@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0b0b0c;
+  --card: #131316;
+  --muted: #9aa0a6;
+}
+html, body, #__next { height: 100%; }
+body { background: var(--bg); color: white; }
+a { color: #60a5fa; }
+.container { max-width: 72rem; margin: 0 auto; padding: 0 1rem; }
+.card { background: var(--card); border-radius: 0.75rem; padding: 1rem; border: 1px solid #262629; }
+.btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 0.5rem; padding: 0.5rem 1rem; font-weight: 500; background: rgba(255,255,255,0.08); transition: background 0.2s; }
+.btn:hover { background: rgba(255,255,255,0.16); }
+.input { width: 100%; border-radius: 0.5rem; background: rgba(0,0,0,0.3); border: 1px solid #3f3f46; padding: 0.5rem 0.75rem; outline: none; }
+.input:focus { box-shadow: 0 0 0 2px #3b82f6; }
+.label { display: block; font-size: 0.875rem; color: #cbd5e1; margin-bottom: 0.25rem; }
+.badge { display: inline-flex; gap: 0.5rem; align-items: center; font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 0.375rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); }
