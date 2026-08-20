@@ -82,3 +82,45 @@ export type Artist = ScoreInputs & {
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at'>> & {
   name: string;
 };
+
+export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change';
+
+export const LOG_TYPES: LogType[] = ['note', 'outreach', 'response', 'meeting', 'status_change'];
+
+export const LOG_TYPE_LABELS: Record<LogType, string> = {
+  note: 'Note',
+  outreach: 'Outreach sent',
+  response: 'Response received',
+  meeting: 'Meeting / call',
+  status_change: 'Stage change',
+};
+
+export type LogEntry = {
+  id: number;
+  artist_id: number;
+  created_at: string;
+  type: LogType;
+  message: string;
+  author?: string;
+};
+
+export type LogEntryInput = {
+  type: LogType;
+  message: string;
+  author?: string;
+};
+
+// A point-in-time snapshot of an artist's score inputs + Breakout Score,
+// recorded on every create/update so the scoring model can be validated later
+// (e.g. "of artists that crossed 90, what % actually broke out?").
+export type ScoreSnapshot = ScoreInputs & {
+  id: number;
+  artist_id: number;
+  recorded_at: string;
+  stage: Stage;
+  breakout_score: number;
+  followers_count?: number;
+  monthly_listeners?: number;
+  growth_velocity_pct?: number;
+  engagement_rate_pct?: number;
+};

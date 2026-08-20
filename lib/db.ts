@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { Artist, ArtistInput } from './types';
+import { breakoutScore } from './scoring';
+import { Artist, ArtistInput, LogEntry, LogEntryInput, ScoreSnapshot } from './types';
 
 const dbFile = path.join(process.cwd(), 'data', 'app.db');
 const dir = path.dirname(dbFile);
@@ -10,6 +11,7 @@ if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 export const db = new Database(dbFile);
 
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS artists (
@@ -40,6 +42,35 @@ CREATE TABLE IF NOT EXISTS artists (
   professionalism REAL NOT NULL DEFAULT 0,
   notes TEXT
 );
+CREATE TABLE IF NOT EXISTS contact_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'note',
+  message TEXT NOT NULL,
+  author TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_contact_log_artist ON contact_log(artist_id);
+CREATE TABLE IF NOT EXISTS score_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  recorded_at TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  breakout_score REAL NOT NULL,
+  followers_count INTEGER,
+  monthly_listeners INTEGER,
+  growth_velocity_pct REAL,
+  engagement_rate_pct REAL,
+  music_talent REAL NOT NULL,
+  growth_velocity REAL NOT NULL,
+  engagement_quality REAL NOT NULL,
+  original_song_response REAL NOT NULL,
+  brand_personality REAL NOT NULL,
+  content_consistency REAL NOT NULL,
+  commercial_potential REAL NOT NULL,
+  professionalism REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_score_history_artist ON score_history(artist_id);
 `);
 
 // Seed a few example artists so the dashboard isn't empty on first run.
@@ -151,6 +182,30 @@ if (count.c === 0) {
     }
   });
   tx(seed);
+
+  // Seed a snapshot + a bit of activity history for each demo artist.
+  for (const artist of getAllArtists()) {
+    snapshotScore(artist);
+    if (artist.name === 'Maya X') {
+      addLogEntry(artist.id, {
+        type: 'outreach',
+        message: 'Sent an initial DM introducing Scout and asking about her original music plans.',
+        author: 'Stephen',
+      });
+      addLogEntry(artist.id, {
+        type: 'response',
+        message: 'She replied — open to a call next week. Scheduling.',
+        author: 'Stephen',
+      });
+    }
+    if (artist.name === 'Ada Bloom') {
+      addLogEntry(artist.id, {
+        type: 'note',
+        message: 'Flagged by scout after her cover of "Undertow" hit 92k views with unusually strong comment sentiment.',
+        author: 'Stephen',
+      });
+    }
+  }
 }
 
 export function getAllArtists(): Artist[] {
@@ -181,7 +236,9 @@ export function createArtist(input: ArtistInput): Artist {
   const info = db
     .prepare(`INSERT INTO artists (${columns.join(', ')}) VALUES (${placeholders})`)
     .run(row);
-  return getArtist(info.lastInsertRowid as number)!;
+  const artist = getArtist(info.lastInsertRowid as number)!;
+  snapshotScore(artist);
+  return artist;
 }
 
 export function updateArtist(id: number, input: ArtistInput): Artist | undefined {
@@ -199,10 +256,78 @@ export function updateArtist(id: number, input: ArtistInput): Artist | undefined
   if (sets.length > 0) {
     db.prepare(`UPDATE artists SET updated_at = @updated_at, ${sets.join(', ')} WHERE id = @id`).run(row);
   }
-  return getArtist(id);
+  const updated = getArtist(id)!;
+  if (input.stage && input.stage !== existing.stage) {
+    addLogEntry(id, {
+      type: 'status_change',
+      message: `Stage changed from "${existing.stage}" to "${updated.stage}"`,
+    });
+  }
+  if (sets.length > 0) snapshotScore(updated);
+  return updated;
 }
 
 export function deleteArtist(id: number): boolean {
   const info = db.prepare('DELETE FROM artists WHERE id = ?').run(id);
+  return info.changes > 0;
+}
+
+function snapshotScore(artist: Artist) {
+  db.prepare(`
+    INSERT INTO score_history (
+      artist_id, recorded_at, stage, breakout_score,
+      followers_count, monthly_listeners, growth_velocity_pct, engagement_rate_pct,
+      music_talent, growth_velocity, engagement_quality, original_song_response,
+      brand_personality, content_consistency, commercial_potential, professionalism
+    ) VALUES (
+      @artist_id, @recorded_at, @stage, @breakout_score,
+      @followers_count, @monthly_listeners, @growth_velocity_pct, @engagement_rate_pct,
+      @music_talent, @growth_velocity, @engagement_quality, @original_song_response,
+      @brand_personality, @content_consistency, @commercial_potential, @professionalism
+    )
+  `).run({
+    artist_id: artist.id,
+    recorded_at: new Date().toISOString(),
+    stage: artist.stage,
+    breakout_score: breakoutScore(artist),
+    followers_count: artist.followers_count ?? null,
+    monthly_listeners: artist.monthly_listeners ?? null,
+    growth_velocity_pct: artist.growth_velocity_pct ?? null,
+    engagement_rate_pct: artist.engagement_rate_pct ?? null,
+    music_talent: artist.music_talent,
+    growth_velocity: artist.growth_velocity,
+    engagement_quality: artist.engagement_quality,
+    original_song_response: artist.original_song_response,
+    brand_personality: artist.brand_personality,
+    content_consistency: artist.content_consistency,
+    commercial_potential: artist.commercial_potential,
+    professionalism: artist.professionalism,
+  });
+}
+
+export function getScoreHistory(artistId: number): ScoreSnapshot[] {
+  return db
+    .prepare('SELECT * FROM score_history WHERE artist_id = ? ORDER BY recorded_at ASC')
+    .all(artistId) as ScoreSnapshot[];
+}
+
+export function getArtistLog(artistId: number): LogEntry[] {
+  return db
+    .prepare('SELECT * FROM contact_log WHERE artist_id = ? ORDER BY created_at DESC')
+    .all(artistId) as LogEntry[];
+}
+
+export function addLogEntry(artistId: number, input: LogEntryInput): LogEntry {
+  const now = new Date().toISOString();
+  const info = db
+    .prepare('INSERT INTO contact_log (artist_id, created_at, type, message, author) VALUES (?, ?, ?, ?, ?)')
+    .run(artistId, now, input.type, input.message, input.author ?? null);
+  return db.prepare('SELECT * FROM contact_log WHERE id = ?').get(info.lastInsertRowid) as LogEntry;
+}
+
+export function deleteLogEntry(artistId: number, logId: number): boolean {
+  const info = db
+    .prepare('DELETE FROM contact_log WHERE id = ? AND artist_id = ?')
+    .run(logId, artistId);
   return info.changes > 0;
 }

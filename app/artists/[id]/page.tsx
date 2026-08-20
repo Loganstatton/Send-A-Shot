@@ -3,6 +3,8 @@ import { getArtist } from '@/lib/db';
 import ArtistForm from '@/components/ArtistForm';
 import { breakoutScore } from '@/lib/scoring';
 import ScoreBadge from '@/components/ScoreBadge';
+import ActivityLog from '@/components/ActivityLog';
+import ScoreHistory from '@/components/ScoreHistory';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +27,12 @@ export default function ArtistDetailPage({ params }: { params: { id: string } })
         </div>
         <ScoreBadge score={score} size="lg" />
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <ScoreHistory artistId={artist.id} />
+        <ActivityLog artistId={artist.id} />
+      </div>
+
       <ArtistForm artist={artist} />
     </div>
   );
