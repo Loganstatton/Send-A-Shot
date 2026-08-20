@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { breakoutScore } from './scoring';
+import { DATA_DIR } from './data-dir';
 import {
   Agreement, AgreementInput, Artist, ArtistInput, LogEntry, LogEntryInput,
   RevenueEntry, RevenueEntryInput, ScoreSnapshot, User,
@@ -9,7 +10,7 @@ import {
 
 export type Actor = { id: number; name: string };
 
-const dbFile = path.join(process.cwd(), 'data', 'app.db');
+const dbFile = path.join(DATA_DIR, 'app.db');
 const dir = path.dirname(dbFile);
 if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 

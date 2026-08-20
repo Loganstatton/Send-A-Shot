@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
 import { getUserById } from './db';
+import { DATA_DIR } from './data-dir';
 import { User } from './types';
 
 export const SESSION_COOKIE = 'scout_session';
@@ -17,7 +18,7 @@ const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60; // 30 days
 // process, and an in-memory-only fallback would give each instance its own
 // secret, silently invalidating sessions signed by another instance. Set
 // SESSION_SECRET in .env.local for real deployments instead of relying on this.
-const FALLBACK_SECRET_FILE = path.join(process.cwd(), 'data', '.session-secret');
+const FALLBACK_SECRET_FILE = path.join(DATA_DIR, '.session-secret');
 let cachedSecret: string | null = null;
 function getSecret(): string {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
