@@ -1,51 +1,116 @@
-# Send‑A‑Shot (Kit) — Legal MVP
+# Scout — Early Artist Discovery MVP
 
-A tiny full‑stack Next.js app that lets you **send sealed mini “shot kits”** (50ml bottles + shot glass) to someone.  
-**No open containers, no pouring by drivers.** This MVP is for demo/education only.
+A small full-stack Next.js app for tracking emerging, unsigned musicians early —
+before labels, managers, or big creators notice them — and scoring their
+breakout potential so outreach decisions are systematic instead of "I kinda
+like her voice."
+
+This is Phase 1 of the artist-discovery-venture idea: prove the scouting and
+scoring loop works before spending money on development deals, contracts, or
+a licensable data product.
 
 ## Features
-- Product catalog of sealed minis
-- Cart + checkout with age‑confirm checkbox (placeholder)
-- Order tracking page
-- Driver console with status updates (protected by `DRIVER_KEY` env)
-- SQLite (via better‑sqlite3) with auto‑seeding
+- Roster of tracked artists with stage pipeline: Watchlist → Contacted →
+  Development → Portfolio Artist → Flagship (or Passed)
+- Per-artist metrics: followers, monthly listeners, 30-day growth %,
+  engagement rate, platform links
+- Weighted **Breakout Score** (0–100) built from 8 scout-rated categories:
+  music/talent, growth velocity, engagement quality, original-song response,
+  brand/personality, content consistency, commercial potential, professionalism
+- Dashboard sorted by Breakout Score with an outreach recommendation
+  (🔥 Immediate outreach / 👀 Watch closely / 📊 Monitor / Pass)
+- Per-artist activity log for outreach tracking (note / outreach sent /
+  response received / meeting / stage change) — stage changes are logged
+  automatically
+- Automatic score history: every create/update snapshots the Breakout Score,
+  stage, and metrics, shown as a sparkline + table on each artist's page —
+  this is what lets you later check whether the scoring model actually works
+- Multi-user accounts: sign up, log in, and every artist shows who added it
+  (`Added by ...`); log entries are attributed to whoever is logged in — no
+  one can post as someone else
+- Deals & revenue ledger per artist: log agreements (development deal,
+  management, development investment, other) with a commission % and an
+  optional upfront investment amount, then log revenue (streaming,
+  sponsorship, shows, merch) linked to an agreement — commission is computed
+  and frozen at entry time, and an investment shows recoup progress
+  (`Recouped $X of $Y`). This is a ledger for tracking negotiated terms and
+  totals, not a payout-accounting engine — real splits are whatever the
+  actual contract and accountant say
+- SQLite (via better-sqlite3) with auto-seeding of a few example artists
 
 ## Quick Start
 ```bash
 # Node 18+ recommended
 npm i
-# set a simple driver key
-echo "DRIVER_KEY=let-me-in" > .env.local
+
+# Recommended: set a persistent session secret so logins survive restarts
+echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env.local
+
 npm run dev
-# open http://localhost:3000
+# open http://localhost:3000, then sign up for an account
 ```
 
-> **Note:** better-sqlite3 uses native bindings. On macOS/Linux it compiles automatically during `npm i`. On Windows, ensure build tools are installed or switch to a hosted Linux dev container.
+If you skip `SESSION_SECRET`, the app generates a fallback secret at
+`data/.session-secret` on first run so sessions still work — but that file
+is dev-only and gitignored; set a real `SESSION_SECRET` for any deployment
+that isn't a single local process.
+
+Sign-up is currently open to anyone who can reach the app (no invite system
+yet) — fine for an internal tool behind your own network/auth, not for a
+public deployment. See Roadmap.
+
+## Breakout Score weights
+
+| Category | Weight |
+|---|---|
+| Music / Talent | 25 |
+| Audience Growth Velocity | 15 |
+| Engagement Quality | 15 |
+| Original-Song Response | 15 |
+| Brand / Personality | 10 |
+| Content Consistency | 10 |
+| Commercial Potential | 5 |
+| Professionalism / Work Ethic | 5 |
+
+Score bands: 85–100 immediate outreach, 70–84 watch closely, 55–69 monitor,
+below 55 pass. See `lib/scoring.ts`.
 
 ## What This MVP Does Not Include
-- Real ID verification (use a provider like Persona, Onfido, or Stripe Identity in production)
-- Real payments (add Stripe or similar)
-- Complex compliance (time windows, dry counties, tax, inventory sync, geofencing)
-
-## Legal Reminder
-This demo models a **lawful alternative** to “sending shots”: deliver **sealed** minis only. Drivers do not pour or serve alcohol. Recipient must open and pour themselves and present valid ID at handoff.
+- Full CRM tooling (email sequences, reminders/follow-up scheduling)
+- Real payments/invoicing, or actual payout-waterfall accounting (recoup-then-
+  commission sequencing, taxes, etc.) — the deals/revenue ledger tracks
+  commitments and totals, it does not move money
+- Automated social-metrics ingestion (metrics are entered manually for now —
+  a future phase would pull follower counts, growth, and engagement directly
+  from TikTok/Instagram/Spotify APIs)
+- Invite-only signup, roles/permissions, or password reset (any authenticated
+  user can currently view/edit/delete any artist and any agreement — fine for
+  a small trusted team, not for a larger org)
 
 ## Project Structure
 ```
 app/                 # Next.js app router
-  api/               # API routes (products, orders, driver updates)
-  checkout/          # checkout page
-  driver/            # driver console
-  order/[id]/        # order status page
-components/
-lib/                 # sqlite db + helpers
-data/                # sqlite file lives here
+  page.tsx           # dashboard
+  artists/new/       # add-artist form
+  artists/[id]/      # artist detail + edit form
+  login/, signup/    # auth pages
+  api/artists/       # REST API (list/create/get/update/delete)
+    [id]/log/        # activity log entries (outreach, notes, stage changes)
+    [id]/history/    # score/metric snapshots over time
+    [id]/agreements/ # deal terms (type, status, commission %, investment)
+    [id]/revenue/    # revenue entries, optionally linked to an agreement
+  api/auth/          # signup/login/logout
+components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory,
+                     # DealsAndRevenue, AuthForm
+lib/                 # sqlite db, types, scoring logic, auth/session helpers, money formatting
+data/                # sqlite file + fallback session secret live here
 ```
 
 ## Next Steps (Roadmap)
-- Add ID verification SDK flow (liveness + barcode scan)
-- Add Stripe checkout (test mode) and webhooks
-- Add merchant/store onboarding + service areas
-- Add delivery windows, tip, and taxes
-- Proper auth (Clerk/Auth.js) for customer + driver
-- Inventory & pricing per‑store
+- Automated metrics ingestion from TikTok/Instagram/YouTube/Spotify
+- Crowdsourced scouting with finder's-fee attribution
+- Reminders/follow-up scheduling on top of the activity log
+- Invite-only signup, roles/permissions (e.g. only the creator or an admin
+  can delete an artist/agreement), and password reset
+- Real payout-waterfall logic (recoup-then-commission sequencing) if the
+  simple ledger stops being enough

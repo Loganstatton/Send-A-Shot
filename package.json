@@ -1,5 +1,5 @@
 {
-  "name": "send-a-shot-mvp",
+  "name": "scout-artist-discovery",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "better-sqlite3": "^9.4.1",
-    "next": "14.2.5",
+    "bcryptjs": "^2.4.3",
+    "next": "14.2.35",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "zod": "^3.23.8",
@@ -21,6 +22,8 @@
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
+    "@types/better-sqlite3": "^7.6.9",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.11.17",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.23"
