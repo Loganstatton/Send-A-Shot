@@ -8,11 +8,10 @@ export default function Header() {
   return (
     <header className="border-b border-neutral-800">
       <div className="container flex items-center justify-between py-4">
-        <Link href="/" className="text-lg font-semibold">Send‑A‑Shot (Kit)</Link>
+        <Link href="/" className="text-lg font-semibold">Scout</Link>
         <nav className="flex gap-3">
-          <Link className={"btn " + (is('/') ? 'bg-white/20' : '')} href="/">Shop</Link>
-          <Link className={"btn " + (is('/checkout') ? 'bg-white/20' : '')} href="/checkout">Checkout</Link>
-          <Link className={"btn " + (is('/driver') ? 'bg-white/20' : '')} href="/driver">Driver</Link>
+          <Link className={"btn " + (is('/') ? 'bg-white/20' : '')} href="/">Dashboard</Link>
+          <Link className={"btn btn-primary " + (is('/artists/new') ? 'bg-blue-700' : '')} href="/artists/new">+ Add Artist</Link>
         </nav>
       </div>
     </header>

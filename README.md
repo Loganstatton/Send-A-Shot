@@ -1,51 +1,75 @@
-# Send‑A‑Shot (Kit) — Legal MVP
+# Scout — Early Artist Discovery MVP
 
-A tiny full‑stack Next.js app that lets you **send sealed mini “shot kits”** (50ml bottles + shot glass) to someone.  
-**No open containers, no pouring by drivers.** This MVP is for demo/education only.
+A small full-stack Next.js app for tracking emerging, unsigned musicians early —
+before labels, managers, or big creators notice them — and scoring their
+breakout potential so outreach decisions are systematic instead of "I kinda
+like her voice."
+
+This is Phase 1 of the artist-discovery-venture idea: prove the scouting and
+scoring loop works before spending money on development deals, contracts, or
+a licensable data product.
 
 ## Features
-- Product catalog of sealed minis
-- Cart + checkout with age‑confirm checkbox (placeholder)
-- Order tracking page
-- Driver console with status updates (protected by `DRIVER_KEY` env)
-- SQLite (via better‑sqlite3) with auto‑seeding
+- Roster of tracked artists with stage pipeline: Watchlist → Contacted →
+  Development → Portfolio Artist → Flagship (or Passed)
+- Per-artist metrics: followers, monthly listeners, 30-day growth %,
+  engagement rate, platform links
+- Weighted **Breakout Score** (0–100) built from 8 scout-rated categories:
+  music/talent, growth velocity, engagement quality, original-song response,
+  brand/personality, content consistency, commercial potential, professionalism
+- Dashboard sorted by Breakout Score with an outreach recommendation
+  (🔥 Immediate outreach / 👀 Watch closely / 📊 Monitor / Pass)
+- SQLite (via better-sqlite3) with auto-seeding of a few example artists
 
 ## Quick Start
 ```bash
 # Node 18+ recommended
 npm i
-# set a simple driver key
-echo "DRIVER_KEY=let-me-in" > .env.local
 npm run dev
 # open http://localhost:3000
 ```
 
-> **Note:** better-sqlite3 uses native bindings. On macOS/Linux it compiles automatically during `npm i`. On Windows, ensure build tools are installed or switch to a hosted Linux dev container.
+## Breakout Score weights
+
+| Category | Weight |
+|---|---|
+| Music / Talent | 25 |
+| Audience Growth Velocity | 15 |
+| Engagement Quality | 15 |
+| Original-Song Response | 15 |
+| Brand / Personality | 10 |
+| Content Consistency | 10 |
+| Commercial Potential | 5 |
+| Professionalism / Work Ethic | 5 |
+
+Score bands: 85–100 immediate outreach, 70–84 watch closely, 55–69 monitor,
+below 55 pass. See `lib/scoring.ts`.
 
 ## What This MVP Does Not Include
-- Real ID verification (use a provider like Persona, Onfido, or Stripe Identity in production)
-- Real payments (add Stripe or similar)
-- Complex compliance (time windows, dry counties, tax, inventory sync, geofencing)
-
-## Legal Reminder
-This demo models a **lawful alternative** to “sending shots”: deliver **sealed** minis only. Drivers do not pour or serve alcohol. Recipient must open and pour themselves and present valid ID at handoff.
+- Outreach/CRM tooling (email sequences, contact history)
+- Contracts, revenue tracking, or payments
+- Automated social-metrics ingestion (metrics are entered manually for now —
+  a future phase would pull follower counts, growth, and engagement directly
+  from TikTok/Instagram/Spotify APIs)
+- Auth / multi-user support (single-user, local-only for now)
 
 ## Project Structure
 ```
 app/                 # Next.js app router
-  api/               # API routes (products, orders, driver updates)
-  checkout/          # checkout page
-  driver/            # driver console
-  order/[id]/        # order status page
-components/
-lib/                 # sqlite db + helpers
+  page.tsx           # dashboard
+  artists/new/       # add-artist form
+  artists/[id]/      # artist detail + edit form
+  api/artists/       # REST API (list/create/get/update/delete)
+components/          # Header, ArtistForm, ScoreBadge
+lib/                 # sqlite db, types, scoring logic
 data/                # sqlite file lives here
 ```
 
 ## Next Steps (Roadmap)
-- Add ID verification SDK flow (liveness + barcode scan)
-- Add Stripe checkout (test mode) and webhooks
-- Add merchant/store onboarding + service areas
-- Add delivery windows, tip, and taxes
-- Proper auth (Clerk/Auth.js) for customer + driver
-- Inventory & pricing per‑store
+- Auth so multiple scouts can use it and see who added/owns each artist
+- Automated metrics ingestion from TikTok/Instagram/YouTube/Spotify
+- Historical tracking of scores/metrics over time (to validate the scoring
+  model: "of artists scored 90+, what % actually broke out?")
+- Outreach tracking (contacted date, response, notes thread)
+- Contract/revenue-share tracking once artists move into Development/Portfolio
+- Crowdsourced scouting with finder's-fee attribution
