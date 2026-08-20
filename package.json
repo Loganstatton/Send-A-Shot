@@ -9,7 +9,7 @@
     "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
-    "better-sqlite3": "^9.4.1",
+    "better-sqlite3": "^13.0.3",
     "bcryptjs": "^2.4.3",
     "next": "14.2.35",
     "react": "18.2.0",
@@ -22,7 +22,7 @@
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
-    "@types/better-sqlite3": "^7.6.9",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.11.17",
     "@types/react": "^18.2.66",
