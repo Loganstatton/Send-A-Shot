@@ -5,6 +5,10 @@ import path from 'path';
 // data written there can reset unexpectedly. Fine for kicking the tires;
 // anywhere with a persistent disk (a VPS, Render, Railway, etc.) is a better
 // fit for this app's local-SQLite-file design if you want data to stick.
-export const DATA_DIR = process.env.VERCEL
-  ? '/tmp/scout-data'
-  : path.join(process.cwd(), 'data');
+//
+// DATA_DIR lets a real persistent-disk deployment (e.g. a Render disk
+// mounted at /var/data) point storage there explicitly, overriding both
+// defaults below.
+export const DATA_DIR =
+  process.env.DATA_DIR ??
+  (process.env.VERCEL ? '/tmp/scout-data' : path.join(process.cwd(), 'data'));
