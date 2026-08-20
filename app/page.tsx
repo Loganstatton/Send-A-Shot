@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { getAllArtists } from '@/lib/db';
+import { requireUser } from '@/lib/auth';
 import { breakoutScore } from '@/lib/scoring';
 import { STAGE_LABELS } from '@/lib/types';
 import ScoreBadge from '@/components/ScoreBadge';
 
 export const dynamic = 'force-dynamic';
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  await requireUser();
   const artists = getAllArtists()
     .map((a) => ({ ...a, score: breakoutScore(a) }))
     .sort((a, b) => b.score - a.score);
@@ -55,6 +57,7 @@ export default function DashboardPage() {
                   {artist.followers_count != null && <span>{artist.followers_count.toLocaleString()} followers</span>}
                   {artist.growth_velocity_pct != null && <span>+{artist.growth_velocity_pct}%/mo</span>}
                   {artist.engagement_rate_pct != null && <span>{artist.engagement_rate_pct}% engagement</span>}
+                  {artist.created_by_name && <span>Added by {artist.created_by_name}</span>}
                 </div>
               </div>
             </div>

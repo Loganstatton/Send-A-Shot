@@ -1,5 +1,6 @@
 import './globals.css';
 import Header from '@/components/Header';
+import { getSessionUser } from '@/lib/auth';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -7,11 +8,12 @@ export const metadata: Metadata = {
   description: 'Track emerging artists early, score their breakout potential, and manage outreach before anyone else notices them.',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const user = await getSessionUser();
   return (
     <html lang="en">
       <body>
-        <Header />
+        <Header user={user} />
         <main className="container py-6">{children}</main>
         <footer className="container py-10 text-sm text-neutral-400">
           <div className="card">

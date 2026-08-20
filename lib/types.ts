@@ -77,10 +77,19 @@ export type Artist = ScoreInputs & {
   growth_velocity_pct?: number;
   engagement_rate_pct?: number;
   notes?: string;
+  created_by?: number;
+  created_by_name?: string;
 };
 
-export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at'>> & {
+export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {
   name: string;
+};
+
+export type User = {
+  id: number;
+  created_at: string;
+  name: string;
+  email: string;
 };
 
 export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change';
@@ -107,7 +116,6 @@ export type LogEntry = {
 export type LogEntryInput = {
   type: LogType;
   message: string;
-  author?: string;
 };
 
 // A point-in-time snapshot of an artist's score inputs + Breakout Score,

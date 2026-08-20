@@ -14,7 +14,6 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
   const [entries, setEntries] = useState<LogEntry[] | null>(null);
   const [type, setType] = useState<LogType>('note');
   const [message, setMessage] = useState('');
-  const [author, setAuthor] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function load() {
@@ -35,7 +34,7 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
       await fetch(`/api/artists/${artistId}/log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, message, author: author || undefined }),
+        body: JSON.stringify({ type, message }),
       });
       setMessage('');
       await load();
@@ -54,19 +53,11 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
       <h2 className="font-semibold text-lg">Activity log</h2>
 
       <form onSubmit={handleAdd} className="space-y-2">
-        <div className="flex gap-2 flex-wrap">
-          <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value as LogType)}>
-            {LOG_TYPES.map((t) => (
-              <option key={t} value={t}>{LOG_TYPE_LABELS[t]}</option>
-            ))}
-          </select>
-          <input
-            className="input w-auto flex-1 min-w-[120px]"
-            placeholder="Your name (optional)"
-            value={author}
-            onChange={(e) => setAuthor(e.target.value)}
-          />
-        </div>
+        <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value as LogType)}>
+          {LOG_TYPES.map((t) => (
+            <option key={t} value={t}>{LOG_TYPE_LABELS[t]}</option>
+          ))}
+        </select>
         <textarea
           className="input min-h-[70px]"
           placeholder="What happened? e.g. 'Sent an intro DM about her original music.'"

@@ -2,7 +2,9 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { breakoutScore } from './scoring';
-import { Artist, ArtistInput, LogEntry, LogEntryInput, ScoreSnapshot } from './types';
+import { Artist, ArtistInput, LogEntry, LogEntryInput, ScoreSnapshot, User } from './types';
+
+export type Actor = { id: number; name: string };
 
 const dbFile = path.join(process.cwd(), 'data', 'app.db');
 const dir = path.dirname(dbFile);
@@ -42,13 +44,21 @@ CREATE TABLE IF NOT EXISTS artists (
   professionalism REAL NOT NULL DEFAULT 0,
   notes TEXT
 );
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS contact_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'note',
   message TEXT NOT NULL,
-  author TEXT
+  author TEXT,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_contact_log_artist ON contact_log(artist_id);
 CREATE TABLE IF NOT EXISTS score_history (
@@ -72,6 +82,23 @@ CREATE TABLE IF NOT EXISTS score_history (
 );
 CREATE INDEX IF NOT EXISTS idx_score_history_artist ON score_history(artist_id);
 `);
+
+// Lightweight migrations for columns added after the initial table creation.
+// SQLite has no "ADD COLUMN IF NOT EXISTS", so ignore the duplicate-column error.
+function addColumnIfMissing(table: string, ddl: string) {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  } catch (err: any) {
+    if (!/duplicate column name/i.test(err?.message ?? '')) throw err;
+  }
+}
+addColumnIfMissing('artists', 'created_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+
+const ARTIST_SELECT = `
+  SELECT artists.*, users.name AS created_by_name
+  FROM artists
+  LEFT JOIN users ON users.id = artists.created_by
+`;
 
 // Seed a few example artists so the dashboard isn't empty on first run.
 const count = db.prepare('SELECT COUNT(*) as c FROM artists').get() as { c: number };
@@ -184,36 +211,34 @@ if (count.c === 0) {
   tx(seed);
 
   // Seed a snapshot + a bit of activity history for each demo artist.
+  const seedActor = { name: 'Stephen' };
   for (const artist of getAllArtists()) {
     snapshotScore(artist);
     if (artist.name === 'Maya X') {
       addLogEntry(artist.id, {
         type: 'outreach',
         message: 'Sent an initial DM introducing Scout and asking about her original music plans.',
-        author: 'Stephen',
-      });
+      }, seedActor);
       addLogEntry(artist.id, {
         type: 'response',
         message: 'She replied — open to a call next week. Scheduling.',
-        author: 'Stephen',
-      });
+      }, seedActor);
     }
     if (artist.name === 'Ada Bloom') {
       addLogEntry(artist.id, {
         type: 'note',
         message: 'Flagged by scout after her cover of "Undertow" hit 92k views with unusually strong comment sentiment.',
-        author: 'Stephen',
-      });
+      }, seedActor);
     }
   }
 }
 
 export function getAllArtists(): Artist[] {
-  return db.prepare('SELECT * FROM artists ORDER BY updated_at DESC').all() as Artist[];
+  return db.prepare(`${ARTIST_SELECT} ORDER BY artists.updated_at DESC`).all() as Artist[];
 }
 
 export function getArtist(id: number): Artist | undefined {
-  return db.prepare('SELECT * FROM artists WHERE id = ?').get(id) as Artist | undefined;
+  return db.prepare(`${ARTIST_SELECT} WHERE artists.id = ?`).get(id) as Artist | undefined;
 }
 
 const WRITABLE_FIELDS = [
@@ -225,13 +250,13 @@ const WRITABLE_FIELDS = [
   'notes',
 ] as const;
 
-export function createArtist(input: ArtistInput): Artist {
+export function createArtist(input: ArtistInput, actor?: Actor | null): Artist {
   const now = new Date().toISOString();
-  const row: Record<string, unknown> = { created_at: now, updated_at: now };
+  const row: Record<string, unknown> = { created_at: now, updated_at: now, created_by: actor?.id ?? null };
   for (const field of WRITABLE_FIELDS) {
     row[field] = (input as any)[field] ?? (field === 'stage' ? 'watchlist' : null);
   }
-  const columns = ['created_at', 'updated_at', ...WRITABLE_FIELDS];
+  const columns = ['created_at', 'updated_at', 'created_by', ...WRITABLE_FIELDS];
   const placeholders = columns.map((c) => `@${c}`).join(', ');
   const info = db
     .prepare(`INSERT INTO artists (${columns.join(', ')}) VALUES (${placeholders})`)
@@ -241,7 +266,7 @@ export function createArtist(input: ArtistInput): Artist {
   return artist;
 }
 
-export function updateArtist(id: number, input: ArtistInput): Artist | undefined {
+export function updateArtist(id: number, input: ArtistInput, actor?: Actor | null): Artist | undefined {
   const existing = getArtist(id);
   if (!existing) return undefined;
   const now = new Date().toISOString();
@@ -261,7 +286,7 @@ export function updateArtist(id: number, input: ArtistInput): Artist | undefined
     addLogEntry(id, {
       type: 'status_change',
       message: `Stage changed from "${existing.stage}" to "${updated.stage}"`,
-    });
+    }, actor);
   }
   if (sets.length > 0) snapshotScore(updated);
   return updated;
@@ -317,11 +342,12 @@ export function getArtistLog(artistId: number): LogEntry[] {
     .all(artistId) as LogEntry[];
 }
 
-export function addLogEntry(artistId: number, input: LogEntryInput): LogEntry {
+export function addLogEntry(artistId: number, input: LogEntryInput, actor?: Actor | { name: string } | null): LogEntry {
   const now = new Date().toISOString();
+  const actorId = actor && 'id' in actor ? actor.id : null;
   const info = db
-    .prepare('INSERT INTO contact_log (artist_id, created_at, type, message, author) VALUES (?, ?, ?, ?, ?)')
-    .run(artistId, now, input.type, input.message, input.author ?? null);
+    .prepare('INSERT INTO contact_log (artist_id, created_at, type, message, author, user_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(artistId, now, input.type, input.message, actor?.name ?? null, actorId);
   return db.prepare('SELECT * FROM contact_log WHERE id = ?').get(info.lastInsertRowid) as LogEntry;
 }
 
@@ -330,4 +356,24 @@ export function deleteLogEntry(artistId: number, logId: number): boolean {
     .prepare('DELETE FROM contact_log WHERE id = ? AND artist_id = ?')
     .run(logId, artistId);
   return info.changes > 0;
+}
+
+export function createUser(input: { name: string; email: string; password_hash: string }): User {
+  const now = new Date().toISOString();
+  const info = db
+    .prepare('INSERT INTO users (created_at, name, email, password_hash) VALUES (?, ?, ?, ?)')
+    .run(now, input.name, input.email.toLowerCase(), input.password_hash);
+  return getUserById(info.lastInsertRowid as number)!;
+}
+
+export function getUserByEmail(email: string): (User & { password_hash: string }) | undefined {
+  return db
+    .prepare('SELECT id, created_at, name, email, password_hash FROM users WHERE email = ?')
+    .get(email.toLowerCase()) as (User & { password_hash: string }) | undefined;
+}
+
+export function getUserById(id: number): User | undefined {
+  return db
+    .prepare('SELECT id, created_at, name, email FROM users WHERE id = ?')
+    .get(id) as User | undefined;
 }

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getArtist } from '@/lib/db';
+import { requireUser } from '@/lib/auth';
 import ArtistForm from '@/components/ArtistForm';
 import { breakoutScore } from '@/lib/scoring';
 import ScoreBadge from '@/components/ScoreBadge';
@@ -8,7 +9,8 @@ import ScoreHistory from '@/components/ScoreHistory';
 
 export const dynamic = 'force-dynamic';
 
-export default function ArtistDetailPage({ params }: { params: { id: string } }) {
+export default async function ArtistDetailPage({ params }: { params: { id: string } }) {
+  await requireUser();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
   const artist = getArtist(id);
@@ -22,7 +24,9 @@ export default function ArtistDetailPage({ params }: { params: { id: string } })
         <div>
           <h1 className="text-2xl font-semibold">{artist.name}</h1>
           <p className="text-neutral-400 text-sm">
-            Added {new Date(artist.created_at).toLocaleDateString()} · Last updated {new Date(artist.updated_at).toLocaleDateString()}
+            Added {new Date(artist.created_at).toLocaleDateString()}
+            {artist.created_by_name ? ` by ${artist.created_by_name}` : ''}
+            {' · '}Last updated {new Date(artist.updated_at).toLocaleDateString()}
           </p>
         </div>
         <ScoreBadge score={score} size="lg" />

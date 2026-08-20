@@ -25,15 +25,31 @@ a licensable data product.
 - Automatic score history: every create/update snapshots the Breakout Score,
   stage, and metrics, shown as a sparkline + table on each artist's page —
   this is what lets you later check whether the scoring model actually works
+- Multi-user accounts: sign up, log in, and every artist shows who added it
+  (`Added by ...`); log entries are attributed to whoever is logged in — no
+  one can post as someone else
 - SQLite (via better-sqlite3) with auto-seeding of a few example artists
 
 ## Quick Start
 ```bash
 # Node 18+ recommended
 npm i
+
+# Recommended: set a persistent session secret so logins survive restarts
+echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env.local
+
 npm run dev
-# open http://localhost:3000
+# open http://localhost:3000, then sign up for an account
 ```
+
+If you skip `SESSION_SECRET`, the app generates a fallback secret at
+`data/.session-secret` on first run so sessions still work — but that file
+is dev-only and gitignored; set a real `SESSION_SECRET` for any deployment
+that isn't a single local process.
+
+Sign-up is currently open to anyone who can reach the app (no invite system
+yet) — fine for an internal tool behind your own network/auth, not for a
+public deployment. See Roadmap.
 
 ## Breakout Score weights
 
@@ -57,7 +73,9 @@ below 55 pass. See `lib/scoring.ts`.
 - Automated social-metrics ingestion (metrics are entered manually for now —
   a future phase would pull follower counts, growth, and engagement directly
   from TikTok/Instagram/Spotify APIs)
-- Auth / multi-user support (single-user, local-only for now)
+- Invite-only signup, roles/permissions, or password reset (any authenticated
+  user can currently view/edit/delete any artist — fine for a small trusted
+  team, not for a larger org)
 
 ## Project Structure
 ```
@@ -65,17 +83,20 @@ app/                 # Next.js app router
   page.tsx           # dashboard
   artists/new/       # add-artist form
   artists/[id]/      # artist detail + edit form
+  login/, signup/    # auth pages
   api/artists/       # REST API (list/create/get/update/delete)
     [id]/log/        # activity log entries (outreach, notes, stage changes)
     [id]/history/    # score/metric snapshots over time
-components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory
-lib/                 # sqlite db, types, scoring logic
-data/                # sqlite file lives here
+  api/auth/          # signup/login/logout
+components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory, AuthForm
+lib/                 # sqlite db, types, scoring logic, auth/session helpers
+data/                # sqlite file + fallback session secret live here
 ```
 
 ## Next Steps (Roadmap)
-- Auth so multiple scouts can use it and see who added/owns each artist
 - Automated metrics ingestion from TikTok/Instagram/YouTube/Spotify
 - Contract/revenue-share tracking once artists move into Development/Portfolio
 - Crowdsourced scouting with finder's-fee attribution
 - Reminders/follow-up scheduling on top of the activity log
+- Invite-only signup, roles/permissions (e.g. only the creator or an admin
+  can delete an artist), and password reset
