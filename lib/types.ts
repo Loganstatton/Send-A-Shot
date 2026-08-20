@@ -132,3 +132,86 @@ export type ScoreSnapshot = ScoreInputs & {
   growth_velocity_pct?: number;
   engagement_rate_pct?: number;
 };
+
+export type AgreementType = 'development' | 'management' | 'investment' | 'other';
+
+export const AGREEMENT_TYPES: AgreementType[] = ['development', 'management', 'investment', 'other'];
+
+export const AGREEMENT_TYPE_LABELS: Record<AgreementType, string> = {
+  development: 'Development deal',
+  management: 'Management agreement',
+  investment: 'Development investment',
+  other: 'Other',
+};
+
+export type AgreementStatus = 'draft' | 'active' | 'completed' | 'terminated';
+
+export const AGREEMENT_STATUSES: AgreementStatus[] = ['draft', 'active', 'completed', 'terminated'];
+
+export const AGREEMENT_STATUS_LABELS: Record<AgreementStatus, string> = {
+  draft: 'Draft',
+  active: 'Active',
+  completed: 'Completed',
+  terminated: 'Terminated',
+};
+
+// Deliberately simple money model: this tracks negotiated terms and totals,
+// it does not compute real payout waterfalls (recoup-then-commission
+// sequencing, taxes, etc). Treat it as a ledger, not an accounting system —
+// real splits are whatever the actual contract and accountant say.
+export type Agreement = {
+  id: number;
+  artist_id: number;
+  created_at: string;
+  updated_at: string;
+  type: AgreementType;
+  status: AgreementStatus;
+  start_date?: string;
+  end_date?: string;
+  commission_pct?: number;
+  investment_amount_cents?: number;
+  notes?: string;
+  created_by?: number;
+  created_by_name?: string;
+};
+
+export type AgreementInput = Partial<
+  Omit<Agreement, 'id' | 'artist_id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>
+> & {
+  type: AgreementType;
+};
+
+export type RevenueSource = 'streaming' | 'sponsorship' | 'shows' | 'merch' | 'other';
+
+export const REVENUE_SOURCES: RevenueSource[] = ['streaming', 'sponsorship', 'shows', 'merch', 'other'];
+
+export const REVENUE_SOURCE_LABELS: Record<RevenueSource, string> = {
+  streaming: 'Streaming',
+  sponsorship: 'Sponsorship / brand deal',
+  shows: 'Shows / touring',
+  merch: 'Merch',
+  other: 'Other',
+};
+
+export type RevenueEntry = {
+  id: number;
+  artist_id: number;
+  agreement_id?: number;
+  created_at: string;
+  recorded_at: string;
+  source: RevenueSource;
+  gross_amount_cents: number;
+  commission_pct_applied?: number;
+  commission_amount_cents?: number;
+  notes?: string;
+  created_by?: number;
+  created_by_name?: string;
+};
+
+export type RevenueEntryInput = {
+  agreement_id?: number;
+  recorded_at: string;
+  source: RevenueSource;
+  gross_amount_cents: number;
+  notes?: string;
+};

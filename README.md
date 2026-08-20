@@ -28,6 +28,14 @@ a licensable data product.
 - Multi-user accounts: sign up, log in, and every artist shows who added it
   (`Added by ...`); log entries are attributed to whoever is logged in — no
   one can post as someone else
+- Deals & revenue ledger per artist: log agreements (development deal,
+  management, development investment, other) with a commission % and an
+  optional upfront investment amount, then log revenue (streaming,
+  sponsorship, shows, merch) linked to an agreement — commission is computed
+  and frozen at entry time, and an investment shows recoup progress
+  (`Recouped $X of $Y`). This is a ledger for tracking negotiated terms and
+  totals, not a payout-accounting engine — real splits are whatever the
+  actual contract and accountant say
 - SQLite (via better-sqlite3) with auto-seeding of a few example artists
 
 ## Quick Start
@@ -69,13 +77,15 @@ below 55 pass. See `lib/scoring.ts`.
 
 ## What This MVP Does Not Include
 - Full CRM tooling (email sequences, reminders/follow-up scheduling)
-- Contracts, revenue tracking, or payments
+- Real payments/invoicing, or actual payout-waterfall accounting (recoup-then-
+  commission sequencing, taxes, etc.) — the deals/revenue ledger tracks
+  commitments and totals, it does not move money
 - Automated social-metrics ingestion (metrics are entered manually for now —
   a future phase would pull follower counts, growth, and engagement directly
   from TikTok/Instagram/Spotify APIs)
 - Invite-only signup, roles/permissions, or password reset (any authenticated
-  user can currently view/edit/delete any artist — fine for a small trusted
-  team, not for a larger org)
+  user can currently view/edit/delete any artist and any agreement — fine for
+  a small trusted team, not for a larger org)
 
 ## Project Structure
 ```
@@ -87,16 +97,20 @@ app/                 # Next.js app router
   api/artists/       # REST API (list/create/get/update/delete)
     [id]/log/        # activity log entries (outreach, notes, stage changes)
     [id]/history/    # score/metric snapshots over time
+    [id]/agreements/ # deal terms (type, status, commission %, investment)
+    [id]/revenue/    # revenue entries, optionally linked to an agreement
   api/auth/          # signup/login/logout
-components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory, AuthForm
-lib/                 # sqlite db, types, scoring logic, auth/session helpers
+components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory,
+                     # DealsAndRevenue, AuthForm
+lib/                 # sqlite db, types, scoring logic, auth/session helpers, money formatting
 data/                # sqlite file + fallback session secret live here
 ```
 
 ## Next Steps (Roadmap)
 - Automated metrics ingestion from TikTok/Instagram/YouTube/Spotify
-- Contract/revenue-share tracking once artists move into Development/Portfolio
 - Crowdsourced scouting with finder's-fee attribution
 - Reminders/follow-up scheduling on top of the activity log
 - Invite-only signup, roles/permissions (e.g. only the creator or an admin
-  can delete an artist), and password reset
+  can delete an artist/agreement), and password reset
+- Real payout-waterfall logic (recoup-then-commission sequencing) if the
+  simple ledger stops being enough

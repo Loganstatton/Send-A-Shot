@@ -2,7 +2,10 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { breakoutScore } from './scoring';
-import { Artist, ArtistInput, LogEntry, LogEntryInput, ScoreSnapshot, User } from './types';
+import {
+  Agreement, AgreementInput, Artist, ArtistInput, LogEntry, LogEntryInput,
+  RevenueEntry, RevenueEntryInput, ScoreSnapshot, User,
+} from './types';
 
 export type Actor = { id: number; name: string };
 
@@ -81,6 +84,35 @@ CREATE TABLE IF NOT EXISTS score_history (
   professionalism REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_score_history_artist ON score_history(artist_id);
+CREATE TABLE IF NOT EXISTS agreements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  start_date TEXT,
+  end_date TEXT,
+  commission_pct REAL,
+  investment_amount_cents INTEGER,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agreements_artist ON agreements(artist_id);
+CREATE TABLE IF NOT EXISTS revenue_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  agreement_id INTEGER REFERENCES agreements(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  recorded_at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  gross_amount_cents INTEGER NOT NULL,
+  commission_pct_applied REAL,
+  commission_amount_cents INTEGER,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_revenue_artist ON revenue_entries(artist_id);
 `);
 
 // Lightweight migrations for columns added after the initial table creation.
@@ -376,4 +408,123 @@ export function getUserById(id: number): User | undefined {
   return db
     .prepare('SELECT id, created_at, name, email FROM users WHERE id = ?')
     .get(id) as User | undefined;
+}
+
+const AGREEMENT_SELECT = `
+  SELECT agreements.*, users.name AS created_by_name
+  FROM agreements
+  LEFT JOIN users ON users.id = agreements.created_by
+`;
+
+export function getAgreements(artistId: number): Agreement[] {
+  return db
+    .prepare(`${AGREEMENT_SELECT} WHERE agreements.artist_id = ? ORDER BY agreements.created_at DESC`)
+    .all(artistId) as Agreement[];
+}
+
+export function getAgreement(artistId: number, agreementId: number): Agreement | undefined {
+  return db
+    .prepare(`${AGREEMENT_SELECT} WHERE agreements.artist_id = ? AND agreements.id = ?`)
+    .get(artistId, agreementId) as Agreement | undefined;
+}
+
+const AGREEMENT_WRITABLE_FIELDS = [
+  'type', 'status', 'start_date', 'end_date', 'commission_pct', 'investment_amount_cents', 'notes',
+] as const;
+
+export function createAgreement(artistId: number, input: AgreementInput, actor?: Actor | null): Agreement {
+  const now = new Date().toISOString();
+  const row: Record<string, unknown> = {
+    artist_id: artistId,
+    created_at: now,
+    updated_at: now,
+    created_by: actor?.id ?? null,
+    status: input.status ?? 'draft',
+  };
+  for (const field of AGREEMENT_WRITABLE_FIELDS) {
+    if (field === 'status') continue;
+    row[field] = (input as any)[field] ?? null;
+  }
+  const columns = ['artist_id', 'created_at', 'updated_at', 'created_by', ...AGREEMENT_WRITABLE_FIELDS];
+  const placeholders = columns.map((c) => `@${c}`).join(', ');
+  const info = db
+    .prepare(`INSERT INTO agreements (${columns.join(', ')}) VALUES (${placeholders})`)
+    .run(row);
+  return getAgreement(artistId, info.lastInsertRowid as number)!;
+}
+
+export function updateAgreement(artistId: number, agreementId: number, input: AgreementInput): Agreement | undefined {
+  if (!getAgreement(artistId, agreementId)) return undefined;
+  const now = new Date().toISOString();
+  const sets: string[] = [];
+  const row: Record<string, unknown> = { id: agreementId, updated_at: now };
+  for (const field of AGREEMENT_WRITABLE_FIELDS) {
+    if (field in input) {
+      sets.push(`${field} = @${field}`);
+      row[field] = (input as any)[field];
+    }
+  }
+  if (sets.length > 0) {
+    db.prepare(`UPDATE agreements SET updated_at = @updated_at, ${sets.join(', ')} WHERE id = @id`).run(row);
+  }
+  return getAgreement(artistId, agreementId);
+}
+
+export function deleteAgreement(artistId: number, agreementId: number): boolean {
+  const info = db
+    .prepare('DELETE FROM agreements WHERE id = ? AND artist_id = ?')
+    .run(agreementId, artistId);
+  return info.changes > 0;
+}
+
+const REVENUE_SELECT = `
+  SELECT revenue_entries.*, users.name AS created_by_name
+  FROM revenue_entries
+  LEFT JOIN users ON users.id = revenue_entries.created_by
+`;
+
+export function getRevenueEntries(artistId: number): RevenueEntry[] {
+  return db
+    .prepare(`${REVENUE_SELECT} WHERE revenue_entries.artist_id = ? ORDER BY revenue_entries.recorded_at DESC`)
+    .all(artistId) as RevenueEntry[];
+}
+
+export function createRevenueEntry(artistId: number, input: RevenueEntryInput, actor?: Actor | null): RevenueEntry {
+  const now = new Date().toISOString();
+  const agreement = input.agreement_id ? getAgreement(artistId, input.agreement_id) : undefined;
+  const commissionPct = agreement?.commission_pct ?? null;
+  const commissionCents = commissionPct != null
+    ? Math.round(input.gross_amount_cents * (commissionPct / 100))
+    : null;
+
+  const info = db.prepare(`
+    INSERT INTO revenue_entries (
+      artist_id, agreement_id, created_at, recorded_at, source,
+      gross_amount_cents, commission_pct_applied, commission_amount_cents, notes, created_by
+    ) VALUES (
+      @artist_id, @agreement_id, @created_at, @recorded_at, @source,
+      @gross_amount_cents, @commission_pct_applied, @commission_amount_cents, @notes, @created_by
+    )
+  `).run({
+    artist_id: artistId,
+    agreement_id: input.agreement_id ?? null,
+    created_at: now,
+    recorded_at: input.recorded_at,
+    source: input.source,
+    gross_amount_cents: input.gross_amount_cents,
+    commission_pct_applied: commissionPct,
+    commission_amount_cents: commissionCents,
+    notes: input.notes ?? null,
+    created_by: actor?.id ?? null,
+  });
+  return db
+    .prepare(`${REVENUE_SELECT} WHERE revenue_entries.id = ?`)
+    .get(info.lastInsertRowid) as RevenueEntry;
+}
+
+export function deleteRevenueEntry(artistId: number, revenueId: number): boolean {
+  const info = db
+    .prepare('DELETE FROM revenue_entries WHERE id = ? AND artist_id = ?')
+    .run(revenueId, artistId);
+  return info.changes > 0;
 }

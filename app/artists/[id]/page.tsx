@@ -6,6 +6,7 @@ import { breakoutScore } from '@/lib/scoring';
 import ScoreBadge from '@/components/ScoreBadge';
 import ActivityLog from '@/components/ActivityLog';
 import ScoreHistory from '@/components/ScoreHistory';
+import DealsAndRevenue from '@/components/DealsAndRevenue';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +37,8 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
         <ScoreHistory artistId={artist.id} />
         <ActivityLog artistId={artist.id} />
       </div>
+
+      <DealsAndRevenue artistId={artist.id} />
 
       <ArtistForm artist={artist} />
     </div>
