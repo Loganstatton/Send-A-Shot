@@ -8,6 +8,7 @@ import { marketSentiment } from '@/lib/next-market';
 import ArtistAvatar from '@/components/ArtistAvatar';
 import SentimentBadge from '@/components/SentimentBadge';
 import AudioPreview from '@/components/AudioPreview';
+import SpotifyPreview from '@/components/SpotifyPreview';
 import PriceChart from '@/components/PriceChart';
 import TradePanel from '@/components/TradePanel';
 
@@ -67,6 +68,8 @@ export default async function NextArtistPage({ params }: { params: { id: string 
       </div>
 
       {artist.bio && <p className="text-neutral-300 text-sm max-w-2xl">{artist.bio}</p>}
+
+      <SpotifyPreview trackUrl={artist.top_song_url} artistUrl={artist.spotify_url} />
 
       {foundingRecord && (
         <div className="card border-amber-500/30 bg-amber-500/5">
