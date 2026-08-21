@@ -1,10 +1,20 @@
 import { notFound } from 'next/navigation';
-import { getHolding, getNextArtist } from '@/lib/db';
+import type { Metadata } from 'next';
+import { getArtist, getHolding, getNextArtist, getScoreHistory } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
 import { recommendation } from '@/lib/scoring';
-import Sparkline from '@/components/Sparkline';
+import { marketSentiment } from '@/lib/next-market';
+import ArtistAvatar from '@/components/ArtistAvatar';
+import SentimentBadge from '@/components/SentimentBadge';
+import AudioPreview from '@/components/AudioPreview';
+import PriceChart from '@/components/PriceChart';
 import TradePanel from '@/components/TradePanel';
+
+export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+  const artist = getArtist(Number(params.id));
+  return { title: artist?.name ?? 'Artist' };
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +30,9 @@ export default async function NextArtistPage({ params }: { params: { id: string 
 
   const { artist, score, priceCents, priceHistory } = row;
   const rec = recommendation(score);
+  const sentiment = marketSentiment(score, priceCents);
   const holding = getHolding(user.id, id);
+  const scoreHistory = getScoreHistory(id);
 
   const links = [
     { label: 'TikTok', url: artist.tiktok_url },
@@ -33,33 +45,51 @@ export default async function NextArtistPage({ params }: { params: { id: string 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">{artist.name}</h1>
-          <p className="text-neutral-400 text-sm">
-            {artist.genre}{artist.genre && artist.location ? ' · ' : ''}{artist.location}
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="text-3xl font-semibold">{formatCents(priceCents)}</div>
-          <div className="text-xs text-neutral-500">NEXT Price</div>
+        <div className="flex items-center gap-4">
+          <ArtistAvatar name={artist.name} photoUrl={artist.photo_url} size="lg" />
+          <div>
+            <h1 className="text-2xl font-semibold">{artist.name}</h1>
+            <p className="text-neutral-400 text-sm">
+              {artist.genre}{artist.genre && artist.location ? ' · ' : ''}{artist.location}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap mt-2">
+              <span className="badge text-xs">{rec.emoji} NEXT {score.toFixed(0)}</span>
+              <SentimentBadge sentiment={sentiment} size="sm" />
+              {artist.song_preview_url && <AudioPreview src={artist.song_preview_url} label={`Hear ${artist.name.split(' ')[0]}`} />}
+            </div>
+          </div>
         </div>
       </div>
+
+      {artist.bio && <p className="text-neutral-300 text-sm max-w-2xl">{artist.bio}</p>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <div className="card">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm text-neutral-400">Price history</span>
-              <span className="font-semibold">
-                NEXT Score {score.toFixed(0)} {rec.emoji} <span className="text-neutral-500 font-normal">{rec.label}</span>
-              </span>
-            </div>
-            {priceHistory.length > 1 ? (
-              <Sparkline points={priceHistory.map((p) => p.price_cents)} className="w-full h-32" />
-            ) : (
-              <p className="text-sm text-neutral-500 py-8 text-center">No trades yet — this is the starting price.</p>
-            )}
+            <div className="text-sm text-neutral-400 mb-1">NEXT Price</div>
+            <PriceChart points={priceHistory.map((p) => ({ recorded_at: p.recorded_at, value: p.price_cents }))} format="cents" />
           </div>
+
+          <div className="card">
+            <div className="text-sm text-neutral-400 mb-1">NEXT Score</div>
+            <PriceChart
+              points={scoreHistory.map((s) => ({ recorded_at: s.recorded_at, value: s.breakout_score }))}
+              format="number"
+            />
+            <p className="text-xs text-neutral-500 mt-2">
+              This is the fundamentals history — see when the algorithm spotted momentum before the price caught up.
+            </p>
+          </div>
+
+          {sentiment.tone !== 'fair' && (
+            <div className={`card text-sm ${sentiment.tone === 'undervalued' ? 'border-emerald-500/30' : 'border-red-500/30'}`}>
+              <p className={sentiment.tone === 'undervalued' ? 'text-emerald-300' : 'text-red-300'}>
+                {sentiment.tone === 'undervalued'
+                  ? 'The market hasn’t priced in the fundamentals yet — NEXT Score is running ahead of NEXT Price.'
+                  : 'The market is pricing this artist considerably above what their fundamental momentum currently shows.'}
+              </p>
+            </div>
+          )}
 
           <div className="card">
             <h2 className="font-semibold text-lg mb-3">Momentum</h2>
@@ -81,6 +111,11 @@ export default async function NextArtistPage({ params }: { params: { id: string 
                 <div className="text-lg font-semibold">{artist.engagement_rate_pct != null ? `${artist.engagement_rate_pct}%` : '—'}</div>
               </div>
             </div>
+            {artist.top_song_url && (
+              <div className="mt-4 pt-4 border-t border-neutral-800">
+                <a href={artist.top_song_url} target="_blank" rel="noreferrer" className="btn text-sm">▶ Top song</a>
+              </div>
+            )}
             {links.length > 0 && (
               <div className="flex gap-3 flex-wrap mt-4 pt-4 border-t border-neutral-800">
                 {links.map((l) => (

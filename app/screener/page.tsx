@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import { getPortfolioSummary } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
@@ -7,6 +8,7 @@ import { STAGE_LABELS } from '@/lib/types';
 import Sparkline from '@/components/Sparkline';
 import StatTile from '@/components/StatTile';
 
+export const metadata: Metadata = { title: { absolute: 'Screener — Scout' } };
 export const dynamic = 'force-dynamic';
 
 export default async function ScreenerPage() {

@@ -1,6 +1,8 @@
+import type { Metadata } from 'next';
 import ArtistForm from '@/components/ArtistForm';
 import { requireInternal } from '@/lib/auth';
 
+export const metadata: Metadata = { title: { absolute: 'Add an artist — Scout' } };
 export const dynamic = 'force-dynamic';
 
 export default async function NewArtistPage() {

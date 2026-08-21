@@ -80,6 +80,11 @@ export type Artist = ScoreInputs & {
   created_by?: number;
   created_by_name?: string;
   next_current_price_cents?: number;
+  photo_url?: string;
+  bio?: string;
+  top_song_url?: string;
+  song_preview_url?: string;
+  why_trending?: string;
 };
 
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {
@@ -345,4 +350,22 @@ export type NextMarketRow = {
   score: number;
   priceCents: number;
   priceHistory: NextPricePoint[];
+};
+
+// A permanent, never-erased snapshot of the moment a user first bought an
+// artist on NEXT — recorded on the very first buy, before any UI surfaces
+// it, because the underlying facts (follower count that day, how many
+// people had already backed this artist) can't be reconstructed later.
+// Selling afterward does not remove or alter this record: "you were early"
+// stays true even if the position doesn't.
+export type FoundingBelieverRecord = {
+  id: number;
+  user_id: number;
+  artist_id: number;
+  purchased_at: string;
+  followers_count?: number;
+  monthly_listeners?: number;
+  next_score: number;
+  next_price_cents: number;
+  discovery_rank: number;
 };
