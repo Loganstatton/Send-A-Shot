@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { deleteLogEntry, setFollowUp } from '@/lib/db';
-import { getSessionUser } from '@/lib/auth';
+import { getInternalUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(req: Request, { params }: { params: { id: string; logId: string } }) {
-  const user = await getSessionUser();
+  const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const artistId = Number(params.id);
   const logId = Number(params.logId);
@@ -19,7 +19,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; lo
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string; logId: string } }) {
-  const user = await getSessionUser();
+  const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const artistId = Number(params.id);
   const logId = Number(params.logId);

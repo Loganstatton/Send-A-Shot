@@ -1,10 +1,10 @@
 import ArtistForm from '@/components/ArtistForm';
-import { requireUser } from '@/lib/auth';
+import { requireInternal } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
 export default async function NewArtistPage() {
-  await requireUser();
+  await requireInternal();
   return (
     <div className="space-y-6">
       <div>

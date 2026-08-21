@@ -79,10 +79,27 @@ export type Artist = ScoreInputs & {
   notes?: string;
   created_by?: number;
   created_by_name?: string;
+  next_current_price_cents?: number;
 };
 
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {
   name: string;
+};
+
+// public: paper-trades on NEXT, can't edit artists or see Scout's private data.
+// internal: Scout staff — edits artists, sees deals/notes/investment ledger.
+// admin: everything internal can do, plus manage user roles.
+// New signups always default to 'public'; internal/admin can only be granted
+// by an existing admin (see setUserRole) or the ADMIN_EMAILS bootstrap list —
+// never self-selected.
+export type Role = 'public' | 'internal' | 'admin';
+
+export const ROLES: Role[] = ['public', 'internal', 'admin'];
+
+export const ROLE_LABELS: Record<Role, string> = {
+  public: 'Public (NEXT)',
+  internal: 'Internal (Scout)',
+  admin: 'Admin',
 };
 
 export type User = {
@@ -90,6 +107,8 @@ export type User = {
   created_at: string;
   name: string;
   email: string;
+  role: Role;
+  next_credits_cents: number;
 };
 
 export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change';
@@ -170,10 +189,24 @@ export const AGREEMENT_STATUS_LABELS: Record<AgreementStatus, string> = {
   terminated: 'Terminated',
 };
 
+export type MastersOwner = 'artist' | 'company' | 'shared';
+
+export const MASTERS_OWNERS: MastersOwner[] = ['artist', 'company', 'shared'];
+
+export const MASTERS_OWNER_LABELS: Record<MastersOwner, string> = {
+  artist: 'Artist',
+  company: 'Company',
+  shared: 'Shared',
+};
+
 // Deliberately simple money model: this tracks negotiated terms and totals,
 // it does not compute real payout waterfalls (recoup-then-commission
 // sequencing, taxes, etc). Treat it as a ledger, not an accounting system —
 // real splits are whatever the actual contract and accountant say.
+//
+// commission_pct is the default rate applied to revenue; sponsorship/touring
+// participation only need to be set when they differ from it (e.g. "15%
+// standard, but 0% on touring") — null/unset means "same as commission_pct".
 export type Agreement = {
   id: number;
   artist_id: number;
@@ -184,6 +217,9 @@ export type Agreement = {
   start_date?: string;
   end_date?: string;
   commission_pct?: number;
+  sponsorship_commission_pct?: number;
+  touring_commission_pct?: number;
+  masters_owned_by?: MastersOwner;
   investment_amount_cents?: number;
   notes?: string;
   created_by?: number;
@@ -268,4 +304,45 @@ export type InvestmentEntryInput = {
   category: InvestmentCategory;
   amount_cents: number;
   notes?: string;
+};
+
+// --- NEXT (public paper-trading product) ---
+//
+// NEXT Score (the Breakout Score) answers "how likely is this artist to
+// break out" — it moves on artist performance data. NEXT Price answers
+// "what does the NEXT community currently value this artist at" — it starts
+// from a transparent formula based on the score, then moves purely on paper
+// buy/sell demand. They're deliberately allowed to diverge: that gap (a high
+// score, low price "undervalued" artist) is the whole point.
+
+export type NextHolding = {
+  id: number;
+  user_id: number;
+  artist_id: number;
+  shares: number;
+  cost_basis_cents: number;
+  updated_at: string;
+};
+
+export type NextTransactionType = 'buy' | 'sell';
+
+export type NextTransaction = {
+  id: number;
+  user_id: number;
+  artist_id: number;
+  created_at: string;
+  type: NextTransactionType;
+  shares: number;
+  price_cents_per_share: number;
+  credits_delta_cents: number;
+  realized_pnl_cents?: number;
+};
+
+export type NextPricePoint = { recorded_at: string; price_cents: number };
+
+export type NextMarketRow = {
+  artist: Artist;
+  score: number;
+  priceCents: number;
+  priceHistory: NextPricePoint[];
 };

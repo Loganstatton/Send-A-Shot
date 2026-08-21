@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server';
 import { createArtist, getAllArtists } from '@/lib/db';
-import { getSessionUser } from '@/lib/auth';
+import { getInternalUser } from '@/lib/auth';
 import { ArtistInput } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const user = await getSessionUser();
+  const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   return NextResponse.json(getAllArtists());
 }
 
 export async function POST(req: Request) {
-  const user = await getSessionUser();
+  const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const body = (await req.json()) as ArtistInput;

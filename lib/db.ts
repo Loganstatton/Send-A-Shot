@@ -3,9 +3,11 @@ import path from 'path';
 import fs from 'fs';
 import { breakoutScore } from './scoring';
 import { DATA_DIR } from './data-dir';
+import { applyTradeImpact, executionPriceCents, nextBasePriceCents } from './next-market';
 import {
   Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, InvestmentEntry, InvestmentEntryInput,
-  LogEntry, LogEntryInput, RevenueEntry, RevenueEntryInput, ScoreSnapshot, User,
+  LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType,
+  RevenueEntry, RevenueEntryInput, RevenueSource, Role, ScoreSnapshot, User,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -53,7 +55,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT NOT NULL,
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'public',
+  next_credits_cents INTEGER NOT NULL DEFAULT 1000000
 );
 CREATE TABLE IF NOT EXISTS contact_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,6 +130,36 @@ CREATE TABLE IF NOT EXISTS investment_entries (
   created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_investment_artist ON investment_entries(artist_id);
+CREATE TABLE IF NOT EXISTS next_price_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  recorded_at TEXT NOT NULL,
+  price_cents INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_next_price_history_artist ON next_price_history(artist_id);
+CREATE TABLE IF NOT EXISTS next_holdings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  shares REAL NOT NULL DEFAULT 0,
+  cost_basis_cents INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  UNIQUE(user_id, artist_id)
+);
+CREATE INDEX IF NOT EXISTS idx_next_holdings_user ON next_holdings(user_id);
+CREATE TABLE IF NOT EXISTS next_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  type TEXT NOT NULL,
+  shares REAL NOT NULL,
+  price_cents_per_share INTEGER NOT NULL,
+  credits_delta_cents INTEGER NOT NULL,
+  realized_pnl_cents INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_next_transactions_user ON next_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_next_transactions_artist ON next_transactions(artist_id);
 `);
 
 // Lightweight migrations for columns added after the initial table creation.
@@ -139,6 +173,12 @@ function addColumnIfMissing(table: string, ddl: string) {
 }
 addColumnIfMissing('artists', 'created_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
 addColumnIfMissing('contact_log', 'follow_up_at TEXT');
+addColumnIfMissing('agreements', 'sponsorship_commission_pct REAL');
+addColumnIfMissing('agreements', 'touring_commission_pct REAL');
+addColumnIfMissing('agreements', 'masters_owned_by TEXT');
+addColumnIfMissing('users', "role TEXT NOT NULL DEFAULT 'public'");
+addColumnIfMissing('users', 'next_credits_cents INTEGER NOT NULL DEFAULT 1000000');
+addColumnIfMissing('artists', 'next_current_price_cents INTEGER');
 
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
@@ -427,24 +467,42 @@ export function getDueFollowUps(): DueFollowUp[] {
   `).all() as DueFollowUp[];
 }
 
+const USER_COLUMNS = 'id, created_at, name, email, role, next_credits_cents';
+
+// New accounts always start as 'public' — internal/admin is never
+// self-selected, only granted via setUserRole (an admin) or the
+// ADMIN_EMAILS bootstrap in lib/auth.ts.
 export function createUser(input: { name: string; email: string; password_hash: string }): User {
   const now = new Date().toISOString();
   const info = db
-    .prepare('INSERT INTO users (created_at, name, email, password_hash) VALUES (?, ?, ?, ?)')
+    .prepare("INSERT INTO users (created_at, name, email, password_hash, role) VALUES (?, ?, ?, ?, 'public')")
     .run(now, input.name, input.email.toLowerCase(), input.password_hash);
   return getUserById(info.lastInsertRowid as number)!;
 }
 
 export function getUserByEmail(email: string): (User & { password_hash: string }) | undefined {
   return db
-    .prepare('SELECT id, created_at, name, email, password_hash FROM users WHERE email = ?')
+    .prepare(`SELECT ${USER_COLUMNS}, password_hash FROM users WHERE email = ?`)
     .get(email.toLowerCase()) as (User & { password_hash: string }) | undefined;
 }
 
 export function getUserById(id: number): User | undefined {
   return db
-    .prepare('SELECT id, created_at, name, email FROM users WHERE id = ?')
+    .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
     .get(id) as User | undefined;
+}
+
+export function getAllUsers(): User[] {
+  return db.prepare(`SELECT ${USER_COLUMNS} FROM users ORDER BY created_at ASC`).all() as User[];
+}
+
+// The only way a user's role changes after signup — called by an admin-only
+// route, or by the ADMIN_EMAILS bootstrap. Never reachable from a public
+// user's own account settings.
+export function setUserRole(userId: number, role: Role): User | undefined {
+  const info = db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+  if (info.changes === 0) return undefined;
+  return getUserById(userId);
 }
 
 const AGREEMENT_SELECT = `
@@ -466,7 +524,9 @@ export function getAgreement(artistId: number, agreementId: number): Agreement |
 }
 
 const AGREEMENT_WRITABLE_FIELDS = [
-  'type', 'status', 'start_date', 'end_date', 'commission_pct', 'investment_amount_cents', 'notes',
+  'type', 'status', 'start_date', 'end_date', 'commission_pct',
+  'sponsorship_commission_pct', 'touring_commission_pct', 'masters_owned_by',
+  'investment_amount_cents', 'notes',
 ] as const;
 
 export function createAgreement(artistId: number, input: AgreementInput, actor?: Actor | null): Agreement {
@@ -526,10 +586,24 @@ export function getRevenueEntries(artistId: number): RevenueEntry[] {
     .all(artistId) as RevenueEntry[];
 }
 
+// sponsorship_commission_pct / touring_commission_pct only need to be set
+// when they differ from the agreement's default commission_pct — e.g. "15%
+// standard, but 0% on touring." Unset (null) falls back to the default.
+function resolveCommissionPct(agreement: Agreement | undefined, source: RevenueSource): number | null {
+  if (!agreement) return null;
+  if (source === 'sponsorship' && agreement.sponsorship_commission_pct != null) {
+    return agreement.sponsorship_commission_pct;
+  }
+  if (source === 'shows' && agreement.touring_commission_pct != null) {
+    return agreement.touring_commission_pct;
+  }
+  return agreement.commission_pct ?? null;
+}
+
 export function createRevenueEntry(artistId: number, input: RevenueEntryInput, actor?: Actor | null): RevenueEntry {
   const now = new Date().toISOString();
   const agreement = input.agreement_id ? getAgreement(artistId, input.agreement_id) : undefined;
-  const commissionPct = agreement?.commission_pct ?? null;
+  const commissionPct = resolveCommissionPct(agreement, input.source);
   const commissionCents = commissionPct != null
     ? Math.round(input.gross_amount_cents * (commissionPct / 100))
     : null;
@@ -678,4 +752,190 @@ export function getPortfolioSummary(): PortfolioRow[] {
       roiPct,
     };
   });
+}
+
+// --- NEXT (public paper-trading product) ---
+
+// Lazily sets an artist's starting NEXT Price the first time it's needed
+// (from the score-based formula in lib/next-market), then leaves it alone —
+// after that, price only moves via trades. Self-healing: works whether the
+// artist was created before or after NEXT existed.
+function ensureNextPrice(artist: Artist): number {
+  if (artist.next_current_price_cents != null) return artist.next_current_price_cents;
+  const price = nextBasePriceCents(breakoutScore(artist));
+  db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(price, artist.id);
+  db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)')
+    .run(artist.id, new Date().toISOString(), price);
+  return price;
+}
+
+function getNextPriceHistory(artistId: number): NextPricePoint[] {
+  return db
+    .prepare('SELECT recorded_at, price_cents FROM next_price_history WHERE artist_id = ? ORDER BY recorded_at ASC')
+    .all(artistId) as NextPricePoint[];
+}
+
+export function getNextMarket(): NextMarketRow[] {
+  return getAllArtists()
+    .filter((a) => a.stage !== 'passed')
+    .map((artist) => ({
+      artist,
+      score: breakoutScore(artist),
+      priceCents: ensureNextPrice(artist),
+      priceHistory: getNextPriceHistory(artist.id),
+    }));
+}
+
+export function getNextArtist(artistId: number): NextMarketRow | undefined {
+  const artist = getArtist(artistId);
+  if (!artist) return undefined;
+  return {
+    artist,
+    score: breakoutScore(artist),
+    priceCents: ensureNextPrice(artist),
+    priceHistory: getNextPriceHistory(artistId),
+  };
+}
+
+export function getHolding(userId: number, artistId: number): NextHolding | undefined {
+  return db
+    .prepare('SELECT * FROM next_holdings WHERE user_id = ? AND artist_id = ?')
+    .get(userId, artistId) as NextHolding | undefined;
+}
+
+export function getUserHoldings(userId: number): (NextHolding & { artist_name: string; price_cents: number })[] {
+  const rows = db.prepare(`
+    SELECT next_holdings.*, artists.name AS artist_name
+    FROM next_holdings
+    JOIN artists ON artists.id = next_holdings.artist_id
+    WHERE next_holdings.user_id = ? AND next_holdings.shares > 0
+    ORDER BY next_holdings.updated_at DESC
+  `).all(userId) as (NextHolding & { artist_name: string })[];
+  return rows.map((row) => {
+    const artist = getArtist(row.artist_id)!;
+    return { ...row, price_cents: ensureNextPrice(artist) };
+  });
+}
+
+export function getUserTransactions(userId: number, limit = 50): (NextTransaction & { artist_name: string })[] {
+  return db.prepare(`
+    SELECT next_transactions.*, artists.name AS artist_name
+    FROM next_transactions
+    JOIN artists ON artists.id = next_transactions.artist_id
+    WHERE next_transactions.user_id = ?
+    ORDER BY next_transactions.created_at DESC
+    LIMIT ?
+  `).all(userId, limit) as (NextTransaction & { artist_name: string })[];
+}
+
+export type TradeResult =
+  | { ok: true; shares: number; priceCents: number; newBalanceCents: number; realizedPnlCents?: number }
+  | { ok: false; error: string };
+
+// Both buy and sell take a NEXT Credits amount ("spend $X" / "sell $X
+// worth") rather than a share count — simpler for a paper-trading UI, and
+// symmetric in both directions. Average-cost method for P&L: cost_basis
+// tracks total credits paid for the current position, so unrealized P&L is
+// always (current value - cost_basis), and a partial sell reduces cost_basis
+// proportionally to the shares sold.
+export function executeTrade(
+  userId: number,
+  artistId: number,
+  type: NextTransactionType,
+  creditsAmountCents: number
+): TradeResult {
+  if (!Number.isFinite(creditsAmountCents) || creditsAmountCents <= 0) {
+    return { ok: false, error: 'amount must be a positive number' };
+  }
+  const artist = getArtist(artistId);
+  if (!artist) return { ok: false, error: 'artist not found' };
+  const user = getUserById(userId);
+  if (!user) return { ok: false, error: 'user not found' };
+
+  const prePriceCents = ensureNextPrice(artist);
+  const now = new Date().toISOString();
+
+  if (type === 'buy') {
+    if (creditsAmountCents > user.next_credits_cents) {
+      return { ok: false, error: 'not enough NEXT Credits' };
+    }
+    // Impact is sized by the requested spend, same as the visible market
+    // move; the trader's own fill price is the average of pre/post so that
+    // impact isn't free money on an immediate resale (see executionPriceCents).
+    const postPriceCents = applyTradeImpact(prePriceCents, creditsAmountCents, 'buy');
+    const executionCents = executionPriceCents(prePriceCents, postPriceCents);
+    const shares = creditsAmountCents / executionCents;
+    const holding = getHolding(userId, artistId);
+    const newShares = (holding?.shares ?? 0) + shares;
+    const newCostBasis = (holding?.cost_basis_cents ?? 0) + creditsAmountCents;
+
+    const tx = db.transaction(() => {
+      if (holding) {
+        db.prepare('UPDATE next_holdings SET shares = ?, cost_basis_cents = ?, updated_at = ? WHERE id = ?')
+          .run(newShares, newCostBasis, now, holding.id);
+      } else {
+        db.prepare('INSERT INTO next_holdings (user_id, artist_id, shares, cost_basis_cents, updated_at) VALUES (?, ?, ?, ?, ?)')
+          .run(userId, artistId, newShares, newCostBasis, now);
+      }
+      db.prepare('UPDATE users SET next_credits_cents = next_credits_cents - ? WHERE id = ?')
+        .run(creditsAmountCents, userId);
+      db.prepare(`
+        INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents)
+        VALUES (?, ?, ?, 'buy', ?, ?, ?)
+      `).run(userId, artistId, now, shares, executionCents, -creditsAmountCents);
+
+      db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
+      db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);
+    });
+    tx();
+
+    return { ok: true, shares, priceCents: executionCents, newBalanceCents: user.next_credits_cents - creditsAmountCents };
+  }
+
+  // sell
+  const holding = getHolding(userId, artistId);
+  const ownedShares = holding?.shares ?? 0;
+  if (!holding || ownedShares <= 0) return { ok: false, error: "you don't own any shares of this artist" };
+
+  const requestedShares = creditsAmountCents / prePriceCents;
+  const sharesSold = Math.min(requestedShares, ownedShares);
+  // Size impact by what's actually being sold (valued at the pre-trade
+  // price), not the originally requested amount — matters when the request
+  // gets capped by ownedShares.
+  const notionalAtPrePriceCents = Math.round(sharesSold * prePriceCents);
+  const postPriceCents = applyTradeImpact(prePriceCents, notionalAtPrePriceCents, 'sell');
+  const executionCents = executionPriceCents(prePriceCents, postPriceCents);
+  const proceedsCents = Math.round(sharesSold * executionCents);
+  const avgCostPerShareCents = holding.cost_basis_cents / ownedShares;
+  const costBasisSold = avgCostPerShareCents * sharesSold;
+  const realizedPnlCents = Math.round(proceedsCents - costBasisSold);
+  const remainingShares = ownedShares - sharesSold;
+  const remainingCostBasis = Math.round(holding.cost_basis_cents - costBasisSold);
+
+  const tx = db.transaction(() => {
+    if (remainingShares < 0.0001) {
+      db.prepare('DELETE FROM next_holdings WHERE id = ?').run(holding.id);
+    } else {
+      db.prepare('UPDATE next_holdings SET shares = ?, cost_basis_cents = ?, updated_at = ? WHERE id = ?')
+        .run(remainingShares, remainingCostBasis, now, holding.id);
+    }
+    db.prepare('UPDATE users SET next_credits_cents = next_credits_cents + ? WHERE id = ?')
+      .run(proceedsCents, userId);
+    db.prepare(`
+      INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents, realized_pnl_cents)
+      VALUES (?, ?, ?, 'sell', ?, ?, ?, ?)
+    `).run(userId, artistId, now, sharesSold, executionCents, proceedsCents, realizedPnlCents);
+
+    db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
+    db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);
+  });
+  tx();
+
+  return {
+    ok: true,
+    shares: sharesSold,
+    priceCents: executionCents,
+    newBalanceCents: user.next_credits_cents + proceedsCents,
+    realizedPnlCents,
+  };
 }
