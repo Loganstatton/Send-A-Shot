@@ -11,8 +11,8 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 const {
   approveDiscoveryCandidate, completeSyncRun, createArtist, createSyncRun, createUser, executeTrade,
   getArtist, getArtistsWithSoundchartsLink, getDiscoveryCandidates, getKnownDiscoveryUuids,
-  getLatestSyncRun, getNewDiscoveryCandidateCount, getNextArtist, getTrackedSoundchartsUuids, getUserById,
-  insertDiscoveryCandidate, setDiscoveryCandidateStatus, updateArtist,
+  getKnownDiscoveryYoutubeChannelIds, getLatestSyncRun, getNewDiscoveryCandidateCount, getNextArtist,
+  getTrackedSoundchartsUuids, getUserById, insertDiscoveryCandidate, setDiscoveryCandidateStatus, updateArtist,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -153,6 +153,7 @@ describe('Discovery Engine — candidate queue', () => {
   it('a new candidate appears in the "new" queue and counts toward the pending badge', () => {
     const before = getNewDiscoveryCandidateCount();
     insertDiscoveryCandidate({
+      source: 'soundcharts',
       soundcharts_uuid: 'uuid-new-1',
       name: 'Fresh Signal',
       followers_count: 12_000,
@@ -172,8 +173,8 @@ describe('Discovery Engine — candidate queue', () => {
     const passUser = makeUser('pass-actor@example.com');
     const watchUser = makeUser('watch-actor@example.com');
 
-    insertDiscoveryCandidate({ soundcharts_uuid: 'uuid-pass-1', name: 'Pass Me', followers_count: 5000, flagged_reason: 'test' });
-    insertDiscoveryCandidate({ soundcharts_uuid: 'uuid-watch-1', name: 'Watch Me', followers_count: 5000, flagged_reason: 'test' });
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-pass-1', name: 'Pass Me', followers_count: 5000, flagged_reason: 'test' });
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-watch-1', name: 'Watch Me', followers_count: 5000, flagged_reason: 'test' });
 
     const passCandidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-pass-1')!;
     const watchCandidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-watch-1')!;
@@ -192,13 +193,14 @@ describe('Discovery Engine — candidate queue', () => {
   });
 
   it('a passed or watched candidate is excluded from future scans by soundcharts_uuid', () => {
-    insertDiscoveryCandidate({ soundcharts_uuid: 'uuid-known-1', name: 'Already Seen', followers_count: 5000, flagged_reason: 'test' });
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-known-1', name: 'Already Seen', followers_count: 5000, flagged_reason: 'test' });
     expect(getKnownDiscoveryUuids().has('uuid-known-1')).toBe(true);
   });
 
   it('Approve creates a real, editable artist pre-filled from the candidate — not auto-scored', () => {
     const admin = makeUser('approver@example.com');
     insertDiscoveryCandidate({
+      source: 'soundcharts',
       soundcharts_uuid: 'uuid-approve-1',
       name: 'Breakout Kid',
       photo_url: 'https://example.com/photo.jpg',
@@ -317,5 +319,83 @@ describe('Automated Soundcharts sync', () => {
     expect(latest.id).toBe(run.id);
     expect(latest.status).toBe('failed');
     expect(latest.error).toBe('Soundcharts unreachable');
+  });
+});
+
+describe('YouTube discovery — candidates without a Soundcharts identity', () => {
+  it('inserts and reads back a YouTube candidate with no soundcharts_uuid at all', () => {
+    insertDiscoveryCandidate({
+      source: 'youtube',
+      name: 'Unmatched Channel',
+      yt_video_id: 'vid-unmatched-1',
+      yt_channel_id: 'chan-unmatched-1',
+      yt_channel_title: 'Unmatched Channel',
+      yt_genre: 'pop',
+      yt_view_count: 150_000,
+      yt_channel_subscriber_count: 8_000,
+      momentum_score: 87.3,
+      flagged_reason: '150K views in 6 days • 8K channel subscribers',
+    });
+
+    const found = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-unmatched-1')!;
+    expect(found).toBeDefined();
+    expect(found.source).toBe('youtube');
+    expect(found.soundcharts_uuid).toBeFalsy();
+    expect(found.momentum_score).toBe(87.3);
+  });
+
+  it('a YouTube candidate CAN carry a Soundcharts match alongside its channel identity', () => {
+    insertDiscoveryCandidate({
+      source: 'youtube',
+      name: 'Matched Channel',
+      soundcharts_uuid: 'uuid-yt-matched-1',
+      followers_count: 22_000,
+      growth_30d_pct: 12,
+      yt_channel_id: 'chan-matched-1',
+      yt_channel_title: 'Matched Channel',
+      momentum_score: 55,
+      flagged_reason: 'test',
+    });
+
+    const found = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-matched-1')!;
+    expect(found.soundcharts_uuid).toBe('uuid-yt-matched-1');
+    expect(found.followers_count).toBe(22_000);
+  });
+
+  it('the same YouTube channel cannot be inserted twice (partial unique index)', () => {
+    insertDiscoveryCandidate({ source: 'youtube', name: 'Dup Channel', yt_channel_id: 'chan-dup-1', flagged_reason: 'test' });
+    expect(() =>
+      insertDiscoveryCandidate({ source: 'youtube', name: 'Dup Channel', yt_channel_id: 'chan-dup-1', flagged_reason: 'test' })
+    ).toThrow();
+  });
+
+  it('two Soundcharts-less YouTube candidates coexist fine (soundcharts_uuid null is not treated as a duplicate)', () => {
+    insertDiscoveryCandidate({ source: 'youtube', name: 'No Match A', yt_channel_id: 'chan-null-a', flagged_reason: 'test' });
+    expect(() =>
+      insertDiscoveryCandidate({ source: 'youtube', name: 'No Match B', yt_channel_id: 'chan-null-b', flagged_reason: 'test' })
+    ).not.toThrow();
+  });
+
+  it('getKnownDiscoveryYoutubeChannelIds tracks channels regardless of review status', () => {
+    insertDiscoveryCandidate({ source: 'youtube', name: 'Known Channel', yt_channel_id: 'chan-known-1', flagged_reason: 'test' });
+    expect(getKnownDiscoveryYoutubeChannelIds().has('chan-known-1')).toBe(true);
+  });
+
+  it('Approve on a YouTube candidate carries its genre onto the new artist and never requires a Soundcharts uuid', () => {
+    const admin = makeUser('yt-approver@example.com');
+    insertDiscoveryCandidate({
+      source: 'youtube',
+      name: 'Genre Carrier',
+      yt_channel_id: 'chan-genre-1',
+      yt_genre: 'rock-alternative',
+      momentum_score: 60,
+      flagged_reason: 'test',
+    });
+    const candidate = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-genre-1')!;
+    const artist = approveDiscoveryCandidate(candidate.id, { id: admin.id, name: admin.name })!;
+
+    expect(artist).toBeDefined();
+    expect(artist.genre).toBe('rock-alternative');
+    expect(artist.soundcharts_uuid ?? null).toBeNull();
   });
 });

@@ -50,11 +50,15 @@ export default function DiscoveryQueue({ initial }: { initial: DiscoveryCandidat
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold">{c.name}</span>
+                <span className="badge text-xs">{c.source === 'youtube' ? '🎥 YouTube' : '🎵 Soundcharts'}</span>
+                {c.soundcharts_uuid && c.source === 'youtube' && <span className="badge text-xs">🔗 Soundcharts matched</span>}
                 {c.country && <span className="text-xs text-neutral-500">{c.country}</span>}
               </div>
               <p className="text-sm text-emerald-400 mt-1">{c.flagged_reason}</p>
               <div className="text-xs text-neutral-500 mt-1 flex gap-3 flex-wrap">
                 {c.followers_count != null && <span>{c.followers_count.toLocaleString()} Spotify followers</span>}
+                {c.yt_view_count != null && <span>{c.yt_view_count.toLocaleString()} YouTube views</span>}
+                {c.yt_channel_subscriber_count != null && <span>{c.yt_channel_subscriber_count.toLocaleString()} subscribers</span>}
                 <span>Detected {new Date(c.discovered_at).toLocaleDateString()}</span>
               </div>
             </div>

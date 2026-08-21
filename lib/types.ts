@@ -419,11 +419,23 @@ export type GenreLeaderboardEntry = {
 // sits in this queue until a human Scout reviews it. That's deliberate:
 // the system finds the names, a person still decides who's worth backing.
 
+// A candidate's origin. Soundcharts' /top/artists (restricted to plans
+// above ours) was the original — and until now, only — source. YouTube
+// discovery (lib/youtube-discovery.ts) is the second; this type is the
+// deliberate extension point for any future source (a Scout's own
+// submission, an artist self-submission, etc.) — they all end up as the
+// same NewDiscoveryCandidate shape feeding the one Candidate Queue below.
+export type DiscoverySourceKey = 'soundcharts' | 'youtube';
+
 export type DiscoveryCandidateStatus = 'new' | 'watching' | 'approved' | 'passed';
 
 export type DiscoveryCandidate = {
   id: number;
-  soundcharts_uuid: string;
+  source: DiscoverySourceKey;
+  // Soundcharts identity — set for source='soundcharts' candidates always,
+  // and for source='youtube' candidates only once/if they get a confident
+  // Soundcharts name match (see lib/youtube-discovery.ts). Never required.
+  soundcharts_uuid?: string;
   name: string;
   photo_url?: string;
   country?: string;
@@ -432,6 +444,25 @@ export type DiscoveryCandidate = {
   followers_30d_ago?: number;
   growth_7d_pct?: number;
   growth_30d_pct?: number;
+  // YouTube identity + the raw signals and derived metrics its Momentum
+  // Score is built from (see lib/youtube-momentum.ts) — kept as individual
+  // typed fields, not a JSON blob, so they stay queryable/sortable and a
+  // Scout can see exactly which numbers produced the score.
+  yt_video_id?: string;
+  yt_channel_id?: string;
+  yt_channel_title?: string;
+  yt_genre?: string;
+  yt_view_count?: number;
+  yt_like_count?: number;
+  yt_comment_count?: number;
+  yt_published_at?: string;
+  yt_channel_subscriber_count?: number;
+  yt_channel_view_count?: number;
+  yt_views_per_day?: number;
+  yt_like_rate?: number;
+  yt_comment_rate?: number;
+  yt_views_per_subscriber?: number;
+  momentum_score?: number;
   flagged_reason: string;
   status: DiscoveryCandidateStatus;
   discovered_at: string;
@@ -448,11 +479,13 @@ export type DiscoveryRunStatus = 'running' | 'completed' | 'failed';
 // endpoint) without digging through server logs.
 export type DiscoveryRun = {
   id: number;
+  source: DiscoverySourceKey;
   started_at: string;
   completed_at?: string;
   status: DiscoveryRunStatus;
   searched_count: number;
   candidates_found: number;
+  quota_used?: number;
   error?: string;
 };
 
