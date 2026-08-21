@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getAllArtists, getDueFollowUps } from '@/lib/db';
+import { getAllArtists, getDueFollowUps, getLatestSyncRun } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import { breakoutScore } from '@/lib/scoring';
 import { STAGE_LABELS } from '@/lib/types';
 import ScoreBadge from '@/components/ScoreBadge';
 import FollowUpList from '@/components/FollowUpList';
+import SyncAllButton from '@/components/SyncAllButton';
 
 export const metadata: Metadata = { title: { absolute: 'Scout — Early Artist Discovery' } };
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,7 @@ export default async function DashboardPage() {
     .map((a) => ({ ...a, score: breakoutScore(a) }))
     .sort((a, b) => b.score - a.score);
   const dueFollowUps = getDueFollowUps();
+  const lastSync = getLatestSyncRun();
 
   const active = artists.filter((a) => a.stage !== 'passed');
   const fire = active.filter((a) => a.score >= 85).length;
@@ -33,6 +35,18 @@ export default async function DashboardPage() {
           <div className="badge">🔥 Ready to contact: {fire}</div>
           <div className="badge">👀 Watching: {watch}</div>
         </div>
+      </div>
+
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <SyncAllButton />
+        {lastSync && (
+          <p className="text-xs text-neutral-500">
+            Last Soundcharts sync: {new Date(lastSync.started_at).toLocaleString()} —{' '}
+            {lastSync.status === 'failed'
+              ? <span className="text-red-400">failed: {lastSync.error}</span>
+              : `checked ${lastSync.checked_count}, updated ${lastSync.updated_count}${lastSync.failed_count > 0 ? `, ${lastSync.failed_count} failed` : ''}`}
+          </p>
+        )}
       </div>
 
       {active.length === 0 && (

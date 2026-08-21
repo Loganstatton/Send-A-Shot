@@ -10,7 +10,7 @@ import {
   DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput,
   LeaderboardEntry, LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction,
   NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS,
-  ScoreSnapshot, ScoutProfile, User,
+  ScoreSnapshot, ScoutProfile, SyncRun, User,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -202,6 +202,16 @@ CREATE TABLE IF NOT EXISTS discovery_runs (
   status TEXT NOT NULL DEFAULT 'running',
   searched_count INTEGER NOT NULL DEFAULT 0,
   candidates_found INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  status TEXT NOT NULL DEFAULT 'running',
+  checked_count INTEGER NOT NULL DEFAULT 0,
+  updated_count INTEGER NOT NULL DEFAULT 0,
+  failed_count INTEGER NOT NULL DEFAULT 0,
   error TEXT
 );
 `);
@@ -1171,6 +1181,38 @@ export function getFoundingBelieverRecordsForUser(
 export function getTrackedSoundchartsUuids(): Set<string> {
   const rows = db.prepare("SELECT soundcharts_uuid FROM artists WHERE soundcharts_uuid IS NOT NULL").all() as { soundcharts_uuid: string }[];
   return new Set(rows.map((r) => r.soundcharts_uuid));
+}
+
+// Every artist linked to a Soundcharts profile — the exact set a sync run
+// needs to refresh. Unlinked artists (no soundcharts_uuid) are untouched by
+// automated sync; their stats stay manual-entry only, same as today.
+export function getArtistsWithSoundchartsLink(): { id: number; soundcharts_uuid: string }[] {
+  return db
+    .prepare("SELECT id, soundcharts_uuid FROM artists WHERE soundcharts_uuid IS NOT NULL")
+    .all() as { id: number; soundcharts_uuid: string }[];
+}
+
+export function createSyncRun(): SyncRun {
+  const now = new Date().toISOString();
+  const info = db
+    .prepare("INSERT INTO sync_runs (started_at, status, checked_count, updated_count, failed_count) VALUES (?, 'running', 0, 0, 0)")
+    .run(now);
+  return db.prepare('SELECT * FROM sync_runs WHERE id = ?').get(info.lastInsertRowid) as SyncRun;
+}
+
+export function completeSyncRun(
+  id: number,
+  result: { status: 'completed' | 'failed'; checkedCount: number; updatedCount: number; failedCount: number; error?: string }
+): void {
+  db.prepare(`
+    UPDATE sync_runs
+    SET completed_at = ?, status = ?, checked_count = ?, updated_count = ?, failed_count = ?, error = ?
+    WHERE id = ?
+  `).run(new Date().toISOString(), result.status, result.checkedCount, result.updatedCount, result.failedCount, result.error ?? null, id);
+}
+
+export function getLatestSyncRun(): SyncRun | undefined {
+  return db.prepare('SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1').get() as SyncRun | undefined;
 }
 
 // Candidates already reviewed (watching/approved/passed) for a name are

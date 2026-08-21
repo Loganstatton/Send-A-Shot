@@ -47,6 +47,10 @@ a licensable data product.
   re-sync once linked — bio, genre, and platform links stay manual, since
   Soundcharts' artist-metadata endpoint doesn't return those on this plan,
   confirmed against real responses (see setup below)
+- Optional scheduled sync: the same re-sync as above, run automatically
+  across every linked artist on a daily schedule (or on demand from the
+  dashboard) — the market's numbers stop depending on someone remembering
+  to click the per-artist button (see setup below)
 - Optional Discovery Engine: a scheduled scan searches Soundcharts for
   smaller artists (under 250K Spotify followers) showing unusual growth
   (≥4% in 7 days or ≥8% in 30 days) and drops them into a private
@@ -105,6 +109,33 @@ Without these env vars set, the Soundcharts panel shows a clear "not
 configured" error instead of failing silently — everything else in the app
 works the same either way.
 
+### Optional: Automated Soundcharts sync (no manual button needed)
+
+Uses the same Soundcharts credentials above, plus the `CRON_SECRET` from the
+Discovery Engine section below (shared by both scheduled endpoints — set it
+up once).
+
+`POST /api/soundcharts/sync` refreshes every already-linked artist's stats
+(followers, 30-day growth %, photo, location, platform links — whatever
+Soundcharts actually returns) in one pass, the same data the per-artist
+"Sync from Soundcharts" button pulls, just for the whole roster at once. It
+can be triggered two ways:
+- **Manually** — the "Sync all now" button on the Scout dashboard (`/`),
+  while logged in as Internal/Admin.
+- **On a schedule** — point the same external scheduler used for the
+  Discovery Engine at this endpoint too:
+  ```
+  POST https://<your-app>/api/soundcharts/sync
+  Header: x-cron-secret: <the CRON_SECRET value>
+  ```
+  once a day. Without `CRON_SECRET` set, only the manual button works — an
+  artist's numbers just sit until someone clicks it, same as before.
+
+An artist's `name` is deliberately never touched by the automated sync (only
+by the manual button, which a human reviews before saving) — a background
+job silently renaming someone is the wrong default. Unlinked artists (no
+Soundcharts UUID) are untouched either way; their stats stay manual-entry.
+
 ### Optional: Discovery Engine (finds artists for you)
 
 Uses the same Soundcharts credentials above, plus one more:
@@ -162,9 +193,6 @@ below 55 pass. See `lib/scoring.ts`.
 - Real payments/invoicing, or actual payout-waterfall accounting (recoup-then-
   commission sequencing, taxes, etc.) — the deals/revenue ledger tracks
   commitments and totals, it does not move money
-- Scheduled re-sync of *existing* artists' stats — the Discovery Engine
-  finds new artists on a schedule, but an already-tracked artist's numbers
-  still only refresh via the manual "Sync from Soundcharts" button
 - Invite-only signup or password reset — public signup is open (accounts
   just default to the harmless Public/NEXT role), and any Internal/Admin user
   can currently view/edit/delete any artist and any agreement — fine for a
@@ -202,12 +230,12 @@ app/                 # Next.js app router
   api/next/          # NEXT trade endpoint (any logged-in user)
   api/admin/         # role management (admin only)
   api/auth/          # signup/login/logout
-  api/soundcharts/   # search + fetch-by-uuid (internal only)
+  api/soundcharts/   # search + fetch-by-uuid + sync-all (session or CRON_SECRET)
   api/discovery/     # scan trigger (session or CRON_SECRET) + candidate actions
 components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory,
                      # DealsAndRevenue, InvestmentLedger, TradePanel, RoleManager,
                      # StatTile, Sparkline, FollowUpList, AuthForm, SoundchartsSearch,
-                     # DiscoveryQueue, DiscoveryScanButton
+                     # SyncAllButton, DiscoveryQueue, DiscoveryScanButton
 lib/                 # sqlite db, types, scoring logic, NEXT pricing engine,
                      # auth/role helpers, money formatting, soundcharts client,
                      # discovery filtering logic
@@ -215,12 +243,6 @@ data/                # sqlite file + fallback session secret live here
 ```
 
 ## Next Steps (Roadmap)
-- Blend live Soundcharts numbers into part of the Breakout Score
-  (e.g. Audience Growth Velocity, Engagement Quality) instead of every
-  category being a hand-moved slider — human judgment stays for the parts
-  a number can't capture (music quality, personality, professionalism)
-- Scheduled re-sync of already-tracked artists' stats, not just new-candidate
-  discovery
 - Populate the market with a real, curated set of emerging artists across
   genres — the actual precondition for a meaningful closed beta
 - A closed beta with real users and the retention/engagement metrics to
