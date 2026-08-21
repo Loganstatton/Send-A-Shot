@@ -412,3 +412,46 @@ export type GenreLeaderboardEntry = {
   pnlCents: number;
   artistsBackedCount: number;
 };
+
+// --- Discovery Engine: finds artists Scout hasn't heard of yet ---
+//
+// A candidate never becomes a real artist/NEXT-listed row on its own — it
+// sits in this queue until a human Scout reviews it. That's deliberate:
+// the system finds the names, a person still decides who's worth backing.
+
+export type DiscoveryCandidateStatus = 'new' | 'watching' | 'approved' | 'passed';
+
+export type DiscoveryCandidate = {
+  id: number;
+  soundcharts_uuid: string;
+  name: string;
+  photo_url?: string;
+  country?: string;
+  followers_count?: number;
+  followers_7d_ago?: number;
+  followers_30d_ago?: number;
+  growth_7d_pct?: number;
+  growth_30d_pct?: number;
+  flagged_reason: string;
+  status: DiscoveryCandidateStatus;
+  discovered_at: string;
+  reviewed_at?: string;
+  reviewed_by?: number;
+  reviewed_by_name?: string;
+  artist_id?: number;
+};
+
+export type DiscoveryRunStatus = 'running' | 'completed' | 'failed';
+
+// One row per scan — powers the "last scan: 3 hours ago, found 6" summary
+// and is the only way to see why a scan came up empty (e.g. plan-restricted
+// endpoint) without digging through server logs.
+export type DiscoveryRun = {
+  id: number;
+  started_at: string;
+  completed_at?: string;
+  status: DiscoveryRunStatus;
+  searched_count: number;
+  candidates_found: number;
+  error?: string;
+};

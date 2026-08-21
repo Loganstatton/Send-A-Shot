@@ -1,6 +1,7 @@
 import './globals.css';
 import Header from '@/components/Header';
 import { getSessionUser } from '@/lib/auth';
+import { getNewDiscoveryCandidateCount } from '@/lib/db';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -13,10 +14,12 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
+  const isInternal = user?.role === 'internal' || user?.role === 'admin';
+  const newCandidateCount = isInternal ? getNewDiscoveryCandidateCount() : 0;
   return (
     <html lang="en">
       <body>
-        <Header user={user} />
+        <Header user={user} newCandidateCount={newCandidateCount} />
         <main className="container py-6">{children}</main>
       </body>
     </html>
