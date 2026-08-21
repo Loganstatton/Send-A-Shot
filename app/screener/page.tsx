@@ -5,6 +5,7 @@ import { formatCents } from '@/lib/format';
 import { momentumStatus } from '@/lib/scoring';
 import { STAGE_LABELS } from '@/lib/types';
 import Sparkline from '@/components/Sparkline';
+import StatTile from '@/components/StatTile';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,23 +19,43 @@ export default async function ScreenerPage() {
     (acc, r) => ({
       invested: acc.invested + r.totalInvestedCents,
       commission: acc.commission + r.totalCommissionCents,
+      gross: acc.gross + r.totalGrossCents,
     }),
-    { invested: 0, commission: 0 }
+    { invested: 0, commission: 0, gross: 0 }
   );
+
+  // rows is already sorted by score desc, so the top performer is rows[0].
+  const topPerformer = rows.length > 0 ? rows[0] : null;
+  const fastestGrowing = rows
+    .filter((r) => r.hasComparison)
+    .reduce<(typeof rows)[number] | null>((best, r) => (!best || r.changeAbs > best.changeAbs ? r : best), null);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Screener</h1>
-          <p className="text-neutral-400 text-sm">Every tracked artist, ticker-style — score momentum, investment, and return in one screen.</p>
-        </div>
-        <div className="flex gap-3 flex-wrap">
-          <div className="badge">Artists: {rows.length}</div>
-          <div className="badge">Invested: {formatCents(totals.invested)}</div>
-          <div className="badge">Commission earned: {formatCents(totals.commission)}</div>
-        </div>
+      <div>
+        <h1 className="text-2xl font-semibold">Screener</h1>
+        <p className="text-neutral-400 text-sm">Every tracked artist, ticker-style — score momentum, investment, and return in one screen.</p>
       </div>
+
+      {rows.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <StatTile label="Artists tracked" value={String(rows.length)} />
+          <StatTile label="Total invested" value={formatCents(totals.invested)} />
+          <StatTile label="Total revenue" value={formatCents(totals.gross)} />
+          <StatTile label="Commission earned" value={formatCents(totals.commission)} />
+          <StatTile
+            label="Top performer"
+            value={topPerformer?.artist.name ?? '—'}
+            delta={topPerformer ? topPerformer.score.toFixed(1) : undefined}
+          />
+          <StatTile
+            label="Fastest growing"
+            value={fastestGrowing?.artist.name ?? '—'}
+            delta={fastestGrowing ? `${fastestGrowing.changeAbs > 0 ? '+' : ''}${fastestGrowing.changeAbs.toFixed(1)}` : undefined}
+            deltaTone={fastestGrowing ? (fastestGrowing.changeAbs >= 0 ? 'up' : 'down') : 'neutral'}
+          />
+        </div>
+      )}
 
       {rows.length === 0 && (
         <div className="card text-center py-12">
