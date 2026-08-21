@@ -4,7 +4,7 @@ import fs from 'fs';
 import { breakoutScore } from './scoring';
 import { DATA_DIR } from './data-dir';
 import {
-  Agreement, AgreementInput, Artist, ArtistInput, LogEntry, LogEntryInput,
+  Agreement, AgreementInput, Artist, ArtistInput, InvestmentEntry, InvestmentEntryInput, LogEntry, LogEntryInput,
   RevenueEntry, RevenueEntryInput, ScoreSnapshot, User,
 } from './types';
 
@@ -114,6 +114,18 @@ CREATE TABLE IF NOT EXISTS revenue_entries (
   created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_revenue_artist ON revenue_entries(artist_id);
+CREATE TABLE IF NOT EXISTS investment_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  agreement_id INTEGER REFERENCES agreements(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  recorded_at TEXT NOT NULL,
+  category TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_investment_artist ON investment_entries(artist_id);
 `);
 
 // Lightweight migrations for columns added after the initial table creation.
@@ -530,6 +542,48 @@ export function deleteRevenueEntry(artistId: number, revenueId: number): boolean
   return info.changes > 0;
 }
 
+const INVESTMENT_SELECT = `
+  SELECT investment_entries.*, users.name AS created_by_name
+  FROM investment_entries
+  LEFT JOIN users ON users.id = investment_entries.created_by
+`;
+
+export function getInvestmentEntries(artistId: number): InvestmentEntry[] {
+  return db
+    .prepare(`${INVESTMENT_SELECT} WHERE investment_entries.artist_id = ? ORDER BY investment_entries.recorded_at DESC`)
+    .all(artistId) as InvestmentEntry[];
+}
+
+export function createInvestmentEntry(artistId: number, input: InvestmentEntryInput, actor?: Actor | null): InvestmentEntry {
+  const now = new Date().toISOString();
+  const info = db.prepare(`
+    INSERT INTO investment_entries (
+      artist_id, agreement_id, created_at, recorded_at, category, amount_cents, notes, created_by
+    ) VALUES (
+      @artist_id, @agreement_id, @created_at, @recorded_at, @category, @amount_cents, @notes, @created_by
+    )
+  `).run({
+    artist_id: artistId,
+    agreement_id: input.agreement_id ?? null,
+    created_at: now,
+    recorded_at: input.recorded_at,
+    category: input.category,
+    amount_cents: input.amount_cents,
+    notes: input.notes ?? null,
+    created_by: actor?.id ?? null,
+  });
+  return db
+    .prepare(`${INVESTMENT_SELECT} WHERE investment_entries.id = ?`)
+    .get(info.lastInsertRowid) as InvestmentEntry;
+}
+
+export function deleteInvestmentEntry(artistId: number, investmentId: number): boolean {
+  const info = db
+    .prepare('DELETE FROM investment_entries WHERE id = ? AND artist_id = ?')
+    .run(investmentId, artistId);
+  return info.changes > 0;
+}
+
 export type PortfolioRow = {
   artist: Artist;
   score: number;
@@ -540,6 +594,7 @@ export type PortfolioRow = {
   totalInvestedCents: number;
   totalGrossCents: number;
   totalCommissionCents: number;
+  roiPct: number | null;
 };
 
 // One row per tracked artist: current Breakout Score, its trend since the
@@ -558,8 +613,11 @@ export function getPortfolioSummary(): PortfolioRow[] {
     historyByArtist.set(row.artist_id, list);
   }
 
+  // Actual categorized spend (marketing/studio/video/etc), not the
+  // agreement's negotiated investment_amount_cents ceiling — this is what
+  // ROI is measured against.
   const investedRows = db
-    .prepare('SELECT artist_id, SUM(investment_amount_cents) as total FROM agreements WHERE investment_amount_cents IS NOT NULL GROUP BY artist_id')
+    .prepare('SELECT artist_id, SUM(amount_cents) as total FROM investment_entries GROUP BY artist_id')
     .all() as { artist_id: number; total: number }[];
   const investedByArtist = new Map(investedRows.map((r) => [r.artist_id, r.total]));
 
@@ -578,6 +636,11 @@ export function getPortfolioSummary(): PortfolioRow[] {
       ? Math.round((changeAbs / previousScore!) * 1000) / 10
       : null;
     const revenue = revenueByArtist.get(artist.id);
+    const totalInvestedCents = investedByArtist.get(artist.id) ?? 0;
+    const totalCommissionCents = revenue?.commission ?? 0;
+    const roiPct = totalInvestedCents > 0
+      ? Math.round(((totalCommissionCents - totalInvestedCents) / totalInvestedCents) * 1000) / 10
+      : null;
     return {
       artist,
       score,
@@ -585,9 +648,10 @@ export function getPortfolioSummary(): PortfolioRow[] {
       changeAbs,
       changePct,
       hasComparison,
-      totalInvestedCents: investedByArtist.get(artist.id) ?? 0,
+      totalInvestedCents,
       totalGrossCents: revenue?.gross ?? 0,
-      totalCommissionCents: revenue?.commission ?? 0,
+      totalCommissionCents,
+      roiPct,
     };
   });
 }

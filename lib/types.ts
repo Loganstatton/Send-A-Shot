@@ -215,3 +215,42 @@ export type RevenueEntryInput = {
   gross_amount_cents: number;
   notes?: string;
 };
+
+export type InvestmentCategory = 'marketing' | 'studio' | 'video' | 'content' | 'travel' | 'other';
+
+export const INVESTMENT_CATEGORIES: InvestmentCategory[] = [
+  'marketing', 'studio', 'video', 'content', 'travel', 'other',
+];
+
+export const INVESTMENT_CATEGORY_LABELS: Record<InvestmentCategory, string> = {
+  marketing: 'Marketing',
+  studio: 'Studio',
+  video: 'Video',
+  content: 'Content',
+  travel: 'Travel',
+  other: 'Other',
+};
+
+// Actual categorized spend on an artist — separate from an agreement's
+// investment_amount_cents (which is the negotiated commitment/ceiling).
+// This is "where did the money actually go," used to compute ROI.
+export type InvestmentEntry = {
+  id: number;
+  artist_id: number;
+  agreement_id?: number;
+  created_at: string;
+  recorded_at: string;
+  category: InvestmentCategory;
+  amount_cents: number;
+  notes?: string;
+  created_by?: number;
+  created_by_name?: string;
+};
+
+export type InvestmentEntryInput = {
+  agreement_id?: number;
+  recorded_at: string;
+  category: InvestmentCategory;
+  amount_cents: number;
+  notes?: string;
+};

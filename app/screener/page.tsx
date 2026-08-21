@@ -55,6 +55,7 @@ export default async function ScreenerPage() {
                 <th className="font-normal pb-2 text-right">Change</th>
                 <th className="font-normal pb-2 text-right">Invested</th>
                 <th className="font-normal pb-2 text-right">Commission</th>
+                <th className="font-normal pb-2 text-right">ROI</th>
                 <th className="font-normal pb-2">Status</th>
               </tr>
             </thead>
@@ -97,6 +98,11 @@ export default async function ScreenerPage() {
                     </td>
                     <td className="py-2 pr-3 text-right whitespace-nowrap">{formatCents(row.totalInvestedCents)}</td>
                     <td className="py-2 pr-3 text-right whitespace-nowrap">{formatCents(row.totalCommissionCents)}</td>
+                    <td className={`py-2 pr-3 text-right whitespace-nowrap font-medium ${
+                      row.roiPct == null ? 'text-neutral-600' : row.roiPct >= 0 ? 'text-emerald-400' : 'text-red-400'
+                    }`}>
+                      {row.roiPct != null ? `${row.roiPct > 0 ? '+' : ''}${row.roiPct}%` : '—'}
+                    </td>
                     <td className="py-2 whitespace-nowrap">{status.emoji} {status.label}</td>
                   </tr>
                 );
