@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getArtist } from '@/lib/db';
-import { requireUser } from '@/lib/auth';
+import { requireInternal } from '@/lib/auth';
 import ArtistForm from '@/components/ArtistForm';
 import { breakoutScore } from '@/lib/scoring';
 import ScoreBadge from '@/components/ScoreBadge';
@@ -12,7 +12,7 @@ import InvestmentLedger from '@/components/InvestmentLedger';
 export const dynamic = 'force-dynamic';
 
 export default async function ArtistDetailPage({ params }: { params: { id: string } }) {
-  await requireUser();
+  await requireInternal();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
   const artist = getArtist(id);

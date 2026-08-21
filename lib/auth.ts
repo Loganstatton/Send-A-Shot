@@ -4,7 +4,7 @@ import path from 'path';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
-import { getUserById } from './db';
+import { getUserById, setUserRole } from './db';
 import { DATA_DIR } from './data-dir';
 import { User } from './types';
 
@@ -87,13 +87,31 @@ export function clearSessionCookie() {
   cookies().delete(SESSION_COOKIE);
 }
 
+// Bootstrap mechanism for the very first admin(s): comma-separated emails in
+// ADMIN_EMAILS get upgraded to 'admin' on their next session check. This is
+// the only automatic role grant — every other promotion goes through the
+// admin-only /admin/users panel (setUserRole). Existing accounts are never
+// auto-upgraded just by having signed up earlier; only being named in this
+// env var does it.
+function maybeBootstrapAdmin(user: User): User {
+  if (user.role === 'admin') return user;
+  const adminEmails = (process.env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (!adminEmails.includes(user.email.toLowerCase())) return user;
+  return setUserRole(user.id, 'admin') ?? user;
+}
+
 // Server-only: read + verify the session cookie and load the user.
 export async function getSessionUser(): Promise<User | null> {
   const token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const payload = verify(token);
   if (!payload) return null;
-  return getUserById(payload.uid) ?? null;
+  const user = getUserById(payload.uid);
+  if (!user) return null;
+  return maybeBootstrapAdmin(user);
 }
 
 // For server components/pages: redirect to /login if not authenticated.
@@ -101,6 +119,35 @@ export async function requireUser(): Promise<User> {
   const user = await getSessionUser();
   if (!user) redirect('/login');
   return user;
+}
+
+// Scout tool pages (dashboard, screener, artist edit/notes/deals) — internal
+// staff and admins only. Public NEXT users get redirected to /next instead
+// of an error page, since that's where they actually belong.
+export async function requireInternal(): Promise<User> {
+  const user = await requireUser();
+  if (user.role === 'public') redirect('/next');
+  return user;
+}
+
+// Admin-only pages (role management). Non-admins get bounced to wherever
+// requireInternal/requireUser would otherwise send them.
+export async function requireAdmin(): Promise<User> {
+  const user = await requireUser();
+  if (user.role !== 'admin') redirect(user.role === 'internal' ? '/' : '/next');
+  return user;
+}
+
+// API-route-friendly variants: return null instead of redirecting (redirect()
+// isn't meaningful for a fetch() caller — route handlers should 401/403 JSON).
+export async function getInternalUser(): Promise<User | null> {
+  const user = await getSessionUser();
+  return user && user.role !== 'public' ? user : null;
+}
+
+export async function getAdminUser(): Promise<User | null> {
+  const user = await getSessionUser();
+  return user && user.role === 'admin' ? user : null;
 }
 
 export function hashPassword(password: string): Promise<string> {

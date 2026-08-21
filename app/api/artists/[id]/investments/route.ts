@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createInvestmentEntry, getArtist, getInvestmentEntries } from '@/lib/db';
-import { getSessionUser } from '@/lib/auth';
+import { getInternalUser } from '@/lib/auth';
 import { INVESTMENT_CATEGORIES, InvestmentEntryInput } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ function parseId(idParam: string) {
 }
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
-  const user = await getSessionUser();
+  const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
   if (id === null) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
@@ -20,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = await getSessionUser();
+  const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
   if (id === null) return NextResponse.json({ error: 'invalid id' }, { status: 400 });

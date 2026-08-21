@@ -85,11 +85,29 @@ export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at
   name: string;
 };
 
+// public: paper-trades on NEXT, can't edit artists or see Scout's private data.
+// internal: Scout staff — edits artists, sees deals/notes/investment ledger.
+// admin: everything internal can do, plus manage user roles.
+// New signups always default to 'public'; internal/admin can only be granted
+// by an existing admin (see setUserRole) or the ADMIN_EMAILS bootstrap list —
+// never self-selected.
+export type Role = 'public' | 'internal' | 'admin';
+
+export const ROLES: Role[] = ['public', 'internal', 'admin'];
+
+export const ROLE_LABELS: Record<Role, string> = {
+  public: 'Public (NEXT)',
+  internal: 'Internal (Scout)',
+  admin: 'Admin',
+};
+
 export type User = {
   id: number;
   created_at: string;
   name: string;
   email: string;
+  role: Role;
+  next_credits_cents: number;
 };
 
 export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change';

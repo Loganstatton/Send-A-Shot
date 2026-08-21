@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
 import { deleteAgreement, updateAgreement } from '@/lib/db';
-import { getSessionUser } from '@/lib/auth';
+import { getInternalUser } from '@/lib/auth';
 import { AgreementInput } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(req: Request, { params }: { params: { id: string; agreementId: string } }) {
-  const user = await getSessionUser();
+  const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const artistId = Number(params.id);
   const agreementId = Number(params.agreementId);
@@ -20,7 +20,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; ag
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string; agreementId: string } }) {
-  const user = await getSessionUser();
+  const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const artistId = Number(params.id);
   const agreementId = Number(params.agreementId);

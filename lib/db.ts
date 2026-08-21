@@ -5,7 +5,7 @@ import { breakoutScore } from './scoring';
 import { DATA_DIR } from './data-dir';
 import {
   Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, InvestmentEntry, InvestmentEntryInput,
-  LogEntry, LogEntryInput, RevenueEntry, RevenueEntryInput, RevenueSource, ScoreSnapshot, User,
+  LogEntry, LogEntryInput, RevenueEntry, RevenueEntryInput, RevenueSource, Role, ScoreSnapshot, User,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -53,7 +53,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TEXT NOT NULL,
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'public',
+  next_credits_cents INTEGER NOT NULL DEFAULT 1000000
 );
 CREATE TABLE IF NOT EXISTS contact_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,6 +144,8 @@ addColumnIfMissing('contact_log', 'follow_up_at TEXT');
 addColumnIfMissing('agreements', 'sponsorship_commission_pct REAL');
 addColumnIfMissing('agreements', 'touring_commission_pct REAL');
 addColumnIfMissing('agreements', 'masters_owned_by TEXT');
+addColumnIfMissing('users', "role TEXT NOT NULL DEFAULT 'public'");
+addColumnIfMissing('users', 'next_credits_cents INTEGER NOT NULL DEFAULT 1000000');
 
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
@@ -430,24 +434,42 @@ export function getDueFollowUps(): DueFollowUp[] {
   `).all() as DueFollowUp[];
 }
 
+const USER_COLUMNS = 'id, created_at, name, email, role, next_credits_cents';
+
+// New accounts always start as 'public' — internal/admin is never
+// self-selected, only granted via setUserRole (an admin) or the
+// ADMIN_EMAILS bootstrap in lib/auth.ts.
 export function createUser(input: { name: string; email: string; password_hash: string }): User {
   const now = new Date().toISOString();
   const info = db
-    .prepare('INSERT INTO users (created_at, name, email, password_hash) VALUES (?, ?, ?, ?)')
+    .prepare("INSERT INTO users (created_at, name, email, password_hash, role) VALUES (?, ?, ?, ?, 'public')")
     .run(now, input.name, input.email.toLowerCase(), input.password_hash);
   return getUserById(info.lastInsertRowid as number)!;
 }
 
 export function getUserByEmail(email: string): (User & { password_hash: string }) | undefined {
   return db
-    .prepare('SELECT id, created_at, name, email, password_hash FROM users WHERE email = ?')
+    .prepare(`SELECT ${USER_COLUMNS}, password_hash FROM users WHERE email = ?`)
     .get(email.toLowerCase()) as (User & { password_hash: string }) | undefined;
 }
 
 export function getUserById(id: number): User | undefined {
   return db
-    .prepare('SELECT id, created_at, name, email FROM users WHERE id = ?')
+    .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
     .get(id) as User | undefined;
+}
+
+export function getAllUsers(): User[] {
+  return db.prepare(`SELECT ${USER_COLUMNS} FROM users ORDER BY created_at ASC`).all() as User[];
+}
+
+// The only way a user's role changes after signup — called by an admin-only
+// route, or by the ADMIN_EMAILS bootstrap. Never reachable from a public
+// user's own account settings.
+export function setUserRole(userId: number, role: Role): User | undefined {
+  const info = db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+  if (info.changes === 0) return undefined;
+  return getUserById(userId);
 }
 
 const AGREEMENT_SELECT = `

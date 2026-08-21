@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getPortfolioSummary } from '@/lib/db';
-import { requireUser } from '@/lib/auth';
+import { requireInternal } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
 import { momentumStatus } from '@/lib/scoring';
 import { STAGE_LABELS } from '@/lib/types';
@@ -10,7 +10,7 @@ import StatTile from '@/components/StatTile';
 export const dynamic = 'force-dynamic';
 
 export default async function ScreenerPage() {
-  await requireUser();
+  await requireInternal();
   const rows = getPortfolioSummary()
     .filter((r) => r.artist.stage !== 'passed')
     .sort((a, b) => b.score - a.score);

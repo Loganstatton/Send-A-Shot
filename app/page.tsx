@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getAllArtists, getDueFollowUps } from '@/lib/db';
-import { requireUser } from '@/lib/auth';
+import { requireInternal } from '@/lib/auth';
 import { breakoutScore } from '@/lib/scoring';
 import { STAGE_LABELS } from '@/lib/types';
 import ScoreBadge from '@/components/ScoreBadge';
@@ -9,7 +9,7 @@ import FollowUpList from '@/components/FollowUpList';
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  await requireUser();
+  await requireInternal();
   const artists = getAllArtists()
     .map((a) => ({ ...a, score: breakoutScore(a) }))
     .sort((a, b) => b.score - a.score);
