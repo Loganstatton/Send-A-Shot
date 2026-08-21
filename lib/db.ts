@@ -3,11 +3,13 @@ import path from 'path';
 import fs from 'fs';
 import { breakoutScore } from './scoring';
 import { DATA_DIR } from './data-dir';
-import { applyTradeImpact, executionPriceCents, nextBasePriceCents } from './next-market';
+import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents } from './next-market';
+import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import {
-  Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, FoundingBelieverRecord, InvestmentEntry, InvestmentEntryInput,
-  LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType,
-  RevenueEntry, RevenueEntryInput, RevenueSource, Role, ScoreSnapshot, User,
+  Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry,
+  InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LogEntry, LogEntryInput, NextHolding, NextMarketRow,
+  NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput,
+  RevenueSource, Role, ScoreSnapshot, ScoutProfile, User,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -977,4 +979,132 @@ export function executeTrade(
     newBalanceCents: user.next_credits_cents + proceedsCents,
     realizedPnlCents,
   };
+}
+
+// --- Scout Identity: public profiles, leaderboards, Founding Believer ---
+
+export function getPortfolioValue(userId: number): PortfolioValue {
+  const user = getUserById(userId)!;
+  const holdings = getUserHoldings(userId);
+  const holdingsValueCents = holdings.reduce((sum, h) => sum + Math.round(h.shares * h.price_cents), 0);
+  const totalValueCents = user.next_credits_cents + holdingsValueCents;
+  const totalReturnCents = totalValueCents - NEXT_STARTING_CREDITS_CENTS;
+  const totalReturnPct = Math.round((totalReturnCents / NEXT_STARTING_CREDITS_CENTS) * 1000) / 10;
+  return { cashCents: user.next_credits_cents, holdingsValueCents, totalValueCents, totalReturnCents, totalReturnPct };
+}
+
+// Distinct artists ever backed — reads from next_founding_believers (never
+// updated/deleted after insert), so selling a position afterward doesn't
+// make it disappear from "artists backed."
+export function getArtistsBackedCount(userId: number): number {
+  const row = db
+    .prepare('SELECT COUNT(DISTINCT artist_id) AS c FROM next_founding_believers WHERE user_id = ?')
+    .get(userId) as { c: number };
+  return row.c;
+}
+
+export function getEarlyDiscoveriesCount(userId: number): number {
+  const row = db
+    .prepare('SELECT COUNT(*) AS c FROM next_founding_believers WHERE user_id = ? AND discovery_rank <= ?')
+    .get(userId, EARLY_DISCOVERY_RANK_THRESHOLD) as { c: number };
+  return row.c;
+}
+
+// Ranked by all-time total return %; ties broken by artists backed (more
+// activity outranks a flat, untouched account at the same 0%).
+export function getScoutLeaderboard(): LeaderboardEntry[] {
+  const entries = getAllUsers().map((user) => ({
+    user: { id: user.id, name: user.name },
+    rank: 0,
+    totalReturnPct: getPortfolioValue(user.id).totalReturnPct,
+    artistsBackedCount: getArtistsBackedCount(user.id),
+  }));
+  entries.sort((a, b) => b.totalReturnPct - a.totalReturnPct || b.artistsBackedCount - a.artistsBackedCount);
+  entries.forEach((e, i) => { e.rank = i + 1; });
+  return entries;
+}
+
+export function getScoutProfile(userId: number): ScoutProfile | undefined {
+  const user = getUserById(userId);
+  if (!user) return undefined;
+  const leaderboard = getScoutLeaderboard();
+  const entry = leaderboard.find((e) => e.user.id === userId)!;
+  const portfolio = getPortfolioValue(userId);
+  const earlyDiscoveriesCount = getEarlyDiscoveriesCount(userId);
+  return {
+    user: { id: user.id, name: user.name },
+    portfolio,
+    scoutScoreValue: scoutScore({ totalReturnPct: portfolio.totalReturnPct, earlyDiscoveriesCount }),
+    rank: entry.rank,
+    totalScouts: leaderboard.length,
+    artistsBackedCount: entry.artistsBackedCount,
+    earlyDiscoveriesCount,
+  };
+}
+
+export function getAvailableGenres(): string[] {
+  const rows = db
+    .prepare("SELECT DISTINCT genre FROM artists WHERE genre IS NOT NULL AND genre != '' ORDER BY genre ASC")
+    .all() as { genre: string }[];
+  return rows.map((r) => r.genre);
+}
+
+// Ranked by realized + unrealized $ P&L earned specifically from that
+// genre's artists (not %, since "amount invested in this genre" isn't
+// well-defined once a position's fully sold). Only scouts with at least
+// one buy or sell in the genre appear.
+export function getGenreLeaderboard(genre: string): GenreLeaderboardEntry[] {
+  const entries: GenreLeaderboardEntry[] = [];
+
+  for (const user of getAllUsers()) {
+    const holdings = db.prepare(`
+      SELECT next_holdings.shares, next_holdings.cost_basis_cents, next_holdings.artist_id
+      FROM next_holdings
+      JOIN artists ON artists.id = next_holdings.artist_id
+      WHERE next_holdings.user_id = ? AND next_holdings.shares > 0 AND artists.genre = ?
+    `).all(user.id, genre) as { shares: number; cost_basis_cents: number; artist_id: number }[];
+
+    const artistIds = new Set<number>();
+    let pnlCents = 0;
+    for (const h of holdings) {
+      const artist = getArtist(h.artist_id)!;
+      pnlCents += Math.round(h.shares * ensureNextPrice(artist)) - h.cost_basis_cents;
+      artistIds.add(h.artist_id);
+    }
+
+    const sells = db.prepare(`
+      SELECT next_transactions.realized_pnl_cents, next_transactions.artist_id
+      FROM next_transactions
+      JOIN artists ON artists.id = next_transactions.artist_id
+      WHERE next_transactions.user_id = ? AND next_transactions.type = 'sell' AND artists.genre = ?
+    `).all(user.id, genre) as { realized_pnl_cents: number | null; artist_id: number }[];
+    for (const s of sells) {
+      pnlCents += s.realized_pnl_cents ?? 0;
+      artistIds.add(s.artist_id);
+    }
+
+    if (artistIds.size === 0) continue;
+    entries.push({ user: { id: user.id, name: user.name }, rank: 0, pnlCents, artistsBackedCount: artistIds.size });
+  }
+
+  entries.sort((a, b) => b.pnlCents - a.pnlCents);
+  entries.forEach((e, i) => { e.rank = i + 1; });
+  return entries;
+}
+
+export function getFoundingBelieverCountForArtist(artistId: number): number {
+  const row = db.prepare('SELECT COUNT(*) AS c FROM next_founding_believers WHERE artist_id = ?').get(artistId) as { c: number };
+  return row.c;
+}
+
+export function getFoundingBelieverRecordsForUser(
+  userId: number
+): (FoundingBelieverRecord & { artist_name: string; artist_photo_url?: string })[] {
+  return db.prepare(`
+    SELECT next_founding_believers.*, artists.name AS artist_name, artists.photo_url AS artist_photo_url
+    FROM next_founding_believers
+    JOIN artists ON artists.id = next_founding_believers.artist_id
+    WHERE next_founding_believers.user_id = ?
+    ORDER BY next_founding_believers.purchased_at DESC
+  `).all(userId) as (FoundingBelieverRecord & { artist_name: string; artist_photo_url?: string })[];
 }

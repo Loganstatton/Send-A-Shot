@@ -369,3 +369,45 @@ export type FoundingBelieverRecord = {
   next_price_cents: number;
   discovery_rank: number;
 };
+
+// Public-safe user summary — no email, no password_hash. What a leaderboard
+// row or a Scout Profile is allowed to show about someone else.
+export type PublicScout = {
+  id: number;
+  name: string;
+};
+
+export type PortfolioValue = {
+  cashCents: number;
+  holdingsValueCents: number;
+  totalValueCents: number;
+  totalReturnCents: number;
+  totalReturnPct: number;
+};
+
+export type ScoutProfile = {
+  user: PublicScout;
+  portfolio: PortfolioValue;
+  scoutScoreValue: number;
+  rank: number;
+  totalScouts: number;
+  artistsBackedCount: number;
+  earlyDiscoveriesCount: number;
+};
+
+export type LeaderboardEntry = {
+  user: PublicScout;
+  rank: number;
+  totalReturnPct: number;
+  artistsBackedCount: number;
+};
+
+// A genre board ranks by realized+unrealized $ P&L earned specifically from
+// that genre's artists, not overall %, since a per-genre "invested" base
+// isn't always well-defined (e.g. a fully-sold position).
+export type GenreLeaderboardEntry = {
+  user: PublicScout;
+  rank: number;
+  pnlCents: number;
+  artistsBackedCount: number;
+};
