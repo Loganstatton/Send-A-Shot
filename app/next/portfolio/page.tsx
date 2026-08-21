@@ -1,9 +1,12 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import { getUserHoldings, getUserTransactions } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
 import StatTile from '@/components/StatTile';
+import ArtistAvatar from '@/components/ArtistAvatar';
 
+export const metadata: Metadata = { title: 'Portfolio' };
 export const dynamic = 'force-dynamic';
 
 export default async function NextPortfolioPage() {
@@ -52,46 +55,37 @@ export default async function NextPortfolioPage() {
         />
       </div>
 
-      <div className="card space-y-3">
+      <div className="space-y-3">
         <h2 className="font-semibold text-lg">Holdings</h2>
         {holdingsWithValue.length === 0 && (
-          <div className="text-center py-8">
+          <div className="card text-center py-8">
             <p className="text-neutral-400">No positions yet.</p>
             <Link href="/next" className="btn btn-primary mt-4 inline-flex">Browse NEXT</Link>
           </div>
         )}
-        {holdingsWithValue.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[600px]">
-              <thead className="text-neutral-500 text-left">
-                <tr>
-                  <th className="font-normal pb-2">Artist</th>
-                  <th className="font-normal pb-2 text-right">Shares</th>
-                  <th className="font-normal pb-2 text-right">Avg cost</th>
-                  <th className="font-normal pb-2 text-right">Price</th>
-                  <th className="font-normal pb-2 text-right">Value</th>
-                  <th className="font-normal pb-2 text-right">P&amp;L</th>
-                </tr>
-              </thead>
-              <tbody>
-                {holdingsWithValue.map((h) => (
-                  <tr key={h.id} className="border-t border-neutral-800">
-                    <td className="py-2">
-                      <Link href={`/next/artists/${h.artist_id}`} className="font-medium hover:underline">{h.artist_name}</Link>
-                    </td>
-                    <td className="py-2 text-right">{h.shares.toFixed(4)}</td>
-                    <td className="py-2 text-right">{formatCents(h.cost_basis_cents / h.shares)}</td>
-                    <td className="py-2 text-right">{formatCents(h.price_cents)}</td>
-                    <td className="py-2 text-right">{formatCents(h.marketValueCents)}</td>
-                    <td className={`py-2 text-right font-medium ${h.unrealizedPnlCents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {h.unrealizedPnlCents >= 0 ? '+' : ''}{formatCents(h.unrealizedPnlCents)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {holdingsWithValue.map((h) => {
+          const unrealizedPct = h.cost_basis_cents !== 0 ? (h.unrealizedPnlCents / h.cost_basis_cents) * 100 : 0;
+          return (
+            <Link
+              key={h.id}
+              href={`/next/artists/${h.artist_id}`}
+              className="card flex items-center gap-4 hover:border-neutral-600 transition-colors"
+            >
+              <ArtistAvatar name={h.artist_name} photoUrl={h.artist_photo_url} />
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold truncate">{h.artist_name}</div>
+                <div className="text-sm text-neutral-400">{h.shares.toFixed(4)} shares</div>
+                <div className="text-xs text-neutral-500">Avg: {formatCents(h.cost_basis_cents / h.shares)} · Current: {formatCents(h.price_cents)}</div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="font-semibold">{formatCents(h.marketValueCents)}</div>
+                <div className={`text-sm font-medium ${h.unrealizedPnlCents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {h.unrealizedPnlCents >= 0 ? '+' : ''}{formatCents(h.unrealizedPnlCents)} ({h.unrealizedPnlCents >= 0 ? '+' : ''}{unrealizedPct.toFixed(2)}%)
+                </div>
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
       {transactions.length > 0 && (

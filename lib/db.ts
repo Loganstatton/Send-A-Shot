@@ -5,7 +5,7 @@ import { breakoutScore } from './scoring';
 import { DATA_DIR } from './data-dir';
 import { applyTradeImpact, executionPriceCents, nextBasePriceCents } from './next-market';
 import {
-  Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, InvestmentEntry, InvestmentEntryInput,
+  Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, FoundingBelieverRecord, InvestmentEntry, InvestmentEntryInput,
   LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType,
   RevenueEntry, RevenueEntryInput, RevenueSource, Role, ScoreSnapshot, User,
 } from './types';
@@ -160,6 +160,19 @@ CREATE TABLE IF NOT EXISTS next_transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_next_transactions_user ON next_transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_next_transactions_artist ON next_transactions(artist_id);
+CREATE TABLE IF NOT EXISTS next_founding_believers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  purchased_at TEXT NOT NULL,
+  followers_count INTEGER,
+  monthly_listeners INTEGER,
+  next_score REAL NOT NULL,
+  next_price_cents INTEGER NOT NULL,
+  discovery_rank INTEGER NOT NULL,
+  UNIQUE(user_id, artist_id)
+);
+CREATE INDEX IF NOT EXISTS idx_founding_believers_artist ON next_founding_believers(artist_id);
 `);
 
 // Lightweight migrations for columns added after the initial table creation.
@@ -179,6 +192,11 @@ addColumnIfMissing('agreements', 'masters_owned_by TEXT');
 addColumnIfMissing('users', "role TEXT NOT NULL DEFAULT 'public'");
 addColumnIfMissing('users', 'next_credits_cents INTEGER NOT NULL DEFAULT 1000000');
 addColumnIfMissing('artists', 'next_current_price_cents INTEGER');
+addColumnIfMissing('artists', 'photo_url TEXT');
+addColumnIfMissing('artists', 'bio TEXT');
+addColumnIfMissing('artists', 'top_song_url TEXT');
+addColumnIfMissing('artists', 'song_preview_url TEXT');
+addColumnIfMissing('artists', 'why_trending TEXT');
 
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
@@ -333,7 +351,7 @@ const WRITABLE_FIELDS = [
   'followers_count', 'monthly_listeners', 'growth_velocity_pct', 'engagement_rate_pct',
   'music_talent', 'growth_velocity', 'engagement_quality', 'original_song_response',
   'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
-  'notes',
+  'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending',
 ] as const;
 
 export function createArtist(input: ArtistInput, actor?: Actor | null): Artist {
@@ -803,18 +821,37 @@ export function getHolding(userId: number, artistId: number): NextHolding | unde
     .get(userId, artistId) as NextHolding | undefined;
 }
 
-export function getUserHoldings(userId: number): (NextHolding & { artist_name: string; price_cents: number })[] {
+export function getUserHoldings(userId: number): (NextHolding & { artist_name: string; artist_photo_url?: string; price_cents: number })[] {
   const rows = db.prepare(`
-    SELECT next_holdings.*, artists.name AS artist_name
+    SELECT next_holdings.*, artists.name AS artist_name, artists.photo_url AS artist_photo_url
     FROM next_holdings
     JOIN artists ON artists.id = next_holdings.artist_id
     WHERE next_holdings.user_id = ? AND next_holdings.shares > 0
     ORDER BY next_holdings.updated_at DESC
-  `).all(userId) as (NextHolding & { artist_name: string })[];
+  `).all(userId) as (NextHolding & { artist_name: string; artist_photo_url?: string })[];
   return rows.map((row) => {
     const artist = getArtist(row.artist_id)!;
     return { ...row, price_cents: ensureNextPrice(artist) };
   });
+}
+
+// Records a permanent "you were early" snapshot the first time a user ever
+// buys into an artist. UNIQUE(user_id, artist_id) makes this idempotent —
+// safe to call on every buy — and the row is never updated or deleted after
+// insert, including when the position is later sold down to zero.
+function recordFoundingBelieverIfFirstBuy(userId: number, artistId: number, artist: Artist, score: number, priceCents: number, now: string) {
+  const { rank } = db.prepare('SELECT COUNT(*) AS rank FROM next_founding_believers WHERE artist_id = ?').get(artistId) as { rank: number };
+  db.prepare(`
+    INSERT OR IGNORE INTO next_founding_believers
+      (user_id, artist_id, purchased_at, followers_count, monthly_listeners, next_score, next_price_cents, discovery_rank)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(userId, artistId, now, artist.followers_count ?? null, artist.monthly_listeners ?? null, score, priceCents, rank + 1);
+}
+
+export function getFoundingBelieverRecord(userId: number, artistId: number): FoundingBelieverRecord | undefined {
+  return db
+    .prepare('SELECT * FROM next_founding_believers WHERE user_id = ? AND artist_id = ?')
+    .get(userId, artistId) as FoundingBelieverRecord | undefined;
 }
 
 export function getUserTransactions(userId: number, limit = 50): (NextTransaction & { artist_name: string })[] {
@@ -886,6 +923,8 @@ export function executeTrade(
 
       db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
       db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);
+
+      recordFoundingBelieverIfFirstBuy(userId, artistId, artist, breakoutScore(artist), executionCents, now);
     });
     tx();
 

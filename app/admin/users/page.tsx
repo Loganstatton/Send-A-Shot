@@ -1,7 +1,9 @@
+import type { Metadata } from 'next';
 import { requireAdmin } from '@/lib/auth';
 import { getAllUsers } from '@/lib/db';
 import RoleManager from '@/components/RoleManager';
 
+export const metadata: Metadata = { title: { absolute: 'Manage users — Scout' } };
 export const dynamic = 'force-dynamic';
 
 export default async function AdminUsersPage() {

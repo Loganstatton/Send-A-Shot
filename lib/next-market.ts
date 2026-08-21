@@ -43,3 +43,35 @@ export function applyTradeImpact(priceCents: number, creditsAmountCents: number,
 export function executionPriceCents(prePriceCents: number, postPriceCents: number): number {
   return Math.max(NEXT_MIN_PRICE_CENTS, Math.round((prePriceCents + postPriceCents) / 2));
 }
+
+// The inverse of nextBasePriceCents: "what score would justify the current
+// price, if price purely tracked the base formula?" Comparing this to the
+// artist's actual NEXT Score is how NEXT surfaces its own headline idea —
+// "when they disagree, that's the signal" — as an actual number instead of
+// just a sentence. A price above what the score would set on its own means
+// the market is pricing in more than the fundamentals show (overheated); a
+// price below means the market hasn't caught up yet (undervalued).
+export function impliedScoreFromPrice(priceCents: number): number {
+  const dollars = priceCents / 100;
+  const normalized = Math.pow(Math.max(0, (dollars - 1) / 49), 1 / 1.8);
+  return Math.max(0, Math.min(100, normalized * 100));
+}
+
+export type MarketSentiment = {
+  label: 'Undervalued' | 'Overheated' | 'Fair value';
+  tone: 'undervalued' | 'overheated' | 'fair';
+  impliedScore: number;
+  diff: number; // actual score minus implied score, in score points
+};
+
+// A few points of drift is noise, not a signal — only call it out once the
+// score/price gap is big enough to matter.
+const SENTIMENT_THRESHOLD = 4;
+
+export function marketSentiment(actualScore: number, priceCents: number): MarketSentiment {
+  const impliedScore = impliedScoreFromPrice(priceCents);
+  const diff = actualScore - impliedScore;
+  if (diff >= SENTIMENT_THRESHOLD) return { label: 'Undervalued', tone: 'undervalued', impliedScore, diff };
+  if (diff <= -SENTIMENT_THRESHOLD) return { label: 'Overheated', tone: 'overheated', impliedScore, diff };
+  return { label: 'Fair value', tone: 'fair', impliedScore, diff };
+}

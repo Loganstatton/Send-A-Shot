@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { Metadata } from 'next';
 import { getAllArtists, getDueFollowUps } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import { breakoutScore } from '@/lib/scoring';
@@ -6,6 +7,7 @@ import { STAGE_LABELS } from '@/lib/types';
 import ScoreBadge from '@/components/ScoreBadge';
 import FollowUpList from '@/components/FollowUpList';
 
+export const metadata: Metadata = { title: { absolute: 'Scout — Early Artist Discovery' } };
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
@@ -85,6 +87,15 @@ export default async function DashboardPage() {
           </div>
         </details>
       )}
+
+      <div className="card text-sm text-neutral-400">
+        <p>
+          <strong>Scout:</strong> internal tool for tracking emerging, unsigned artists and scoring
+          their breakout potential before they build a professional team. Data is stored locally in
+          SQLite — this is a discovery/scoring tool, not a contract or payments system. Not visible to
+          NEXT (public) users.
+        </p>
+      </div>
     </div>
   );
 }

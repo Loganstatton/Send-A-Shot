@@ -25,7 +25,7 @@ export default function Header({ user }: { user: User | null }) {
         <nav className="flex items-center gap-3">
           {user ? (
             <>
-              <Link className={"btn " + (pathname === '/next' || pathname?.startsWith('/next/artists') ? 'bg-white/20' : '')} href="/next">NEXT</Link>
+              <Link className={"btn " + (pathname === '/next' || pathname?.startsWith('/next/artists') ? 'bg-white/20' : '')} href="/next">Discover</Link>
               <Link className={"btn " + (is('/next/portfolio') ? 'bg-white/20' : '')} href="/next/portfolio">Portfolio</Link>
               {isInternal && (
                 <>

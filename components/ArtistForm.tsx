@@ -39,6 +39,11 @@ export default function ArtistForm({ artist }: Props) {
     commercial_potential: artist?.commercial_potential ?? 5,
     professionalism: artist?.professionalism ?? 5,
     notes: artist?.notes ?? '',
+    photo_url: artist?.photo_url ?? '',
+    bio: artist?.bio ?? '',
+    top_song_url: artist?.top_song_url ?? '',
+    song_preview_url: artist?.song_preview_url ?? '',
+    why_trending: artist?.why_trending ?? '',
   }));
 
   const liveScore = breakoutScore({
@@ -122,6 +127,32 @@ export default function ArtistForm({ artist }: Props) {
             <label className="label">Scout</label>
             <input className="input" value={form.scout_name ?? ''} onChange={(e) => set('scout_name', e.target.value)} placeholder="Who found them" />
           </div>
+        </div>
+      </div>
+
+      <div className="card space-y-4">
+        <h2 className="font-semibold text-lg">Media <span className="font-normal text-sm text-neutral-500">— what NEXT users actually see</span></h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="label">Photo URL</label>
+            <input className="input" value={form.photo_url ?? ''} onChange={(e) => set('photo_url', e.target.value)} placeholder="https://…jpg" />
+          </div>
+          <div>
+            <label className="label">30-second preview clip URL</label>
+            <input className="input" value={form.song_preview_url ?? ''} onChange={(e) => set('song_preview_url', e.target.value)} placeholder="Direct link to an audio file (.mp3, .m4a…)" />
+          </div>
+          <div>
+            <label className="label">Top song link</label>
+            <input className="input" value={form.top_song_url ?? ''} onChange={(e) => set('top_song_url', e.target.value)} placeholder="Link to their best/most popular track" />
+          </div>
+          <div>
+            <label className="label">Why they&apos;re trending</label>
+            <input className="input" value={form.why_trending ?? ''} onChange={(e) => set('why_trending', e.target.value)} placeholder="One line — shown right on the card" />
+          </div>
+        </div>
+        <div>
+          <label className="label">Short bio</label>
+          <textarea className="input min-h-[70px]" value={form.bio ?? ''} onChange={(e) => set('bio', e.target.value)} placeholder="A couple sentences for their NEXT page" />
         </div>
       </div>
 
