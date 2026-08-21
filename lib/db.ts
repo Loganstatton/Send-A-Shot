@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { breakoutScore } from './scoring';
 import { DATA_DIR } from './data-dir';
-import { applyTradeImpact, nextBasePriceCents } from './next-market';
+import { applyTradeImpact, executionPriceCents, nextBasePriceCents } from './next-market';
 import {
   Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, InvestmentEntry, InvestmentEntryInput,
   LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType,
@@ -852,14 +852,19 @@ export function executeTrade(
   const user = getUserById(userId);
   if (!user) return { ok: false, error: 'user not found' };
 
-  const priceCents = ensureNextPrice(artist);
+  const prePriceCents = ensureNextPrice(artist);
   const now = new Date().toISOString();
 
   if (type === 'buy') {
     if (creditsAmountCents > user.next_credits_cents) {
       return { ok: false, error: 'not enough NEXT Credits' };
     }
-    const shares = creditsAmountCents / priceCents;
+    // Impact is sized by the requested spend, same as the visible market
+    // move; the trader's own fill price is the average of pre/post so that
+    // impact isn't free money on an immediate resale (see executionPriceCents).
+    const postPriceCents = applyTradeImpact(prePriceCents, creditsAmountCents, 'buy');
+    const executionCents = executionPriceCents(prePriceCents, postPriceCents);
+    const shares = creditsAmountCents / executionCents;
     const holding = getHolding(userId, artistId);
     const newShares = (holding?.shares ?? 0) + shares;
     const newCostBasis = (holding?.cost_basis_cents ?? 0) + creditsAmountCents;
@@ -877,15 +882,14 @@ export function executeTrade(
       db.prepare(`
         INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents)
         VALUES (?, ?, ?, 'buy', ?, ?, ?)
-      `).run(userId, artistId, now, shares, priceCents, -creditsAmountCents);
+      `).run(userId, artistId, now, shares, executionCents, -creditsAmountCents);
 
-      const newPrice = applyTradeImpact(priceCents, creditsAmountCents, 'buy');
-      db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(newPrice, artistId);
-      db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, newPrice);
+      db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
+      db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);
     });
     tx();
 
-    return { ok: true, shares, priceCents, newBalanceCents: user.next_credits_cents - creditsAmountCents };
+    return { ok: true, shares, priceCents: executionCents, newBalanceCents: user.next_credits_cents - creditsAmountCents };
   }
 
   // sell
@@ -893,9 +897,15 @@ export function executeTrade(
   const ownedShares = holding?.shares ?? 0;
   if (!holding || ownedShares <= 0) return { ok: false, error: "you don't own any shares of this artist" };
 
-  const requestedShares = creditsAmountCents / priceCents;
+  const requestedShares = creditsAmountCents / prePriceCents;
   const sharesSold = Math.min(requestedShares, ownedShares);
-  const proceedsCents = Math.round(sharesSold * priceCents);
+  // Size impact by what's actually being sold (valued at the pre-trade
+  // price), not the originally requested amount — matters when the request
+  // gets capped by ownedShares.
+  const notionalAtPrePriceCents = Math.round(sharesSold * prePriceCents);
+  const postPriceCents = applyTradeImpact(prePriceCents, notionalAtPrePriceCents, 'sell');
+  const executionCents = executionPriceCents(prePriceCents, postPriceCents);
+  const proceedsCents = Math.round(sharesSold * executionCents);
   const avgCostPerShareCents = holding.cost_basis_cents / ownedShares;
   const costBasisSold = avgCostPerShareCents * sharesSold;
   const realizedPnlCents = Math.round(proceedsCents - costBasisSold);
@@ -914,18 +924,17 @@ export function executeTrade(
     db.prepare(`
       INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents, realized_pnl_cents)
       VALUES (?, ?, ?, 'sell', ?, ?, ?, ?)
-    `).run(userId, artistId, now, sharesSold, priceCents, proceedsCents, realizedPnlCents);
+    `).run(userId, artistId, now, sharesSold, executionCents, proceedsCents, realizedPnlCents);
 
-    const newPrice = applyTradeImpact(priceCents, proceedsCents, 'sell');
-    db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(newPrice, artistId);
-    db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, newPrice);
+    db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
+    db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);
   });
   tx();
 
   return {
     ok: true,
     shares: sharesSold,
-    priceCents,
+    priceCents: executionCents,
     newBalanceCents: user.next_credits_cents + proceedsCents,
     realizedPnlCents,
   };

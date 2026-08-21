@@ -29,3 +29,17 @@ export function applyTradeImpact(priceCents: number, creditsAmountCents: number,
   const factor = direction === 'buy' ? 1 + impact : 1 - impact;
   return Math.max(NEXT_MIN_PRICE_CENTS, Math.round(priceCents * factor));
 }
+
+// A trade fills at the AVERAGE of the pre- and post-impact price, not the
+// pre-impact price — i.e. the trader pays/receives their own slippage,
+// instead of it being free money on their very next trade. Without this, a
+// buy executes at the cheap pre-impact price while the impact is banked
+// into the market price, and an immediate sell captures that gap as pure
+// profit with zero outside market activity — a self-sandwich exploit. With
+// average execution on both legs, round-tripping (buy then immediately
+// sell, nothing else happening) costs a small amount every time, the same
+// way a bid-ask spread does in a real market, and never manufactures
+// credits. See lib/db.test.ts for the automated proof.
+export function executionPriceCents(prePriceCents: number, postPriceCents: number): number {
+  return Math.max(NEXT_MIN_PRICE_CENTS, Math.round((prePriceCents + postPriceCents) / 2));
+}
