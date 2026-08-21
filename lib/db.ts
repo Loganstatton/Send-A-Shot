@@ -199,6 +199,7 @@ addColumnIfMissing('artists', 'bio TEXT');
 addColumnIfMissing('artists', 'top_song_url TEXT');
 addColumnIfMissing('artists', 'song_preview_url TEXT');
 addColumnIfMissing('artists', 'why_trending TEXT');
+addColumnIfMissing('artists', 'soundcharts_uuid TEXT');
 
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
@@ -353,7 +354,7 @@ const WRITABLE_FIELDS = [
   'followers_count', 'monthly_listeners', 'growth_velocity_pct', 'engagement_rate_pct',
   'music_talent', 'growth_velocity', 'engagement_quality', 'original_song_response',
   'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
-  'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending',
+  'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending', 'soundcharts_uuid',
 ] as const;
 
 export function createArtist(input: ArtistInput, actor?: Actor | null): Artist {

@@ -85,6 +85,7 @@ export type Artist = ScoreInputs & {
   top_song_url?: string;
   song_preview_url?: string;
   why_trending?: string;
+  soundcharts_uuid?: string;
 };
 
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {

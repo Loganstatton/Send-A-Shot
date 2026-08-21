@@ -42,6 +42,9 @@ a licensable data product.
   totals, not a payout-accounting engine — real splits are whatever the
   actual contract and accountant say
 - SQLite (via better-sqlite3) with auto-seeding of a few example artists
+- Optional Soundcharts integration: search an artist by name to auto-fill
+  photo, bio, genre, location, and platform stats, plus a one-click re-sync
+  once linked (see setup below)
 
 ## Quick Start
 ```bash
@@ -74,6 +77,21 @@ That email is promoted to Admin automatically on next login. From there, use
 to anyone else — that's the only way roles change; public users can never
 self-select internal access.
 
+### Optional: Soundcharts integration (live metrics)
+
+Set these to enable searching Soundcharts by artist name from the Add Artist
+form (auto-fills photo, bio, genre, location, and platform stats) and a
+"Sync from Soundcharts" button on artists already linked:
+
+```bash
+echo "SOUNDCHARTS_APP_ID=your-app-id" >> .env.local
+echo "SOUNDCHARTS_API_KEY=your-api-key" >> .env.local
+```
+
+Without these set, the Soundcharts panel on the artist form shows a clear
+"not configured" error instead of failing silently — everything else in the
+app works the same either way. Metrics are otherwise entered by hand.
+
 ## Breakout Score weights
 
 | Category | Weight |
@@ -95,9 +113,9 @@ below 55 pass. See `lib/scoring.ts`.
 - Real payments/invoicing, or actual payout-waterfall accounting (recoup-then-
   commission sequencing, taxes, etc.) — the deals/revenue ledger tracks
   commitments and totals, it does not move money
-- Automated social-metrics ingestion (metrics are entered manually for now —
-  a future phase would pull follower counts, growth, and engagement directly
-  from TikTok/Instagram/Spotify APIs)
+- Automated social-metrics ingestion beyond the optional Soundcharts
+  search-and-fill / sync (see above) — no scheduled refresh yet, it's a
+  manual trigger per artist
 - Invite-only signup or password reset — public signup is open (accounts
   just default to the harmless Public/NEXT role), and any Internal/Admin user
   can currently view/edit/delete any artist and any agreement — fine for a
@@ -134,19 +152,21 @@ app/                 # Next.js app router
   api/next/          # NEXT trade endpoint (any logged-in user)
   api/admin/         # role management (admin only)
   api/auth/          # signup/login/logout
+  api/soundcharts/   # search + fetch-by-uuid (internal only)
 components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory,
                      # DealsAndRevenue, InvestmentLedger, TradePanel, RoleManager,
-                     # StatTile, Sparkline, FollowUpList, AuthForm
+                     # StatTile, Sparkline, FollowUpList, AuthForm, SoundchartsSearch
 lib/                 # sqlite db, types, scoring logic, NEXT pricing engine,
-                     # auth/role helpers, money formatting
+                     # auth/role helpers, money formatting, soundcharts client
 data/                # sqlite file + fallback session secret live here
 ```
 
 ## Next Steps (Roadmap)
 - Momentum alerts on NEXT ("Artist X +52% listeners in 7D")
-- Scout leaderboards, "Founding Believer" badges, prediction markets — the
-  gamification layer on top of NEXT's core trading loop
-- Automated metrics ingestion from TikTok/Instagram/YouTube/Spotify
+- Prediction markets — the remaining gamification item on top of NEXT's core
+  trading loop (leaderboards and Founding Believer already shipped)
+- Scheduled/automatic Soundcharts re-sync instead of a manual per-artist
+  button
 - Crowdsourced scouting with finder's-fee attribution
 - Reminders/follow-up scheduling on top of the activity log
 - Invite-only signup and password reset

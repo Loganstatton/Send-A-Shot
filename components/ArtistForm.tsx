@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { breakoutScore } from '@/lib/scoring';
 import { Artist, ArtistInput, SCORE_LABELS, SCORE_WEIGHTS, STAGES, STAGE_LABELS, ScoreInputs } from '@/lib/types';
 import ScoreBadge from './ScoreBadge';
+import SoundchartsSearch from './SoundchartsSearch';
 
 const SCORE_FIELDS = Object.keys(SCORE_WEIGHTS) as (keyof ScoreInputs)[];
 
@@ -44,6 +45,7 @@ export default function ArtistForm({ artist }: Props) {
     top_song_url: artist?.top_song_url ?? '',
     song_preview_url: artist?.song_preview_url ?? '',
     why_trending: artist?.why_trending ?? '',
+    soundcharts_uuid: artist?.soundcharts_uuid ?? undefined,
   }));
 
   const liveScore = breakoutScore({
@@ -59,6 +61,10 @@ export default function ArtistForm({ artist }: Props) {
 
   function set<K extends keyof ArtistInput>(key: K, value: ArtistInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function fillFromSoundcharts(data: Partial<ArtistInput>) {
+    setForm((f) => ({ ...f, ...data }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -99,6 +105,8 @@ export default function ArtistForm({ artist }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && <div className="card border-red-500/40 text-red-300">{error}</div>}
+
+      <SoundchartsSearch soundchartsUuid={form.soundcharts_uuid} onFill={fillFromSoundcharts} />
 
       <div className="card space-y-4">
         <h2 className="font-semibold text-lg">Basics</h2>
