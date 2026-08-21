@@ -9,14 +9,28 @@ import YoutubeScanButton from '@/components/YoutubeScanButton';
 export const metadata: Metadata = { title: { absolute: 'New Candidates — Scout' } };
 export const dynamic = 'force-dynamic';
 
+function rejectionSummary(run: DiscoveryRun): string | null {
+  if (run.candidates_found > 0) return null;
+  const parts = [
+    run.rejected_below_min_views && `${run.rejected_below_min_views} too few views`,
+    run.rejected_no_subscriber_count && `${run.rejected_no_subscriber_count} no subscriber count`,
+    run.rejected_subscriber_out_of_band && `${run.rejected_subscriber_out_of_band} channel size outside band`,
+    run.rejected_below_momentum_threshold &&
+      `${run.rejected_below_momentum_threshold} below momentum threshold${run.best_rejected_momentum_score != null ? ` (best: ${run.best_rejected_momentum_score}/100)` : ''}`,
+  ].filter(Boolean);
+  return parts.length > 0 ? `Rejected: ${parts.join(', ')}.` : null;
+}
+
 function LastRunLine({ label, run }: { label: string; run?: DiscoveryRun }) {
   if (!run) return null;
+  const rejected = run.status === 'completed' ? rejectionSummary(run) : null;
   return (
     <p className="text-xs text-neutral-500">
       {label}: {new Date(run.started_at).toLocaleString()} —{' '}
       {run.status === 'failed'
         ? <span className="text-red-400">failed: {run.error}</span>
-        : `searched ${run.searched_count}, found ${run.candidates_found}`}
+        : `searched ${run.searched_count}, found ${run.candidates_found}.`}
+      {rejected && <span> {rejected}</span>}
     </p>
   );
 }

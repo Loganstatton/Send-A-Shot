@@ -9,10 +9,11 @@ import { describe, expect, it } from 'vitest';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
 const {
-  approveDiscoveryCandidate, completeSyncRun, createArtist, createSyncRun, createUser, executeTrade,
-  getArtist, getArtistsWithSoundchartsLink, getDiscoveryCandidates, getKnownDiscoveryUuids,
-  getKnownDiscoveryYoutubeChannelIds, getLatestSyncRun, getNewDiscoveryCandidateCount, getNextArtist,
-  getTrackedSoundchartsUuids, getUserById, insertDiscoveryCandidate, setDiscoveryCandidateStatus, updateArtist,
+  approveDiscoveryCandidate, completeDiscoveryRun, completeSyncRun, createArtist, createDiscoveryRun, createSyncRun,
+  createUser, executeTrade, getArtist, getArtistsWithSoundchartsLink, getDiscoveryCandidates, getKnownDiscoveryUuids,
+  getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun, getNewDiscoveryCandidateCount,
+  getNextArtist, getTrackedSoundchartsUuids, getUserById, insertDiscoveryCandidate, setDiscoveryCandidateStatus,
+  updateArtist,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -397,5 +398,41 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
     expect(artist).toBeDefined();
     expect(artist.genre).toBe('rock-alternative');
     expect(artist.soundcharts_uuid ?? null).toBeNull();
+  });
+
+  it('a completed YouTube run round-trips its rejection breakdown — this is what tells a Scout "why zero", not just "zero"', () => {
+    const run = createDiscoveryRun('youtube');
+    completeDiscoveryRun(run.id, {
+      status: 'completed',
+      searchedCount: 90,
+      candidatesFound: 0,
+      quotaUsed: 602,
+      rejectionBreakdown: {
+        belowMinViews: 12,
+        noSubscriberCount: 30,
+        subscriberOutOfBand: 40,
+        belowMomentumThreshold: 8,
+        bestRejectedMomentumScore: 22.5,
+      },
+    });
+
+    const latest = getLatestDiscoveryRun('youtube')!;
+    expect(latest.id).toBe(run.id);
+    expect(latest.candidates_found).toBe(0);
+    expect(latest.rejected_below_min_views).toBe(12);
+    expect(latest.rejected_no_subscriber_count).toBe(30);
+    expect(latest.rejected_subscriber_out_of_band).toBe(40);
+    expect(latest.rejected_below_momentum_threshold).toBe(8);
+    expect(latest.best_rejected_momentum_score).toBe(22.5);
+  });
+
+  it('a Soundcharts run (no rejection filtering) leaves the breakdown columns null, not zero', () => {
+    const run = createDiscoveryRun('soundcharts');
+    completeDiscoveryRun(run.id, { status: 'completed', searchedCount: 10, candidatesFound: 2 });
+
+    const latest = getLatestDiscoveryRun('soundcharts')!;
+    expect(latest.id).toBe(run.id);
+    expect(latest.rejected_below_min_views ?? null).toBeNull();
+    expect(latest.rejected_below_momentum_threshold ?? null).toBeNull();
   });
 });
