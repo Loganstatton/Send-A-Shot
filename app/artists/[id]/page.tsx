@@ -7,6 +7,7 @@ import ScoreBadge from '@/components/ScoreBadge';
 import ActivityLog from '@/components/ActivityLog';
 import ScoreHistory from '@/components/ScoreHistory';
 import DealsAndRevenue from '@/components/DealsAndRevenue';
+import InvestmentLedger from '@/components/InvestmentLedger';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,8 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
       </div>
 
       <DealsAndRevenue artistId={artist.id} />
+
+      <InvestmentLedger artistId={artist.id} />
 
       <ArtistForm artist={artist} />
     </div>
