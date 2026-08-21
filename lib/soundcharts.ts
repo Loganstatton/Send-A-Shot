@@ -119,6 +119,12 @@ export async function getArtistData(uuid: string): Promise<SoundchartsResult<Sou
   const metaResult = await soundchartsFetch(`/api/v2/artist/${encodeURIComponent(uuid)}`);
   if (!metaResult.ok) return metaResult;
 
+  // TEMPORARY: several fields (bio, genre, platform links) are coming back
+  // empty against real data and the guessed key names need to be corrected
+  // against an actual response instead of guessed again — check Render's
+  // Logs tab after a search to find this line, then this block gets removed.
+  console.log('[soundcharts] raw artist metadata response:', JSON.stringify(metaResult.data));
+
   const meta = pick(metaResult.data, 'object', 'artist') ?? metaResult.data;
 
   const genres = pick(meta, 'genres');
@@ -155,6 +161,7 @@ export async function getArtistData(uuid: string): Promise<SoundchartsResult<Sou
   // Audience/follower counts live on a separate, less certain endpoint —
   // best-effort only, never lets a metadata-only result fail.
   const audience = await soundchartsFetch(`/api/v2/artist/${encodeURIComponent(uuid)}/audience/spotify`);
+  console.log('[soundcharts] raw audience response:', JSON.stringify(audience));
   if (audience.ok) {
     const items = pick(audience.data, 'items') ?? [];
     const latest = Array.isArray(items) && items.length > 0 ? items[items.length - 1] : undefined;
