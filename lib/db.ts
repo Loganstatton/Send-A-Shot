@@ -5,7 +5,7 @@ import { breakoutScore } from './scoring';
 import { DATA_DIR } from './data-dir';
 import {
   Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, InvestmentEntry, InvestmentEntryInput,
-  LogEntry, LogEntryInput, RevenueEntry, RevenueEntryInput, ScoreSnapshot, User,
+  LogEntry, LogEntryInput, RevenueEntry, RevenueEntryInput, RevenueSource, ScoreSnapshot, User,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -139,6 +139,9 @@ function addColumnIfMissing(table: string, ddl: string) {
 }
 addColumnIfMissing('artists', 'created_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
 addColumnIfMissing('contact_log', 'follow_up_at TEXT');
+addColumnIfMissing('agreements', 'sponsorship_commission_pct REAL');
+addColumnIfMissing('agreements', 'touring_commission_pct REAL');
+addColumnIfMissing('agreements', 'masters_owned_by TEXT');
 
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
@@ -466,7 +469,9 @@ export function getAgreement(artistId: number, agreementId: number): Agreement |
 }
 
 const AGREEMENT_WRITABLE_FIELDS = [
-  'type', 'status', 'start_date', 'end_date', 'commission_pct', 'investment_amount_cents', 'notes',
+  'type', 'status', 'start_date', 'end_date', 'commission_pct',
+  'sponsorship_commission_pct', 'touring_commission_pct', 'masters_owned_by',
+  'investment_amount_cents', 'notes',
 ] as const;
 
 export function createAgreement(artistId: number, input: AgreementInput, actor?: Actor | null): Agreement {
@@ -526,10 +531,24 @@ export function getRevenueEntries(artistId: number): RevenueEntry[] {
     .all(artistId) as RevenueEntry[];
 }
 
+// sponsorship_commission_pct / touring_commission_pct only need to be set
+// when they differ from the agreement's default commission_pct — e.g. "15%
+// standard, but 0% on touring." Unset (null) falls back to the default.
+function resolveCommissionPct(agreement: Agreement | undefined, source: RevenueSource): number | null {
+  if (!agreement) return null;
+  if (source === 'sponsorship' && agreement.sponsorship_commission_pct != null) {
+    return agreement.sponsorship_commission_pct;
+  }
+  if (source === 'shows' && agreement.touring_commission_pct != null) {
+    return agreement.touring_commission_pct;
+  }
+  return agreement.commission_pct ?? null;
+}
+
 export function createRevenueEntry(artistId: number, input: RevenueEntryInput, actor?: Actor | null): RevenueEntry {
   const now = new Date().toISOString();
   const agreement = input.agreement_id ? getAgreement(artistId, input.agreement_id) : undefined;
-  const commissionPct = agreement?.commission_pct ?? null;
+  const commissionPct = resolveCommissionPct(agreement, input.source);
   const commissionCents = commissionPct != null
     ? Math.round(input.gross_amount_cents * (commissionPct / 100))
     : null;

@@ -4,6 +4,7 @@ import { formatCents, dollarsToCents } from '@/lib/format';
 import {
   AGREEMENT_STATUS_LABELS, AGREEMENT_STATUSES, AGREEMENT_TYPE_LABELS, AGREEMENT_TYPES,
   Agreement, AgreementInput, AgreementStatus, AgreementType,
+  MASTERS_OWNER_LABELS, MASTERS_OWNERS, MastersOwner,
   REVENUE_SOURCE_LABELS, REVENUE_SOURCES, RevenueEntry, RevenueSource,
 } from '@/lib/types';
 
@@ -18,6 +19,18 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Whole-month term between two ISO dates (e.g. Jan 2026 -> Jan 2028 is 24
+// months), floored at 1 so a same-day range still reads as "1 month"
+// instead of "0 months".
+function termMonths(start?: string, end?: string): number | null {
+  if (!start || !end) return null;
+  const s = new Date(start);
+  const e = new Date(end);
+  let months = (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+  if (e.getDate() < s.getDate()) months -= 1;
+  return Math.max(1, months);
+}
+
 export default function DealsAndRevenue({ artistId }: { artistId: number }) {
   const [agreements, setAgreements] = useState<Agreement[] | null>(null);
   const [revenue, setRevenue] = useState<RevenueEntry[] | null>(null);
@@ -26,6 +39,9 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
   const [agreementType, setAgreementType] = useState<AgreementType>('development');
   const [agreementStatus, setAgreementStatus] = useState<AgreementStatus>('draft');
   const [commissionPct, setCommissionPct] = useState('15');
+  const [sponsorshipPct, setSponsorshipPct] = useState('');
+  const [touringPct, setTouringPct] = useState('');
+  const [mastersOwnedBy, setMastersOwnedBy] = useState<MastersOwner | ''>('');
   const [investmentDollars, setInvestmentDollars] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -78,6 +94,9 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
         type: agreementType,
         status: agreementStatus,
         commission_pct: commissionPct ? Number(commissionPct) : undefined,
+        sponsorship_commission_pct: sponsorshipPct ? Number(sponsorshipPct) : undefined,
+        touring_commission_pct: touringPct ? Number(touringPct) : undefined,
+        masters_owned_by: mastersOwnedBy || undefined,
         investment_amount_cents: investmentDollars ? dollarsToCents(Number(investmentDollars)) : undefined,
         start_date: startDate || undefined,
         end_date: endDate || undefined,
@@ -90,6 +109,9 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
       });
       setShowAgreementForm(false);
       setCommissionPct('15');
+      setSponsorshipPct('');
+      setTouringPct('');
+      setMastersOwnedBy('');
       setInvestmentDollars('');
       setStartDate('');
       setEndDate('');
@@ -171,6 +193,14 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
               <input className="input" type="number" step="0.1" min="0" max="100" placeholder="Commission %" value={commissionPct} onChange={(e) => setCommissionPct(e.target.value)} />
               <input className="input" type="number" step="0.01" min="0" placeholder="Investment $" value={investmentDollars} onChange={(e) => setInvestmentDollars(e.target.value)} />
             </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <input className="input" type="number" step="0.1" min="0" max="100" placeholder="Sponsorship % (if different)" value={sponsorshipPct} onChange={(e) => setSponsorshipPct(e.target.value)} />
+              <input className="input" type="number" step="0.1" min="0" max="100" placeholder="Touring % (if different)" value={touringPct} onChange={(e) => setTouringPct(e.target.value)} />
+              <select className="input" value={mastersOwnedBy} onChange={(e) => setMastersOwnedBy(e.target.value as MastersOwner | '')}>
+                <option value="">Masters owned by…</option>
+                {MASTERS_OWNERS.map((m) => <option key={m} value={m}>{MASTERS_OWNER_LABELS[m]}</option>)}
+              </select>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="label">Start date</label>
@@ -194,6 +224,7 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
 
         {agreements?.map((a) => {
           const recoup = recoupFor(a);
+          const term = termMonths(a.start_date, a.end_date);
           return (
             <div key={a.id} className="border-t border-neutral-800 pt-2 flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -206,8 +237,16 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
                   {a.investment_amount_cents != null && <span>Investment: {formatCents(a.investment_amount_cents)}</span>}
                   {a.start_date && <span>Start {a.start_date}</span>}
                   {a.end_date && <span>End {a.end_date}</span>}
+                  {term != null && <span>Term: {term} {term === 1 ? 'month' : 'months'}</span>}
                   {a.created_by_name && <span>by {a.created_by_name}</span>}
                 </div>
+                {(a.sponsorship_commission_pct != null || a.touring_commission_pct != null || a.masters_owned_by) && (
+                  <div className="text-xs text-neutral-500 mt-1 flex gap-3 flex-wrap">
+                    <span>Sponsorship: {a.sponsorship_commission_pct != null ? `${a.sponsorship_commission_pct}%` : 'same as commission'}</span>
+                    <span>Touring: {a.touring_commission_pct != null ? `${a.touring_commission_pct}%` : 'same as commission'}</span>
+                    {a.masters_owned_by && <span>Masters: {MASTERS_OWNER_LABELS[a.masters_owned_by]}</span>}
+                  </div>
+                )}
                 {recoup && (
                   <div className="mt-1 text-xs text-neutral-400">
                     Recouped {formatCents(recoup.earned)} of {formatCents(a.investment_amount_cents)} ({recoup.pct}%)

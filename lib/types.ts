@@ -170,10 +170,24 @@ export const AGREEMENT_STATUS_LABELS: Record<AgreementStatus, string> = {
   terminated: 'Terminated',
 };
 
+export type MastersOwner = 'artist' | 'company' | 'shared';
+
+export const MASTERS_OWNERS: MastersOwner[] = ['artist', 'company', 'shared'];
+
+export const MASTERS_OWNER_LABELS: Record<MastersOwner, string> = {
+  artist: 'Artist',
+  company: 'Company',
+  shared: 'Shared',
+};
+
 // Deliberately simple money model: this tracks negotiated terms and totals,
 // it does not compute real payout waterfalls (recoup-then-commission
 // sequencing, taxes, etc). Treat it as a ledger, not an accounting system —
 // real splits are whatever the actual contract and accountant say.
+//
+// commission_pct is the default rate applied to revenue; sponsorship/touring
+// participation only need to be set when they differ from it (e.g. "15%
+// standard, but 0% on touring") — null/unset means "same as commission_pct".
 export type Agreement = {
   id: number;
   artist_id: number;
@@ -184,6 +198,9 @@ export type Agreement = {
   start_date?: string;
   end_date?: string;
   commission_pct?: number;
+  sponsorship_commission_pct?: number;
+  touring_commission_pct?: number;
+  masters_owned_by?: MastersOwner;
   investment_amount_cents?: number;
   notes?: string;
   created_by?: number;
