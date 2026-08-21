@@ -8,7 +8,11 @@ import { describe, expect, it } from 'vitest';
 // file instead of the real dev/prod database.
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
-const { createArtist, createUser, executeTrade, getNextArtist, getUserById } = await import('./db');
+const {
+  approveDiscoveryCandidate, createArtist, createUser, executeTrade, getArtist, getDiscoveryCandidates,
+  getKnownDiscoveryUuids, getNewDiscoveryCandidateCount, getNextArtist, getTrackedSoundchartsUuids, getUserById,
+  insertDiscoveryCandidate, setDiscoveryCandidateStatus,
+} = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
 
@@ -135,5 +139,86 @@ describe('NEXT trading engine — self-trade exploit prevention', () => {
 
     const finalBalance = getUserById(buyer.id)!.next_credits_cents;
     expect(finalBalance).toBeGreaterThan(STARTING_BALANCE_CENTS);
+  });
+});
+
+describe('Discovery Engine — candidate queue', () => {
+  it('a new candidate appears in the "new" queue and counts toward the pending badge', () => {
+    const before = getNewDiscoveryCandidateCount();
+    insertDiscoveryCandidate({
+      soundcharts_uuid: 'uuid-new-1',
+      name: 'Fresh Signal',
+      followers_count: 12_000,
+      followers_7d_ago: 10_000,
+      growth_7d_pct: 20,
+      flagged_reason: '+20% Spotify followers in 7 days (10.0K → 12.0K) — a sudden jump',
+    });
+
+    expect(getNewDiscoveryCandidateCount()).toBe(before + 1);
+    const queue = getDiscoveryCandidates('new');
+    const found = queue.find((c) => c.soundcharts_uuid === 'uuid-new-1');
+    expect(found).toBeDefined();
+    expect(found!.status).toBe('new');
+  });
+
+  it('Pass and Watch move a candidate out of the "new" queue without touching the roster', () => {
+    const passUser = makeUser('pass-actor@example.com');
+    const watchUser = makeUser('watch-actor@example.com');
+
+    insertDiscoveryCandidate({ soundcharts_uuid: 'uuid-pass-1', name: 'Pass Me', followers_count: 5000, flagged_reason: 'test' });
+    insertDiscoveryCandidate({ soundcharts_uuid: 'uuid-watch-1', name: 'Watch Me', followers_count: 5000, flagged_reason: 'test' });
+
+    const passCandidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-pass-1')!;
+    const watchCandidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-watch-1')!;
+
+    const passed = setDiscoveryCandidateStatus(passCandidate.id, 'passed', { id: passUser.id, name: passUser.name });
+    const watched = setDiscoveryCandidateStatus(watchCandidate.id, 'watching', { id: watchUser.id, name: watchUser.name });
+
+    expect(passed!.status).toBe('passed');
+    expect(watched!.status).toBe('watching');
+    // Neither shows up in the "new" queue anymore...
+    expect(getDiscoveryCandidates('new').some((c) => c.id === passCandidate.id)).toBe(false);
+    expect(getDiscoveryCandidates('new').some((c) => c.id === watchCandidate.id)).toBe(false);
+    // ...but a passed/watched candidate never became a real artist.
+    expect(getTrackedSoundchartsUuids().has('uuid-pass-1')).toBe(false);
+    expect(getTrackedSoundchartsUuids().has('uuid-watch-1')).toBe(false);
+  });
+
+  it('a passed or watched candidate is excluded from future scans by soundcharts_uuid', () => {
+    insertDiscoveryCandidate({ soundcharts_uuid: 'uuid-known-1', name: 'Already Seen', followers_count: 5000, flagged_reason: 'test' });
+    expect(getKnownDiscoveryUuids().has('uuid-known-1')).toBe(true);
+  });
+
+  it('Approve creates a real, editable artist pre-filled from the candidate — not auto-scored', () => {
+    const admin = makeUser('approver@example.com');
+    insertDiscoveryCandidate({
+      soundcharts_uuid: 'uuid-approve-1',
+      name: 'Breakout Kid',
+      photo_url: 'https://example.com/photo.jpg',
+      country: 'US',
+      followers_count: 42_000,
+      growth_30d_pct: 15,
+      flagged_reason: '+15% Spotify followers in 30 days (36.5K → 42.0K)',
+    });
+    const candidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-approve-1')!;
+
+    const artist = approveDiscoveryCandidate(candidate.id, { id: admin.id, name: admin.name });
+
+    expect(artist).toBeDefined();
+    expect(artist!.name).toBe('Breakout Kid');
+    expect(artist!.soundcharts_uuid).toBe('uuid-approve-1');
+    expect(artist!.followers_count).toBe(42_000);
+    // Human judgment is still required — approving never assigns a score.
+    expect(artist!.music_talent).toBe(0);
+
+    // The candidate is now linked to the real artist and marked approved,
+    // and the artist is immediately editable/findable like any other.
+    const reloaded = getDiscoveryCandidates().find((c) => c.id === candidate.id)!;
+    expect(reloaded.status).toBe('approved');
+    expect(reloaded.artist_id).toBe(artist!.id);
+    expect(getArtist(artist!.id)).toBeDefined();
+
+    // And it's now tracked, so a future scan won't re-flag it.
+    expect(getTrackedSoundchartsUuids().has('uuid-approve-1')).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import { User } from '@/lib/types';
 import LogoutButton from './LogoutButton';
 
-export default function Header({ user }: { user: User | null }) {
+export default function Header({ user, newCandidateCount = 0 }: { user: User | null; newCandidateCount?: number }) {
   const pathname = usePathname();
   const is = (p: string) => pathname === p || (p !== '/' && pathname?.startsWith(p));
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
@@ -26,6 +26,9 @@ export default function Header({ user }: { user: User | null }) {
                 <>
                   <Link className={"btn " + (pathname === '/' ? 'bg-white/20' : '')} href="/">Dashboard</Link>
                   <Link className={"btn " + (is('/screener') ? 'bg-white/20' : '')} href="/screener">Screener</Link>
+                  <Link className={"btn " + (is('/discovery') ? 'bg-white/20' : '')} href="/discovery">
+                    New Candidates{newCandidateCount > 0 && <span className="ml-1.5 badge text-xs px-1.5">{newCandidateCount}</span>}
+                  </Link>
                   <Link className={"btn btn-primary " + (is('/artists/new') ? 'bg-blue-700' : '')} href="/artists/new">+ Add Artist</Link>
                 </>
               )}

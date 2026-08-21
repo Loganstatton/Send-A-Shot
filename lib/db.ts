@@ -6,10 +6,11 @@ import { DATA_DIR } from './data-dir';
 import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents } from './next-market';
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import {
-  Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry,
-  InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LogEntry, LogEntryInput, NextHolding, NextMarketRow,
-  NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput,
-  RevenueSource, Role, ScoreSnapshot, ScoutProfile, User,
+  Agreement, AgreementInput, Artist, ArtistInput, DiscoveryCandidate, DiscoveryCandidateStatus, DiscoveryRun,
+  DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput,
+  LeaderboardEntry, LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction,
+  NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS,
+  ScoreSnapshot, ScoutProfile, User,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -175,6 +176,34 @@ CREATE TABLE IF NOT EXISTS next_founding_believers (
   UNIQUE(user_id, artist_id)
 );
 CREATE INDEX IF NOT EXISTS idx_founding_believers_artist ON next_founding_believers(artist_id);
+CREATE TABLE IF NOT EXISTS discovery_candidates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  soundcharts_uuid TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  photo_url TEXT,
+  country TEXT,
+  followers_count INTEGER,
+  followers_7d_ago INTEGER,
+  followers_30d_ago INTEGER,
+  growth_7d_pct REAL,
+  growth_30d_pct REAL,
+  flagged_reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'new',
+  discovered_at TEXT NOT NULL,
+  reviewed_at TEXT,
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  artist_id INTEGER REFERENCES artists(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_candidates_status ON discovery_candidates(status);
+CREATE TABLE IF NOT EXISTS discovery_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  status TEXT NOT NULL DEFAULT 'running',
+  searched_count INTEGER NOT NULL DEFAULT 0,
+  candidates_found INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
 `);
 
 // Lightweight migrations for columns added after the initial table creation.
@@ -357,11 +386,21 @@ const WRITABLE_FIELDS = [
   'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending', 'soundcharts_uuid',
 ] as const;
 
+// The eight score columns are NOT NULL DEFAULT 0 in the schema — a caller
+// that omits them (e.g. approving a Discovery candidate, which deliberately
+// leaves scoring to a human) must still get 0, not null, or the insert
+// violates that constraint.
+const SCORE_FIELD_SET = new Set(Object.keys(SCORE_WEIGHTS));
+
 export function createArtist(input: ArtistInput, actor?: Actor | null): Artist {
   const now = new Date().toISOString();
   const row: Record<string, unknown> = { created_at: now, updated_at: now, created_by: actor?.id ?? null };
   for (const field of WRITABLE_FIELDS) {
-    row[field] = (input as any)[field] ?? (field === 'stage' ? 'watchlist' : null);
+    const value = (input as any)[field];
+    if (value != null) row[field] = value;
+    else if (field === 'stage') row[field] = 'watchlist';
+    else if (SCORE_FIELD_SET.has(field)) row[field] = 0;
+    else row[field] = null;
   }
   const columns = ['created_at', 'updated_at', 'created_by', ...WRITABLE_FIELDS];
   const placeholders = columns.map((c) => `@${c}`).join(', ');
@@ -1108,4 +1147,134 @@ export function getFoundingBelieverRecordsForUser(
     WHERE next_founding_believers.user_id = ?
     ORDER BY next_founding_believers.purchased_at DESC
   `).all(userId) as (FoundingBelieverRecord & { artist_name: string; artist_photo_url?: string })[];
+}
+
+// --- Discovery Engine ---
+
+export function getTrackedSoundchartsUuids(): Set<string> {
+  const rows = db.prepare("SELECT soundcharts_uuid FROM artists WHERE soundcharts_uuid IS NOT NULL").all() as { soundcharts_uuid: string }[];
+  return new Set(rows.map((r) => r.soundcharts_uuid));
+}
+
+// Candidates already reviewed (watching/approved/passed) for a name are
+// skipped on future scans too — a "no thanks" from a Scout should stick,
+// not reappear every day just because the artist is still growing.
+export function getKnownDiscoveryUuids(): Set<string> {
+  const rows = db.prepare('SELECT soundcharts_uuid FROM discovery_candidates').all() as { soundcharts_uuid: string }[];
+  return new Set(rows.map((r) => r.soundcharts_uuid));
+}
+
+export function createDiscoveryRun(): DiscoveryRun {
+  const now = new Date().toISOString();
+  const info = db
+    .prepare("INSERT INTO discovery_runs (started_at, status, searched_count, candidates_found) VALUES (?, 'running', 0, 0)")
+    .run(now);
+  return db.prepare('SELECT * FROM discovery_runs WHERE id = ?').get(info.lastInsertRowid) as DiscoveryRun;
+}
+
+export function completeDiscoveryRun(
+  id: number,
+  result: { status: 'completed' | 'failed'; searchedCount: number; candidatesFound: number; error?: string }
+): void {
+  db.prepare(`
+    UPDATE discovery_runs
+    SET completed_at = ?, status = ?, searched_count = ?, candidates_found = ?, error = ?
+    WHERE id = ?
+  `).run(new Date().toISOString(), result.status, result.searchedCount, result.candidatesFound, result.error ?? null, id);
+}
+
+export function getLatestDiscoveryRun(): DiscoveryRun | undefined {
+  return db.prepare('SELECT * FROM discovery_runs ORDER BY started_at DESC LIMIT 1').get() as DiscoveryRun | undefined;
+}
+
+export type NewDiscoveryCandidate = {
+  soundcharts_uuid: string;
+  name: string;
+  photo_url?: string;
+  country?: string;
+  followers_count?: number;
+  followers_7d_ago?: number;
+  followers_30d_ago?: number;
+  growth_7d_pct?: number;
+  growth_30d_pct?: number;
+  flagged_reason: string;
+};
+
+export function insertDiscoveryCandidate(c: NewDiscoveryCandidate): void {
+  db.prepare(`
+    INSERT INTO discovery_candidates (
+      soundcharts_uuid, name, photo_url, country, followers_count, followers_7d_ago, followers_30d_ago,
+      growth_7d_pct, growth_30d_pct, flagged_reason, status, discovered_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
+  `).run(
+    c.soundcharts_uuid, c.name, c.photo_url ?? null, c.country ?? null,
+    c.followers_count ?? null, c.followers_7d_ago ?? null, c.followers_30d_ago ?? null,
+    c.growth_7d_pct ?? null, c.growth_30d_pct ?? null, c.flagged_reason, new Date().toISOString()
+  );
+}
+
+const DISCOVERY_CANDIDATE_SELECT = `
+  SELECT discovery_candidates.*, users.name AS reviewed_by_name
+  FROM discovery_candidates
+  LEFT JOIN users ON users.id = discovery_candidates.reviewed_by
+`;
+
+export function getDiscoveryCandidates(status?: DiscoveryCandidateStatus): DiscoveryCandidate[] {
+  if (status) {
+    return db
+      .prepare(`${DISCOVERY_CANDIDATE_SELECT} WHERE discovery_candidates.status = ? ORDER BY discovery_candidates.growth_30d_pct DESC NULLS LAST, discovery_candidates.discovered_at DESC`)
+      .all(status) as DiscoveryCandidate[];
+  }
+  return db
+    .prepare(`${DISCOVERY_CANDIDATE_SELECT} ORDER BY discovery_candidates.discovered_at DESC`)
+    .all() as DiscoveryCandidate[];
+}
+
+export function getNewDiscoveryCandidateCount(): number {
+  const row = db.prepare("SELECT COUNT(*) AS c FROM discovery_candidates WHERE status = 'new'").get() as { c: number };
+  return row.c;
+}
+
+export function getDiscoveryCandidate(id: number): DiscoveryCandidate | undefined {
+  return db.prepare(`${DISCOVERY_CANDIDATE_SELECT} WHERE discovery_candidates.id = ?`).get(id) as DiscoveryCandidate | undefined;
+}
+
+export function setDiscoveryCandidateStatus(
+  id: number,
+  status: 'watching' | 'passed',
+  actor: Actor
+): DiscoveryCandidate | undefined {
+  const info = db
+    .prepare('UPDATE discovery_candidates SET status = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?')
+    .run(status, new Date().toISOString(), actor.id, id);
+  if (info.changes === 0) return undefined;
+  return getDiscoveryCandidate(id);
+}
+
+// Approving a candidate creates the real, editable artist row — pre-filled
+// with what Discovery already knows, stage 'watchlist', score inputs at the
+// neutral default. It does NOT auto-list on NEXT or assign a Breakout Score;
+// a human still rates the eight categories before this artist is real to
+// the product, same as any artist Scout added by hand.
+export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | undefined {
+  const candidate = getDiscoveryCandidate(id);
+  if (!candidate || candidate.status === 'approved') return undefined;
+
+  const artist = createArtist(
+    {
+      name: candidate.name,
+      photo_url: candidate.photo_url,
+      location: candidate.country,
+      followers_count: candidate.followers_count,
+      growth_velocity_pct: candidate.growth_30d_pct,
+      soundcharts_uuid: candidate.soundcharts_uuid,
+      why_trending: candidate.flagged_reason,
+    },
+    actor
+  );
+
+  db.prepare('UPDATE discovery_candidates SET status = ?, reviewed_at = ?, reviewed_by = ?, artist_id = ? WHERE id = ?')
+    .run('approved', new Date().toISOString(), actor.id, artist.id, id);
+
+  return artist;
 }

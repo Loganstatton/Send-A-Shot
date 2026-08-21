@@ -23,7 +23,7 @@ export function soundchartsConfigured(): boolean {
 
 type SoundchartsResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-async function soundchartsFetch(path: string): Promise<SoundchartsResult<any>> {
+async function soundchartsFetch(path: string, init?: { method?: string; body?: unknown }): Promise<SoundchartsResult<any>> {
   const appId = process.env.SOUNDCHARTS_APP_ID;
   const apiKey = process.env.SOUNDCHARTS_API_KEY;
   if (!appId || !apiKey) return { ok: false, error: 'Soundcharts is not configured on this server.' };
@@ -31,7 +31,13 @@ async function soundchartsFetch(path: string): Promise<SoundchartsResult<any>> {
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
-      headers: { 'x-app-id': appId, 'x-api-key': apiKey },
+      method: init?.method ?? 'GET',
+      headers: {
+        'x-app-id': appId,
+        'x-api-key': apiKey,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: init?.body ? JSON.stringify(init.body) : undefined,
       cache: 'no-store',
     });
   } catch (err: any) {
@@ -42,7 +48,7 @@ async function soundchartsFetch(path: string): Promise<SoundchartsResult<any>> {
     const body = await res.text().catch(() => '');
     return {
       ok: false,
-      error: `Soundcharts returned ${res.status} — check SOUNDCHARTS_APP_ID/SOUNDCHARTS_API_KEY and that this server's outbound network allows customer.api.soundcharts.com. Response: ${body.slice(0, 200)}`,
+      error: `Soundcharts returned ${res.status} — check SOUNDCHARTS_APP_ID/SOUNDCHARTS_API_KEY, that this server's outbound network allows customer.api.soundcharts.com, and that this endpoint is included in your plan. Response: ${body.slice(0, 300)}`,
     };
   }
   if (res.status === 404) {
@@ -53,7 +59,7 @@ async function soundchartsFetch(path: string): Promise<SoundchartsResult<any>> {
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    return { ok: false, error: `Soundcharts returned ${res.status}: ${body.slice(0, 300)}` };
+    return { ok: false, error: `Soundcharts returned ${res.status}: ${body.slice(0, 400)}` };
   }
 
   try {
@@ -177,4 +183,92 @@ export async function getArtistData(uuid: string): Promise<SoundchartsResult<Sou
   }
 
   return { ok: true, data };
+}
+
+// --- Discovery: finding artists nobody searched for by name ---
+//
+// Search-by-name and audience-by-uuid (above) both require already knowing
+// who you're looking for — neither helps find someone new. Soundcharts'
+// actual tool for this is POST /api/v2/top/artists ("get artists ... for
+// A&R discovery" per their own docs), sortable/filterable by platform,
+// metric, period, country, genre, career stage. It's also documented as
+// "restricted to specific plans" — so a 403 here may mean the account's
+// plan doesn't include it, not a fixable bug. The exact request/response
+// shape isn't confirmed by a live call (same situation search/metadata/
+// audience were in before real data fixed them), so this starts as
+// minimally as possible and logs the raw response — check Render's logs
+// after a scan and share the "[soundcharts] raw top/artists response" line
+// so the real filter/sort keys and result shape can replace this guess.
+export type SoundchartsTopArtistHit = {
+  uuid: string;
+  name: string;
+  imageUrl?: string;
+  countryCode?: string;
+};
+
+export async function topArtists(): Promise<SoundchartsResult<SoundchartsTopArtistHit[]>> {
+  const result = await soundchartsFetch('/api/v2/top/artists', {
+    method: 'POST',
+    body: {
+      sort: { platform: 'spotify', metricType: 'followerCount', period: 'month', order: 'desc' },
+    },
+  });
+
+  console.log('[soundcharts] raw top/artists response:', JSON.stringify(result).slice(0, 4000));
+
+  if (!result.ok) return result;
+
+  const items = pick(result.data, 'items') ?? [];
+  if (!Array.isArray(items)) return { ok: false, error: 'Unexpected top/artists response shape from Soundcharts.' };
+
+  const hits: SoundchartsTopArtistHit[] = items
+    .map((item: any) => {
+      const artist = pick(item, 'artist', 'object') ?? item;
+      return {
+        uuid: pick(artist, 'uuid', 'id'),
+        name: pick(artist, 'name'),
+        imageUrl: pick(artist, 'imageUrl', 'image_url'),
+        countryCode: pick(artist, 'countryCode', 'country_code'),
+      };
+    })
+    .filter((h: SoundchartsTopArtistHit) => h.uuid && h.name);
+
+  return { ok: true, data: hits };
+}
+
+// Real follower history for one candidate, reusing the confirmed-working
+// audience endpoint — returns null (not an error) on any failure, so one
+// bad candidate never aborts a whole scan.
+export async function getFollowerHistory(uuid: string): Promise<{ latest: number; sevenDaysAgo?: number; thirtyDaysAgo?: number } | null> {
+  const result = await soundchartsFetch(`/api/v2/artist/${encodeURIComponent(uuid)}/audience/spotify`);
+  if (!result.ok) return null;
+
+  const items = (pick(result.data, 'items') ?? []) as any[];
+  if (!Array.isArray(items) || items.length === 0) return null;
+
+  const byDate = items
+    .map((it) => ({ date: pick(it, 'date'), value: pick(it, 'followerCount') }))
+    .filter((it) => it.date && typeof it.value === 'number')
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  if (byDate.length === 0) return null;
+  const latest = byDate[byDate.length - 1];
+  const latestTime = new Date(latest.date).getTime();
+
+  const closestTo = (daysAgo: number) => {
+    const targetTime = latestTime - daysAgo * 86400000;
+    let best: { date: string; value: number } | undefined;
+    let bestDiff = Infinity;
+    for (const point of byDate) {
+      const diff = Math.abs(new Date(point.date).getTime() - targetTime);
+      if (diff < bestDiff) { bestDiff = diff; best = point; }
+    }
+    return best?.value;
+  };
+
+  return {
+    latest: latest.value,
+    sevenDaysAgo: closestTo(7),
+    thirtyDaysAgo: closestTo(30),
+  };
 }

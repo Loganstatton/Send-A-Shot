@@ -43,8 +43,18 @@ a licensable data product.
   actual contract and accountant say
 - SQLite (via better-sqlite3) with auto-seeding of a few example artists
 - Optional Soundcharts integration: search an artist by name to auto-fill
-  photo, bio, genre, location, and platform stats, plus a one-click re-sync
-  once linked (see setup below)
+  photo, country, follower count, and 30-day growth %, plus a one-click
+  re-sync once linked — bio, genre, and platform links stay manual, since
+  Soundcharts' artist-metadata endpoint doesn't return those on this plan,
+  confirmed against real responses (see setup below)
+- Optional Discovery Engine: a scheduled scan searches Soundcharts for
+  smaller artists (under 250K Spotify followers) showing unusual growth
+  (≥4% in 7 days or ≥8% in 30 days) and drops them into a private
+  **New Candidates** queue at `/discovery` — Approve turns one into a real,
+  editable artist (pre-filled, but never auto-scored — a human still rates
+  the eight Breakout Score categories), Watch keeps it in view, Pass drops
+  it for good. Nothing reaches NEXT without that human review (see setup
+  below)
 
 ## Quick Start
 ```bash
@@ -80,17 +90,48 @@ self-select internal access.
 ### Optional: Soundcharts integration (live metrics)
 
 Set these to enable searching Soundcharts by artist name from the Add Artist
-form (auto-fills photo, bio, genre, location, and platform stats) and a
-"Sync from Soundcharts" button on artists already linked:
+form and a "Sync from Soundcharts" button on artists already linked:
 
 ```bash
 echo "SOUNDCHARTS_APP_ID=your-app-id" >> .env.local
 echo "SOUNDCHARTS_API_KEY=your-api-key" >> .env.local
 ```
 
-Without these set, the Soundcharts panel on the artist form shows a clear
-"not configured" error instead of failing silently — everything else in the
-app works the same either way. Metrics are otherwise entered by hand.
+Confirmed against real responses: this fills in photo, country, follower
+count, and 30-day growth %. Bio, genre, and platform links (Spotify,
+Instagram, TikTok, YouTube) stay manual — Soundcharts' artist-metadata
+endpoint simply doesn't return them on this plan, even for major artists.
+Without these env vars set, the Soundcharts panel shows a clear "not
+configured" error instead of failing silently — everything else in the app
+works the same either way.
+
+### Optional: Discovery Engine (finds artists for you)
+
+Uses the same Soundcharts credentials above, plus one more:
+
+```bash
+echo "CRON_SECRET=$(openssl rand -hex 32)" >> .env.local
+```
+
+`POST /api/discovery/scan` searches Soundcharts for smaller, fast-growing
+artists and adds any it finds to the **New Candidates** queue (internal
+nav). It can be triggered two ways:
+- **Manually** — the "Run scan now" button on `/discovery`, while logged in
+  as Internal/Admin. Works immediately, no extra setup.
+- **On a schedule** — Render's web service has no built-in cron, so "every
+  day" means pointing an external scheduler at the endpoint. Any scheduler
+  works (a Render Cron Job, a GitHub Actions workflow on a schedule, a free
+  service like cron-job.org) — have it send:
+  ```
+  POST https://<your-app>/api/discovery/scan
+  Header: x-cron-secret: <the CRON_SECRET value>
+  ```
+  once a day. Without `CRON_SECRET` set, only the manual button works — the
+  automatic path simply doesn't exist yet, nothing breaks.
+
+A candidate never touches NEXT or gets a Breakout Score on its own —
+Approve just creates a normal, editable artist (stage: Watchlist, score
+sliders at 0) so a human still rates it, same as adding one by hand.
 
 ## Breakout Score weights
 
@@ -113,9 +154,11 @@ below 55 pass. See `lib/scoring.ts`.
 - Real payments/invoicing, or actual payout-waterfall accounting (recoup-then-
   commission sequencing, taxes, etc.) — the deals/revenue ledger tracks
   commitments and totals, it does not move money
-- Automated social-metrics ingestion beyond the optional Soundcharts
-  search-and-fill / sync (see above) — no scheduled refresh yet, it's a
-  manual trigger per artist
+- Scheduled re-sync of *existing* artists' stats — the Discovery Engine
+  finds new artists on a schedule, but an already-tracked artist's numbers
+  still only refresh via the manual "Sync from Soundcharts" button
+- A data-driven NEXT Score — it's still 100% the eight hand-rated
+  categories; live growth/engagement numbers aren't blended in yet
 - Invite-only signup or password reset — public signup is open (accounts
   just default to the harmless Public/NEXT role), and any Internal/Admin user
   can currently view/edit/delete any artist and any agreement — fine for a
@@ -140,6 +183,7 @@ app/                 # Next.js app router
   screener/          # Scout portfolio/ROI screener (internal)
   artists/new/       # add-artist form (internal)
   artists/[id]/      # artist detail + edit form (internal)
+  discovery/         # New Candidates queue — Approve/Watch/Pass (internal)
   admin/users/       # role management (admin only)
   next/              # NEXT: public market feed, artist stock pages, portfolio
   login/, signup/    # auth pages
@@ -153,20 +197,33 @@ app/                 # Next.js app router
   api/admin/         # role management (admin only)
   api/auth/          # signup/login/logout
   api/soundcharts/   # search + fetch-by-uuid (internal only)
+  api/discovery/     # scan trigger (session or CRON_SECRET) + candidate actions
 components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory,
                      # DealsAndRevenue, InvestmentLedger, TradePanel, RoleManager,
-                     # StatTile, Sparkline, FollowUpList, AuthForm, SoundchartsSearch
+                     # StatTile, Sparkline, FollowUpList, AuthForm, SoundchartsSearch,
+                     # DiscoveryQueue, DiscoveryScanButton
 lib/                 # sqlite db, types, scoring logic, NEXT pricing engine,
-                     # auth/role helpers, money formatting, soundcharts client
+                     # auth/role helpers, money formatting, soundcharts client,
+                     # discovery filtering logic
 data/                # sqlite file + fallback session secret live here
 ```
 
 ## Next Steps (Roadmap)
+- Blend live Soundcharts numbers into part of the Breakout Score
+  (e.g. Audience Growth Velocity, Engagement Quality) instead of every
+  category being a hand-moved slider — human judgment stays for the parts
+  a number can't capture (music quality, personality, professionalism)
+- Scheduled re-sync of already-tracked artists' stats, not just new-candidate
+  discovery
+- Populate the market with a real, curated set of emerging artists across
+  genres — the actual precondition for a meaningful closed beta
+- A closed beta with real users and the retention/engagement metrics to
+  match (return rate, listens-before-buy, trades/user, leaderboard views,
+  how often someone backs a genuinely small artist) — before any
+  monetization or real-money work is worth considering
 - Momentum alerts on NEXT ("Artist X +52% listeners in 7D")
 - Prediction markets — the remaining gamification item on top of NEXT's core
   trading loop (leaderboards and Founding Believer already shipped)
-- Scheduled/automatic Soundcharts re-sync instead of a manual per-artist
-  button
 - Crowdsourced scouting with finder's-fee attribution
 - Reminders/follow-up scheduling on top of the activity log
 - Invite-only signup and password reset
