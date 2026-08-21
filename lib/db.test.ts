@@ -11,7 +11,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 const {
   approveDiscoveryCandidate, createArtist, createUser, executeTrade, getArtist, getDiscoveryCandidates,
   getKnownDiscoveryUuids, getNewDiscoveryCandidateCount, getNextArtist, getTrackedSoundchartsUuids, getUserById,
-  insertDiscoveryCandidate, setDiscoveryCandidateStatus,
+  insertDiscoveryCandidate, setDiscoveryCandidateStatus, updateArtist,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -21,13 +21,19 @@ function makeUser(email: string) {
 }
 
 function makeArtist(name: string) {
-  // All eight score categories at 8/10 -> breakoutScore = 8 * (sum of
-  // weights)/10 = 8 * 100/10 = 80 exactly. Deterministic, no seeding needed.
+  // The six rated categories at 8/10, plus growth_velocity_pct: 32 and
+  // engagement_rate_pct: 16 — chosen because growthVelocityScore(32) and
+  // engagementQualityScore(16) both equal exactly 8.0 too (see
+  // lib/scoring.ts), so every category lands on 8 and
+  // breakoutScore = 8 * (sum of weights)/10 = 8 * 100/10 = 80 exactly.
+  // Deterministic, no seeding needed. growth_velocity/engagement_quality
+  // are NOT set directly — createArtist ignores them and always derives
+  // both from the _pct fields.
   return createArtist({
     name,
     music_talent: 8,
-    growth_velocity: 8,
-    engagement_quality: 8,
+    growth_velocity_pct: 32,
+    engagement_rate_pct: 16,
     original_song_response: 8,
     brand_personality: 8,
     content_consistency: 8,
@@ -208,8 +214,12 @@ describe('Discovery Engine — candidate queue', () => {
     expect(artist!.name).toBe('Breakout Kid');
     expect(artist!.soundcharts_uuid).toBe('uuid-approve-1');
     expect(artist!.followers_count).toBe(42_000);
-    // Human judgment is still required — approving never assigns a score.
+    // Human judgment is still required for the qualitative categories...
     expect(artist!.music_talent).toBe(0);
+    // ...but Growth Velocity is derived immediately from the real growth %
+    // Discovery already found — never manually rated, and never 0 just
+    // because nobody's looked at this artist yet.
+    expect(artist!.growth_velocity).toBeGreaterThan(0);
 
     // The candidate is now linked to the real artist and marked approved,
     // and the artist is immediately editable/findable like any other.
@@ -220,5 +230,54 @@ describe('Discovery Engine — candidate queue', () => {
 
     // And it's now tracked, so a future scan won't re-flag it.
     expect(getTrackedSoundchartsUuids().has('uuid-approve-1')).toBe(true);
+  });
+});
+
+describe('Data-driven scoring — Growth Velocity / Engagement Quality', () => {
+  it('growth_velocity is derived from growth_velocity_pct on create, ignoring any raw value sent', () => {
+    const artist = createArtist({
+      name: 'Derived Growth',
+      growth_velocity_pct: 32, // -> exactly 8.0 by design, see makeArtist
+      growth_velocity: 0.1, // still a structurally valid field on Artist — must be ignored, not trusted
+    });
+    expect(artist.growth_velocity).toBe(8);
+  });
+
+  it('engagement_quality is derived from engagement_rate_pct on create', () => {
+    const artist = createArtist({ name: 'Derived Engagement', engagement_rate_pct: 16 });
+    expect(artist.engagement_quality).toBe(8);
+  });
+
+  it('omitting growth_velocity_pct / engagement_rate_pct derives 0, not null (schema is NOT NULL)', () => {
+    const artist = createArtist({ name: 'No Data Yet' });
+    expect(artist.growth_velocity).toBe(0);
+    expect(artist.engagement_quality).toBe(0);
+  });
+
+  it('updating growth_velocity_pct alone re-derives growth_velocity without touching engagement_quality', () => {
+    const artist = createArtist({ name: 'Update Growth', growth_velocity_pct: 32, engagement_rate_pct: 16 });
+    expect(artist.growth_velocity).toBe(8);
+    expect(artist.engagement_quality).toBe(8);
+
+    const updated = updateArtist(artist.id, { name: artist.name, growth_velocity_pct: 0 })!;
+    expect(updated.growth_velocity).toBe(0);
+    // engagement_rate_pct wasn't part of this update, so its derived score
+    // is recomputed from the unchanged existing value, not blanked out.
+    expect(updated.engagement_quality).toBe(8);
+  });
+
+  it('a bigger real-world growth spike scores higher, but with diminishing returns near the ceiling', () => {
+    const modest = createArtist({ name: 'Modest Grower', growth_velocity_pct: 5 });
+    const strong = createArtist({ name: 'Strong Grower', growth_velocity_pct: 25 });
+    const huge = createArtist({ name: 'Huge Grower', growth_velocity_pct: 200 });
+
+    expect(modest.growth_velocity).toBeGreaterThan(0);
+    expect(strong.growth_velocity).toBeGreaterThan(modest.growth_velocity);
+    // Huge (200%) is clamped at the same ceiling score as a very strong
+    // but more plausible 50%+ — this is deliberate: past the ceiling, more
+    // growth doesn't buy more score.
+    const atCeiling = createArtist({ name: 'At Ceiling', growth_velocity_pct: 50 });
+    expect(huge.growth_velocity).toBe(atCeiling.growth_velocity);
+    expect(huge.growth_velocity).toBe(10);
   });
 });

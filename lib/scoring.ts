@@ -1,12 +1,44 @@
 import { SCORE_WEIGHTS, ScoreInputs } from './types';
 
-// Weighted 0-10 scout ratings -> 0-100 Breakout Score.
+// Weighted 0-10 scout ratings -> 0-100 Breakout Score. Six of the eight
+// inputs are still a human's own rating (music/talent, personality, etc. —
+// judgment a number can't replace). The other two, Growth Velocity and
+// Engagement Quality, are never hand-set anymore: see
+// growthVelocityScore()/engagementQualityScore() below, which convert a
+// real growth/engagement % into the 0-10 this function expects. This
+// function itself doesn't know or care where an input came from — it just
+// sums whatever 0-10 values it's given.
 export function breakoutScore(inputs: ScoreInputs): number {
   const total = (Object.keys(SCORE_WEIGHTS) as (keyof ScoreInputs)[]).reduce(
     (sum, key) => sum + (inputs[key] ?? 0) * (SCORE_WEIGHTS[key] / 10),
     0
   );
   return Math.round(total * 10) / 10;
+}
+
+// Converts a real 30-day follower growth % into the 0-10 Growth Velocity
+// category. Diminishing-returns curve (sqrt, not linear): going from 0% to
+// 10% growth matters more than going from 40% to 50% — sustained modest
+// growth is itself a strong signal for an artist this early, so it
+// shouldn't take a huge spike to register.
+export const GROWTH_VELOCITY_SCORE_CEILING_PCT = 50;
+
+export function growthVelocityScore(growthPct: number | null | undefined): number {
+  const clamped = Math.max(0, Math.min(GROWTH_VELOCITY_SCORE_CEILING_PCT, growthPct ?? 0));
+  return Math.round(Math.sqrt(clamped / GROWTH_VELOCITY_SCORE_CEILING_PCT) * 100) / 10;
+}
+
+// Converts a real engagement rate % into the 0-10 Engagement Quality
+// category. Linear, not curved — unlike growth, there's no strong reason
+// early engagement-% gains should count disproportionately more than later
+// ones. The 20% ceiling is a first-pass, deliberately simple band (most
+// engaged small accounts land well under it); worth revisiting once real
+// engagement data across many artists shows what "exceptional" looks like.
+export const ENGAGEMENT_SCORE_CEILING_PCT = 20;
+
+export function engagementQualityScore(engagementPct: number | null | undefined): number {
+  const clamped = Math.max(0, Math.min(ENGAGEMENT_SCORE_CEILING_PCT, engagementPct ?? 0));
+  return Math.round((clamped / ENGAGEMENT_SCORE_CEILING_PCT) * 100) / 10;
 }
 
 export type Recommendation = {

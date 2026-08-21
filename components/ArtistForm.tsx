@@ -1,12 +1,17 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { breakoutScore } from '@/lib/scoring';
+import { breakoutScore, engagementQualityScore, growthVelocityScore } from '@/lib/scoring';
 import { Artist, ArtistInput, SCORE_LABELS, SCORE_WEIGHTS, STAGES, STAGE_LABELS, ScoreInputs } from '@/lib/types';
 import ScoreBadge from './ScoreBadge';
 import SoundchartsSearch from './SoundchartsSearch';
 
-const SCORE_FIELDS = Object.keys(SCORE_WEIGHTS) as (keyof ScoreInputs)[];
+// Growth Velocity and Engagement Quality are excluded here — they're no
+// longer a human-rated slider, see the computed-value note in the Metrics
+// section below instead.
+const RATED_SCORE_FIELDS = (Object.keys(SCORE_WEIGHTS) as (keyof ScoreInputs)[]).filter(
+  (f) => f !== 'growth_velocity' && f !== 'engagement_quality'
+);
 
 type Props = {
   artist?: Artist;
@@ -32,8 +37,6 @@ export default function ArtistForm({ artist }: Props) {
     growth_velocity_pct: artist?.growth_velocity_pct ?? undefined,
     engagement_rate_pct: artist?.engagement_rate_pct ?? undefined,
     music_talent: artist?.music_talent ?? 5,
-    growth_velocity: artist?.growth_velocity ?? 5,
-    engagement_quality: artist?.engagement_quality ?? 5,
     original_song_response: artist?.original_song_response ?? 5,
     brand_personality: artist?.brand_personality ?? 5,
     content_consistency: artist?.content_consistency ?? 5,
@@ -48,10 +51,13 @@ export default function ArtistForm({ artist }: Props) {
     soundcharts_uuid: artist?.soundcharts_uuid ?? undefined,
   }));
 
+  const liveGrowthScore = growthVelocityScore(form.growth_velocity_pct);
+  const liveEngagementScore = engagementQualityScore(form.engagement_rate_pct);
+
   const liveScore = breakoutScore({
     music_talent: form.music_talent ?? 0,
-    growth_velocity: form.growth_velocity ?? 0,
-    engagement_quality: form.engagement_quality ?? 0,
+    growth_velocity: liveGrowthScore,
+    engagement_quality: liveEngagementScore,
     original_song_response: form.original_song_response ?? 0,
     brand_personality: form.brand_personality ?? 0,
     content_consistency: form.content_consistency ?? 0,
@@ -192,6 +198,10 @@ export default function ArtistForm({ artist }: Props) {
 
       <div className="card space-y-4">
         <h2 className="font-semibold text-lg">Metrics</h2>
+        <p className="text-sm text-neutral-400">
+          30-day growth and engagement rate directly drive two of the Breakout Score categories below —
+          no separate rating needed. Soundcharts sync fills growth automatically when linked.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="label">Followers</label>
@@ -204,10 +214,12 @@ export default function ArtistForm({ artist }: Props) {
           <div>
             <label className="label">30-day growth %</label>
             <input type="number" step="0.1" className="input" value={form.growth_velocity_pct ?? ''} onChange={(e) => set('growth_velocity_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
+            <p className="text-xs text-neutral-500 mt-1">→ Growth Velocity {liveGrowthScore.toFixed(1)}/10</p>
           </div>
           <div>
             <label className="label">Engagement rate %</label>
             <input type="number" step="0.1" className="input" value={form.engagement_rate_pct ?? ''} onChange={(e) => set('engagement_rate_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
+            <p className="text-xs text-neutral-500 mt-1">→ Engagement Quality {liveEngagementScore.toFixed(1)}/10</p>
           </div>
         </div>
       </div>
@@ -218,10 +230,16 @@ export default function ArtistForm({ artist }: Props) {
           <ScoreBadge score={liveScore} size="lg" />
         </div>
         <p className="text-sm text-neutral-400">
-          Rate each category 0–10. Weighted automatically into the Breakout Score (music/talent counts most, professionalism/commercial potential count least).
+          Rate each category 0–10. Weighted automatically into the Breakout Score (music/talent counts most,
+          professionalism/commercial potential count least). Growth Velocity and Engagement Quality aren't
+          rated here anymore — they're computed from the real numbers in Metrics above.
         </p>
+        <div className="flex items-center gap-4 text-sm border border-neutral-800 rounded-lg px-4 py-3">
+          <span className="text-neutral-400">Growth Velocity <strong className="text-white">{liveGrowthScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.growth_velocity}%</span>
+          <span className="text-neutral-400">Engagement Quality <strong className="text-white">{liveEngagementScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.engagement_quality}%</span>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-          {SCORE_FIELDS.map((field) => (
+          {RATED_SCORE_FIELDS.map((field) => (
             <div key={field}>
               <div className="flex items-center justify-between">
                 <label className="label mb-0">{SCORE_LABELS[field]}</label>

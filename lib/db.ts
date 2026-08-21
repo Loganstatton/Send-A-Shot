@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { breakoutScore } from './scoring';
+import { breakoutScore, engagementQualityScore, growthVelocityScore } from './scoring';
 import { DATA_DIR } from './data-dir';
 import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents } from './next-market';
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
@@ -254,8 +254,6 @@ if (count.c === 0) {
       growth_velocity_pct: 117,
       engagement_rate_pct: 14.8,
       music_talent: 9,
-      growth_velocity: 10,
-      engagement_quality: 9,
       original_song_response: 9,
       brand_personality: 8,
       content_consistency: 8,
@@ -275,8 +273,6 @@ if (count.c === 0) {
       growth_velocity_pct: 72,
       engagement_rate_pct: 11.2,
       music_talent: 8,
-      growth_velocity: 7,
-      engagement_quality: 8,
       original_song_response: 7,
       brand_personality: 7,
       content_consistency: 9,
@@ -295,8 +291,6 @@ if (count.c === 0) {
       growth_velocity_pct: 38,
       engagement_rate_pct: 12.7,
       music_talent: 9,
-      growth_velocity: 6,
-      engagement_quality: 8,
       original_song_response: 8,
       brand_personality: 6,
       content_consistency: 4,
@@ -341,6 +335,10 @@ if (count.c === 0) {
         engagement_rate_pct: null,
         notes: null,
         ...it,
+        // Bypasses createArtist() (this seed uses a raw INSERT for speed),
+        // so it has to derive these itself the same way createArtist does.
+        growth_velocity: growthVelocityScore(it.growth_velocity_pct),
+        engagement_quality: engagementQualityScore(it.engagement_rate_pct),
       });
     }
   });
@@ -381,15 +379,22 @@ const WRITABLE_FIELDS = [
   'name', 'stage', 'genre', 'location', 'scout_name',
   'tiktok_url', 'instagram_url', 'youtube_url', 'spotify_url', 'soundcloud_url',
   'followers_count', 'monthly_listeners', 'growth_velocity_pct', 'engagement_rate_pct',
-  'music_talent', 'growth_velocity', 'engagement_quality', 'original_song_response',
+  'music_talent', 'original_song_response',
   'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
   'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending', 'soundcharts_uuid',
 ] as const;
 
-// The eight score columns are NOT NULL DEFAULT 0 in the schema — a caller
-// that omits them (e.g. approving a Discovery candidate, which deliberately
-// leaves scoring to a human) must still get 0, not null, or the insert
-// violates that constraint.
+// growth_velocity and engagement_quality are deliberately NOT writable
+// fields — they're always derived from growth_velocity_pct/
+// engagement_rate_pct (see lib/scoring.ts) right here, so every write path
+// (the form, the API, Discovery's Approve) stays consistent by
+// construction instead of each caller needing to remember to compute them.
+const DERIVED_SCORE_FIELDS = ['growth_velocity', 'engagement_quality'] as const;
+
+// The six remaining (human-rated) score columns are NOT NULL DEFAULT 0 in
+// the schema — a caller that omits them (e.g. approving a Discovery
+// candidate, which deliberately leaves rating to a human) must still get
+// 0, not null, or the insert violates that constraint.
 const SCORE_FIELD_SET = new Set(Object.keys(SCORE_WEIGHTS));
 
 export function createArtist(input: ArtistInput, actor?: Actor | null): Artist {
@@ -402,7 +407,10 @@ export function createArtist(input: ArtistInput, actor?: Actor | null): Artist {
     else if (SCORE_FIELD_SET.has(field)) row[field] = 0;
     else row[field] = null;
   }
-  const columns = ['created_at', 'updated_at', 'created_by', ...WRITABLE_FIELDS];
+  row.growth_velocity = growthVelocityScore(row.growth_velocity_pct as number | null);
+  row.engagement_quality = engagementQualityScore(row.engagement_rate_pct as number | null);
+
+  const columns = ['created_at', 'updated_at', 'created_by', ...WRITABLE_FIELDS, ...DERIVED_SCORE_FIELDS];
   const placeholders = columns.map((c) => `@${c}`).join(', ');
   const info = db
     .prepare(`INSERT INTO artists (${columns.join(', ')}) VALUES (${placeholders})`)
@@ -425,6 +433,15 @@ export function updateArtist(id: number, input: ArtistInput, actor?: Actor | nul
     }
   }
   if (sets.length > 0) {
+    // Re-derive from whatever the growth/engagement % ends up being after
+    // this update (the new value if this update touched it, the existing
+    // one otherwise) — never left stale relative to the % that actually
+    // drives it.
+    const nextGrowthPct = 'growth_velocity_pct' in input ? input.growth_velocity_pct ?? null : existing.growth_velocity_pct ?? null;
+    const nextEngagementPct = 'engagement_rate_pct' in input ? input.engagement_rate_pct ?? null : existing.engagement_rate_pct ?? null;
+    sets.push('growth_velocity = @growth_velocity', 'engagement_quality = @engagement_quality');
+    row.growth_velocity = growthVelocityScore(nextGrowthPct);
+    row.engagement_quality = engagementQualityScore(nextEngagementPct);
     db.prepare(`UPDATE artists SET updated_at = @updated_at, ${sets.join(', ')} WHERE id = @id`).run(row);
   }
   const updated = getArtist(id)!;
