@@ -158,18 +158,20 @@ export async function getArtistData(uuid: string): Promise<SoundchartsResult<Sou
     youtube_url: platformUrl('youtube'),
   };
 
-  // Audience/follower counts live on a separate, less certain endpoint —
-  // best-effort only, never lets a metadata-only result fail.
+  // Confirmed against a real response (see git history): this endpoint
+  // returns Spotify FOLLOWER counts over time (field: followerCount), not
+  // "monthly listeners" — Spotify doesn't expose monthly listeners through
+  // any public API, only follower-style counts. items[] is chronological
+  // ascending, so the last entry is the most recent.
   const audience = await soundchartsFetch(`/api/v2/artist/${encodeURIComponent(uuid)}/audience/spotify`);
-  console.log('[soundcharts] raw audience response:', JSON.stringify(audience));
   if (audience.ok) {
     const items = pick(audience.data, 'items') ?? [];
     const latest = Array.isArray(items) && items.length > 0 ? items[items.length - 1] : undefined;
     const earliest = Array.isArray(items) && items.length > 0 ? items[0] : undefined;
     if (latest) {
-      const latestValue = pick(latest, 'value', 'followerCount', 'listenerCount');
-      const earliestValue = earliest ? pick(earliest, 'value', 'followerCount', 'listenerCount') : undefined;
-      if (typeof latestValue === 'number') data.monthly_listeners = Math.round(latestValue);
+      const latestValue = pick(latest, 'followerCount');
+      const earliestValue = earliest ? pick(earliest, 'followerCount') : undefined;
+      if (typeof latestValue === 'number') data.followers_count = Math.round(latestValue);
       if (typeof latestValue === 'number' && typeof earliestValue === 'number' && earliestValue > 0) {
         data.growth_velocity_pct = Math.round(((latestValue - earliestValue) / earliestValue) * 1000) / 10;
       }
