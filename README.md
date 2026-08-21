@@ -102,34 +102,50 @@ below 55 pass. See `lib/scoring.ts`.
   just default to the harmless Public/NEXT role), and any Internal/Admin user
   can currently view/edit/delete any artist and any agreement — fine for a
   small trusted Scout team, not for a larger org
-- NEXT (the public paper-trading product) is a placeholder page for now —
-  see Roadmap
+- **NEXT**: the public paper-trading product, live at `/next`. Every user
+  (any role) gets $10,000 in virtual NEXT Credits and a portfolio. Each
+  artist has a **NEXT Score** (the Breakout Score — predicts breakout
+  likelihood, moves on artist performance data) and a separate **NEXT
+  Price** (what the community currently pays — starts from a transparent
+  score-based formula, then moves purely on paper buy/sell demand: ~5% per
+  $10,000 traded on one side). They're allowed to diverge on purpose — a
+  high score at a low price is "undervalued." Buy/sell by dollar amount,
+  average-cost P&L, full transaction history, portfolio value/return.
+  Public artist pages show only public-safe fields (name, genre, location,
+  public socials, growth metrics, score, price) — never Scout's notes,
+  stage, or scout attribution
 
 ## Project Structure
 ```
 app/                 # Next.js app router
-  page.tsx           # dashboard
-  artists/new/       # add-artist form
-  artists/[id]/      # artist detail + edit form
+  page.tsx           # Scout dashboard (internal)
+  screener/          # Scout portfolio/ROI screener (internal)
+  artists/new/       # add-artist form (internal)
+  artists/[id]/      # artist detail + edit form (internal)
+  admin/users/       # role management (admin only)
+  next/              # NEXT: public market feed, artist stock pages, portfolio
   login/, signup/    # auth pages
-  api/artists/       # REST API (list/create/get/update/delete)
+  api/artists/       # Scout REST API (internal/admin only)
     [id]/log/        # activity log entries (outreach, notes, stage changes)
     [id]/history/    # score/metric snapshots over time
     [id]/agreements/ # deal terms (type, status, commission %, investment)
     [id]/revenue/    # revenue entries, optionally linked to an agreement
+    [id]/investments/# categorized spend ledger (marketing/studio/video/etc)
+  api/next/          # NEXT trade endpoint (any logged-in user)
+  api/admin/         # role management (admin only)
   api/auth/          # signup/login/logout
 components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory,
-                     # DealsAndRevenue, AuthForm
-lib/                 # sqlite db, types, scoring logic, auth/session helpers, money formatting
+                     # DealsAndRevenue, InvestmentLedger, TradePanel, RoleManager,
+                     # StatTile, Sparkline, FollowUpList, AuthForm
+lib/                 # sqlite db, types, scoring logic, NEXT pricing engine,
+                     # auth/role helpers, money formatting
 data/                # sqlite file + fallback session secret live here
 ```
 
 ## Next Steps (Roadmap)
-- NEXT: the public paper-trading product — $10k virtual NEXT Credits per
-  public user, a NEXT Price per artist (separate from the Breakout/NEXT
-  Score — price moves on paper buy/sell demand, score moves on artist
-  performance data), buy/sell, and a portfolio P/L page. Role gating and the
-  `/next` placeholder are already in place; the trading engine itself is next
+- Momentum alerts on NEXT ("Artist X +52% listeners in 7D")
+- Scout leaderboards, "Founding Believer" badges, prediction markets — the
+  gamification layer on top of NEXT's core trading loop
 - Automated metrics ingestion from TikTok/Instagram/YouTube/Spotify
 - Crowdsourced scouting with finder's-fee attribution
 - Reminders/follow-up scheduling on top of the activity log

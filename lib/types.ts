@@ -79,6 +79,7 @@ export type Artist = ScoreInputs & {
   notes?: string;
   created_by?: number;
   created_by_name?: string;
+  next_current_price_cents?: number;
 };
 
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {
@@ -303,4 +304,45 @@ export type InvestmentEntryInput = {
   category: InvestmentCategory;
   amount_cents: number;
   notes?: string;
+};
+
+// --- NEXT (public paper-trading product) ---
+//
+// NEXT Score (the Breakout Score) answers "how likely is this artist to
+// break out" — it moves on artist performance data. NEXT Price answers
+// "what does the NEXT community currently value this artist at" — it starts
+// from a transparent formula based on the score, then moves purely on paper
+// buy/sell demand. They're deliberately allowed to diverge: that gap (a high
+// score, low price "undervalued" artist) is the whole point.
+
+export type NextHolding = {
+  id: number;
+  user_id: number;
+  artist_id: number;
+  shares: number;
+  cost_basis_cents: number;
+  updated_at: string;
+};
+
+export type NextTransactionType = 'buy' | 'sell';
+
+export type NextTransaction = {
+  id: number;
+  user_id: number;
+  artist_id: number;
+  created_at: string;
+  type: NextTransactionType;
+  shares: number;
+  price_cents_per_share: number;
+  credits_delta_cents: number;
+  realized_pnl_cents?: number;
+};
+
+export type NextPricePoint = { recorded_at: string; price_cents: number };
+
+export type NextMarketRow = {
+  artist: Artist;
+  score: number;
+  priceCents: number;
+  priceHistory: NextPricePoint[];
 };

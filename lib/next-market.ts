@@ -1,0 +1,31 @@
+// NEXT's paper-market pricing. Deliberately transparent (no hidden formula) —
+// documented here and echoed in the UI, per the "the algorithm has an
+// opinion, the market has an opinion, you decide who's right" design.
+
+export const NEXT_STARTING_CREDITS_CENTS = 1_000_000; // $10,000.00 in NEXT Credits
+export const NEXT_MIN_PRICE_CENTS = 100; // price floor: $1.00
+
+// Base price when an artist first enters the market: a $1-$50 range, curved
+// so a strong score commands a disproportionately higher starting price
+// (score 55 -> ~$17.70, score 94 -> ~$44.84, score 100 -> $50.00).
+export function nextBasePriceCents(score: number): number {
+  const normalized = Math.max(0, Math.min(100, score)) / 100;
+  const dollars = 1 + Math.pow(normalized, 1.8) * 49;
+  return Math.round(dollars * 100);
+}
+
+// Every $10,000 of NEXT Credits traded on one side moves price ~5%. Buys
+// push it up, sells push it down; the floor keeps a heavily-sold artist from
+// hitting zero.
+const IMPACT_PER_CREDITS_CENTS = 1_000_000;
+const IMPACT_RATE = 0.05;
+
+export function priceImpactPct(creditsAmountCents: number): number {
+  return (creditsAmountCents / IMPACT_PER_CREDITS_CENTS) * IMPACT_RATE;
+}
+
+export function applyTradeImpact(priceCents: number, creditsAmountCents: number, direction: 'buy' | 'sell'): number {
+  const impact = priceImpactPct(creditsAmountCents);
+  const factor = direction === 'buy' ? 1 + impact : 1 - impact;
+  return Math.max(NEXT_MIN_PRICE_CENTS, Math.round(priceCents * factor));
+}
