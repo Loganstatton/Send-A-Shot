@@ -68,6 +68,7 @@ export async function evaluateCandidates(
     if (!reason) continue;
 
     candidates.push({
+      source: 'soundcharts',
       soundcharts_uuid: hit.uuid,
       name: hit.name,
       photo_url: hit.imageUrl,

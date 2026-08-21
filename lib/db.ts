@@ -7,7 +7,7 @@ import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nex
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import {
   Agreement, AgreementInput, Artist, ArtistInput, DiscoveryCandidate, DiscoveryCandidateStatus, DiscoveryRun,
-  DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput,
+  DiscoverySourceKey, DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput,
   LeaderboardEntry, LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction,
   NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS,
   ScoreSnapshot, ScoutProfile, SyncRun, User,
@@ -176,25 +176,6 @@ CREATE TABLE IF NOT EXISTS next_founding_believers (
   UNIQUE(user_id, artist_id)
 );
 CREATE INDEX IF NOT EXISTS idx_founding_believers_artist ON next_founding_believers(artist_id);
-CREATE TABLE IF NOT EXISTS discovery_candidates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  soundcharts_uuid TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  photo_url TEXT,
-  country TEXT,
-  followers_count INTEGER,
-  followers_7d_ago INTEGER,
-  followers_30d_ago INTEGER,
-  growth_7d_pct REAL,
-  growth_30d_pct REAL,
-  flagged_reason TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'new',
-  discovered_at TEXT NOT NULL,
-  reviewed_at TEXT,
-  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  artist_id INTEGER REFERENCES artists(id) ON DELETE SET NULL
-);
-CREATE INDEX IF NOT EXISTS idx_discovery_candidates_status ON discovery_candidates(status);
 CREATE TABLE IF NOT EXISTS discovery_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   started_at TEXT NOT NULL,
@@ -239,6 +220,111 @@ addColumnIfMissing('artists', 'top_song_url TEXT');
 addColumnIfMissing('artists', 'song_preview_url TEXT');
 addColumnIfMissing('artists', 'why_trending TEXT');
 addColumnIfMissing('artists', 'soundcharts_uuid TEXT');
+// discovery_runs originally only ever meant a Soundcharts scan; `source`
+// distinguishes it from a YouTube scan run, `quota_used` is a rough count
+// of external API calls spent (search/videos/channels for YouTube) so a
+// quota problem shows up in run history instead of only in logs.
+addColumnIfMissing('discovery_runs', "source TEXT NOT NULL DEFAULT 'soundcharts'");
+addColumnIfMissing('discovery_runs', 'quota_used INTEGER');
+
+// discovery_candidates originally required `soundcharts_uuid NOT NULL
+// UNIQUE` — Soundcharts' /top/artists was the only discovery source, so
+// every candidate had one by construction. YouTube discovery (see
+// lib/youtube-discovery.ts) adds candidates that may never get a
+// confident Soundcharts match, so that column has to become optional.
+// SQLite can't relax a column's NOT NULL/UNIQUE in place, so this is a
+// one-time table rebuild: rename the old table aside, create the new
+// shape, copy every existing row across as source='soundcharts' (the
+// only source that could have existed before this migration), drop the
+// old table. Guarded by inspecting the live schema (not a version flag),
+// so it's idempotent and safe to run on every boot — a fresh database
+// never has the old shape and just takes the "create straight away" path.
+const DISCOVERY_CANDIDATES_DDL = `
+  CREATE TABLE discovery_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL DEFAULT 'soundcharts',
+    soundcharts_uuid TEXT,
+    name TEXT NOT NULL,
+    photo_url TEXT,
+    country TEXT,
+    followers_count INTEGER,
+    followers_7d_ago INTEGER,
+    followers_30d_ago INTEGER,
+    growth_7d_pct REAL,
+    growth_30d_pct REAL,
+    yt_video_id TEXT,
+    yt_channel_id TEXT,
+    yt_channel_title TEXT,
+    yt_genre TEXT,
+    yt_view_count INTEGER,
+    yt_like_count INTEGER,
+    yt_comment_count INTEGER,
+    yt_published_at TEXT,
+    yt_channel_subscriber_count INTEGER,
+    yt_channel_view_count INTEGER,
+    yt_views_per_day REAL,
+    yt_like_rate REAL,
+    yt_comment_rate REAL,
+    yt_views_per_subscriber REAL,
+    momentum_score REAL,
+    flagged_reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'new',
+    discovered_at TEXT NOT NULL,
+    reviewed_at TEXT,
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    artist_id INTEGER REFERENCES artists(id) ON DELETE SET NULL
+  )
+`;
+
+function ensureDiscoveryCandidatesIndexes() {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_discovery_candidates_status ON discovery_candidates(status);
+    -- Each source has its own identity/dedup key. Partial unique indexes
+    -- (not a column-level UNIQUE) because only one source's key column is
+    -- ever populated on a given row.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_candidates_soundcharts_uuid
+      ON discovery_candidates(soundcharts_uuid) WHERE soundcharts_uuid IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_discovery_candidates_yt_channel
+      ON discovery_candidates(yt_channel_id) WHERE yt_channel_id IS NOT NULL;
+  `);
+}
+
+function ensureDiscoveryCandidatesSchema() {
+  const tableExists = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'discovery_candidates'")
+    .get();
+  if (!tableExists) {
+    db.exec(DISCOVERY_CANDIDATES_DDL);
+    ensureDiscoveryCandidatesIndexes();
+    return;
+  }
+
+  const cols = db.prepare('PRAGMA table_info(discovery_candidates)').all() as { name: string; notnull: number }[];
+  const uuidCol = cols.find((c) => c.name === 'soundcharts_uuid');
+  const alreadyMigrated = Boolean(uuidCol) && uuidCol!.notnull === 0 && cols.some((c) => c.name === 'source');
+  if (alreadyMigrated) {
+    ensureDiscoveryCandidatesIndexes();
+    return;
+  }
+
+  db.exec('ALTER TABLE discovery_candidates RENAME TO discovery_candidates_pre_youtube');
+  db.exec(DISCOVERY_CANDIDATES_DDL);
+  db.exec(`
+    INSERT INTO discovery_candidates (
+      id, source, soundcharts_uuid, name, photo_url, country,
+      followers_count, followers_7d_ago, followers_30d_ago, growth_7d_pct, growth_30d_pct,
+      flagged_reason, status, discovered_at, reviewed_at, reviewed_by, artist_id
+    )
+    SELECT
+      id, 'soundcharts', soundcharts_uuid, name, photo_url, country,
+      followers_count, followers_7d_ago, followers_30d_ago, growth_7d_pct, growth_30d_pct,
+      flagged_reason, status, discovered_at, reviewed_at, reviewed_by, artist_id
+    FROM discovery_candidates_pre_youtube
+  `);
+  db.exec('DROP TABLE discovery_candidates_pre_youtube');
+  ensureDiscoveryCandidatesIndexes();
+}
+ensureDiscoveryCandidatesSchema();
 
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
@@ -1219,35 +1305,50 @@ export function getLatestSyncRun(): SyncRun | undefined {
 // skipped on future scans too — a "no thanks" from a Scout should stick,
 // not reappear every day just because the artist is still growing.
 export function getKnownDiscoveryUuids(): Set<string> {
-  const rows = db.prepare('SELECT soundcharts_uuid FROM discovery_candidates').all() as { soundcharts_uuid: string }[];
+  const rows = db
+    .prepare('SELECT soundcharts_uuid FROM discovery_candidates WHERE soundcharts_uuid IS NOT NULL')
+    .all() as { soundcharts_uuid: string }[];
   return new Set(rows.map((r) => r.soundcharts_uuid));
 }
 
-export function createDiscoveryRun(): DiscoveryRun {
+// Same "a no-thanks sticks" rule, keyed by YouTube channel instead — a
+// channel already sitting in the queue (any status) is skipped on future
+// YouTube scans, whether or not it ever picked up a Soundcharts match.
+export function getKnownDiscoveryYoutubeChannelIds(): Set<string> {
+  const rows = db
+    .prepare('SELECT yt_channel_id FROM discovery_candidates WHERE yt_channel_id IS NOT NULL')
+    .all() as { yt_channel_id: string }[];
+  return new Set(rows.map((r) => r.yt_channel_id));
+}
+
+export function createDiscoveryRun(source: DiscoverySourceKey = 'soundcharts'): DiscoveryRun {
   const now = new Date().toISOString();
   const info = db
-    .prepare("INSERT INTO discovery_runs (started_at, status, searched_count, candidates_found) VALUES (?, 'running', 0, 0)")
-    .run(now);
+    .prepare("INSERT INTO discovery_runs (started_at, status, searched_count, candidates_found, source) VALUES (?, 'running', 0, 0, ?)")
+    .run(now, source);
   return db.prepare('SELECT * FROM discovery_runs WHERE id = ?').get(info.lastInsertRowid) as DiscoveryRun;
 }
 
 export function completeDiscoveryRun(
   id: number,
-  result: { status: 'completed' | 'failed'; searchedCount: number; candidatesFound: number; error?: string }
+  result: { status: 'completed' | 'failed'; searchedCount: number; candidatesFound: number; error?: string; quotaUsed?: number }
 ): void {
   db.prepare(`
     UPDATE discovery_runs
-    SET completed_at = ?, status = ?, searched_count = ?, candidates_found = ?, error = ?
+    SET completed_at = ?, status = ?, searched_count = ?, candidates_found = ?, error = ?, quota_used = ?
     WHERE id = ?
-  `).run(new Date().toISOString(), result.status, result.searchedCount, result.candidatesFound, result.error ?? null, id);
+  `).run(new Date().toISOString(), result.status, result.searchedCount, result.candidatesFound, result.error ?? null, result.quotaUsed ?? null, id);
 }
 
-export function getLatestDiscoveryRun(): DiscoveryRun | undefined {
-  return db.prepare('SELECT * FROM discovery_runs ORDER BY started_at DESC LIMIT 1').get() as DiscoveryRun | undefined;
+export function getLatestDiscoveryRun(source: DiscoverySourceKey = 'soundcharts'): DiscoveryRun | undefined {
+  return db
+    .prepare('SELECT * FROM discovery_runs WHERE source = ? ORDER BY started_at DESC LIMIT 1')
+    .get(source) as DiscoveryRun | undefined;
 }
 
 export type NewDiscoveryCandidate = {
-  soundcharts_uuid: string;
+  source: DiscoverySourceKey;
+  soundcharts_uuid?: string;
   name: string;
   photo_url?: string;
   country?: string;
@@ -1256,20 +1357,42 @@ export type NewDiscoveryCandidate = {
   followers_30d_ago?: number;
   growth_7d_pct?: number;
   growth_30d_pct?: number;
+  yt_video_id?: string;
+  yt_channel_id?: string;
+  yt_channel_title?: string;
+  yt_genre?: string;
+  yt_view_count?: number;
+  yt_like_count?: number;
+  yt_comment_count?: number;
+  yt_published_at?: string;
+  yt_channel_subscriber_count?: number;
+  yt_channel_view_count?: number;
+  yt_views_per_day?: number;
+  yt_like_rate?: number;
+  yt_comment_rate?: number;
+  yt_views_per_subscriber?: number;
+  momentum_score?: number;
   flagged_reason: string;
 };
 
+const DISCOVERY_CANDIDATE_COLUMNS = [
+  'source', 'soundcharts_uuid', 'name', 'photo_url', 'country',
+  'followers_count', 'followers_7d_ago', 'followers_30d_ago', 'growth_7d_pct', 'growth_30d_pct',
+  'yt_video_id', 'yt_channel_id', 'yt_channel_title', 'yt_genre', 'yt_view_count', 'yt_like_count',
+  'yt_comment_count', 'yt_published_at', 'yt_channel_subscriber_count', 'yt_channel_view_count',
+  'yt_views_per_day', 'yt_like_rate', 'yt_comment_rate', 'yt_views_per_subscriber', 'momentum_score',
+  'flagged_reason',
+] as const;
+
 export function insertDiscoveryCandidate(c: NewDiscoveryCandidate): void {
+  const columns = [...DISCOVERY_CANDIDATE_COLUMNS, 'status', 'discovered_at'];
+  const placeholders = DISCOVERY_CANDIDATE_COLUMNS.map((col) => `@${col}`).join(', ');
+  const row: Record<string, unknown> = { discovered_at: new Date().toISOString() };
+  for (const col of DISCOVERY_CANDIDATE_COLUMNS) row[col] = (c as any)[col] ?? null;
   db.prepare(`
-    INSERT INTO discovery_candidates (
-      soundcharts_uuid, name, photo_url, country, followers_count, followers_7d_ago, followers_30d_ago,
-      growth_7d_pct, growth_30d_pct, flagged_reason, status, discovered_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
-  `).run(
-    c.soundcharts_uuid, c.name, c.photo_url ?? null, c.country ?? null,
-    c.followers_count ?? null, c.followers_7d_ago ?? null, c.followers_30d_ago ?? null,
-    c.growth_7d_pct ?? null, c.growth_30d_pct ?? null, c.flagged_reason, new Date().toISOString()
-  );
+    INSERT INTO discovery_candidates (${columns.join(', ')})
+    VALUES (${placeholders}, 'new', @discovered_at)
+  `).run(row);
 }
 
 const DISCOVERY_CANDIDATE_SELECT = `
@@ -1278,10 +1401,14 @@ const DISCOVERY_CANDIDATE_SELECT = `
   LEFT JOIN users ON users.id = discovery_candidates.reviewed_by
 `;
 
+// Soundcharts candidates rank by 30-day growth %, YouTube candidates by
+// momentum_score — different scales, but both roughly "how hot is this
+// right now" on a 0-a-few-hundred range, so COALESCE-ing them into one
+// sort is an acceptable MVP approximation rather than two separate lists.
 export function getDiscoveryCandidates(status?: DiscoveryCandidateStatus): DiscoveryCandidate[] {
   if (status) {
     return db
-      .prepare(`${DISCOVERY_CANDIDATE_SELECT} WHERE discovery_candidates.status = ? ORDER BY discovery_candidates.growth_30d_pct DESC NULLS LAST, discovery_candidates.discovered_at DESC`)
+      .prepare(`${DISCOVERY_CANDIDATE_SELECT} WHERE discovery_candidates.status = ? ORDER BY COALESCE(discovery_candidates.momentum_score, discovery_candidates.growth_30d_pct) DESC NULLS LAST, discovery_candidates.discovered_at DESC`)
       .all(status) as DiscoveryCandidate[];
   }
   return db
@@ -1324,6 +1451,7 @@ export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | un
       name: candidate.name,
       photo_url: candidate.photo_url,
       location: candidate.country,
+      genre: candidate.yt_genre,
       followers_count: candidate.followers_count,
       growth_velocity_pct: candidate.growth_30d_pct,
       soundcharts_uuid: candidate.soundcharts_uuid,
