@@ -455,3 +455,20 @@ export type DiscoveryRun = {
   candidates_found: number;
   error?: string;
 };
+
+export type SyncRunStatus = 'running' | 'completed' | 'failed';
+
+// One row per Soundcharts sync — same "last run: X ago" visibility as
+// DiscoveryRun above, so an automated daily sync that silently starts
+// failing (bad CRON_SECRET, plan-restricted endpoint) shows up on the
+// dashboard instead of only in server logs.
+export type SyncRun = {
+  id: number;
+  started_at: string;
+  completed_at?: string;
+  status: SyncRunStatus;
+  checked_count: number;
+  updated_count: number;
+  failed_count: number;
+  error?: string;
+};

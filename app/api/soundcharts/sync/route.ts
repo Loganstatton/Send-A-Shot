@@ -1,0 +1,66 @@
+import { NextResponse } from 'next/server';
+import { getInternalUser } from '@/lib/auth';
+import { completeSyncRun, createSyncRun, getArtistsWithSoundchartsLink, updateArtist } from '@/lib/db';
+import { getArtistData, soundchartsConfigured } from '@/lib/soundcharts';
+import { ArtistInput } from '@/lib/types';
+
+export const dynamic = 'force-dynamic';
+
+// Same dual-auth pattern as /api/discovery/scan: a logged-in internal
+// session (a manual "Sync all now"), or a shared secret for an external
+// scheduler. This is what lets growth_velocity_pct/followers_count/etc.
+// across the whole roster stay current WITHOUT anyone clicking the
+// per-artist "Sync from Soundcharts" button on every artist, every day —
+// see README for wiring up a daily scheduler.
+async function isAuthorized(req: Request): Promise<boolean> {
+  const user = await getInternalUser();
+  if (user) return true;
+  const secret = process.env.CRON_SECRET;
+  return Boolean(secret) && req.headers.get('x-cron-secret') === secret;
+}
+
+export async function POST(req: Request) {
+  if (!(await isAuthorized(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  if (!soundchartsConfigured()) {
+    return NextResponse.json({ error: 'Soundcharts is not configured on this server.' }, { status: 503 });
+  }
+
+  const run = createSyncRun();
+  const linked = getArtistsWithSoundchartsLink();
+  let updatedCount = 0;
+  let failedCount = 0;
+
+  try {
+    for (const { id, soundcharts_uuid } of linked) {
+      const result = await getArtistData(soundcharts_uuid);
+      if (!result.ok) {
+        failedCount++;
+        continue;
+      }
+      // Same rule the manual "Sync from Soundcharts" button follows: only
+      // fields Soundcharts actually returned a value for get written, so a
+      // transient gap in their response never blanks out something a Scout
+      // typed in by hand. Unlike the manual button, `name` is deliberately
+      // excluded here — a background job silently renaming an artist with
+      // no human reviewing the change first is the wrong default; a Scout
+      // can still pull the new name in via the manual button if it matters.
+      const { name: _name, ...rest } = result.data;
+      const nonEmpty = Object.fromEntries(Object.entries(rest).filter(([, v]) => v != null && v !== ''));
+      if (Object.keys(nonEmpty).length > 0) {
+        // updateArtist only writes fields present in the object (see
+        // lib/db.ts) — ArtistInput's required `name` is a create-time
+        // constraint that doesn't apply to a partial update like this one.
+        updateArtist(id, nonEmpty as ArtistInput);
+        updatedCount++;
+      }
+    }
+
+    completeSyncRun(run.id, { status: 'completed', checkedCount: linked.length, updatedCount, failedCount });
+    return NextResponse.json({ runId: run.id, checked: linked.length, updated: updatedCount, failed: failedCount });
+  } catch (err: any) {
+    const message = err?.message ?? 'Unknown error during sync.';
+    completeSyncRun(run.id, { status: 'failed', checkedCount: linked.length, updatedCount, failedCount, error: message });
+    return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
+  }
+}

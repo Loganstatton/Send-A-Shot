@@ -9,8 +9,9 @@ import { describe, expect, it } from 'vitest';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
 const {
-  approveDiscoveryCandidate, createArtist, createUser, executeTrade, getArtist, getDiscoveryCandidates,
-  getKnownDiscoveryUuids, getNewDiscoveryCandidateCount, getNextArtist, getTrackedSoundchartsUuids, getUserById,
+  approveDiscoveryCandidate, completeSyncRun, createArtist, createSyncRun, createUser, executeTrade,
+  getArtist, getArtistsWithSoundchartsLink, getDiscoveryCandidates, getKnownDiscoveryUuids,
+  getLatestSyncRun, getNewDiscoveryCandidateCount, getNextArtist, getTrackedSoundchartsUuids, getUserById,
   insertDiscoveryCandidate, setDiscoveryCandidateStatus, updateArtist,
 } = await import('./db');
 
@@ -279,5 +280,42 @@ describe('Data-driven scoring — Growth Velocity / Engagement Quality', () => {
     const atCeiling = createArtist({ name: 'At Ceiling', growth_velocity_pct: 50 });
     expect(huge.growth_velocity).toBe(atCeiling.growth_velocity);
     expect(huge.growth_velocity).toBe(10);
+  });
+});
+
+describe('Automated Soundcharts sync', () => {
+  it('getArtistsWithSoundchartsLink only returns artists with a linked uuid', () => {
+    const linked = createArtist({ name: 'Linked Artist', soundcharts_uuid: 'uuid-linked-1' });
+    createArtist({ name: 'Unlinked Artist' });
+
+    const rows = getArtistsWithSoundchartsLink();
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(linked.id);
+    expect(rows.find((r) => r.id === linked.id)?.soundcharts_uuid).toBe('uuid-linked-1');
+  });
+
+  it('createSyncRun/completeSyncRun/getLatestSyncRun round-trip a run record', () => {
+    const run = createSyncRun();
+    expect(run.status).toBe('running');
+
+    completeSyncRun(run.id, { status: 'completed', checkedCount: 5, updatedCount: 3, failedCount: 1 });
+
+    const latest = getLatestSyncRun()!;
+    expect(latest.id).toBe(run.id);
+    expect(latest.status).toBe('completed');
+    expect(latest.checked_count).toBe(5);
+    expect(latest.updated_count).toBe(3);
+    expect(latest.failed_count).toBe(1);
+    expect(latest.completed_at).toBeTruthy();
+  });
+
+  it('a failed sync run records its error message', () => {
+    const run = createSyncRun();
+    completeSyncRun(run.id, { status: 'failed', checkedCount: 0, updatedCount: 0, failedCount: 0, error: 'Soundcharts unreachable' });
+
+    const latest = getLatestSyncRun()!;
+    expect(latest.id).toBe(run.id);
+    expect(latest.status).toBe('failed');
+    expect(latest.error).toBe('Soundcharts unreachable');
   });
 });
