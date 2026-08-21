@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getUserHoldings, getUserTransactions } from '@/lib/db';
+import { getPortfolioValue, getUserHoldings, getUserTransactions } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
 import StatTile from '@/components/StatTile';
@@ -13,6 +13,7 @@ export default async function NextPortfolioPage() {
   const user = await requireUser();
   const holdings = getUserHoldings(user.id);
   const transactions = getUserTransactions(user.id);
+  const portfolio = getPortfolioValue(user.id);
 
   const holdingsWithValue = holdings.map((h) => {
     const marketValueCents = Math.round(h.shares * h.price_cents);
@@ -20,28 +21,27 @@ export default async function NextPortfolioPage() {
     return { ...h, marketValueCents, unrealizedPnlCents };
   });
 
-  const totalHoldingsValueCents = holdingsWithValue.reduce((sum, h) => sum + h.marketValueCents, 0);
   const totalUnrealizedPnlCents = holdingsWithValue.reduce((sum, h) => sum + h.unrealizedPnlCents, 0);
   const totalRealizedPnlCents = transactions.reduce((sum, t) => sum + (t.realized_pnl_cents ?? 0), 0);
-  const totalPortfolioValueCents = user.next_credits_cents + totalHoldingsValueCents;
-  const totalReturnCents = totalPortfolioValueCents - 1_000_000; // started with $10,000
-  const totalReturnPct = Math.round((totalReturnCents / 1_000_000) * 1000) / 10;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Your Portfolio</h1>
-        <p className="text-neutral-400 text-sm">Paper trading — NEXT Credits have no real monetary value.</p>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Your Portfolio</h1>
+          <p className="text-neutral-400 text-sm">Paper trading — NEXT Credits have no real monetary value.</p>
+        </div>
+        <Link href={`/next/profile/${user.id}`} className="btn text-sm">View your Scout Profile</Link>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <StatTile label="Portfolio value" value={formatCents(totalPortfolioValueCents)} />
+        <StatTile label="Portfolio value" value={formatCents(portfolio.totalValueCents)} />
         <StatTile label="Cash balance" value={formatCents(user.next_credits_cents)} />
         <StatTile
           label="Total return"
-          value={`${totalReturnPct > 0 ? '+' : ''}${totalReturnPct}%`}
-          delta={formatCents(totalReturnCents)}
-          deltaTone={totalReturnCents >= 0 ? 'up' : 'down'}
+          value={`${portfolio.totalReturnPct > 0 ? '+' : ''}${portfolio.totalReturnPct}%`}
+          delta={formatCents(portfolio.totalReturnCents)}
+          deltaTone={portfolio.totalReturnCents >= 0 ? 'up' : 'down'}
         />
         <StatTile
           label="Unrealized P&L"

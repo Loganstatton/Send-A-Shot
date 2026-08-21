@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { getArtist, getHolding, getNextArtist, getScoreHistory } from '@/lib/db';
+import { getArtist, getFoundingBelieverCountForArtist, getFoundingBelieverRecord, getHolding, getNextArtist, getScoreHistory } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
 import { recommendation } from '@/lib/scoring';
@@ -33,6 +33,8 @@ export default async function NextArtistPage({ params }: { params: { id: string 
   const sentiment = marketSentiment(score, priceCents);
   const holding = getHolding(user.id, id);
   const scoreHistory = getScoreHistory(id);
+  const foundingRecord = getFoundingBelieverRecord(user.id, id);
+  const backerCount = getFoundingBelieverCountForArtist(id);
 
   const links = [
     { label: 'TikTok', url: artist.tiktok_url },
@@ -57,11 +59,28 @@ export default async function NextArtistPage({ params }: { params: { id: string 
               <SentimentBadge sentiment={sentiment} size="sm" />
               {artist.song_preview_url && <AudioPreview src={artist.song_preview_url} label={`Hear ${artist.name.split(' ')[0]}`} />}
             </div>
+            {backerCount > 0 && (
+              <p className="text-xs text-neutral-500 mt-2">🏆 {backerCount} Scout{backerCount === 1 ? '' : 's'} backed this artist</p>
+            )}
           </div>
         </div>
       </div>
 
       {artist.bio && <p className="text-neutral-300 text-sm max-w-2xl">{artist.bio}</p>}
+
+      {foundingRecord && (
+        <div className="card border-amber-500/30 bg-amber-500/5">
+          <p className="font-semibold text-amber-300">🏆 Founding Believer</p>
+          <p className="text-sm text-neutral-300 mt-1">
+            You backed {artist.name} on {new Date(foundingRecord.purchased_at).toLocaleDateString()}
+            {foundingRecord.followers_count != null && (
+              <> — {foundingRecord.followers_count.toLocaleString()} followers then, {artist.followers_count?.toLocaleString() ?? '—'} today</>
+            )}
+            . You were the #{foundingRecord.discovery_rank} person to back them.
+          </p>
+          <p className="text-xs text-neutral-500 mt-1">This stays true even if you&apos;ve since sold — being early doesn&apos;t expire.</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
