@@ -10,10 +10,22 @@ const TYPE_CLASSES: Record<LogType, string> = {
   status_change: 'bg-amber-500/20 border-amber-500/40 text-amber-300',
 };
 
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function followUpBadge(followUpAt: string) {
+  const overdue = followUpAt < todayISO();
+  return overdue
+    ? { label: `Overdue ${followUpAt}`, className: 'bg-red-500/20 border-red-500/40 text-red-300' }
+    : { label: `Follow up ${followUpAt}`, className: 'bg-amber-500/20 border-amber-500/40 text-amber-300' };
+}
+
 export default function ActivityLog({ artistId }: { artistId: number }) {
   const [entries, setEntries] = useState<LogEntry[] | null>(null);
   const [type, setType] = useState<LogType>('note');
   const [message, setMessage] = useState('');
+  const [followUpAt, setFollowUpAt] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function load() {
@@ -34,9 +46,10 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
       await fetch(`/api/artists/${artistId}/log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, message }),
+        body: JSON.stringify({ type, message, follow_up_at: followUpAt || undefined }),
       });
       setMessage('');
+      setFollowUpAt('');
       await load();
     } finally {
       setSaving(false);
@@ -48,16 +61,36 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
     await load();
   }
 
+  async function handleClearFollowUp(id: number) {
+    await fetch(`/api/artists/${artistId}/log/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ follow_up_at: null }),
+    });
+    await load();
+  }
+
   return (
     <div className="card space-y-4">
       <h2 className="font-semibold text-lg">Activity log</h2>
 
       <form onSubmit={handleAdd} className="space-y-2">
-        <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value as LogType)}>
-          {LOG_TYPES.map((t) => (
-            <option key={t} value={t}>{LOG_TYPE_LABELS[t]}</option>
-          ))}
-        </select>
+        <div className="flex gap-2 flex-wrap">
+          <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value as LogType)}>
+            {LOG_TYPES.map((t) => (
+              <option key={t} value={t}>{LOG_TYPE_LABELS[t]}</option>
+            ))}
+          </select>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-neutral-500 whitespace-nowrap">Follow up on</label>
+            <input
+              type="date"
+              className="input w-auto"
+              value={followUpAt}
+              onChange={(e) => setFollowUpAt(e.target.value)}
+            />
+          </div>
+        </div>
         <textarea
           className="input min-h-[70px]"
           placeholder="What happened? e.g. 'Sent an intro DM about her original music.'"
@@ -81,6 +114,19 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
                   {new Date(entry.created_at).toLocaleString()}
                   {entry.author ? ` · ${entry.author}` : ''}
                 </span>
+                {entry.follow_up_at && (
+                  <span className={`badge ${followUpBadge(entry.follow_up_at).className}`}>
+                    📅 {followUpBadge(entry.follow_up_at).label}
+                    <button
+                      type="button"
+                      className="ml-1 hover:text-white"
+                      onClick={() => handleClearFollowUp(entry.id)}
+                      aria-label="Mark follow-up done"
+                    >
+                      ✓
+                    </button>
+                  </span>
+                )}
               </div>
               <p className="text-sm text-neutral-200 mt-1 break-words">{entry.message}</p>
             </div>

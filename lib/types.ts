@@ -111,11 +111,26 @@ export type LogEntry = {
   type: LogType;
   message: string;
   author?: string;
+  follow_up_at?: string;
 };
 
 export type LogEntryInput = {
   type: LogType;
   message: string;
+  follow_up_at?: string;
+};
+
+// A log entry with a follow-up date that's today or in the past, surfaced
+// across the whole roster on the dashboard so promising artists don't go
+// quiet in someone's Notes app.
+export type DueFollowUp = {
+  id: number;
+  artist_id: number;
+  artist_name: string;
+  type: LogType;
+  message: string;
+  follow_up_at: string;
+  created_at: string;
 };
 
 // A point-in-time snapshot of an artist's score inputs + Breakout Score,

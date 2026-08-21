@@ -4,8 +4,8 @@ import fs from 'fs';
 import { breakoutScore } from './scoring';
 import { DATA_DIR } from './data-dir';
 import {
-  Agreement, AgreementInput, Artist, ArtistInput, InvestmentEntry, InvestmentEntryInput, LogEntry, LogEntryInput,
-  RevenueEntry, RevenueEntryInput, ScoreSnapshot, User,
+  Agreement, AgreementInput, Artist, ArtistInput, DueFollowUp, InvestmentEntry, InvestmentEntryInput,
+  LogEntry, LogEntryInput, RevenueEntry, RevenueEntryInput, ScoreSnapshot, User,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -138,6 +138,7 @@ function addColumnIfMissing(table: string, ddl: string) {
   }
 }
 addColumnIfMissing('artists', 'created_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+addColumnIfMissing('contact_log', 'follow_up_at TEXT');
 
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
@@ -391,8 +392,8 @@ export function addLogEntry(artistId: number, input: LogEntryInput, actor?: Acto
   const now = new Date().toISOString();
   const actorId = actor && 'id' in actor ? actor.id : null;
   const info = db
-    .prepare('INSERT INTO contact_log (artist_id, created_at, type, message, author, user_id) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(artistId, now, input.type, input.message, actor?.name ?? null, actorId);
+    .prepare('INSERT INTO contact_log (artist_id, created_at, type, message, author, user_id, follow_up_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(artistId, now, input.type, input.message, actor?.name ?? null, actorId, input.follow_up_at ?? null);
   return db.prepare('SELECT * FROM contact_log WHERE id = ?').get(info.lastInsertRowid) as LogEntry;
 }
 
@@ -401,6 +402,29 @@ export function deleteLogEntry(artistId: number, logId: number): boolean {
     .prepare('DELETE FROM contact_log WHERE id = ? AND artist_id = ?')
     .run(logId, artistId);
   return info.changes > 0;
+}
+
+// Clears (or sets) the follow-up date on a log entry — used to "check off" a
+// due follow-up once it's been handled, without deleting the entry itself.
+export function setFollowUp(artistId: number, logId: number, followUpAt: string | null): LogEntry | undefined {
+  const info = db
+    .prepare('UPDATE contact_log SET follow_up_at = ? WHERE id = ? AND artist_id = ?')
+    .run(followUpAt, logId, artistId);
+  if (info.changes === 0) return undefined;
+  return db.prepare('SELECT * FROM contact_log WHERE id = ?').get(logId) as LogEntry;
+}
+
+export function getDueFollowUps(): DueFollowUp[] {
+  return db.prepare(`
+    SELECT contact_log.id, contact_log.artist_id, artists.name AS artist_name,
+      contact_log.type, contact_log.message, contact_log.follow_up_at, contact_log.created_at
+    FROM contact_log
+    JOIN artists ON artists.id = contact_log.artist_id
+    WHERE contact_log.follow_up_at IS NOT NULL
+      AND contact_log.follow_up_at <= date('now')
+      AND artists.stage != 'passed'
+    ORDER BY contact_log.follow_up_at ASC
+  `).all() as DueFollowUp[];
 }
 
 export function createUser(input: { name: string; email: string; password_hash: string }): User {

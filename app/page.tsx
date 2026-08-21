@@ -1,9 +1,10 @@
 import Link from 'next/link';
-import { getAllArtists } from '@/lib/db';
+import { getAllArtists, getDueFollowUps } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { breakoutScore } from '@/lib/scoring';
 import { STAGE_LABELS } from '@/lib/types';
 import ScoreBadge from '@/components/ScoreBadge';
+import FollowUpList from '@/components/FollowUpList';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,7 @@ export default async function DashboardPage() {
   const artists = getAllArtists()
     .map((a) => ({ ...a, score: breakoutScore(a) }))
     .sort((a, b) => b.score - a.score);
+  const dueFollowUps = getDueFollowUps();
 
   const active = artists.filter((a) => a.stage !== 'passed');
   const fire = active.filter((a) => a.score >= 85).length;
@@ -37,6 +39,8 @@ export default async function DashboardPage() {
           <Link href="/artists/new" className="btn btn-primary mt-4 inline-flex">+ Add your first artist</Link>
         </div>
       )}
+
+      <FollowUpList initial={dueFollowUps} />
 
       <div className="space-y-3">
         {active.map((artist, idx) => (
