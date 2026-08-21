@@ -1,24 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { ScoreSnapshot } from '@/lib/types';
-
-function Sparkline({ points }: { points: number[] }) {
-  if (points.length < 2) return null;
-  const w = 300;
-  const h = 60;
-  const min = Math.min(...points, 0);
-  const max = Math.max(...points, 100);
-  const range = max - min || 1;
-  const step = w / (points.length - 1);
-  const coords = points
-    .map((p, i) => `${(i * step).toFixed(1)},${(h - ((p - min) / range) * h).toFixed(1)}`)
-    .join(' ');
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-16" preserveAspectRatio="none">
-      <polyline points={coords} fill="none" stroke="#3b82f6" strokeWidth={2} />
-    </svg>
-  );
-}
+import Sparkline from './Sparkline';
 
 export default function ScoreHistory({ artistId }: { artistId: number }) {
   const [history, setHistory] = useState<ScoreSnapshot[] | null>(null);

@@ -529,3 +529,65 @@ export function deleteRevenueEntry(artistId: number, revenueId: number): boolean
     .run(revenueId, artistId);
   return info.changes > 0;
 }
+
+export type PortfolioRow = {
+  artist: Artist;
+  score: number;
+  scoreHistory: { recorded_at: string; breakout_score: number }[];
+  changeAbs: number;
+  changePct: number | null;
+  hasComparison: boolean;
+  totalInvestedCents: number;
+  totalGrossCents: number;
+  totalCommissionCents: number;
+};
+
+// One row per tracked artist: current Breakout Score, its trend since the
+// previous snapshot, and money in/out — the "stock screener" view across
+// the whole roster instead of one artist at a time.
+export function getPortfolioSummary(): PortfolioRow[] {
+  const artists = getAllArtists();
+
+  const historyRows = db
+    .prepare('SELECT artist_id, recorded_at, breakout_score FROM score_history ORDER BY recorded_at ASC')
+    .all() as { artist_id: number; recorded_at: string; breakout_score: number }[];
+  const historyByArtist = new Map<number, { recorded_at: string; breakout_score: number }[]>();
+  for (const row of historyRows) {
+    const list = historyByArtist.get(row.artist_id) ?? [];
+    list.push({ recorded_at: row.recorded_at, breakout_score: row.breakout_score });
+    historyByArtist.set(row.artist_id, list);
+  }
+
+  const investedRows = db
+    .prepare('SELECT artist_id, SUM(investment_amount_cents) as total FROM agreements WHERE investment_amount_cents IS NOT NULL GROUP BY artist_id')
+    .all() as { artist_id: number; total: number }[];
+  const investedByArtist = new Map(investedRows.map((r) => [r.artist_id, r.total]));
+
+  const revenueRows = db
+    .prepare('SELECT artist_id, SUM(commission_amount_cents) as commission, SUM(gross_amount_cents) as gross FROM revenue_entries GROUP BY artist_id')
+    .all() as { artist_id: number; commission: number | null; gross: number }[];
+  const revenueByArtist = new Map(revenueRows.map((r) => [r.artist_id, r]));
+
+  return artists.map((artist) => {
+    const history = historyByArtist.get(artist.id) ?? [];
+    const score = breakoutScore(artist);
+    const previousScore = history.length >= 2 ? history[history.length - 2].breakout_score : null;
+    const hasComparison = previousScore != null;
+    const changeAbs = hasComparison ? Math.round((score - previousScore!) * 10) / 10 : 0;
+    const changePct = hasComparison && previousScore !== 0
+      ? Math.round((changeAbs / previousScore!) * 1000) / 10
+      : null;
+    const revenue = revenueByArtist.get(artist.id);
+    return {
+      artist,
+      score,
+      scoreHistory: history,
+      changeAbs,
+      changePct,
+      hasComparison,
+      totalInvestedCents: investedByArtist.get(artist.id) ?? 0,
+      totalGrossCents: revenue?.gross ?? 0,
+      totalCommissionCents: revenue?.commission ?? 0,
+    };
+  });
+}

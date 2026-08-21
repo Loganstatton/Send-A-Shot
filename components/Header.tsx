@@ -22,6 +22,7 @@ export default function Header({ user }: { user: User | null }) {
           {user ? (
             <>
               <Link className={"btn " + (is('/') ? 'bg-white/20' : '')} href="/">Dashboard</Link>
+              <Link className={"btn " + (is('/screener') ? 'bg-white/20' : '')} href="/screener">Screener</Link>
               <Link className={"btn btn-primary " + (is('/artists/new') ? 'bg-blue-700' : '')} href="/artists/new">+ Add Artist</Link>
               <span className="text-sm text-neutral-400 hidden sm:inline">{user.name}</span>
               <button type="button" className="btn" onClick={handleLogout}>Log out</button>
