@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  computeYoutubeMetrics, MAX_CHANNEL_SUBSCRIBERS, MIN_CHANNEL_SUBSCRIBERS, MIN_VIDEO_VIEWS, MOMENTUM_SCORE_THRESHOLD,
-  passesYoutubeThresholds, youtubeFlaggedReason, youtubeMomentumScore,
+  classifyYoutubeCandidate, computeYoutubeMetrics, MAX_CHANNEL_SUBSCRIBERS, MIN_CHANNEL_SUBSCRIBERS, MIN_VIDEO_VIEWS,
+  MOMENTUM_SCORE_THRESHOLD, passesYoutubeThresholds, youtubeFlaggedReason, youtubeMomentumScore,
 } from './youtube-momentum';
 
 function daysAgo(n: number): string {
@@ -129,5 +129,27 @@ describe('passesYoutubeThresholds', () => {
   it('custom thresholds override the defaults', () => {
     expect(passesYoutubeThresholds(strongInput, strongScore, { minMomentumScore: strongScore + 1 })).toBe(false);
     expect(passesYoutubeThresholds(strongInput, strongScore, { minMomentumScore: strongScore })).toBe(true);
+  });
+});
+
+describe('classifyYoutubeCandidate', () => {
+  const strongInput = { viewCount: 150_000, likeCount: 16_800, commentCount: 1_200, publishedAt: daysAgo(6), channelSubscriberCount: 8_000 };
+  const strongScore = youtubeMomentumScore(computeYoutubeMetrics(strongInput));
+
+  it('returns "passes" for a candidate that clears every gate — same verdict as passesYoutubeThresholds', () => {
+    expect(classifyYoutubeCandidate(strongInput, strongScore)).toBe('passes');
+    expect(passesYoutubeThresholds(strongInput, strongScore)).toBe(true);
+  });
+
+  it('identifies each rejection reason distinctly, checked in gate order', () => {
+    expect(classifyYoutubeCandidate({ ...strongInput, viewCount: MIN_VIDEO_VIEWS - 1 }, 100)).toBe('below_min_views');
+    expect(classifyYoutubeCandidate({ ...strongInput, channelSubscriberCount: undefined }, 100)).toBe('no_subscriber_count');
+    expect(classifyYoutubeCandidate({ ...strongInput, channelSubscriberCount: MAX_CHANNEL_SUBSCRIBERS + 1 }, 100)).toBe('subscriber_out_of_band');
+    expect(classifyYoutubeCandidate(strongInput, 1)).toBe('below_momentum_threshold');
+  });
+
+  it('a view-count failure is reported even when the channel would also fail on subscribers — first gate wins, not a random one', () => {
+    const input = { ...strongInput, viewCount: MIN_VIDEO_VIEWS - 1, channelSubscriberCount: undefined };
+    expect(classifyYoutubeCandidate(input, 100)).toBe('below_min_views');
   });
 });

@@ -13,13 +13,27 @@
 // shape and could be adapted to implement DiscoverySource later with no
 // behavior change.
 
-import { NewDiscoveryCandidate } from './db';
-import { DiscoverySourceKey } from './types';
+import type { NewDiscoveryCandidate } from './db';
+import type { DiscoverySourceKey } from './types';
+
+// Why the candidates that DIDN'T qualify got rejected — optional because
+// only sources that do their own qualification filtering (currently just
+// YouTube) have anything to report here. Answers "did we find nothing
+// because nothing was there, or because a threshold/data gap silently
+// filtered everything?" without guessing.
+export type DiscoveryRejectionBreakdown = {
+  belowMinViews: number;
+  noSubscriberCount: number;
+  subscriberOutOfBand: number;
+  belowMomentumThreshold: number;
+  bestRejectedMomentumScore?: number; // the closest miss among belowMomentumThreshold rejections
+};
 
 export type DiscoveryScanOutcome = {
   candidates: NewDiscoveryCandidate[];
   searchedCount: number;
   quotaUsed?: number;
+  rejectionBreakdown?: DiscoveryRejectionBreakdown;
 };
 
 // The identity sets a source needs to avoid re-flagging something already

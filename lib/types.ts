@@ -487,6 +487,14 @@ export type DiscoveryRun = {
   candidates_found: number;
   quota_used?: number;
   error?: string;
+  // YouTube-only: why candidates that didn't qualify got rejected (see
+  // DiscoveryRejectionBreakdown in lib/discovery-source.ts). Always
+  // undefined on a Soundcharts-source run.
+  rejected_below_min_views?: number;
+  rejected_no_subscriber_count?: number;
+  rejected_subscriber_out_of_band?: number;
+  rejected_below_momentum_threshold?: number;
+  best_rejected_momentum_score?: number;
 };
 
 export type SyncRunStatus = 'running' | 'completed' | 'failed';

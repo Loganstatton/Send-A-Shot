@@ -133,21 +133,40 @@ export type YoutubeThresholds = {
   minMomentumScore?: number;
 };
 
+export type YoutubeCandidateRejectionReason =
+  | 'below_min_views'
+  | 'no_subscriber_count'
+  | 'subscriber_out_of_band'
+  | 'below_momentum_threshold';
+
+// The single source of truth for why a candidate does or doesn't qualify —
+// returns exactly which gate it failed instead of a plain boolean, so a
+// scan can report *why* it found nothing instead of just that it found
+// nothing (a quiet day and a broken pipeline look identical without this).
 // A channel that hides its subscriber count is skipped entirely (not
 // scored as if it had 0) — "disproportionate momentum" is meaningless
 // without a subscriber baseline to compare against.
-export function passesYoutubeThresholds(
+export function classifyYoutubeCandidate(
   input: YoutubeCandidateInputs,
   momentumScore: number,
   thresholds: YoutubeThresholds = {}
-): boolean {
+): YoutubeCandidateRejectionReason | 'passes' {
   const minSubscribers = thresholds.minSubscribers ?? MIN_CHANNEL_SUBSCRIBERS;
   const maxSubscribers = thresholds.maxSubscribers ?? MAX_CHANNEL_SUBSCRIBERS;
   const minViews = thresholds.minViews ?? MIN_VIDEO_VIEWS;
   const minMomentumScore = thresholds.minMomentumScore ?? MOMENTUM_SCORE_THRESHOLD;
 
-  if (input.viewCount < minViews) return false;
-  if (input.channelSubscriberCount == null) return false;
-  if (input.channelSubscriberCount < minSubscribers || input.channelSubscriberCount > maxSubscribers) return false;
-  return momentumScore >= minMomentumScore;
+  if (input.viewCount < minViews) return 'below_min_views';
+  if (input.channelSubscriberCount == null) return 'no_subscriber_count';
+  if (input.channelSubscriberCount < minSubscribers || input.channelSubscriberCount > maxSubscribers) return 'subscriber_out_of_band';
+  if (momentumScore < minMomentumScore) return 'below_momentum_threshold';
+  return 'passes';
+}
+
+export function passesYoutubeThresholds(
+  input: YoutubeCandidateInputs,
+  momentumScore: number,
+  thresholds: YoutubeThresholds = {}
+): boolean {
+  return classifyYoutubeCandidate(input, momentumScore, thresholds) === 'passes';
 }

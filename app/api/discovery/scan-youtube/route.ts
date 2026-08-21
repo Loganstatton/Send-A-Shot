@@ -34,7 +34,7 @@ export async function POST(req: Request) {
       soundchartsUuids: new Set([...getTrackedSoundchartsUuids(), ...getKnownDiscoveryUuids()]),
       youtubeChannelIds: getKnownDiscoveryYoutubeChannelIds(),
     };
-    const { candidates, searchedCount, quotaUsed } = await youtubeDiscoverySource.scan(known);
+    const { candidates, searchedCount, quotaUsed, rejectionBreakdown } = await youtubeDiscoverySource.scan(known);
 
     for (const candidate of candidates) {
       // Belt-and-suspenders: the scan already dedupes within itself and
@@ -49,8 +49,8 @@ export async function POST(req: Request) {
       }
     }
 
-    completeDiscoveryRun(run.id, { status: 'completed', searchedCount, candidatesFound: candidates.length, quotaUsed });
-    return NextResponse.json({ runId: run.id, searchedCount, candidatesFound: candidates.length, quotaUsed });
+    completeDiscoveryRun(run.id, { status: 'completed', searchedCount, candidatesFound: candidates.length, quotaUsed, rejectionBreakdown });
+    return NextResponse.json({ runId: run.id, searchedCount, candidatesFound: candidates.length, quotaUsed, rejectionBreakdown });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during YouTube scan.';
     completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: message });

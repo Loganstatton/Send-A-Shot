@@ -5,6 +5,7 @@ import { breakoutScore, engagementQualityScore, growthVelocityScore } from './sc
 import { DATA_DIR } from './data-dir';
 import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents } from './next-market';
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
+import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
   Agreement, AgreementInput, Artist, ArtistInput, DiscoveryCandidate, DiscoveryCandidateStatus, DiscoveryRun,
   DiscoverySourceKey, DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput,
@@ -226,6 +227,14 @@ addColumnIfMissing('artists', 'soundcharts_uuid TEXT');
 // quota problem shows up in run history instead of only in logs.
 addColumnIfMissing('discovery_runs', "source TEXT NOT NULL DEFAULT 'soundcharts'");
 addColumnIfMissing('discovery_runs', 'quota_used INTEGER');
+// Why candidates that didn't qualify got rejected on a YouTube scan — see
+// DiscoveryRejectionBreakdown in lib/discovery-source.ts. Null/0 on a
+// Soundcharts-source run (it doesn't do this kind of threshold filtering).
+addColumnIfMissing('discovery_runs', 'rejected_below_min_views INTEGER');
+addColumnIfMissing('discovery_runs', 'rejected_no_subscriber_count INTEGER');
+addColumnIfMissing('discovery_runs', 'rejected_subscriber_out_of_band INTEGER');
+addColumnIfMissing('discovery_runs', 'rejected_below_momentum_threshold INTEGER');
+addColumnIfMissing('discovery_runs', 'best_rejected_momentum_score REAL');
 
 // discovery_candidates originally required `soundcharts_uuid NOT NULL
 // UNIQUE` — Soundcharts' /top/artists was the only discovery source, so
@@ -1331,13 +1340,23 @@ export function createDiscoveryRun(source: DiscoverySourceKey = 'soundcharts'): 
 
 export function completeDiscoveryRun(
   id: number,
-  result: { status: 'completed' | 'failed'; searchedCount: number; candidatesFound: number; error?: string; quotaUsed?: number }
+  result: {
+    status: 'completed' | 'failed'; searchedCount: number; candidatesFound: number; error?: string; quotaUsed?: number;
+    rejectionBreakdown?: DiscoveryRejectionBreakdown;
+  }
 ): void {
+  const r = result.rejectionBreakdown;
   db.prepare(`
     UPDATE discovery_runs
-    SET completed_at = ?, status = ?, searched_count = ?, candidates_found = ?, error = ?, quota_used = ?
+    SET completed_at = ?, status = ?, searched_count = ?, candidates_found = ?, error = ?, quota_used = ?,
+        rejected_below_min_views = ?, rejected_no_subscriber_count = ?, rejected_subscriber_out_of_band = ?,
+        rejected_below_momentum_threshold = ?, best_rejected_momentum_score = ?
     WHERE id = ?
-  `).run(new Date().toISOString(), result.status, result.searchedCount, result.candidatesFound, result.error ?? null, result.quotaUsed ?? null, id);
+  `).run(
+    new Date().toISOString(), result.status, result.searchedCount, result.candidatesFound, result.error ?? null, result.quotaUsed ?? null,
+    r?.belowMinViews ?? null, r?.noSubscriberCount ?? null, r?.subscriberOutOfBand ?? null,
+    r?.belowMomentumThreshold ?? null, r?.bestRejectedMomentumScore ?? null, id
+  );
 }
 
 export function getLatestDiscoveryRun(source: DiscoverySourceKey = 'soundcharts'): DiscoveryRun | undefined {

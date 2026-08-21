@@ -9,9 +9,9 @@
 // future third source can follow the same shape.
 
 import { NewDiscoveryCandidate } from './db';
-import { DiscoveryScanOutcome, DiscoverySource, KnownIdentitySets } from './discovery-source';
+import { DiscoveryRejectionBreakdown, DiscoveryScanOutcome, DiscoverySource, KnownIdentitySets } from './discovery-source';
 import {
-  computeYoutubeMetrics, passesYoutubeThresholds, youtubeFlaggedReason, youtubeMomentumScore, YoutubeThresholds,
+  classifyYoutubeCandidate, computeYoutubeMetrics, youtubeFlaggedReason, youtubeMomentumScore, YoutubeThresholds,
 } from './youtube-momentum';
 import { getChannelsStats, getVideosStats, searchRecentMusicVideos, youtubeConfigured } from './youtube';
 import { getArtistData, searchArtists, soundchartsConfigured } from './soundcharts';
@@ -176,13 +176,18 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
     if (!existing || views > existingViews) byChannel.set(hit.channelId, hit);
   }
 
-  // 5. Score, filter to genuine candidates, rank, cap.
+  // 5. Score, classify, rank, cap — every non-passing candidate's reason
+  // gets counted instead of silently discarded, so "found nothing" and
+  // "a threshold/data gap filtered everything" never look the same.
   type Scored = { hit: typeof allHits[number]; viewCount: number; likeCount?: number; commentCount?: number; subscriberCount?: number; channelViewCount?: number; momentumScore: number };
   const scored: Scored[] = [];
+  const rejectionBreakdown: DiscoveryRejectionBreakdown = {
+    belowMinViews: 0, noSubscriberCount: 0, subscriberOutOfBand: 0, belowMomentumThreshold: 0,
+  };
   for (const hit of byChannel.values()) {
     const videoStats = videoStatsById.get(hit.videoId);
     const channelStats = channelStatsById.get(hit.channelId);
-    if (!videoStats?.viewCount) continue;
+    if (!videoStats?.viewCount) continue; // stats fetch failed for this video — not a scored rejection, just missing data
 
     const inputs = {
       viewCount: videoStats.viewCount,
@@ -193,7 +198,18 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
     };
     const metrics = computeYoutubeMetrics(inputs);
     const momentumScore = youtubeMomentumScore(metrics);
-    if (!passesYoutubeThresholds(inputs, momentumScore, thresholds)) continue;
+    const classification = classifyYoutubeCandidate(inputs, momentumScore, thresholds);
+
+    if (classification !== 'passes') {
+      if (classification === 'below_min_views') rejectionBreakdown.belowMinViews++;
+      else if (classification === 'no_subscriber_count') rejectionBreakdown.noSubscriberCount++;
+      else if (classification === 'subscriber_out_of_band') rejectionBreakdown.subscriberOutOfBand++;
+      else if (classification === 'below_momentum_threshold') {
+        rejectionBreakdown.belowMomentumThreshold++;
+        rejectionBreakdown.bestRejectedMomentumScore = Math.max(rejectionBreakdown.bestRejectedMomentumScore ?? 0, momentumScore);
+      }
+      continue;
+    }
 
     scored.push({
       hit, viewCount: videoStats.viewCount, likeCount: videoStats.likeCount, commentCount: videoStats.commentCount,
@@ -240,7 +256,7 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
     });
   }
 
-  return { candidates, searchedCount, quotaUsed };
+  return { candidates, searchedCount, quotaUsed, rejectionBreakdown };
 }
 
 export const youtubeDiscoverySource: DiscoverySource = {
