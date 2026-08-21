@@ -21,3 +21,19 @@ export function recommendation(score: number): Recommendation {
   if (score >= 55) return { label: 'Monitor', emoji: '📊', tone: 'monitor' };
   return { label: 'Pass', emoji: '—', tone: 'pass' };
 }
+
+export type Momentum = {
+  label: string;
+  emoji: string;
+  tone: 'rising' | 'growing' | 'flat' | 'falling' | 'new';
+};
+
+// Classifies an artist's Breakout Score change since the previous snapshot —
+// the "is this one rising or falling" read for the portfolio screener.
+export function momentumStatus(changeAbs: number, hasComparison: boolean): Momentum {
+  if (!hasComparison) return { label: 'New', emoji: '🆕', tone: 'new' };
+  if (changeAbs >= 5) return { label: 'Rising', emoji: '🔥', tone: 'rising' };
+  if (changeAbs > 0) return { label: 'Growing', emoji: '📈', tone: 'growing' };
+  if (changeAbs < 0) return { label: 'Falling', emoji: '📉', tone: 'falling' };
+  return { label: 'Flat', emoji: '➡️', tone: 'flat' };
+}
