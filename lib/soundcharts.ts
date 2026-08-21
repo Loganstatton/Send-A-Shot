@@ -2,14 +2,18 @@
 // component — SOUNDCHARTS_APP_ID/SOUNDCHARTS_API_KEY must never reach the
 // browser bundle.
 //
-// A note on confidence: this was built against Soundcharts' public docs and
-// SDK examples without being able to make a live test call (this dev
-// sandbox's network egress is blocked for customer.api.soundcharts.com), so
-// every parse below is deliberately lenient — it tries a few plausible key
-// names per field and returns whatever it can, rather than throwing on a
-// field name that turns out slightly different in practice. If a field
-// consistently comes back empty once this runs for real, that's the field
-// name to fix first.
+// Confirmed against real responses (search "Taylor Swift" and "Drake" on
+// the live deploy, checked in Render's logs): GET /api/v2/artist/{uuid}
+// returns only { uuid, slug, name, appUrl, imageUrl, webUrl, countryCode }
+// — no genres, no biography, no platform identifiers, even for an artist
+// as major as Drake. That's not a wrong field name to fix, it's the whole
+// response — Soundcharts just doesn't return that data from this endpoint
+// on this plan. So photo_url and location (country only, no city) are
+// real; bio, genre, and the platform URLs stay manual-entry fields, same
+// as fields like top_song_url that never had a Soundcharts source to
+// begin with. The lenient multi-key pick() below is left in place in case
+// some other artist record does carry more — it costs nothing when absent
+// — but don't expect it to fill in for most artists.
 
 const BASE_URL = 'https://customer.api.soundcharts.com';
 
@@ -118,12 +122,6 @@ export type SoundchartsArtistData = {
 export async function getArtistData(uuid: string): Promise<SoundchartsResult<SoundchartsArtistData>> {
   const metaResult = await soundchartsFetch(`/api/v2/artist/${encodeURIComponent(uuid)}`);
   if (!metaResult.ok) return metaResult;
-
-  // TEMPORARY: several fields (bio, genre, platform links) are coming back
-  // empty against real data and the guessed key names need to be corrected
-  // against an actual response instead of guessed again — check Render's
-  // Logs tab after a search to find this line, then this block gets removed.
-  console.log('[soundcharts] raw artist metadata response:', JSON.stringify(metaResult.data));
 
   const meta = pick(metaResult.data, 'object', 'artist') ?? metaResult.data;
 
