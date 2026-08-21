@@ -146,6 +146,14 @@ sliders at 0) so a human still rates it, same as adding one by hand.
 | Commercial Potential | 5 |
 | Professionalism / Work Ethic | 5 |
 
+Six of these eight categories are still a human Scout's own 0–10 rating —
+music quality, personality, professionalism and the like aren't things a
+number can judge. **Audience Growth Velocity** and **Engagement Quality**
+are the exception: they're computed automatically from an artist's real
+30-day follower growth % and engagement rate % (whether entered by hand or
+filled in by Soundcharts sync), so there's no slider for them anymore. See
+`growthVelocityScore()`/`engagementQualityScore()` in `lib/scoring.ts`.
+
 Score bands: 85–100 immediate outreach, 70–84 watch closely, 55–69 monitor,
 below 55 pass. See `lib/scoring.ts`.
 
@@ -157,8 +165,6 @@ below 55 pass. See `lib/scoring.ts`.
 - Scheduled re-sync of *existing* artists' stats — the Discovery Engine
   finds new artists on a schedule, but an already-tracked artist's numbers
   still only refresh via the manual "Sync from Soundcharts" button
-- A data-driven NEXT Score — it's still 100% the eight hand-rated
-  categories; live growth/engagement numbers aren't blended in yet
 - Invite-only signup or password reset — public signup is open (accounts
   just default to the harmless Public/NEXT role), and any Internal/Admin user
   can currently view/edit/delete any artist and any agreement — fine for a
