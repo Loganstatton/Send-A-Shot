@@ -158,23 +158,38 @@ export async function getTopTrack(artistId: string, market = 'US'): Promise<Spot
 
 export type SpotifyTopSong = { top_song_url: string; song_preview_url?: string };
 
+// Why a lookup didn't produce a top song — 'no_artist_match'/'no_top_track'
+// mean the calls succeeded but genuinely found nothing (a fake/demo artist
+// name, or a real artist with no tracks in this market); 'search_failed'/
+// 'top_track_lookup_failed' mean an actual API call errored. Collapsing
+// these into one "failed" bucket (the original design) hid exactly the
+// distinction a Scout needs when a REAL artist unexpectedly gets no match:
+// was Spotify actually asked and came up empty, or did something break?
+export type SpotifyLookupFailureReason = 'no_artist_match' | 'search_failed' | 'no_top_track' | 'top_track_lookup_failed';
+
+export type SpotifyLookupResult =
+  | { ok: true; data: SpotifyTopSong }
+  | { ok: false; reason: SpotifyLookupFailureReason; error?: string };
+
 // The combined, one-call-site convenience this is actually used through:
 // use an existing Spotify link if there is one (skips a search entirely),
-// otherwise search by name. Returns null (never throws) if nothing could
-// be found or matched — the caller treats that exactly like "no data",
-// same as every other best-effort enrichment step in this app.
-export async function getTopSongForArtist(name: string, existingSpotifyUrl?: string | null): Promise<SpotifyTopSong | null> {
+// otherwise search by name. Never throws — a failure is always a typed
+// result, never an exception, same as every other best-effort enrichment
+// step in this app.
+export async function getTopSongForArtist(name: string, existingSpotifyUrl?: string | null): Promise<SpotifyLookupResult> {
   const knownId = extractSpotifyArtistId(existingSpotifyUrl);
   let artistId = knownId;
 
   if (!artistId) {
     const searchResult = await searchArtist(name);
-    if (!searchResult.ok || !searchResult.data) return null;
+    if (!searchResult.ok) return { ok: false, reason: 'search_failed', error: searchResult.error };
+    if (!searchResult.data) return { ok: false, reason: 'no_artist_match' };
     artistId = searchResult.data.id;
   }
 
   const trackResult = await getTopTrack(artistId);
-  if (!trackResult.ok || !trackResult.data) return null;
+  if (!trackResult.ok) return { ok: false, reason: 'top_track_lookup_failed', error: trackResult.error };
+  if (!trackResult.data) return { ok: false, reason: 'no_top_track' };
 
-  return { top_song_url: trackResult.data.url, song_preview_url: trackResult.data.previewUrl };
+  return { ok: true, data: { top_song_url: trackResult.data.url, song_preview_url: trackResult.data.previewUrl } };
 }

@@ -30,7 +30,9 @@ export async function POST(req: Request) {
   // top song — see getArtistsMissingTopSong for why it never overwrites.
   const artists = getArtistsMissingTopSong();
   let updatedCount = 0;
-  let failedCount = 0;
+  let noMatchCount = 0;
+  let errorCount = 0;
+  let lastError: string | undefined;
 
   try {
     // Verify credentials ONCE before looping — a bad client id/secret
@@ -41,23 +43,36 @@ export async function POST(req: Request) {
     if (!authCheck.ok) throw new Error(authCheck.error);
 
     for (const artist of artists) {
-      const topSong = await getTopSongForArtist(artist.name, artist.spotify_url).catch(() => null);
-      if (!topSong) {
-        failedCount++;
+      const result = await getTopSongForArtist(artist.name, artist.spotify_url);
+      if (!result.ok) {
+        // 'no_artist_match'/'no_top_track' mean the calls succeeded and
+        // genuinely found nothing (real for a fake/demo artist name —
+        // but worth knowing separately from an actual API failure for a
+        // real one). 'search_failed'/'top_track_lookup_failed' mean
+        // something actually broke.
+        if (result.reason === 'no_artist_match' || result.reason === 'no_top_track') {
+          noMatchCount++;
+        } else {
+          errorCount++;
+          lastError = result.error;
+          console.error('[spotify-sync] lookup failed for', artist.name, result.reason, result.error);
+        }
         continue;
       }
       // Same as the Soundcharts sync route: updateArtist only writes
       // fields present in the object — ArtistInput's required `name` is a
       // create-time constraint that doesn't apply to a partial update.
-      updateArtist(artist.id, topSong as ArtistInput);
+      updateArtist(artist.id, result.data as ArtistInput);
       updatedCount++;
     }
 
-    completeSyncRun(run.id, { status: 'completed', checkedCount: artists.length, updatedCount, failedCount });
-    return NextResponse.json({ runId: run.id, checked: artists.length, updated: updatedCount, failed: failedCount });
+    const failedCount = noMatchCount + errorCount;
+    completeSyncRun(run.id, { status: 'completed', checkedCount: artists.length, updatedCount, failedCount, noMatchCount, errorCount, lastError });
+    return NextResponse.json({ runId: run.id, checked: artists.length, updated: updatedCount, noMatch: noMatchCount, errors: errorCount, lastError });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during Spotify sync.';
-    completeSyncRun(run.id, { status: 'failed', checkedCount: artists.length, updatedCount, failedCount, error: message });
+    const failedCount = noMatchCount + errorCount;
+    completeSyncRun(run.id, { status: 'failed', checkedCount: artists.length, updatedCount, failedCount, error: message, noMatchCount, errorCount, lastError });
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }
 }

@@ -172,29 +172,44 @@ the app-only Client Credentials flow — no user login, no scopes, nothing
 user-specific), then copy the Client ID and Client Secret from the app's
 settings. `CRON_SECRET` (above) is reused for this sync's scheduler too.
 
-`POST /api/spotify/sync` looks up each artist still missing a
-`top_song_url` (by their existing Spotify link if one's on file, otherwise
-by searching Spotify for their name) and fills in a link to their
-top track, plus a 30-second preview clip when Spotify provides one — it
-frequently doesn't; Spotify has restricted preview availability for a
-large and growing share of tracks in recent years, which is a Spotify
-platform limitation, not a bug here. Triggered the same two ways as the
-other sync jobs:
-- **Manually** — the "Sync Spotify top songs" button on the Scout
-  dashboard (`/`).
-- **On a schedule** — point the same external scheduler at:
-  ```
-  POST https://<your-app>/api/spotify/sync
-  Header: x-cron-secret: <the CRON_SECRET value>
-  ```
+This lookup happens two ways:
+- **Immediately, once, when an artist enters the roster** — adding an artist
+  by hand (`/artists/new`) or Approving a Discovery candidate both trigger
+  a one-time best-effort lookup right away, so the top song shows up
+  without a separate trip to the dashboard. Never blocks or fails the
+  creation itself — skipped entirely if Spotify isn't configured, and any
+  failure just leaves the field empty for the batch sync to retry later.
+- **In a batch, for anyone still missing one** — `POST /api/spotify/sync`
+  looks up every artist still missing a `top_song_url` (by their existing
+  Spotify link if one's on file, otherwise by searching Spotify for their
+  name) and fills in a link to their top track, plus a 30-second preview
+  clip when Spotify provides one — it frequently doesn't; Spotify has
+  restricted preview availability for a large and growing share of tracks
+  in recent years, which is a Spotify platform limitation, not a bug here.
+  Triggered the same two ways as the other sync jobs:
+  - **Manually** — the "Sync Spotify top songs" button on the Scout
+    dashboard (`/`).
+  - **On a schedule** — point the same external scheduler at:
+    ```
+    POST https://<your-app>/api/spotify/sync
+    Header: x-cron-secret: <the CRON_SECRET value>
+    ```
 
-Once `top_song_url` is filled — by this sync or typed in by a Scout — it's
-never silently overwritten again; it's a curatorial choice of which song
-represents the artist, not a stat that should keep refreshing out from
-under someone. Clear the field to have sync fill it again. Without
+Once `top_song_url` is filled — by either path, or typed in by a Scout —
+it's never silently overwritten again; it's a curatorial choice of which
+song represents the artist, not a stat that should keep refreshing out
+from under someone. Clear the field to have sync fill it again. Without
 `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` set, the sync button shows a
-clear "not configured" error; the rest of the app works the same either
-way.
+clear "not configured" error, and the on-create lookup is silently
+skipped; the rest of the app works the same either way.
+
+The batch sync's result — both the button's own text and the dashboard's
+"Last Spotify sync" line — distinguishes *why* an artist wasn't updated:
+**no Spotify match** (the calls succeeded but genuinely found nothing —
+expected for this repo's own demo/seed artists, since they aren't real
+people) versus an **actual lookup error** (a real API call failed — worth
+investigating, since a real artist unexpectedly getting no match usually
+means this, not a genuine absence from Spotify).
 
 ### Optional: Discovery Engine (finds artists for you)
 
