@@ -3,7 +3,6 @@ import { getDiscoveryCandidates, getLatestDiscoveryRun } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import { DiscoveryRun } from '@/lib/types';
 import DiscoveryQueue from '@/components/DiscoveryQueue';
-import DiscoveryScanButton from '@/components/DiscoveryScanButton';
 import YoutubeScanButton from '@/components/YoutubeScanButton';
 
 export const metadata: Metadata = { title: { absolute: 'New Candidates — Scout' } };
@@ -39,7 +38,6 @@ export default async function DiscoveryPage() {
   await requireInternal();
   const candidates = getDiscoveryCandidates('new');
   const watching = getDiscoveryCandidates('watching');
-  const lastSoundchartsRun = getLatestDiscoveryRun('soundcharts');
   const lastYoutubeRun = getLatestDiscoveryRun('youtube');
 
   return (
@@ -48,18 +46,16 @@ export default async function DiscoveryPage() {
         <div>
           <h1 className="text-2xl font-semibold">New Candidates</h1>
           <p className="text-neutral-400 text-sm">
-            Artists Soundcharts or YouTube flagged for unusual momentum — nobody searched for these by name.
+            Artists YouTube flagged for unusual momentum — nobody searched for these by name.
             Approve to add them to Scout&apos;s roster and rate them; Watch to keep an eye without committing; Pass to drop them for good.
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <DiscoveryScanButton />
           <YoutubeScanButton />
         </div>
       </div>
 
       <div className="space-y-1">
-        <LastRunLine label="Last Soundcharts scan" run={lastSoundchartsRun} />
         <LastRunLine label="Last YouTube scan" run={lastYoutubeRun} />
       </div>
 

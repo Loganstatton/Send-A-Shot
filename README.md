@@ -60,22 +60,25 @@ a licensable data product.
   registration), independent of whether Soundcharts is configured or
   linked, and never overwrites a value once set (by sync or by hand) —
   clear the field to have it filled again (see setup below)
-- Optional Discovery Engine: two independent scheduled scans feed one
-  private **New Candidates** queue at `/discovery` — Approve turns a
-  candidate into a real, editable artist (pre-filled, but never
-  auto-scored — a human still rates the eight Breakout Score categories),
-  Watch keeps it in view, Pass drops it for good. Nothing reaches NEXT
-  without that human review (see setup below):
-  - **Soundcharts source**: searches for smaller artists (under 250K
-    Spotify followers) showing unusual growth (≥4% in 7 days or ≥8% in 30
-    days). Uses `/top/artists`, which Soundcharts documents as
-    plan-restricted — see the Soundcharts plan audit below if this 403s.
-  - **YouTube source**: searches recent Music-category uploads across
-    several genres for small channels with disproportionate momentum (a
-    video earning far more views than its channel's subscriber count would
-    predict), scores them with a transparent **Momentum Score**, and
-    attempts a best-effort Soundcharts name match to enrich the result —
-    never required, and never calls the restricted `/top/artists` endpoint.
+- Optional Discovery Engine: a scheduled scan feeds a private
+  **New Candidates** queue at `/discovery` — Approve turns a candidate
+  into a real, editable artist (pre-filled, but never auto-scored — a
+  human still rates the eight Breakout Score categories), Watch keeps it
+  in view, Pass drops it for good. Nothing reaches NEXT without that
+  human review (see setup below):
+  - **YouTube source** (the active one): searches recent Music-category
+    uploads across several genres for small channels with disproportionate
+    momentum (a video earning far more views than its channel's subscriber
+    count would predict), scores them with a transparent **Momentum
+    Score**, and attempts a best-effort Soundcharts name match to enrich
+    the result — never required.
+  - **Soundcharts source**: exists in the codebase (`/top/artists`,
+    documented as plan-restricted) but isn't wired into the UI — finding
+    candidates this way needs Soundcharts' $250/mo Growth plan, which
+    isn't worth it for this (see setup below). Soundcharts stays fully in
+    use for the *other* thing it does (Add Artist search-and-fill,
+    per-artist stats sync) — just not for finding artists nobody searched
+    for by name.
 
 ## Quick Start
 ```bash
@@ -207,43 +210,28 @@ means this, not a genuine absence from Deezer).
 
 ### Optional: Discovery Engine (finds artists for you)
 
-Uses the same Soundcharts credentials above, plus one more:
+**YouTube is the only active discovery source.** Soundcharts *can* also
+find candidates this way — searching `/top/artists` for smaller,
+fast-growing artists — but that endpoint needs Soundcharts' $250/mo
+Growth plan, which isn't worth it just for discovery. That source's code
+(`app/api/discovery/scan`, the Soundcharts branch of `lib/discovery.ts`)
+is still in the repo and still tested, but it has no button and nothing
+schedules it — a deliberate cost decision, not a bug. If that plan is
+ever worth it later, wiring the button back in is a small change.
+Soundcharts stays fully in use for the *other* thing it does: Add Artist
+search-and-fill and per-artist stats sync (see above) — those endpoints
+work fine on the current plan.
 
 ```bash
 echo "CRON_SECRET=$(openssl rand -hex 32)" >> .env.local
 ```
 
-`POST /api/discovery/scan` searches Soundcharts for smaller, fast-growing
-artists and adds any it finds to the **New Candidates** queue (internal
-nav). It can be triggered two ways:
-- **Manually** — the "Run scan now" button on `/discovery`, while logged in
-  as Internal/Admin. Works immediately, no extra setup.
-- **On a schedule** — this app deploys on Render, whose web services have
-  no built-in cron, so "every day" means pointing an external scheduler at
-  the endpoint. Any scheduler works (a [Render Cron
-  Job](https://render.com/docs/cronjobs) — a separate service alongside
-  this one, on Render's own free/paid cron tier — a GitHub Actions workflow
-  on a `schedule:` trigger, or a free service like cron-job.org) — have it
-  send:
-  ```
-  POST https://<your-app>/api/discovery/scan
-  Header: x-cron-secret: <the CRON_SECRET value>
-  ```
-  once a day. Without `CRON_SECRET` set, only the manual button works — the
-  automatic path simply doesn't exist yet, nothing breaks.
+### YouTube Discovery source
 
-A candidate never touches NEXT or gets a Breakout Score on its own —
-Approve just creates a normal, editable artist (stage: Watchlist, score
-sliders at 0) so a human still rates it, same as adding one by hand.
-
-### Optional: YouTube Discovery source
-
-Soundcharts' `/top/artists` — the endpoint the Soundcharts source above
-needs to find artists nobody searched for by name — is documented as
-restricted to specific plans, and doesn't require an upgrade to work
-around: this source finds candidates on YouTube instead, and still uses
-Soundcharts (search + artist-by-uuid, both already used elsewhere in this
-app) only to *enrich* a candidate afterward — never to find one.
+Finds candidates on YouTube, and separately uses Soundcharts (search +
+artist-by-uuid, both already used elsewhere in this app) only to *enrich*
+a candidate afterward — never to find one, so this never touches the
+restricted `/top/artists` endpoint.
 
 ```bash
 echo "YOUTUBE_API_KEY=your-youtube-data-api-v3-key" >> .env.local
@@ -274,7 +262,7 @@ exist. Every candidate's explanation is visible on `/discovery`, e.g.
 are captured when the sentiment is there, one inline in that explanation
 and a second shown just below it.
 
-Triggered the same two ways as the Soundcharts source:
+Triggered two ways:
 - **Manually** — the "Run YouTube scan now" button on `/discovery`.
 - **On a schedule** — point the same external scheduler at:
   ```
@@ -390,13 +378,14 @@ app/                 # Next.js app router
   api/auth/          # signup/login/logout
   api/soundcharts/   # search + fetch-by-uuid + sync-all (session or CRON_SECRET)
   api/deezer/        # top-song sync (session or CRON_SECRET) — free, keyless
-  api/discovery/     # scan-soundcharts + scan-youtube triggers (session or
-                     # CRON_SECRET) + candidate actions, feeding one queue
+  api/discovery/     # scan (Soundcharts — coded but unwired, see setup) +
+                     # scan-youtube (active) triggers (session or CRON_SECRET)
+                     # + candidate actions, feeding one queue
 components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory,
                      # DealsAndRevenue, InvestmentLedger, TradePanel, RoleManager,
                      # StatTile, Sparkline, FollowUpList, AuthForm, SoundchartsSearch,
                      # SyncAllButton, DeezerSyncButton, DiscoveryQueue,
-                     # DiscoveryScanButton, YoutubeScanButton
+                     # YoutubeScanButton
 lib/                 # sqlite db, types, scoring logic, NEXT pricing engine,
                      # auth/role helpers, money formatting, soundcharts + deezer
                      # clients, discovery-source abstraction + Soundcharts/
@@ -406,9 +395,9 @@ data/                # sqlite file + fallback session secret live here
 
 ## Next Steps (Roadmap)
 - Populate the market with a real, curated set of emerging artists across
-  genres by running the Discovery Engine's two sources (Soundcharts +
-  YouTube — see setup above) and working through the Approve/Watch/Pass
-  queue — the actual precondition for a meaningful closed beta
+  genres by running the Discovery Engine's YouTube source (see setup
+  above) and working through the Approve/Watch/Pass queue — the actual
+  precondition for a meaningful closed beta
 - A closed beta with real users and the retention/engagement metrics to
   match (return rate, listens-before-buy, trades/user, leaderboard views,
   how often someone backs a genuinely small artist) — before any
