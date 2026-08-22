@@ -92,7 +92,10 @@ export async function searchRecentMusicVideos(
     videoCategoryId: '10', // Music
     order: 'date',
     publishedAfter: opts.publishedAfter,
-    maxResults: String(opts.maxResults),
+    // YouTube rejects (400) anything outside 0-50, rather than clamping —
+    // clamp here so an env var set too high degrades to "50, the max"
+    // instead of erroring out this genre's search entirely.
+    maxResults: String(Math.min(Math.max(opts.maxResults, 1), 50)),
     safeSearch: 'none',
   });
   if (!result.ok) return result;

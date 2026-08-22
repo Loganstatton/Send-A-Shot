@@ -100,7 +100,12 @@ async function matchAndEnrichWithSoundcharts(channelTitle: string): Promise<Soun
 async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<DiscoveryScanOutcome> {
   if (!youtubeConfigured()) throw new Error('YouTube is not configured on this server.');
 
-  const maxResultsPerGenre = envInt('YOUTUBE_MAX_RESULTS_PER_GENRE', 15);
+  // 50 is YouTube's own hard cap on results per search.list call, and
+  // search.list is priced as a flat 100 quota units per call regardless
+  // of how many results are requested — so defaulting to the max costs
+  // nothing extra on the expensive part of the scan, it's strictly more
+  // coverage per genre for the same price.
+  const maxResultsPerGenre = envInt('YOUTUBE_MAX_RESULTS_PER_GENRE', 50);
   const publishedWithinDays = envInt('YOUTUBE_PUBLISHED_WITHIN_DAYS', 14);
   const maxCandidatesPerRun = envInt('YOUTUBE_MAX_CANDIDATES_PER_RUN', 25);
   const commentsPerCandidate = envInt('YOUTUBE_COMMENTS_PER_CANDIDATE', 20);
