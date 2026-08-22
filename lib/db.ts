@@ -230,6 +230,7 @@ addColumnIfMissing('discovery_runs', 'quota_used INTEGER');
 // Why candidates that didn't qualify got rejected on a YouTube scan — see
 // DiscoveryRejectionBreakdown in lib/discovery-source.ts. Null/0 on a
 // Soundcharts-source run (it doesn't do this kind of threshold filtering).
+addColumnIfMissing('discovery_runs', 'rejected_not_official_release INTEGER');
 addColumnIfMissing('discovery_runs', 'rejected_below_min_views INTEGER');
 addColumnIfMissing('discovery_runs', 'rejected_no_subscriber_count INTEGER');
 addColumnIfMissing('discovery_runs', 'rejected_subscriber_out_of_band INTEGER');
@@ -1403,12 +1404,12 @@ export function completeDiscoveryRun(
   db.prepare(`
     UPDATE discovery_runs
     SET completed_at = ?, status = ?, searched_count = ?, candidates_found = ?, error = ?, quota_used = ?,
-        rejected_below_min_views = ?, rejected_no_subscriber_count = ?, rejected_subscriber_out_of_band = ?,
-        rejected_below_momentum_threshold = ?, best_rejected_momentum_score = ?
+        rejected_not_official_release = ?, rejected_below_min_views = ?, rejected_no_subscriber_count = ?,
+        rejected_subscriber_out_of_band = ?, rejected_below_momentum_threshold = ?, best_rejected_momentum_score = ?
     WHERE id = ?
   `).run(
     new Date().toISOString(), result.status, result.searchedCount, result.candidatesFound, result.error ?? null, result.quotaUsed ?? null,
-    r?.belowMinViews ?? null, r?.noSubscriberCount ?? null, r?.subscriberOutOfBand ?? null,
+    r?.notOfficialRelease ?? null, r?.belowMinViews ?? null, r?.noSubscriberCount ?? null, r?.subscriberOutOfBand ?? null,
     r?.belowMomentumThreshold ?? null, r?.bestRejectedMomentumScore ?? null, id
   );
 }

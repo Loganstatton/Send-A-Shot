@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  classifyYoutubeCandidate, computeYoutubeMetrics, detectHypeComments, MAX_CHANNEL_SUBSCRIBERS,
+  classifyYoutubeCandidate, computeYoutubeMetrics, detectHypeComments, looksLikeOfficialRelease, MAX_CHANNEL_SUBSCRIBERS,
   MIN_CHANNEL_SUBSCRIBERS, MIN_VIDEO_VIEWS, MOMENTUM_SCORE_THRESHOLD, passesCheapGates, passesYoutubeThresholds,
   youtubeFlaggedReason, youtubeMomentumScore,
 } from './youtube-momentum';
+
+const OFFICIAL_TITLE = 'Song Name (Official Audio)';
 
 function daysAgo(n: number): string {
   return new Date(Date.now() - n * 86_400_000).toISOString();
@@ -166,23 +168,47 @@ describe('detectHypeComments', () => {
   });
 });
 
+describe('looksLikeOfficialRelease', () => {
+  it('matches the standard official-release title conventions', () => {
+    expect(looksLikeOfficialRelease('Song Name (Official Audio)')).toBe(true);
+    expect(looksLikeOfficialRelease('Song Name (Official Video)')).toBe(true);
+    expect(looksLikeOfficialRelease('Song Name (Official Music Video)')).toBe(true);
+    expect(looksLikeOfficialRelease('Song Name (Lyric Video)')).toBe(true);
+    expect(looksLikeOfficialRelease('SONG NAME - OFFICIAL AUDIO')).toBe(true); // case-insensitive
+  });
+
+  it('rejects gear-demo, review, and ranking titles that YouTube still files under Music', () => {
+    expect(looksLikeOfficialRelease('Gearhead #synth #electronic')).toBe(false);
+    expect(looksLikeOfficialRelease('THA CARTER III Album Rating (9.2/10)')).toBe(false);
+    expect(looksLikeOfficialRelease('TOP 5 STORYTELLING RAP SONGS OF ALL TIME')).toBe(false);
+    expect(looksLikeOfficialRelease('DATA PROCESSING')).toBe(false);
+  });
+});
+
 describe('passesCheapGates', () => {
-  it('checks only the three data-already-in-hand gates — no momentum score needed', () => {
-    expect(passesCheapGates({ viewCount: 10_000, channelSubscriberCount: 5_000 })).toBe('passes');
-    expect(passesCheapGates({ viewCount: MIN_VIDEO_VIEWS - 1, channelSubscriberCount: 5_000 })).toBe('below_min_views');
-    expect(passesCheapGates({ viewCount: 10_000, channelSubscriberCount: undefined })).toBe('no_subscriber_count');
-    expect(passesCheapGates({ viewCount: 10_000, channelSubscriberCount: MAX_CHANNEL_SUBSCRIBERS + 1 })).toBe('subscriber_out_of_band');
+  it('checks all four data-already-in-hand gates — no momentum score needed', () => {
+    expect(passesCheapGates({ title: OFFICIAL_TITLE, viewCount: 10_000, channelSubscriberCount: 5_000 })).toBe('passes');
+    expect(passesCheapGates({ title: 'Album Ranking Video', viewCount: 10_000, channelSubscriberCount: 5_000 })).toBe('not_official_release');
+    expect(passesCheapGates({ title: OFFICIAL_TITLE, viewCount: MIN_VIDEO_VIEWS - 1, channelSubscriberCount: 5_000 })).toBe('below_min_views');
+    expect(passesCheapGates({ title: OFFICIAL_TITLE, viewCount: 10_000, channelSubscriberCount: undefined })).toBe('no_subscriber_count');
+    expect(passesCheapGates({ title: OFFICIAL_TITLE, viewCount: 10_000, channelSubscriberCount: MAX_CHANNEL_SUBSCRIBERS + 1 })).toBe('subscriber_out_of_band');
   });
 
   it('agrees with classifyYoutubeCandidate on every candidate that fails a cheap gate', () => {
-    const input = { viewCount: MIN_VIDEO_VIEWS - 1, publishedAt: daysAgo(1), channelSubscriberCount: 5_000 };
+    const input = { title: OFFICIAL_TITLE, viewCount: MIN_VIDEO_VIEWS - 1, publishedAt: daysAgo(1), channelSubscriberCount: 5_000 };
     expect(passesCheapGates(input)).toBe('below_min_views');
     expect(classifyYoutubeCandidate(input, 100)).toBe('below_min_views');
+  });
+
+  it('a non-official-release title is rejected before any other gate is even checked', () => {
+    const input = { title: 'Synth Gear Demo', viewCount: MIN_VIDEO_VIEWS - 1, publishedAt: daysAgo(1), channelSubscriberCount: undefined };
+    expect(passesCheapGates(input)).toBe('not_official_release');
+    expect(classifyYoutubeCandidate(input, 100)).toBe('not_official_release');
   });
 });
 
 describe('passesYoutubeThresholds', () => {
-  const strongInput = { viewCount: 150_000, likeCount: 16_800, commentCount: 1_200, publishedAt: daysAgo(6), channelSubscriberCount: 8_000 };
+  const strongInput = { title: OFFICIAL_TITLE, viewCount: 150_000, likeCount: 16_800, commentCount: 1_200, publishedAt: daysAgo(6), channelSubscriberCount: 8_000 };
   const strongMetrics = computeYoutubeMetrics(strongInput);
   const strongScore = youtubeMomentumScore(strongMetrics);
 
@@ -218,7 +244,7 @@ describe('passesYoutubeThresholds', () => {
 });
 
 describe('classifyYoutubeCandidate', () => {
-  const strongInput = { viewCount: 150_000, likeCount: 16_800, commentCount: 1_200, publishedAt: daysAgo(6), channelSubscriberCount: 8_000 };
+  const strongInput = { title: OFFICIAL_TITLE, viewCount: 150_000, likeCount: 16_800, commentCount: 1_200, publishedAt: daysAgo(6), channelSubscriberCount: 8_000 };
   const strongScore = youtubeMomentumScore(computeYoutubeMetrics(strongInput));
 
   it('returns "passes" for a candidate that clears every gate — same verdict as passesYoutubeThresholds', () => {
@@ -227,6 +253,7 @@ describe('classifyYoutubeCandidate', () => {
   });
 
   it('identifies each rejection reason distinctly, checked in gate order', () => {
+    expect(classifyYoutubeCandidate({ ...strongInput, title: 'Album Ranking Video' }, 100)).toBe('not_official_release');
     expect(classifyYoutubeCandidate({ ...strongInput, viewCount: MIN_VIDEO_VIEWS - 1 }, 100)).toBe('below_min_views');
     expect(classifyYoutubeCandidate({ ...strongInput, channelSubscriberCount: undefined }, 100)).toBe('no_subscriber_count');
     expect(classifyYoutubeCandidate({ ...strongInput, channelSubscriberCount: MAX_CHANNEL_SUBSCRIBERS + 1 }, 100)).toBe('subscriber_out_of_band');

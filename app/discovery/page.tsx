@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 function rejectionSummary(run: DiscoveryRun): string | null {
   if (run.candidates_found > 0) return null;
   const parts = [
+    run.rejected_not_official_release && `${run.rejected_not_official_release} not tagged as an official release`,
     run.rejected_below_min_views && `${run.rejected_below_min_views} too few views`,
     run.rejected_no_subscriber_count && `${run.rejected_no_subscriber_count} no subscriber count`,
     run.rejected_subscriber_out_of_band && `${run.rejected_subscriber_out_of_band} channel size outside band`,
