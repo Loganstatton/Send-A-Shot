@@ -294,7 +294,7 @@ tune scan size, cost, or which genres run:
 | `YOUTUBE_MAX_RESULTS_PER_GENRE` | 50 (YouTube's own max per call) | Search results pulled per genre per scan — free to max out, since `search` is priced per call, not per result |
 | `YOUTUBE_PUBLISHED_WITHIN_DAYS` | 14 | How recent an upload has to be to be considered |
 | `YOUTUBE_MIN_SUBSCRIBERS` / `YOUTUBE_MAX_SUBSCRIBERS` | 200 / 100,000 | Channel size band — the upper bound is what keeps this "smaller channels," not already-famous artists |
-| `YOUTUBE_MOMENTUM_THRESHOLD` | 40 | Minimum Momentum Score (0–100) to become a candidate |
+| `YOUTUBE_MOMENTUM_THRESHOLD` | 25 | Minimum Momentum Score (0–100) to become a candidate |
 | `YOUTUBE_COMMENTS_PER_CANDIDATE` | 20 | Top comments read (by relevance) per candidate for hype-sentiment detection |
 | `YOUTUBE_MAX_CANDIDATES_PER_RUN` | 25 | Caps both the Soundcharts-enrichment calls and how many new candidates one scan can add |
 

@@ -61,10 +61,16 @@ export function computeYoutubeMetrics(input: YoutubeCandidateInputs): YoutubeCan
 }
 
 // --- Scoring ceilings: the value at which a factor maxes out at 10/10 ---
-export const VIEWS_PER_SUBSCRIBER_CEILING = 10; // views = 10x the sub count is an extreme, cap-worthy spike
-export const VIEWS_PER_DAY_CEILING = 50_000; // 50K/day sustained is already a big early signal
-export const LIKE_RATE_CEILING = 0.15; // 15% like rate is excellent
-export const COMMENT_RATE_CEILING = 0.02; // 2% comment rate is very high
+//
+// Originally calibrated for "already going viral" (10x subs, 50K views/day)
+// — which meant a genuinely small, early, quietly-trending artist (the
+// entire point of this tool) almost never scored high enough to matter.
+// Lowered to describe "outperforming its own small audience," not
+// "blowing up nationally":
+export const VIEWS_PER_SUBSCRIBER_CEILING = 3; // views = 3x the sub count already means reach beyond your own subscribers
+export const VIEWS_PER_DAY_CEILING = 5_000; // 5K/day sustained is a strong early signal for a small channel
+export const LIKE_RATE_CEILING = 0.08; // 8% like rate is genuinely excellent for music content
+export const COMMENT_RATE_CEILING = 0.01; // 1% comment rate is very high
 export const HYPE_COMMENT_RATE_CEILING = 0.2; // 1 in 5 top comments reading as genuine hype is a strong tell
 
 function clampedScore(value: number | undefined, ceiling: number): number {
@@ -214,7 +220,12 @@ export function detectHypeComments(comments: HypeCommentExample[]): HypeCommentA
 export const MIN_CHANNEL_SUBSCRIBERS = 200; // excludes near-empty/inactive channels
 export const MAX_CHANNEL_SUBSCRIBERS = 100_000; // "smaller channels, not already-famous artists"
 export const MIN_VIDEO_VIEWS = 500; // excludes videos too small to trust a rate computed off of
-export const MOMENTUM_SCORE_THRESHOLD = 40; // minimum composite score to flag as a candidate
+// Lowered alongside the ceilings above, same reasoning: 40 was tuned for
+// candidates that were already scoring near-max on the old, viral-only
+// ceilings. 25 is a real bar (not "everything passes") but reachable by a
+// small channel with a couple of genuinely good factors, not only one
+// already blowing up.
+export const MOMENTUM_SCORE_THRESHOLD = 25; // minimum composite score to flag as a candidate
 
 export type YoutubeThresholds = {
   minSubscribers?: number;
