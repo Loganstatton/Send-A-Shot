@@ -58,7 +58,16 @@ export default async function DashboardPage() {
               Last Spotify sync: {new Date(lastSpotifySync.started_at).toLocaleString()} —{' '}
               {lastSpotifySync.status === 'failed'
                 ? <span className="text-red-400">failed: {lastSpotifySync.error}</span>
-                : `checked ${lastSpotifySync.checked_count}, updated ${lastSpotifySync.updated_count}${lastSpotifySync.failed_count > 0 ? `, ${lastSpotifySync.failed_count} no match` : ''}`}
+                : <>
+                    checked {lastSpotifySync.checked_count}, updated {lastSpotifySync.updated_count}.
+                    {(lastSpotifySync.no_match_count ?? 0) > 0 && ` ${lastSpotifySync.no_match_count} no Spotify match.`}
+                    {(lastSpotifySync.error_count ?? 0) > 0 && (
+                      <span className="text-red-400">
+                        {' '}{lastSpotifySync.error_count} lookup error{lastSpotifySync.error_count === 1 ? '' : 's'}
+                        {lastSpotifySync.last_error ? ` (${lastSpotifySync.last_error})` : ''}.
+                      </span>
+                    )}
+                  </>}
             </p>
           )}
         </div>

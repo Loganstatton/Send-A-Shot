@@ -528,4 +528,10 @@ export type SyncRun = {
   updated_count: number;
   failed_count: number;
   error?: string;
+  // Spotify-only: why failed_count is what it is — genuinely no match
+  // found vs an actual API call erroring, plus a sample of the last
+  // error seen. Always undefined on a Soundcharts-source run.
+  no_match_count?: number;
+  error_count?: number;
+  last_error?: string;
 };

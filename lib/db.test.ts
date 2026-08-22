@@ -356,6 +356,29 @@ describe('Spotify top-song sync', () => {
     expect(latestSpotify.source).toBe('spotify');
     expect(latestSpotify.updated_count).toBe(2);
   });
+
+  it('a Spotify run round-trips the no-match-vs-error breakdown — this is what tells a Scout why a REAL artist failed', () => {
+    const run = createSyncRun('spotify');
+    completeSyncRun(run.id, {
+      status: 'completed', checkedCount: 4, updatedCount: 0, failedCount: 4,
+      noMatchCount: 3, errorCount: 1, lastError: 'Spotify rate limit hit — try again shortly.',
+    });
+
+    const latest = getLatestSyncRun('spotify')!;
+    expect(latest.id).toBe(run.id);
+    expect(latest.no_match_count).toBe(3);
+    expect(latest.error_count).toBe(1);
+    expect(latest.last_error).toBe('Spotify rate limit hit — try again shortly.');
+  });
+
+  it('a Soundcharts run (no lookup-reason breakdown) leaves those columns null, not zero', () => {
+    const run = createSyncRun('soundcharts');
+    completeSyncRun(run.id, { status: 'completed', checkedCount: 5, updatedCount: 5, failedCount: 0 });
+
+    const latest = getLatestSyncRun('soundcharts')!;
+    expect(latest.no_match_count ?? null).toBeNull();
+    expect(latest.error_count ?? null).toBeNull();
+  });
 });
 
 describe('YouTube discovery — candidates without a Soundcharts identity', () => {

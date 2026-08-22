@@ -239,6 +239,13 @@ addColumnIfMissing('discovery_runs', 'best_rejected_momentum_score REAL');
 // Soundcharts stats sync; `source` distinguishes a Spotify top-track sync
 // run (lib/spotify.ts) from it, so each has its own independent history.
 addColumnIfMissing('sync_runs', "source TEXT NOT NULL DEFAULT 'soundcharts'");
+// Spotify-only diagnostics: why a "checked N, updated 0" run found nothing
+// — genuinely no match for any artist (no_match_count) vs an actual API
+// call failing (error_count), plus a sample of the last error seen. Null
+// on a Soundcharts-source run, which doesn't do this kind of lookup.
+addColumnIfMissing('sync_runs', 'no_match_count INTEGER');
+addColumnIfMissing('sync_runs', 'error_count INTEGER');
+addColumnIfMissing('sync_runs', 'last_error TEXT');
 
 // discovery_candidates originally required `soundcharts_uuid NOT NULL
 // UNIQUE` — Soundcharts' /top/artists was the only discovery source, so
@@ -1319,13 +1326,20 @@ export function createSyncRun(source: SyncSourceKey = 'soundcharts'): SyncRun {
 
 export function completeSyncRun(
   id: number,
-  result: { status: 'completed' | 'failed'; checkedCount: number; updatedCount: number; failedCount: number; error?: string }
+  result: {
+    status: 'completed' | 'failed'; checkedCount: number; updatedCount: number; failedCount: number; error?: string;
+    noMatchCount?: number; errorCount?: number; lastError?: string;
+  }
 ): void {
   db.prepare(`
     UPDATE sync_runs
-    SET completed_at = ?, status = ?, checked_count = ?, updated_count = ?, failed_count = ?, error = ?
+    SET completed_at = ?, status = ?, checked_count = ?, updated_count = ?, failed_count = ?, error = ?,
+        no_match_count = ?, error_count = ?, last_error = ?
     WHERE id = ?
-  `).run(new Date().toISOString(), result.status, result.checkedCount, result.updatedCount, result.failedCount, result.error ?? null, id);
+  `).run(
+    new Date().toISOString(), result.status, result.checkedCount, result.updatedCount, result.failedCount, result.error ?? null,
+    result.noMatchCount ?? null, result.errorCount ?? null, result.lastError ?? null, id
+  );
 }
 
 export function getLatestSyncRun(source: SyncSourceKey = 'soundcharts'): SyncRun | undefined {

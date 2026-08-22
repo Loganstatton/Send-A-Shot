@@ -14,7 +14,10 @@ export default function SpotifySyncButton() {
       const res = await fetch('/api/spotify/sync', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Sync failed');
-      setResult(`Checked ${data.checked}, updated ${data.updated}${data.failed > 0 ? `, ${data.failed} no match/failed` : ''}.`);
+      let text = `Checked ${data.checked}, updated ${data.updated}.`;
+      if (data.noMatch > 0) text += ` ${data.noMatch} no Spotify match.`;
+      if (data.errors > 0) text += ` ${data.errors} lookup error${data.errors === 1 ? '' : 's'}${data.lastError ? ` (${data.lastError})` : ''}.`;
+      setResult(text);
       router.refresh();
     } catch (err: any) {
       setResult(err.message ?? 'Sync failed.');
