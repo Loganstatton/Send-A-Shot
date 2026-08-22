@@ -154,10 +154,12 @@ export default function ArtistForm({ artist }: Props) {
           <div>
             <label className="label">30-second preview clip URL</label>
             <input className="input" value={form.song_preview_url ?? ''} onChange={(e) => set('song_preview_url', e.target.value)} placeholder="Direct link to an audio file (.mp3, .m4a…)" />
+            <p className="text-xs text-neutral-500 mt-1">Spotify sync fills this when it can — Spotify has stopped returning a preview clip for a growing share of tracks, so this often stays empty even when Top song link fills in fine</p>
           </div>
           <div>
             <label className="label">Top song link</label>
             <input className="input" value={form.top_song_url ?? ''} onChange={(e) => set('top_song_url', e.target.value)} placeholder="Link to their best/most popular track" />
+            <p className="text-xs text-neutral-500 mt-1">✓ Spotify sync fills this automatically (dashboard) — only type one in to override it</p>
           </div>
           <div>
             <label className="label">Why they&apos;re trending</label>
@@ -200,26 +202,30 @@ export default function ArtistForm({ artist }: Props) {
         <h2 className="font-semibold text-lg">Metrics</h2>
         <p className="text-sm text-neutral-400">
           30-day growth and engagement rate directly drive two of the Breakout Score categories below —
-          no separate rating needed. Soundcharts sync fills growth automatically when linked.
+          no separate rating needed. Followers and 30-day growth fill automatically via Soundcharts sync
+          when linked; monthly listeners and engagement rate stay manual — no API (Soundcharts&apos; or
+          otherwise) exposes either of those for Spotify, on any plan.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="label">Followers</label>
             <input type="number" min={0} className="input" value={form.followers_count ?? ''} onChange={(e) => set('followers_count', e.target.value === '' ? undefined : Number(e.target.value))} />
+            <p className="text-xs text-neutral-500 mt-1">✓ Soundcharts sync fills this when linked</p>
           </div>
           <div>
             <label className="label">Monthly listeners</label>
             <input type="number" min={0} className="input" value={form.monthly_listeners ?? ''} onChange={(e) => set('monthly_listeners', e.target.value === '' ? undefined : Number(e.target.value))} />
+            <p className="text-xs text-neutral-500 mt-1">Manual only — Spotify doesn&apos;t expose this via any API</p>
           </div>
           <div>
             <label className="label">30-day growth %</label>
             <input type="number" step="0.1" className="input" value={form.growth_velocity_pct ?? ''} onChange={(e) => set('growth_velocity_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
-            <p className="text-xs text-neutral-500 mt-1">→ Growth Velocity {liveGrowthScore.toFixed(1)}/10</p>
+            <p className="text-xs text-neutral-500 mt-1">✓ Soundcharts sync fills this when linked · → Growth Velocity {liveGrowthScore.toFixed(1)}/10</p>
           </div>
           <div>
             <label className="label">Engagement rate %</label>
             <input type="number" step="0.1" className="input" value={form.engagement_rate_pct ?? ''} onChange={(e) => set('engagement_rate_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
-            <p className="text-xs text-neutral-500 mt-1">→ Engagement Quality {liveEngagementScore.toFixed(1)}/10</p>
+            <p className="text-xs text-neutral-500 mt-1">Manual only — not returned by Soundcharts on this plan · → Engagement Quality {liveEngagementScore.toFixed(1)}/10</p>
           </div>
         </div>
       </div>
