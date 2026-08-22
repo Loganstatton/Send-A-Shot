@@ -10,10 +10,10 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
 const {
   approveDiscoveryCandidate, completeDiscoveryRun, completeSyncRun, createArtist, createDiscoveryRun, createSyncRun,
-  createUser, executeTrade, getArtist, getArtistsWithSoundchartsLink, getDiscoveryCandidates, getKnownDiscoveryUuids,
-  getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun, getNewDiscoveryCandidateCount,
-  getNextArtist, getTrackedSoundchartsUuids, getUserById, insertDiscoveryCandidate, setDiscoveryCandidateStatus,
-  updateArtist,
+  createUser, executeTrade, getArtist, getArtistsMissingTopSong, getArtistsWithSoundchartsLink, getDiscoveryCandidates,
+  getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun,
+  getNewDiscoveryCandidateCount, getNextArtist, getTrackedSoundchartsUuids, getUserById, insertDiscoveryCandidate,
+  setDiscoveryCandidateStatus, updateArtist,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -320,6 +320,41 @@ describe('Automated Soundcharts sync', () => {
     expect(latest.id).toBe(run.id);
     expect(latest.status).toBe('failed');
     expect(latest.error).toBe('Soundcharts unreachable');
+  });
+});
+
+describe('Spotify top-song sync', () => {
+  it('getArtistsMissingTopSong only returns artists with no top_song_url set', () => {
+    const missing = createArtist({ name: 'No Top Song Yet' });
+    const has = createArtist({ name: 'Already Has One', top_song_url: 'https://open.spotify.com/track/abc' });
+
+    const rows = getArtistsMissingTopSong();
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(missing.id);
+    expect(ids).not.toContain(has.id);
+  });
+
+  it('filling in top_song_url removes an artist from the missing set — sync will not touch it again', () => {
+    const artist = createArtist({ name: 'Freshly Filled' });
+    expect(getArtistsMissingTopSong().map((r) => r.id)).toContain(artist.id);
+
+    updateArtist(artist.id, { name: artist.name, top_song_url: 'https://open.spotify.com/track/xyz' });
+    expect(getArtistsMissingTopSong().map((r) => r.id)).not.toContain(artist.id);
+  });
+
+  it("Soundcharts and Spotify sync runs keep independent 'latest' history via the source column", () => {
+    const soundchartsRun = createSyncRun('soundcharts');
+    completeSyncRun(soundchartsRun.id, { status: 'completed', checkedCount: 5, updatedCount: 5, failedCount: 0 });
+    const spotifyRun = createSyncRun('spotify');
+    completeSyncRun(spotifyRun.id, { status: 'completed', checkedCount: 3, updatedCount: 2, failedCount: 1 });
+
+    const latestSoundcharts = getLatestSyncRun('soundcharts')!;
+    const latestSpotify = getLatestSyncRun('spotify')!;
+    expect(latestSoundcharts.id).toBe(soundchartsRun.id);
+    expect(latestSoundcharts.source).toBe('soundcharts');
+    expect(latestSpotify.id).toBe(spotifyRun.id);
+    expect(latestSpotify.source).toBe('spotify');
+    expect(latestSpotify.updated_count).toBe(2);
   });
 });
 

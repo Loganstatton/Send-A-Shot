@@ -11,7 +11,7 @@ import {
   DiscoverySourceKey, DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput,
   LeaderboardEntry, LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction,
   NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS,
-  ScoreSnapshot, ScoutProfile, SyncRun, User,
+  ScoreSnapshot, ScoutProfile, SyncRun, SyncSourceKey, User,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -235,6 +235,10 @@ addColumnIfMissing('discovery_runs', 'rejected_no_subscriber_count INTEGER');
 addColumnIfMissing('discovery_runs', 'rejected_subscriber_out_of_band INTEGER');
 addColumnIfMissing('discovery_runs', 'rejected_below_momentum_threshold INTEGER');
 addColumnIfMissing('discovery_runs', 'best_rejected_momentum_score REAL');
+// Same treatment for sync_runs — it originally only ever meant a
+// Soundcharts stats sync; `source` distinguishes a Spotify top-track sync
+// run (lib/spotify.ts) from it, so each has its own independent history.
+addColumnIfMissing('sync_runs', "source TEXT NOT NULL DEFAULT 'soundcharts'");
 
 // discovery_candidates originally required `soundcharts_uuid NOT NULL
 // UNIQUE` — Soundcharts' /top/artists was the only discovery source, so
@@ -1305,11 +1309,11 @@ export function getArtistsWithSoundchartsLink(): { id: number; soundcharts_uuid:
     .all() as { id: number; soundcharts_uuid: string }[];
 }
 
-export function createSyncRun(): SyncRun {
+export function createSyncRun(source: SyncSourceKey = 'soundcharts'): SyncRun {
   const now = new Date().toISOString();
   const info = db
-    .prepare("INSERT INTO sync_runs (started_at, status, checked_count, updated_count, failed_count) VALUES (?, 'running', 0, 0, 0)")
-    .run(now);
+    .prepare("INSERT INTO sync_runs (started_at, status, checked_count, updated_count, failed_count, source) VALUES (?, 'running', 0, 0, 0, ?)")
+    .run(now, source);
   return db.prepare('SELECT * FROM sync_runs WHERE id = ?').get(info.lastInsertRowid) as SyncRun;
 }
 
@@ -1324,8 +1328,23 @@ export function completeSyncRun(
   `).run(new Date().toISOString(), result.status, result.checkedCount, result.updatedCount, result.failedCount, result.error ?? null, id);
 }
 
-export function getLatestSyncRun(): SyncRun | undefined {
-  return db.prepare('SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1').get() as SyncRun | undefined;
+export function getLatestSyncRun(source: SyncSourceKey = 'soundcharts'): SyncRun | undefined {
+  return db
+    .prepare('SELECT * FROM sync_runs WHERE source = ? ORDER BY started_at DESC LIMIT 1')
+    .get(source) as SyncRun | undefined;
+}
+
+// Artists still missing a top song link, for Spotify top-track sync —
+// unlike Soundcharts sync (which only touches artists explicitly linked
+// by uuid, but always re-fetches), this touches every artist regardless
+// of a Soundcharts link, but only ones that don't already have one. Once
+// filled — by this sync or typed in by hand — it's a Scout's curatorial
+// choice of which song best represents the artist, so it's never
+// silently overwritten; clear the field to have sync fill it again.
+export function getArtistsMissingTopSong(): { id: number; name: string; spotify_url: string | null }[] {
+  return db
+    .prepare("SELECT id, name, spotify_url FROM artists WHERE top_song_url IS NULL OR top_song_url = ''")
+    .all() as { id: number; name: string; spotify_url: string | null }[];
 }
 
 // Candidates already reviewed (watching/approved/passed) for a name are

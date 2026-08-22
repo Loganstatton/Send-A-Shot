@@ -509,12 +509,18 @@ export type DiscoveryRun = {
 
 export type SyncRunStatus = 'running' | 'completed' | 'failed';
 
-// One row per Soundcharts sync — same "last run: X ago" visibility as
-// DiscoveryRun above, so an automated daily sync that silently starts
-// failing (bad CRON_SECRET, plan-restricted endpoint) shows up on the
-// dashboard instead of only in server logs.
+// Same extension pattern as DiscoverySourceKey — Soundcharts stats sync
+// was the only sync source until Spotify top-track sync (lib/spotify.ts)
+// needed its own independent, separately-configured run history.
+export type SyncSourceKey = 'soundcharts' | 'spotify';
+
+// One row per sync run — same "last run: X ago" visibility as DiscoveryRun
+// above, so an automated daily sync that silently starts failing (bad
+// CRON_SECRET, missing credentials) shows up on the dashboard instead of
+// only in server logs.
 export type SyncRun = {
   id: number;
+  source: SyncSourceKey;
   started_at: string;
   completed_at?: string;
   status: SyncRunStatus;
