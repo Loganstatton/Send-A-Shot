@@ -201,17 +201,23 @@ Get a key from the [Google Cloud Console](https://console.cloud.google.com/)
 `POST /api/discovery/scan-youtube` searches recent Music-category uploads
 across six genre buckets (hip-hop/rap, pop, R&B, country, rock/alternative,
 electronic), pulls real view/like/comment/subscriber counts for what it
-finds, and scores each one with a transparent **Momentum Score** — the
-same 0–100, weighted, tunable-ceiling shape as the Breakout Score itself
-(see `lib/youtube-momentum.ts`), built to reward *disproportionate*
+finds, reads each surviving candidate's top comments for genuine "how is
+this not viral" / "underrated" / "this deserves to blow up" sentiment
+(a curated keyword match, not NLP — see `HYPE_PHRASES` in
+`lib/youtube-momentum.ts`, freely tunable), and scores each one with a
+transparent **Momentum Score** — the same 0–100, weighted, tunable-ceiling
+shape as the Breakout Score itself, built to reward *disproportionate*
 momentum (a small channel's video earning far more views than its
-subscriber count would predict) rather than just raw view count. A
-candidate that clears the score threshold gets a best-effort Soundcharts
-name match attempted (search + `/artist/{uuid}`, confirmed-working
-endpoints only) to pull in follower/growth data — improves the candidate,
-never required for it to exist. Every candidate's explanation is visible
-on `/discovery`, e.g. *"142K views in 6 days • 8.4K channel subscribers •
-11.2% like rate"*.
+subscriber count would predict, or getting genuinely surprised reactions
+in the comments) rather than just raw view count. A candidate that clears
+the score threshold gets a best-effort Soundcharts name match attempted
+(search + `/artist/{uuid}`, confirmed-working endpoints only) to pull in
+follower/growth data — improves the candidate, never required for it to
+exist. Every candidate's explanation is visible on `/discovery`, e.g.
+*"142K views in 6 days • 8.4K channel subscribers • 11.2% like rate • 💬
+'how is this not viral??' (412 likes)"* — up to two real example comments
+are captured when the sentiment is there, one inline in that explanation
+and a second shown just below it.
 
 Triggered the same two ways as the Soundcharts source:
 - **Manually** — the "Run YouTube scan now" button on `/discovery`.
@@ -223,13 +229,17 @@ Triggered the same two ways as the Soundcharts source:
   A daily scan is enough; there's no need to run this more often.
 
 **Quota**: the YouTube Data API's daily quota is limited, and its `search`
-call is far more expensive (100 units) than fetching stats (1 unit per
-batched call of up to 50 ids) — this source calls `search` once per genre
-(not once per candidate), then batches every video/channel stats lookup
-found across all genres into as few calls as possible. A default scan
-(6 genres × 15 results) costs roughly `6 × 100 + 2 = 602` quota units
-against a typical 10,000/day default quota. All of the following are
-env-configurable if you need to tune scan size, cost, or which genres run:
+call is far more expensive (100 units) than fetching stats or comments (1
+unit per call — batched up to 50 ids per call for stats; comments can only
+be fetched one video at a time, so 1 unit per candidate) — this source
+calls `search` once per genre (not once per candidate), batches every
+video/channel stats lookup found across all genres into as few calls as
+possible, and only fetches comments for a candidate that *already* cleared
+the free view-count and subscriber-band checks — never for every search
+hit. A default scan (6 genres × 15 results, ~20 candidates surviving the
+free gates) costs roughly `6 × 100 + 2 + 20 = 622` quota units against a
+typical 10,000/day default quota. All of the following are env-configurable
+if you need to tune scan size, cost, or which genres run:
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -238,6 +248,7 @@ env-configurable if you need to tune scan size, cost, or which genres run:
 | `YOUTUBE_PUBLISHED_WITHIN_DAYS` | 14 | How recent an upload has to be to be considered |
 | `YOUTUBE_MIN_SUBSCRIBERS` / `YOUTUBE_MAX_SUBSCRIBERS` | 200 / 100,000 | Channel size band — the upper bound is what keeps this "smaller channels," not already-famous artists |
 | `YOUTUBE_MOMENTUM_THRESHOLD` | 40 | Minimum Momentum Score (0–100) to become a candidate |
+| `YOUTUBE_COMMENTS_PER_CANDIDATE` | 20 | Top comments read (by relevance) per candidate for hype-sentiment detection |
 | `YOUTUBE_MAX_CANDIDATES_PER_RUN` | 25 | Caps both the Soundcharts-enrichment calls and how many new candidates one scan can add |
 
 A channel that hides its subscriber count, or a video with likes/comments

@@ -382,6 +382,37 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
     expect(getKnownDiscoveryYoutubeChannelIds().has('chan-known-1')).toBe(true);
   });
 
+  it('hype-comment fields (rate, examples, likes) round-trip through insert and read', () => {
+    insertDiscoveryCandidate({
+      source: 'youtube',
+      name: 'Hype Channel',
+      yt_channel_id: 'chan-hype-1',
+      momentum_score: 72,
+      yt_hype_comment_rate: 0.15,
+      yt_comments_analyzed: 20,
+      yt_example_comment_1: 'how is this not viral??',
+      yt_example_comment_1_likes: 412,
+      yt_example_comment_2: 'this is so underrated',
+      yt_example_comment_2_likes: 88,
+      flagged_reason: '142K views in 6 days • 💬 "how is this not viral??" (412 likes)',
+    });
+
+    const found = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-hype-1')!;
+    expect(found.yt_hype_comment_rate).toBeCloseTo(0.15, 5);
+    expect(found.yt_comments_analyzed).toBe(20);
+    expect(found.yt_example_comment_1).toBe('how is this not viral??');
+    expect(found.yt_example_comment_1_likes).toBe(412);
+    expect(found.yt_example_comment_2).toBe('this is so underrated');
+    expect(found.yt_example_comment_2_likes).toBe(88);
+  });
+
+  it('a candidate with no hype comments found leaves those fields null, not zero-filled', () => {
+    insertDiscoveryCandidate({ source: 'youtube', name: 'No Hype', yt_channel_id: 'chan-no-hype-1', momentum_score: 55, flagged_reason: 'test' });
+    const found = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-no-hype-1')!;
+    expect(found.yt_hype_comment_rate ?? null).toBeNull();
+    expect(found.yt_example_comment_1 ?? null).toBeNull();
+  });
+
   it('Approve on a YouTube candidate carries its genre onto the new artist and never requires a Soundcharts uuid', () => {
     const admin = makeUser('yt-approver@example.com');
     insertDiscoveryCandidate({

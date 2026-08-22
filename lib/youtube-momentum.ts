@@ -7,10 +7,14 @@
 // Goal: detect DISPROPORTIONATE momentum, not just raw view count — an
 // 8,000-subscriber channel getting 150,000 views in 6 days should score
 // higher than a 2-million-subscriber channel getting 200,000 views in the
-// same window. viewsPerSubscriber is the factor that captures that; the
-// other three (views/day, like rate, comment rate) round out the picture.
+// same window. viewsPerSubscriber is the factor that captures that; views/
+// day, like rate, and comment rate round out the numeric picture; and
+// hypeCommentRate (see detectHypeComments below) adds a qualitative
+// signal — real people in the comments reacting with "wow" / "how is this
+// not viral" is exactly the kind of organic surprise the numbers alone
+// can miss.
 //
-// Deliberately simple (MVP): four factors, each clamped to a ceiling and
+// Deliberately simple (MVP): five factors, each clamped to a ceiling and
 // scored 0-10 (same diminishing-returns style as lib/scoring.ts), then a
 // weighted sum -> 0-100 momentum_score. Every ceiling/weight below is a
 // first-pass constant, easy to retune without touching the shape of the
@@ -22,6 +26,11 @@ export type YoutubeCandidateInputs = {
   commentCount?: number;
   publishedAt: string;
   channelSubscriberCount?: number;
+  // Pre-computed by detectHypeComments() from real comment text fetched
+  // separately (see lib/youtube.ts's getTopComments) — not derived here,
+  // just passed through. Undefined when comments are disabled/unfetched,
+  // NOT when zero comments matched (that's a real 0, not missing data).
+  hypeCommentRate?: number;
 };
 
 export type YoutubeCandidateMetrics = {
@@ -30,6 +39,7 @@ export type YoutubeCandidateMetrics = {
   likeRate?: number; // undefined if YouTube didn't return likeCount (likes hidden)
   commentRate?: number; // undefined if commentCount unavailable (comments disabled)
   viewsPerSubscriber?: number; // undefined if subscriberCount unavailable/hidden
+  hypeCommentRate?: number; // pass-through from input — see there
 };
 
 export function computeYoutubeMetrics(input: YoutubeCandidateInputs): YoutubeCandidateMetrics {
@@ -46,6 +56,7 @@ export function computeYoutubeMetrics(input: YoutubeCandidateInputs): YoutubeCan
       input.channelSubscriberCount != null && input.channelSubscriberCount > 0
         ? input.viewCount / input.channelSubscriberCount
         : undefined,
+    hypeCommentRate: input.hypeCommentRate,
   };
 }
 
@@ -54,6 +65,7 @@ export const VIEWS_PER_SUBSCRIBER_CEILING = 10; // views = 10x the sub count is 
 export const VIEWS_PER_DAY_CEILING = 50_000; // 50K/day sustained is already a big early signal
 export const LIKE_RATE_CEILING = 0.15; // 15% like rate is excellent
 export const COMMENT_RATE_CEILING = 0.02; // 2% comment rate is very high
+export const HYPE_COMMENT_RATE_CEILING = 0.2; // 1 in 5 top comments reading as genuine hype is a strong tell
 
 function clampedScore(value: number | undefined, ceiling: number): number {
   if (value == null) return 0;
@@ -62,26 +74,31 @@ function clampedScore(value: number | undefined, ceiling: number): number {
 }
 
 // Weights sum to 100 when every factor is available. viewsPerSubscriber
-// carries the most weight deliberately — it's the one factor that
-// distinguishes "surprising for this channel's size" from "just a lot of
-// raw views."
+// still carries the most weight — it's a hard number that's meaningfully
+// harder to fake than a comment. hypeCommentRate is deliberately the
+// second-largest weight (comment sentiment was the whole point of adding
+// it) but not the largest — it's the one factor here that's gameable
+// (bots, an artist's own fans coordinating), so it informs the score
+// without being able to single-handedly dominate it.
 export const MOMENTUM_WEIGHTS = {
-  viewsPerSubscriber: 40,
-  viewsPerDay: 30,
-  likeRate: 15,
-  commentRate: 15,
+  viewsPerSubscriber: 35,
+  viewsPerDay: 25,
+  hypeCommentRate: 20,
+  likeRate: 10,
+  commentRate: 10,
 } as const;
 
 // A factor YouTube didn't return data for (likes/comments disabled,
-// subscriber count hidden) is excluded from both the numerator and the
-// weight total, rather than scored as 0 — a channel that hides its
-// subscriber count shouldn't be penalized as if it had none. The
-// remaining weight is rescaled so 100 is still reachable on the factors
-// that ARE available.
+// subscriber count hidden, comment fetch failed) is excluded from both
+// the numerator and the weight total, rather than scored as 0 — e.g. a
+// channel that hides its subscriber count shouldn't be penalized as if
+// it had none. The remaining weight is rescaled so 100 is still
+// reachable on the factors that ARE available.
 export function youtubeMomentumScore(metrics: YoutubeCandidateMetrics): number {
   const factors: [number | undefined, number, number][] = [
     [metrics.viewsPerSubscriber, VIEWS_PER_SUBSCRIBER_CEILING, MOMENTUM_WEIGHTS.viewsPerSubscriber],
     [metrics.viewsPerDay, VIEWS_PER_DAY_CEILING, MOMENTUM_WEIGHTS.viewsPerDay],
+    [metrics.hypeCommentRate, HYPE_COMMENT_RATE_CEILING, MOMENTUM_WEIGHTS.hypeCommentRate],
     [metrics.likeRate, LIKE_RATE_CEILING, MOMENTUM_WEIGHTS.likeRate],
     [metrics.commentRate, COMMENT_RATE_CEILING, MOMENTUM_WEIGHTS.commentRate],
   ];
@@ -103,11 +120,20 @@ function formatCount(n: number): string {
   return String(n);
 }
 
+function truncate(text: string, max: number): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  return collapsed.length > max ? `${collapsed.slice(0, max - 1)}…` : collapsed;
+}
+
 // Builds the specific, numbers-first explanation a Scout reads to decide
-// Approve/Watch/Pass — e.g. "142K views in 6 days • 8.4K channel
-// subscribers • 11.2% like rate". Only mentions factors YouTube actually
-// returned data for.
-export function youtubeFlaggedReason(input: YoutubeCandidateInputs, metrics: YoutubeCandidateMetrics): string {
+// Approve/Watch/Pass — e.g. '142K views in 6 days • 8.4K channel
+// subscribers • 11.2% like rate • 💬 "how is this not viral??" (412
+// likes)'. Only mentions factors YouTube actually returned data for.
+export function youtubeFlaggedReason(
+  input: YoutubeCandidateInputs,
+  metrics: YoutubeCandidateMetrics,
+  bestHypeComment?: HypeCommentExample
+): string {
   const days = Math.max(1, Math.round(metrics.videoAgeDays));
   const parts = [`${formatCount(input.viewCount)} views in ${days} day${days === 1 ? '' : 's'}`];
   if (input.channelSubscriberCount != null) {
@@ -116,7 +142,71 @@ export function youtubeFlaggedReason(input: YoutubeCandidateInputs, metrics: You
   if (metrics.likeRate != null) {
     parts.push(`${Math.round(metrics.likeRate * 1000) / 10}% like rate`);
   }
+  if (bestHypeComment) {
+    parts.push(`💬 "${truncate(bestHypeComment.text, 80)}" (${bestHypeComment.likeCount} like${bestHypeComment.likeCount === 1 ? '' : 's'})`);
+  }
   return parts.join(' • ');
+}
+
+// --- Comment sentiment: a lightweight keyword heuristic, not NLP ---
+//
+// Deliberately simple and honest about its limits: substring matching
+// against a curated phrase list. It will miss paraphrased hype and
+// occasionally false-positive on sarcasm — it is not sentiment analysis.
+// What it's good at is exactly the pattern the roadmap asked for: the
+// recognizable, repeated shape real "this deserves to blow up" comments
+// take. Tune this list freely; it costs nothing to extend.
+export const HYPE_PHRASES = [
+  'how is this not viral',
+  "how is this not blowing up",
+  "why isn't this viral",
+  'why is this not viral',
+  'underrated',
+  'deserves more views',
+  'deserves millions',
+  'deserves way more',
+  'needs to blow up',
+  'blowing up soon',
+  'about to blow up',
+  'going to blow up',
+  'gonna blow up',
+  'this is a hit',
+  'certified banger',
+  'this slaps',
+  'on repeat',
+  "can't stop listening",
+  'cant stop listening',
+  'insane talent',
+  'so talented',
+  'needs a record deal',
+  'record label',
+  'gonna be famous',
+  'going to be famous',
+  'next big thing',
+  'star in the making',
+] as const;
+
+function containsHypePhrase(text: string): boolean {
+  const lower = text.toLowerCase();
+  return HYPE_PHRASES.some((phrase) => lower.includes(phrase));
+}
+
+export type HypeCommentExample = { text: string; likeCount: number };
+
+export type HypeCommentAnalysis = {
+  // Undefined (not 0) when there was nothing to analyze — comments
+  // disabled, fetch failed, or zero comments existed. A real 0 means
+  // comments existed and were checked but none matched.
+  hypeCommentRate?: number;
+  commentsAnalyzed: number;
+  examples: HypeCommentExample[]; // up to 2 matches, highest-liked first
+};
+
+export function detectHypeComments(comments: HypeCommentExample[]): HypeCommentAnalysis {
+  if (comments.length === 0) return { hypeCommentRate: undefined, commentsAnalyzed: 0, examples: [] };
+  const matches = comments.filter((c) => containsHypePhrase(c.text));
+  const examples = [...matches].sort((a, b) => b.likeCount - a.likeCount).slice(0, 2);
+  return { hypeCommentRate: matches.length / comments.length, commentsAnalyzed: comments.length, examples };
 }
 
 // --- Qualification thresholds (defaults; env-overridable — see
@@ -139,28 +229,44 @@ export type YoutubeCandidateRejectionReason =
   | 'subscriber_out_of_band'
   | 'below_momentum_threshold';
 
-// The single source of truth for why a candidate does or doesn't qualify —
-// returns exactly which gate it failed instead of a plain boolean, so a
-// scan can report *why* it found nothing instead of just that it found
-// nothing (a quiet day and a broken pipeline look identical without this).
+// The three gates that need no extra API call — pure math on data already
+// fetched for every search hit. Checked BEFORE spending a commentThreads
+// call on a candidate: no point paying for comment analysis on a channel
+// that was never going to qualify on view count or subscriber size alone.
 // A channel that hides its subscriber count is skipped entirely (not
 // scored as if it had 0) — "disproportionate momentum" is meaningless
 // without a subscriber baseline to compare against.
+export function passesCheapGates(
+  input: Pick<YoutubeCandidateInputs, 'viewCount' | 'channelSubscriberCount'>,
+  thresholds: YoutubeThresholds = {}
+): Exclude<YoutubeCandidateRejectionReason, 'below_momentum_threshold'> | 'passes' {
+  const minSubscribers = thresholds.minSubscribers ?? MIN_CHANNEL_SUBSCRIBERS;
+  const maxSubscribers = thresholds.maxSubscribers ?? MAX_CHANNEL_SUBSCRIBERS;
+  const minViews = thresholds.minViews ?? MIN_VIDEO_VIEWS;
+
+  if (input.viewCount < minViews) return 'below_min_views';
+  if (input.channelSubscriberCount == null) return 'no_subscriber_count';
+  if (input.channelSubscriberCount < minSubscribers || input.channelSubscriberCount > maxSubscribers) return 'subscriber_out_of_band';
+  return 'passes';
+}
+
+// The single source of truth for why a candidate does or doesn't qualify
+// OVERALL — returns exactly which gate it failed instead of a plain
+// boolean, so a scan can report *why* it found nothing instead of just
+// that it found nothing (a quiet day and a broken pipeline look identical
+// without this). Requires momentumScore, which in turn requires comment
+// data to be complete (see lib/youtube-discovery.ts's two-phase flow) —
+// use passesCheapGates() first if you need a verdict before that exists.
 export function classifyYoutubeCandidate(
   input: YoutubeCandidateInputs,
   momentumScore: number,
   thresholds: YoutubeThresholds = {}
 ): YoutubeCandidateRejectionReason | 'passes' {
-  const minSubscribers = thresholds.minSubscribers ?? MIN_CHANNEL_SUBSCRIBERS;
-  const maxSubscribers = thresholds.maxSubscribers ?? MAX_CHANNEL_SUBSCRIBERS;
-  const minViews = thresholds.minViews ?? MIN_VIDEO_VIEWS;
-  const minMomentumScore = thresholds.minMomentumScore ?? MOMENTUM_SCORE_THRESHOLD;
+  const cheapGate = passesCheapGates(input, thresholds);
+  if (cheapGate !== 'passes') return cheapGate;
 
-  if (input.viewCount < minViews) return 'below_min_views';
-  if (input.channelSubscriberCount == null) return 'no_subscriber_count';
-  if (input.channelSubscriberCount < minSubscribers || input.channelSubscriberCount > maxSubscribers) return 'subscriber_out_of_band';
-  if (momentumScore < minMomentumScore) return 'below_momentum_threshold';
-  return 'passes';
+  const minMomentumScore = thresholds.minMomentumScore ?? MOMENTUM_SCORE_THRESHOLD;
+  return momentumScore < minMomentumScore ? 'below_momentum_threshold' : 'passes';
 }
 
 export function passesYoutubeThresholds(

@@ -462,6 +462,16 @@ export type DiscoveryCandidate = {
   yt_like_rate?: number;
   yt_comment_rate?: number;
   yt_views_per_subscriber?: number;
+  // Comment sentiment (see detectHypeComments in lib/youtube-momentum.ts)
+  // — a rate (undefined when nothing could be analyzed, not 0) plus up to
+  // two real example quotes for a Scout to read directly, highest-liked
+  // first.
+  yt_hype_comment_rate?: number;
+  yt_comments_analyzed?: number;
+  yt_example_comment_1?: string;
+  yt_example_comment_1_likes?: number;
+  yt_example_comment_2?: string;
+  yt_example_comment_2_likes?: number;
   momentum_score?: number;
   flagged_reason: string;
   status: DiscoveryCandidateStatus;

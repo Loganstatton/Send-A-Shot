@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  classifyYoutubeCandidate, computeYoutubeMetrics, MAX_CHANNEL_SUBSCRIBERS, MIN_CHANNEL_SUBSCRIBERS, MIN_VIDEO_VIEWS,
-  MOMENTUM_SCORE_THRESHOLD, passesYoutubeThresholds, youtubeFlaggedReason, youtubeMomentumScore,
+  classifyYoutubeCandidate, computeYoutubeMetrics, detectHypeComments, MAX_CHANNEL_SUBSCRIBERS,
+  MIN_CHANNEL_SUBSCRIBERS, MIN_VIDEO_VIEWS, MOMENTUM_SCORE_THRESHOLD, passesCheapGates, passesYoutubeThresholds,
+  youtubeFlaggedReason, youtubeMomentumScore,
 } from './youtube-momentum';
 
 function daysAgo(n: number): string {
@@ -74,6 +75,17 @@ describe('youtubeMomentumScore', () => {
   it('returns 0 when no factor has data', () => {
     expect(youtubeMomentumScore({ videoAgeDays: 5, viewsPerDay: 0 })).toBe(0);
   });
+
+  it('strong comment hype meaningfully raises the score over the same video with no comment data', () => {
+    const withoutHype = computeYoutubeMetrics({ viewCount: 50_000, publishedAt: daysAgo(6), channelSubscriberCount: 20_000 });
+    const withHype = computeYoutubeMetrics({ viewCount: 50_000, publishedAt: daysAgo(6), channelSubscriberCount: 20_000, hypeCommentRate: 0.3 });
+    expect(youtubeMomentumScore(withHype)).toBeGreaterThan(youtubeMomentumScore(withoutHype));
+  });
+
+  it('a real 0 hype rate (comments checked, none matched) is passed through as 0, not dropped like missing data', () => {
+    const metrics = computeYoutubeMetrics({ viewCount: 50_000, publishedAt: daysAgo(6), channelSubscriberCount: 20_000, hypeCommentRate: 0 });
+    expect(metrics.hypeCommentRate).toBe(0);
+  });
 });
 
 describe('youtubeFlaggedReason', () => {
@@ -93,6 +105,79 @@ describe('youtubeFlaggedReason', () => {
     expect(reason).not.toContain('subscribers');
     expect(reason).not.toContain('like rate');
     expect(reason).toContain('5K views in 2 days');
+  });
+
+  it('appends the best hype comment quote with its like count when one is passed in', () => {
+    const input = { viewCount: 142_000, likeCount: 15_904, publishedAt: daysAgo(6), channelSubscriberCount: 8_400 };
+    const metrics = computeYoutubeMetrics(input);
+    const reason = youtubeFlaggedReason(input, metrics, { text: 'how is this not viral??', likeCount: 412 });
+    expect(reason).toContain('💬 "how is this not viral??" (412 likes)');
+  });
+
+  it('truncates a long comment quote rather than blowing up the line', () => {
+    const input = { viewCount: 1_000, publishedAt: daysAgo(1) };
+    const metrics = computeYoutubeMetrics(input);
+    const longComment = 'a'.repeat(200);
+    const reason = youtubeFlaggedReason(input, metrics, { text: longComment, likeCount: 1 });
+    expect(reason.length).toBeLessThan(longComment.length);
+    expect(reason).toContain('…');
+  });
+
+  it('omits the comment segment entirely when no example was found', () => {
+    const input = { viewCount: 5_000, publishedAt: daysAgo(2) };
+    const reason = youtubeFlaggedReason(input, computeYoutubeMetrics(input));
+    expect(reason).not.toContain('💬');
+  });
+});
+
+describe('detectHypeComments', () => {
+  it('matches known hype phrases case-insensitively and computes a rate', () => {
+    const analysis = detectHypeComments([
+      { text: 'How is this NOT viral??', likeCount: 412 },
+      { text: 'love the beat', likeCount: 3 },
+      { text: 'this is so underrated', likeCount: 88 },
+      { text: 'first', likeCount: 0 },
+    ]);
+    expect(analysis.commentsAnalyzed).toBe(4);
+    expect(analysis.hypeCommentRate).toBeCloseTo(0.5, 5);
+  });
+
+  it('returns the top 2 matches sorted by like count, not discovery order', () => {
+    const analysis = detectHypeComments([
+      { text: 'underrated', likeCount: 5 },
+      { text: 'how is this not viral', likeCount: 412 },
+      { text: 'this deserves more views', likeCount: 90 },
+    ]);
+    expect(analysis.examples).toHaveLength(2);
+    expect(analysis.examples[0].likeCount).toBe(412);
+    expect(analysis.examples[1].likeCount).toBe(90);
+  });
+
+  it('a real 0% match rate is a defined number, not undefined — comments existed and were checked', () => {
+    const analysis = detectHypeComments([{ text: 'nice song', likeCount: 2 }, { text: 'cool', likeCount: 1 }]);
+    expect(analysis.hypeCommentRate).toBe(0);
+    expect(analysis.examples).toEqual([]);
+  });
+
+  it('an empty comment list (fetch failed / comments disabled) leaves the rate undefined, distinct from a real 0', () => {
+    const analysis = detectHypeComments([]);
+    expect(analysis.hypeCommentRate).toBeUndefined();
+    expect(analysis.commentsAnalyzed).toBe(0);
+  });
+});
+
+describe('passesCheapGates', () => {
+  it('checks only the three data-already-in-hand gates — no momentum score needed', () => {
+    expect(passesCheapGates({ viewCount: 10_000, channelSubscriberCount: 5_000 })).toBe('passes');
+    expect(passesCheapGates({ viewCount: MIN_VIDEO_VIEWS - 1, channelSubscriberCount: 5_000 })).toBe('below_min_views');
+    expect(passesCheapGates({ viewCount: 10_000, channelSubscriberCount: undefined })).toBe('no_subscriber_count');
+    expect(passesCheapGates({ viewCount: 10_000, channelSubscriberCount: MAX_CHANNEL_SUBSCRIBERS + 1 })).toBe('subscriber_out_of_band');
+  });
+
+  it('agrees with classifyYoutubeCandidate on every candidate that fails a cheap gate', () => {
+    const input = { viewCount: MIN_VIDEO_VIEWS - 1, publishedAt: daysAgo(1), channelSubscriberCount: 5_000 };
+    expect(passesCheapGates(input)).toBe('below_min_views');
+    expect(classifyYoutubeCandidate(input, 100)).toBe('below_min_views');
   });
 });
 
