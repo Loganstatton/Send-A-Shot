@@ -155,3 +155,39 @@ export async function getChannelsStats(channelIds: string[]): Promise<YoutubeRes
   }));
   return { ok: true, data: stats };
 }
+
+export type YoutubeComment = { text: string; likeCount: number };
+
+// Top-level comments only (no replies), ordered by relevance — YouTube's
+// own "most likely to matter" ranking, which in practice surfaces the
+// most-liked/most-replied comments first. That's deliberate: a genuine
+// "how is this not viral" reaction that other viewers have upvoted is a
+// much stronger signal than one buried at the bottom in chronological
+// order. 1 quota unit per call, same tier as videos/channels.list — NOT
+// batched (the API takes one videoId per call), so this is called once
+// per candidate that already cleared the free gates (see
+// lib/youtube-discovery.ts), not once per search hit.
+//
+// Fails gracefully and non-fatally for a video with comments disabled or
+// deleted (a 403/404 from YouTube) — the caller treats a failed result
+// exactly like "no comment data available," never as a reason to reject
+// or crash on that candidate.
+export async function getTopComments(videoId: string, maxResults: number): Promise<YoutubeResult<YoutubeComment[]>> {
+  const result = await youtubeFetch('/commentThreads', {
+    part: 'snippet',
+    videoId,
+    maxResults: String(Math.min(maxResults, 100)),
+    order: 'relevance',
+    textFormat: 'plainText',
+  });
+  if (!result.ok) return result;
+
+  const items = Array.isArray(result.data?.items) ? result.data.items : [];
+  const comments: YoutubeComment[] = items
+    .map((item: any) => {
+      const snippet = item?.snippet?.topLevelComment?.snippet;
+      return { text: snippet?.textDisplay, likeCount: parseCount(snippet?.likeCount) ?? 0 };
+    })
+    .filter((c: YoutubeComment) => typeof c.text === 'string' && c.text.length > 0);
+  return { ok: true, data: comments };
+}

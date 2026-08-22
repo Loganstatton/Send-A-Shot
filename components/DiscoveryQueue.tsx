@@ -55,10 +55,18 @@ export default function DiscoveryQueue({ initial }: { initial: DiscoveryCandidat
                 {c.country && <span className="text-xs text-neutral-500">{c.country}</span>}
               </div>
               <p className="text-sm text-emerald-400 mt-1">{c.flagged_reason}</p>
+              {c.yt_example_comment_2 && (
+                <p className="text-xs text-neutral-400 mt-1">
+                  💬 &ldquo;{c.yt_example_comment_2}&rdquo; ({c.yt_example_comment_2_likes ?? 0} like{c.yt_example_comment_2_likes === 1 ? '' : 's'})
+                </p>
+              )}
               <div className="text-xs text-neutral-500 mt-1 flex gap-3 flex-wrap">
                 {c.followers_count != null && <span>{c.followers_count.toLocaleString()} Spotify followers</span>}
                 {c.yt_view_count != null && <span>{c.yt_view_count.toLocaleString()} YouTube views</span>}
                 {c.yt_channel_subscriber_count != null && <span>{c.yt_channel_subscriber_count.toLocaleString()} subscribers</span>}
+                {c.yt_hype_comment_rate != null && (
+                  <span>{Math.round(c.yt_hype_comment_rate * 1000) / 10}% hype comments{c.yt_comments_analyzed != null ? ` (of ${c.yt_comments_analyzed})` : ''}</span>
+                )}
                 <span>Detected {new Date(c.discovered_at).toLocaleDateString()}</span>
               </div>
             </div>

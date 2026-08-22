@@ -275,6 +275,12 @@ const DISCOVERY_CANDIDATES_DDL = `
     yt_like_rate REAL,
     yt_comment_rate REAL,
     yt_views_per_subscriber REAL,
+    yt_hype_comment_rate REAL,
+    yt_comments_analyzed INTEGER,
+    yt_example_comment_1 TEXT,
+    yt_example_comment_1_likes INTEGER,
+    yt_example_comment_2 TEXT,
+    yt_example_comment_2_likes INTEGER,
     momentum_score REAL,
     flagged_reason TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'new',
@@ -334,6 +340,18 @@ function ensureDiscoveryCandidatesSchema() {
   ensureDiscoveryCandidatesIndexes();
 }
 ensureDiscoveryCandidatesSchema();
+// Added after the table-rebuild migration above already shipped — a
+// database that went through that migration but predates comment-based
+// scoring needs these added the ordinary way (they're new nullable
+// columns, not a NOT NULL/UNIQUE relaxation, so no rebuild is needed). A
+// brand-new table already has them from DISCOVERY_CANDIDATES_DDL above;
+// these are then harmless duplicate-column no-ops.
+addColumnIfMissing('discovery_candidates', 'yt_hype_comment_rate REAL');
+addColumnIfMissing('discovery_candidates', 'yt_comments_analyzed INTEGER');
+addColumnIfMissing('discovery_candidates', 'yt_example_comment_1 TEXT');
+addColumnIfMissing('discovery_candidates', 'yt_example_comment_1_likes INTEGER');
+addColumnIfMissing('discovery_candidates', 'yt_example_comment_2 TEXT');
+addColumnIfMissing('discovery_candidates', 'yt_example_comment_2_likes INTEGER');
 
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
@@ -1390,6 +1408,12 @@ export type NewDiscoveryCandidate = {
   yt_like_rate?: number;
   yt_comment_rate?: number;
   yt_views_per_subscriber?: number;
+  yt_hype_comment_rate?: number;
+  yt_comments_analyzed?: number;
+  yt_example_comment_1?: string;
+  yt_example_comment_1_likes?: number;
+  yt_example_comment_2?: string;
+  yt_example_comment_2_likes?: number;
   momentum_score?: number;
   flagged_reason: string;
 };
@@ -1399,8 +1423,9 @@ const DISCOVERY_CANDIDATE_COLUMNS = [
   'followers_count', 'followers_7d_ago', 'followers_30d_ago', 'growth_7d_pct', 'growth_30d_pct',
   'yt_video_id', 'yt_channel_id', 'yt_channel_title', 'yt_genre', 'yt_view_count', 'yt_like_count',
   'yt_comment_count', 'yt_published_at', 'yt_channel_subscriber_count', 'yt_channel_view_count',
-  'yt_views_per_day', 'yt_like_rate', 'yt_comment_rate', 'yt_views_per_subscriber', 'momentum_score',
-  'flagged_reason',
+  'yt_views_per_day', 'yt_like_rate', 'yt_comment_rate', 'yt_views_per_subscriber', 'yt_hype_comment_rate',
+  'yt_comments_analyzed', 'yt_example_comment_1', 'yt_example_comment_1_likes', 'yt_example_comment_2',
+  'yt_example_comment_2_likes', 'momentum_score', 'flagged_reason',
 ] as const;
 
 export function insertDiscoveryCandidate(c: NewDiscoveryCandidate): void {
