@@ -1523,6 +1523,18 @@ export function setDiscoveryCandidateStatus(
 // neutral default. It does NOT auto-list on NEXT or assign a Breakout Score;
 // a human still rates the eight categories before this artist is real to
 // the product, same as any artist Scout added by hand.
+// The scan-bucket keys used internally by lib/youtube-discovery.ts
+// (DEFAULT_YOUTUBE_GENRES) — a Scout approving a candidate should see
+// "Hip-Hop/Rap," not the raw search-bucket key "hip-hop-rap".
+const YOUTUBE_GENRE_LABELS: Record<string, string> = {
+  'hip-hop-rap': 'Hip-Hop/Rap',
+  pop: 'Pop',
+  rnb: 'R&B',
+  country: 'Country',
+  'rock-alternative': 'Rock/Alternative',
+  electronic: 'Electronic',
+};
+
 export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | undefined {
   const candidate = getDiscoveryCandidate(id);
   if (!candidate || candidate.status === 'approved') return undefined;
@@ -1532,7 +1544,7 @@ export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | un
       name: candidate.name,
       photo_url: candidate.photo_url,
       location: candidate.country,
-      genre: candidate.yt_genre,
+      genre: candidate.yt_genre ? (YOUTUBE_GENRE_LABELS[candidate.yt_genre] ?? candidate.yt_genre) : undefined,
       followers_count: candidate.followers_count,
       growth_velocity_pct: candidate.growth_30d_pct,
       soundcharts_uuid: candidate.soundcharts_uuid,

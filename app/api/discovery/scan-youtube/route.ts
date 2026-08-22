@@ -36,6 +36,13 @@ export async function POST(req: Request) {
     };
     const { candidates, searchedCount, quotaUsed, rejectionBreakdown } = await youtubeDiscoverySource.scan(known);
 
+    // candidatesFound must reflect what actually made it into the queue,
+    // not how many the scan scored — a scan can score 25 real candidates
+    // and still insert 0 of them (a constraint violation, a schema bug),
+    // and reporting the pre-insert count as success hides exactly that.
+    let insertedCount = 0;
+    let insertFailedCount = 0;
+    let lastInsertError: string | undefined;
     for (const candidate of candidates) {
       // Belt-and-suspenders: the scan already dedupes within itself and
       // against known channels, but a duplicate insert (a race with
@@ -44,13 +51,19 @@ export async function POST(req: Request) {
       // failure never crashes the whole thing.
       try {
         insertDiscoveryCandidate(candidate);
+        insertedCount++;
       } catch (err: any) {
+        insertFailedCount++;
+        lastInsertError = err?.message;
         console.error('[youtube-discovery] failed to insert candidate', candidate.yt_channel_id, err?.message);
       }
     }
 
-    completeDiscoveryRun(run.id, { status: 'completed', searchedCount, candidatesFound: candidates.length, quotaUsed, rejectionBreakdown });
-    return NextResponse.json({ runId: run.id, searchedCount, candidatesFound: candidates.length, quotaUsed, rejectionBreakdown });
+    completeDiscoveryRun(run.id, { status: 'completed', searchedCount, candidatesFound: insertedCount, quotaUsed, rejectionBreakdown });
+    return NextResponse.json({
+      runId: run.id, searchedCount, candidatesFound: insertedCount, quotaUsed, rejectionBreakdown,
+      insertFailedCount, lastInsertError,
+    });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during YouTube scan.';
     completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: message });
