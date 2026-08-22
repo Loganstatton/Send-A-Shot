@@ -235,26 +235,46 @@ export type YoutubeThresholds = {
 };
 
 export type YoutubeCandidateRejectionReason =
+  | 'not_official_release'
   | 'below_min_views'
   | 'no_subscriber_count'
   | 'subscriber_out_of_band'
   | 'below_momentum_threshold';
 
-// The three gates that need no extra API call — pure math on data already
-// fetched for every search hit. Checked BEFORE spending a commentThreads
-// call on a candidate: no point paying for comment analysis on a channel
-// that was never going to qualify on view count or subscriber size alone.
-// A channel that hides its subscriber count is skipped entirely (not
-// scored as if it had 0) — "disproportionate momentum" is meaningless
-// without a subscriber baseline to compare against.
+// YouTube's Music category (videoCategoryId=10) is much broader than
+// "artists releasing songs" — gear-demo channels, album review/ranking
+// channels, reaction videos, and DJ mix compilations all get categorized
+// as Music too, and a generic genre-keyword search surfaces plenty of
+// them. Requiring the title to read like an actual song release (the
+// near-universal "(Official Audio)" / "(Official Video)" / "Lyric Video"
+// convention real artists and labels use) is a strong, standard signal
+// that this is someone's own music, not commentary about music. This
+// trades some recall (a real artist who doesn't tag this way gets missed)
+// for a lot of precision — worth it given the alternative was gear-review
+// and album-ranking channels showing up as "candidates."
+const OFFICIAL_RELEASE_TITLE_PATTERN = /official\s+(music\s+)?video|official\s+audio|lyric\s+video/i;
+
+export function looksLikeOfficialRelease(title: string): boolean {
+  return OFFICIAL_RELEASE_TITLE_PATTERN.test(title);
+}
+
+// The four gates that need no extra API call — pure checks on data
+// already fetched for every search hit. Checked BEFORE spending a
+// commentThreads call on a candidate: no point paying for comment
+// analysis on a channel that was never going to qualify on title, view
+// count, or subscriber size alone. A channel that hides its subscriber
+// count is skipped entirely (not scored as if it had 0) —
+// "disproportionate momentum" is meaningless without a subscriber
+// baseline to compare against.
 export function passesCheapGates(
-  input: Pick<YoutubeCandidateInputs, 'viewCount' | 'channelSubscriberCount'>,
+  input: Pick<YoutubeCandidateInputs, 'viewCount' | 'channelSubscriberCount'> & { title: string },
   thresholds: YoutubeThresholds = {}
 ): Exclude<YoutubeCandidateRejectionReason, 'below_momentum_threshold'> | 'passes' {
   const minSubscribers = thresholds.minSubscribers ?? MIN_CHANNEL_SUBSCRIBERS;
   const maxSubscribers = thresholds.maxSubscribers ?? MAX_CHANNEL_SUBSCRIBERS;
   const minViews = thresholds.minViews ?? MIN_VIDEO_VIEWS;
 
+  if (!looksLikeOfficialRelease(input.title)) return 'not_official_release';
   if (input.viewCount < minViews) return 'below_min_views';
   if (input.channelSubscriberCount == null) return 'no_subscriber_count';
   if (input.channelSubscriberCount < minSubscribers || input.channelSubscriberCount > maxSubscribers) return 'subscriber_out_of_band';
@@ -269,7 +289,7 @@ export function passesCheapGates(
 // data to be complete (see lib/youtube-discovery.ts's two-phase flow) —
 // use passesCheapGates() first if you need a verdict before that exists.
 export function classifyYoutubeCandidate(
-  input: YoutubeCandidateInputs,
+  input: YoutubeCandidateInputs & { title: string },
   momentumScore: number,
   thresholds: YoutubeThresholds = {}
 ): YoutubeCandidateRejectionReason | 'passes' {
@@ -281,7 +301,7 @@ export function classifyYoutubeCandidate(
 }
 
 export function passesYoutubeThresholds(
-  input: YoutubeCandidateInputs,
+  input: YoutubeCandidateInputs & { title: string },
   momentumScore: number,
   thresholds: YoutubeThresholds = {}
 ): boolean {

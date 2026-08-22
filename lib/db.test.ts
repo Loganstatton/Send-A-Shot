@@ -532,6 +532,7 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
       candidatesFound: 0,
       quotaUsed: 602,
       rejectionBreakdown: {
+        notOfficialRelease: 15,
         belowMinViews: 12,
         noSubscriberCount: 30,
         subscriberOutOfBand: 40,
@@ -543,6 +544,7 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
     const latest = getLatestDiscoveryRun('youtube')!;
     expect(latest.id).toBe(run.id);
     expect(latest.candidates_found).toBe(0);
+    expect(latest.rejected_not_official_release).toBe(15);
     expect(latest.rejected_below_min_views).toBe(12);
     expect(latest.rejected_no_subscriber_count).toBe(30);
     expect(latest.rejected_subscriber_out_of_band).toBe(40);

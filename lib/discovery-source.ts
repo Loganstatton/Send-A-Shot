@@ -22,6 +22,7 @@ import type { DiscoverySourceKey } from './types';
 // because nothing was there, or because a threshold/data gap silently
 // filtered everything?" without guessing.
 export type DiscoveryRejectionBreakdown = {
+  notOfficialRelease: number;
   belowMinViews: number;
   noSubscriberCount: number;
   subscriberOutOfBand: number;

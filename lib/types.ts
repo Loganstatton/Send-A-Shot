@@ -500,6 +500,7 @@ export type DiscoveryRun = {
   // YouTube-only: why candidates that didn't qualify got rejected (see
   // DiscoveryRejectionBreakdown in lib/discovery-source.ts). Always
   // undefined on a Soundcharts-source run.
+  rejected_not_official_release?: number;
   rejected_below_min_views?: number;
   rejected_no_subscriber_count?: number;
   rejected_subscriber_out_of_band?: number;

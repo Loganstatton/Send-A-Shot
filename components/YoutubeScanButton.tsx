@@ -19,6 +19,7 @@ export default function YoutubeScanButton() {
       const r = data.rejectionBreakdown;
       if (r && data.candidatesFound === 0) {
         const parts = [
+          r.notOfficialRelease > 0 && `${r.notOfficialRelease} not tagged as an official release`,
           r.belowMinViews > 0 && `${r.belowMinViews} too few views`,
           r.noSubscriberCount > 0 && `${r.noSubscriberCount} no subscriber count`,
           r.subscriberOutOfBand > 0 && `${r.subscriberOutOfBand} channel size outside band`,

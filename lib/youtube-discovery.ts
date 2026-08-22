@@ -144,7 +144,7 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
   // of this scan, which is why genre count and results-per-genre are both
   // env-configurable (see README).
   const genres = scanGenres();
-  const hitsByVideoId = new Map<string, { videoId: string; channelId: string; channelTitle: string; publishedAt: string; genre: string }>();
+  const hitsByVideoId = new Map<string, { videoId: string; channelId: string; channelTitle: string; title: string; publishedAt: string; genre: string }>();
   const genreErrors: string[] = [];
   for (const [genreKey, query] of genres) {
     const result = await searchRecentMusicVideos(query, { publishedAfter, maxResults: maxResultsPerGenre });
@@ -160,7 +160,7 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
     for (const hit of result.data) {
       searchedCount++;
       if (!hitsByVideoId.has(hit.videoId)) {
-        hitsByVideoId.set(hit.videoId, { videoId: hit.videoId, channelId: hit.channelId, channelTitle: hit.channelTitle, publishedAt: hit.publishedAt, genre: genreKey });
+        hitsByVideoId.set(hit.videoId, { videoId: hit.videoId, channelId: hit.channelId, channelTitle: hit.channelTitle, title: hit.title, publishedAt: hit.publishedAt, genre: genreKey });
       }
     }
   }
@@ -226,16 +226,20 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
   };
   const scored: Scored[] = [];
   const rejectionBreakdown: DiscoveryRejectionBreakdown = {
-    belowMinViews: 0, noSubscriberCount: 0, subscriberOutOfBand: 0, belowMomentumThreshold: 0,
+    notOfficialRelease: 0, belowMinViews: 0, noSubscriberCount: 0, subscriberOutOfBand: 0, belowMomentumThreshold: 0,
   };
   for (const hit of byChannel.values()) {
     const videoStats = videoStatsById.get(hit.videoId);
     const channelStats = channelStatsById.get(hit.channelId);
     if (!videoStats?.viewCount) continue; // stats fetch failed for this video — not a scored rejection, just missing data
 
-    const cheapGate = passesCheapGates({ viewCount: videoStats.viewCount, channelSubscriberCount: channelStats?.subscriberCount }, thresholds);
+    const cheapGate = passesCheapGates(
+      { title: hit.title, viewCount: videoStats.viewCount, channelSubscriberCount: channelStats?.subscriberCount },
+      thresholds
+    );
     if (cheapGate !== 'passes') {
-      if (cheapGate === 'below_min_views') rejectionBreakdown.belowMinViews++;
+      if (cheapGate === 'not_official_release') rejectionBreakdown.notOfficialRelease++;
+      else if (cheapGate === 'below_min_views') rejectionBreakdown.belowMinViews++;
       else if (cheapGate === 'no_subscriber_count') rejectionBreakdown.noSubscriberCount++;
       else if (cheapGate === 'subscriber_out_of_band') rejectionBreakdown.subscriberOutOfBand++;
       continue;
@@ -253,6 +257,7 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
     // candidate for something YouTube didn't return.
 
     const inputs = {
+      title: hit.title,
       viewCount: videoStats.viewCount,
       likeCount: videoStats.likeCount,
       commentCount: videoStats.commentCount,
