@@ -1,9 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 export default function YoutubeScanButton() {
-  const router = useRouter();
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -29,10 +27,14 @@ export default function YoutubeScanButton() {
         if (parts.length > 0) text += ` Rejected: ${parts.join(', ')}.`;
       }
       setResult(text);
-      router.refresh();
+      // router.refresh() doesn't reliably bust Next's client-side route
+      // cache right after a POST — the New Candidates list was staying
+      // stale until a manual navigation away and back. A full reload
+      // guarantees fresh data; delayed briefly so this result text is
+      // actually readable before the page reloads out from under it.
+      setTimeout(() => window.location.reload(), 2500);
     } catch (err: any) {
       setResult(err.message ?? 'Scan failed.');
-    } finally {
       setRunning(false);
     }
   }

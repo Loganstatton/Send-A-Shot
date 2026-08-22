@@ -71,7 +71,25 @@ function normalizeArtistName(name: string): string {
     .toLowerCase();
 }
 
-type SoundchartsEnrichment = { soundcharts_uuid: string; followers_count?: number; growth_30d_pct?: number };
+// Same suffixes as normalizeArtistName strips for matching, but kept
+// presentable (spacing/casing preserved) — this becomes the candidate's
+// actual `name`, so a raw "Artist Name - Topic" or "ArtistNameVEVO" isn't
+// just ugly in the queue, it also breaks the Deezer top-song lookup on
+// approval, which needs an exact (case-insensitive) name match.
+function cleanChannelTitle(title: string): string {
+  return title
+    .replace(/\s*-\s*topic$/i, '')
+    .replace(/vevo$/i, '')
+    .replace(/\s+vevo\b/gi, '')
+    .replace(/\(\s*official[^)]*\)/gi, '')
+    .replace(/\bofficial\s+(artist\s+)?channel\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim() || title; // never collapse to an empty string
+}
+
+type SoundchartsEnrichment = {
+  soundcharts_uuid: string; followers_count?: number; growth_30d_pct?: number; photo_url?: string; location?: string;
+};
 
 // Best-effort only: a Soundcharts match improves a candidate but is never
 // required (see file header / roadmap item 5). Only the two endpoints
@@ -94,6 +112,12 @@ async function matchAndEnrichWithSoundcharts(channelTitle: string): Promise<Soun
     soundcharts_uuid: match.uuid,
     followers_count: dataResult.data.followers_count,
     growth_30d_pct: dataResult.data.growth_velocity_pct,
+    // getArtistData also returns photo/location — previously discarded
+    // here, which meant even a successful Soundcharts match left a
+    // YouTube-sourced candidate with no photo and no location, unlike a
+    // Soundcharts-sourced one.
+    photo_url: dataResult.data.photo_url,
+    location: dataResult.data.location,
   };
 }
 
@@ -269,7 +293,9 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
 
     candidates.push({
       source: 'youtube',
-      name: s.hit.channelTitle,
+      name: cleanChannelTitle(s.hit.channelTitle),
+      photo_url: enrichment?.photo_url,
+      country: enrichment?.location,
       soundcharts_uuid: enrichment?.soundcharts_uuid,
       followers_count: enrichment?.followers_count,
       growth_30d_pct: enrichment?.growth_30d_pct,

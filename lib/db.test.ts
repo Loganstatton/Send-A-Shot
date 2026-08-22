@@ -471,7 +471,7 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
     expect(found.yt_example_comment_1 ?? null).toBeNull();
   });
 
-  it('Approve on a YouTube candidate carries its genre onto the new artist and never requires a Soundcharts uuid', () => {
+  it('Approve on a YouTube candidate carries its genre onto the new artist as a human label, not the raw scan-bucket key, and never requires a Soundcharts uuid', () => {
     const admin = makeUser('yt-approver@example.com');
     insertDiscoveryCandidate({
       source: 'youtube',
@@ -485,8 +485,43 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
     const artist = approveDiscoveryCandidate(candidate.id, { id: admin.id, name: admin.name })!;
 
     expect(artist).toBeDefined();
-    expect(artist.genre).toBe('rock-alternative');
+    expect(artist.genre).toBe('Rock/Alternative');
     expect(artist.soundcharts_uuid ?? null).toBeNull();
+  });
+
+  it('Approve on a YouTube candidate with an unrecognized genre key falls back to that raw key rather than dropping it', () => {
+    const admin = makeUser('yt-approver-fallback@example.com');
+    insertDiscoveryCandidate({
+      source: 'youtube',
+      name: 'Unknown Genre Carrier',
+      yt_channel_id: 'chan-genre-2',
+      yt_genre: 'some-future-bucket',
+      momentum_score: 60,
+      flagged_reason: 'test',
+    });
+    const candidate = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-genre-2')!;
+    const artist = approveDiscoveryCandidate(candidate.id, { id: admin.id, name: admin.name })!;
+
+    expect(artist.genre).toBe('some-future-bucket');
+  });
+
+  it('Approve on a YouTube candidate carries its photo and location through when Soundcharts enrichment found them', () => {
+    const admin = makeUser('yt-approver-photo@example.com');
+    insertDiscoveryCandidate({
+      source: 'youtube',
+      name: 'Photo Carrier',
+      yt_channel_id: 'chan-photo-1',
+      photo_url: 'https://example.com/photo.jpg',
+      country: 'Toronto, CA',
+      soundcharts_uuid: 'uuid-photo-1',
+      momentum_score: 60,
+      flagged_reason: 'test',
+    });
+    const candidate = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-photo-1')!;
+    const artist = approveDiscoveryCandidate(candidate.id, { id: admin.id, name: admin.name })!;
+
+    expect(artist.photo_url).toBe('https://example.com/photo.jpg');
+    expect(artist.location).toBe('Toronto, CA');
   });
 
   it('a completed YouTube run round-trips its rejection breakdown — this is what tells a Scout "why zero", not just "zero"', () => {
