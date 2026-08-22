@@ -154,12 +154,12 @@ export default function ArtistForm({ artist }: Props) {
           <div>
             <label className="label">30-second preview clip URL</label>
             <input className="input" value={form.song_preview_url ?? ''} onChange={(e) => set('song_preview_url', e.target.value)} placeholder="Direct link to an audio file (.mp3, .m4a…)" />
-            <p className="text-xs text-neutral-500 mt-1">Spotify sync fills this when it can — Spotify has stopped returning a preview clip for a growing share of tracks, so this often stays empty even when Top song link fills in fine</p>
+            <p className="text-xs text-neutral-500 mt-1">✓ Deezer sync fills this automatically when it finds a top track — only type one in to override it</p>
           </div>
           <div>
             <label className="label">Top song link</label>
             <input className="input" value={form.top_song_url ?? ''} onChange={(e) => set('top_song_url', e.target.value)} placeholder="Link to their best/most popular track" />
-            <p className="text-xs text-neutral-500 mt-1">✓ Spotify sync fills this automatically (dashboard) — only type one in to override it</p>
+            <p className="text-xs text-neutral-500 mt-1">✓ Deezer sync fills this automatically (dashboard) — only type one in to override it</p>
           </div>
           <div>
             <label className="label">Why they&apos;re trending</label>

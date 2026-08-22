@@ -510,9 +510,12 @@ export type DiscoveryRun = {
 export type SyncRunStatus = 'running' | 'completed' | 'failed';
 
 // Same extension pattern as DiscoverySourceKey — Soundcharts stats sync
-// was the only sync source until Spotify top-track sync (lib/spotify.ts)
-// needed its own independent, separately-configured run history.
-export type SyncSourceKey = 'soundcharts' | 'spotify';
+// was the only sync source until Deezer top-track sync (lib/deezer.ts)
+// needed its own independent run history. ('spotify' was the original
+// source key for this before Spotify's Client Credentials flow started
+// 403ing on every call for new apps — old rows keep that value, nothing
+// new writes it.)
+export type SyncSourceKey = 'soundcharts' | 'deezer' | 'spotify';
 
 // One row per sync run — same "last run: X ago" visibility as DiscoveryRun
 // above, so an automated daily sync that silently starts failing (bad
@@ -528,7 +531,7 @@ export type SyncRun = {
   updated_count: number;
   failed_count: number;
   error?: string;
-  // Spotify-only: why failed_count is what it is — genuinely no match
+  // Deezer-only: why failed_count is what it is — genuinely no match
   // found vs an actual API call erroring, plus a sample of the last
   // error seen. Always undefined on a Soundcharts-source run.
   no_match_count?: number;

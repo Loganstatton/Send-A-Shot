@@ -7,7 +7,7 @@ import { STAGE_LABELS } from '@/lib/types';
 import ScoreBadge from '@/components/ScoreBadge';
 import FollowUpList from '@/components/FollowUpList';
 import SyncAllButton from '@/components/SyncAllButton';
-import SpotifySyncButton from '@/components/SpotifySyncButton';
+import DeezerSyncButton from '@/components/DeezerSyncButton';
 
 export const metadata: Metadata = { title: { absolute: 'Scout — Early Artist Discovery' } };
 export const dynamic = 'force-dynamic';
@@ -19,7 +19,7 @@ export default async function DashboardPage() {
     .sort((a, b) => b.score - a.score);
   const dueFollowUps = getDueFollowUps();
   const lastSync = getLatestSyncRun('soundcharts');
-  const lastSpotifySync = getLatestSyncRun('spotify');
+  const lastDeezerSync = getLatestSyncRun('deezer');
 
   const active = artists.filter((a) => a.stage !== 'passed');
   const fire = active.filter((a) => a.score >= 85).length;
@@ -42,7 +42,7 @@ export default async function DashboardPage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div className="flex flex-col items-start gap-2">
           <SyncAllButton />
-          <SpotifySyncButton />
+          <DeezerSyncButton />
         </div>
         <div className="text-right space-y-1">
           {lastSync && (
@@ -53,18 +53,18 @@ export default async function DashboardPage() {
                 : `checked ${lastSync.checked_count}, updated ${lastSync.updated_count}${lastSync.failed_count > 0 ? `, ${lastSync.failed_count} failed` : ''}`}
             </p>
           )}
-          {lastSpotifySync && (
+          {lastDeezerSync && (
             <p className="text-xs text-neutral-500">
-              Last Spotify sync: {new Date(lastSpotifySync.started_at).toLocaleString()} —{' '}
-              {lastSpotifySync.status === 'failed'
-                ? <span className="text-red-400">failed: {lastSpotifySync.error}</span>
+              Last Deezer sync: {new Date(lastDeezerSync.started_at).toLocaleString()} —{' '}
+              {lastDeezerSync.status === 'failed'
+                ? <span className="text-red-400">failed: {lastDeezerSync.error}</span>
                 : <>
-                    checked {lastSpotifySync.checked_count}, updated {lastSpotifySync.updated_count}.
-                    {(lastSpotifySync.no_match_count ?? 0) > 0 && ` ${lastSpotifySync.no_match_count} no Spotify match.`}
-                    {(lastSpotifySync.error_count ?? 0) > 0 && (
+                    checked {lastDeezerSync.checked_count}, updated {lastDeezerSync.updated_count}.
+                    {(lastDeezerSync.no_match_count ?? 0) > 0 && ` ${lastDeezerSync.no_match_count} no Deezer match.`}
+                    {(lastDeezerSync.error_count ?? 0) > 0 && (
                       <span className="text-red-400">
-                        {' '}{lastSpotifySync.error_count} lookup error{lastSpotifySync.error_count === 1 ? '' : 's'}
-                        {lastSpotifySync.last_error ? ` (${lastSpotifySync.last_error})` : ''}.
+                        {' '}{lastDeezerSync.error_count} lookup error{lastDeezerSync.error_count === 1 ? '' : 's'}
+                        {lastDeezerSync.last_error ? ` (${lastDeezerSync.last_error})` : ''}.
                       </span>
                     )}
                   </>}

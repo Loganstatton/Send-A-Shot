@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getInternalUser } from '@/lib/auth';
 import { approveDiscoveryCandidate, setDiscoveryCandidateStatus, updateArtist } from '@/lib/db';
 import { ArtistInput } from '@/lib/types';
-import { getTopSongForArtist, spotifyConfigured } from '@/lib/spotify';
+import { getTopSongForArtist } from '@/lib/deezer';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +23,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     let artist = approveDiscoveryCandidate(id, user);
     if (!artist) return NextResponse.json({ error: 'candidate not found or already approved' }, { status: 404 });
 
-    // Same best-effort, one-time Spotify top-song lookup as the manual Add
+    // Same best-effort, one-time Deezer top-song lookup as the manual Add
     // Artist flow — a candidate becoming a real artist is another "an
     // artist enters the roster" moment, so it gets the same treatment.
-    if (spotifyConfigured() && !artist.top_song_url) {
-      const result = await getTopSongForArtist(artist.name, artist.spotify_url).catch(() => null);
+    if (!artist.top_song_url) {
+      const result = await getTopSongForArtist(artist.name).catch(() => null);
       if (result?.ok) {
         artist = updateArtist(artist.id, result.data as ArtistInput) ?? artist;
       }

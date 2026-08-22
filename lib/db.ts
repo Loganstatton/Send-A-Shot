@@ -236,10 +236,10 @@ addColumnIfMissing('discovery_runs', 'rejected_subscriber_out_of_band INTEGER');
 addColumnIfMissing('discovery_runs', 'rejected_below_momentum_threshold INTEGER');
 addColumnIfMissing('discovery_runs', 'best_rejected_momentum_score REAL');
 // Same treatment for sync_runs — it originally only ever meant a
-// Soundcharts stats sync; `source` distinguishes a Spotify top-track sync
-// run (lib/spotify.ts) from it, so each has its own independent history.
+// Soundcharts stats sync; `source` distinguishes a Deezer top-track sync
+// run (lib/deezer.ts) from it, so each has its own independent history.
 addColumnIfMissing('sync_runs', "source TEXT NOT NULL DEFAULT 'soundcharts'");
-// Spotify-only diagnostics: why a "checked N, updated 0" run found nothing
+// Deezer-only diagnostics: why a "checked N, updated 0" run found nothing
 // — genuinely no match for any artist (no_match_count) vs an actual API
 // call failing (error_count), plus a sample of the last error seen. Null
 // on a Soundcharts-source run, which doesn't do this kind of lookup.
@@ -1344,21 +1344,24 @@ export function completeSyncRun(
 
 export function getLatestSyncRun(source: SyncSourceKey = 'soundcharts'): SyncRun | undefined {
   return db
-    .prepare('SELECT * FROM sync_runs WHERE source = ? ORDER BY started_at DESC LIMIT 1')
+    // id DESC breaks ties when two runs share the same started_at timestamp
+    // (millisecond-resolution ISO strings collide easily under fast/automated
+    // syncs) — started_at alone isn't a reliable "most recent" ordering.
+    .prepare('SELECT * FROM sync_runs WHERE source = ? ORDER BY started_at DESC, id DESC LIMIT 1')
     .get(source) as SyncRun | undefined;
 }
 
-// Artists still missing a top song link, for Spotify top-track sync —
+// Artists still missing a top song link, for Deezer top-track sync —
 // unlike Soundcharts sync (which only touches artists explicitly linked
 // by uuid, but always re-fetches), this touches every artist regardless
 // of a Soundcharts link, but only ones that don't already have one. Once
 // filled — by this sync or typed in by hand — it's a Scout's curatorial
 // choice of which song best represents the artist, so it's never
 // silently overwritten; clear the field to have sync fill it again.
-export function getArtistsMissingTopSong(): { id: number; name: string; spotify_url: string | null }[] {
+export function getArtistsMissingTopSong(): { id: number; name: string }[] {
   return db
-    .prepare("SELECT id, name, spotify_url FROM artists WHERE top_song_url IS NULL OR top_song_url = ''")
-    .all() as { id: number; name: string; spotify_url: string | null }[];
+    .prepare("SELECT id, name FROM artists WHERE top_song_url IS NULL OR top_song_url = ''")
+    .all() as { id: number; name: string }[];
 }
 
 // Candidates already reviewed (watching/approved/passed) for a name are
@@ -1412,7 +1415,8 @@ export function completeDiscoveryRun(
 
 export function getLatestDiscoveryRun(source: DiscoverySourceKey = 'soundcharts'): DiscoveryRun | undefined {
   return db
-    .prepare('SELECT * FROM discovery_runs WHERE source = ? ORDER BY started_at DESC LIMIT 1')
+    // Same started_at tie-break as getLatestSyncRun above.
+    .prepare('SELECT * FROM discovery_runs WHERE source = ? ORDER BY started_at DESC, id DESC LIMIT 1')
     .get(source) as DiscoveryRun | undefined;
 }
 
