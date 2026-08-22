@@ -229,22 +229,26 @@ Triggered the same two ways as the Soundcharts source:
   A daily scan is enough; there's no need to run this more often.
 
 **Quota**: the YouTube Data API's daily quota is limited, and its `search`
-call is far more expensive (100 units) than fetching stats or comments (1
-unit per call — batched up to 50 ids per call for stats; comments can only
-be fetched one video at a time, so 1 unit per candidate) — this source
-calls `search` once per genre (not once per candidate), batches every
+call is far more expensive (100 units, a *flat* cost regardless of how
+many results are requested, up to YouTube's own 50-per-call cap) than
+fetching stats or comments (1 unit per call — batched up to 50 ids per
+call for stats; comments can only be fetched one video at a time, so 1
+unit per candidate) — this source calls `search` once per genre (not once
+per candidate), defaults to pulling YouTube's max of 50 results per call
+since that costs nothing extra on top of the flat 100, batches every
 video/channel stats lookup found across all genres into as few calls as
 possible, and only fetches comments for a candidate that *already* cleared
 the free view-count and subscriber-band checks — never for every search
-hit. A default scan (6 genres × 15 results, ~20 candidates surviving the
-free gates) costs roughly `6 × 100 + 2 + 20 = 622` quota units against a
-typical 10,000/day default quota. All of the following are env-configurable
-if you need to tune scan size, cost, or which genres run:
+hit. A default scan (6 genres × 50 results = 600 units for search) plus
+roughly 1 unit per candidate that survives the free gates for comments
+(typically well under 100) stays a small fraction of a typical 10,000/day
+default quota. All of the following are env-configurable if you need to
+tune scan size, cost, or which genres run:
 
 | Env var | Default | Effect |
 |---|---|---|
 | `YOUTUBE_SCAN_GENRES` | all six | Comma list of genre keys to scan (`hip-hop-rap,pop,rnb,country,rock-alternative,electronic`) |
-| `YOUTUBE_MAX_RESULTS_PER_GENRE` | 15 | Search results pulled per genre per scan |
+| `YOUTUBE_MAX_RESULTS_PER_GENRE` | 50 (YouTube's own max per call) | Search results pulled per genre per scan — free to max out, since `search` is priced per call, not per result |
 | `YOUTUBE_PUBLISHED_WITHIN_DAYS` | 14 | How recent an upload has to be to be considered |
 | `YOUTUBE_MIN_SUBSCRIBERS` / `YOUTUBE_MAX_SUBSCRIBERS` | 200 / 100,000 | Channel size band — the upper bound is what keeps this "smaller channels," not already-famous artists |
 | `YOUTUBE_MOMENTUM_THRESHOLD` | 40 | Minimum Momentum Score (0–100) to become a candidate |
