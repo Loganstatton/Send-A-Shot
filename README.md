@@ -224,25 +224,19 @@ artists and adds any it finds to the **New Candidates** queue (internal
 nav). It can be triggered two ways:
 - **Manually** — the "Run scan now" button on `/discovery`, while logged in
   as Internal/Admin. Works immediately, no extra setup.
-- **On a schedule** — this app deploys on Vercel, which has its own native
-  [Cron Jobs](https://vercel.com/docs/cron-jobs) (a `crons` array in
-  `vercel.json`) — but they don't fit this endpoint as built: Vercel only
-  triggers crons with a `GET` request, and this route only accepts `POST`
-  and authenticates via the `x-cron-secret` header, not the `Authorization:
-  Bearer` header Vercel crons send. So "every day" still means an external
-  scheduler that can send a real `POST` with a custom header — a GitHub
-  Actions workflow on a `schedule:` trigger, or a free service like
-  cron-job.org — hitting:
+- **On a schedule** — this app deploys on Render, whose web services have
+  no built-in cron, so "every day" means pointing an external scheduler at
+  the endpoint. Any scheduler works (a [Render Cron
+  Job](https://render.com/docs/cronjobs) — a separate service alongside
+  this one, on Render's own free/paid cron tier — a GitHub Actions workflow
+  on a `schedule:` trigger, or a free service like cron-job.org) — have it
+  send:
   ```
   POST https://<your-app>/api/discovery/scan
   Header: x-cron-secret: <the CRON_SECRET value>
   ```
   once a day. Without `CRON_SECRET` set, only the manual button works — the
-  automatic path simply doesn't exist yet, nothing breaks. (Wiring this up
-  to Vercel's native cron instead is possible — it would mean adding a `GET`
-  handler to these routes and accepting Vercel's `Authorization: Bearer
-  $CRON_SECRET` header — but that's a code change, not a docs one; ask if
-  you want it.)
+  automatic path simply doesn't exist yet, nothing breaks.
 
 A candidate never touches NEXT or gets a Breakout Score on its own —
 Approve just creates a normal, editable artist (stage: Watchlist, score
