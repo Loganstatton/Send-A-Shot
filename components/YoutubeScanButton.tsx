@@ -15,6 +15,9 @@ export default function YoutubeScanButton() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Scan failed');
       let text = `Searched ${data.searchedCount}, found ${data.candidatesFound} new candidate${data.candidatesFound === 1 ? '' : 's'}.`;
+      if (data.insertFailedCount > 0) {
+        text += ` ${data.insertFailedCount} qualified but failed to save${data.lastInsertError ? ` (${data.lastInsertError})` : ''}.`;
+      }
       const r = data.rejectionBreakdown;
       if (r && data.candidatesFound === 0) {
         const parts = [
