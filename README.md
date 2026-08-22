@@ -54,11 +54,12 @@ a licensable data product.
   across every linked artist on a daily schedule (or on demand from the
   dashboard) — the market's numbers stop depending on someone remembering
   to click the per-artist button (see setup below)
-- Optional Spotify top-song sync: automatically finds and fills in an
-  artist's most popular track link (and a 30-second preview clip, when
-  Spotify provides one) — free to use, independent of whether Soundcharts
-  is configured or linked, and never overwrites a value once set (by sync
-  or by hand) — clear the field to have it filled again (see setup below)
+- Deezer top-song sync: automatically finds and fills in an artist's most
+  popular track link and a 30-second preview clip — free, keyless, nothing
+  to configure (Deezer's public catalog endpoints need no API key or app
+  registration), independent of whether Soundcharts is configured or
+  linked, and never overwrites a value once set (by sync or by hand) —
+  clear the field to have it filled again (see setup below)
 - Optional Discovery Engine: two independent scheduled scans feed one
   private **New Candidates** queue at `/discovery` — Approve turns a
   candidate into a real, editable artist (pre-filled, but never
@@ -152,64 +153,57 @@ by the manual button, which a human reviews before saving) — a background
 job silently renaming someone is the wrong default. Unlinked artists (no
 Soundcharts UUID) are untouched either way; their stats stay manual-entry.
 
-### Optional: Spotify top-song sync
+### Deezer top-song sync
 
 Independent of Soundcharts — doesn't need it configured, doesn't need an
 artist linked to it. This exists because `top_song_url` never had *any*
 API source before (Soundcharts' own metadata endpoint doesn't return
-platform identifiers on this plan — see above), and it's genuinely free:
-Spotify's Web API needs only a free developer account, no billing.
+platform identifiers on this plan — see above).
 
-```bash
-echo "SPOTIFY_CLIENT_ID=your-client-id" >> .env.local
-echo "SPOTIFY_CLIENT_SECRET=your-client-secret" >> .env.local
-```
-
-Get these from the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-— log in with any Spotify account, create an app (the redirect URI field
-can be anything, e.g. `http://localhost:3000`, since this only ever uses
-the app-only Client Credentials flow — no user login, no scopes, nothing
-user-specific), then copy the Client ID and Client Secret from the app's
-settings. `CRON_SECRET` (above) is reused for this sync's scheduler too.
+No setup, no environment variables, nothing to sign up for — Deezer's
+public catalog endpoints (artist search, an artist's top track) are plain
+GET requests that need no API key or app registration. This runs after an
+earlier Spotify-based version of this feature turned out to be a dead
+end: Spotify's Client Credentials flow started returning 403 Forbidden on
+every catalog call for newly-created developer apps, with no working fix
+available and no clear resolution from Spotify's own support channels —
+see git history if you're curious. Deezer needs none of that, and its
+preview clips are more reliably available than Spotify's had become
+anyway.
 
 This lookup happens two ways:
 - **Immediately, once, when an artist enters the roster** — adding an artist
   by hand (`/artists/new`) or Approving a Discovery candidate both trigger
   a one-time best-effort lookup right away, so the top song shows up
   without a separate trip to the dashboard. Never blocks or fails the
-  creation itself — skipped entirely if Spotify isn't configured, and any
-  failure just leaves the field empty for the batch sync to retry later.
-- **In a batch, for anyone still missing one** — `POST /api/spotify/sync`
-  looks up every artist still missing a `top_song_url` (by their existing
-  Spotify link if one's on file, otherwise by searching Spotify for their
-  name) and fills in a link to their top track, plus a 30-second preview
-  clip when Spotify provides one — it frequently doesn't; Spotify has
-  restricted preview availability for a large and growing share of tracks
-  in recent years, which is a Spotify platform limitation, not a bug here.
-  Triggered the same two ways as the other sync jobs:
-  - **Manually** — the "Sync Spotify top songs" button on the Scout
+  creation itself — any failure just leaves the field empty for the batch
+  sync to retry later.
+- **In a batch, for anyone still missing one** — `POST /api/deezer/sync`
+  looks up every artist still missing a `top_song_url` (by searching
+  Deezer for their name) and fills in a link to their top track plus a
+  30-second preview clip. Triggered the same two ways as the other sync
+  jobs:
+  - **Manually** — the "Sync Deezer top songs" button on the Scout
     dashboard (`/`).
   - **On a schedule** — point the same external scheduler at:
     ```
-    POST https://<your-app>/api/spotify/sync
+    POST https://<your-app>/api/deezer/sync
     Header: x-cron-secret: <the CRON_SECRET value>
     ```
+    (reuses the same `CRON_SECRET` as the other scheduled syncs)
 
 Once `top_song_url` is filled — by either path, or typed in by a Scout —
 it's never silently overwritten again; it's a curatorial choice of which
 song represents the artist, not a stat that should keep refreshing out
-from under someone. Clear the field to have sync fill it again. Without
-`SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` set, the sync button shows a
-clear "not configured" error, and the on-create lookup is silently
-skipped; the rest of the app works the same either way.
+from under someone. Clear the field to have sync fill it again.
 
 The batch sync's result — both the button's own text and the dashboard's
-"Last Spotify sync" line — distinguishes *why* an artist wasn't updated:
-**no Spotify match** (the calls succeeded but genuinely found nothing —
+"Last Deezer sync" line — distinguishes *why* an artist wasn't updated:
+**no Deezer match** (the calls succeeded but genuinely found nothing —
 expected for this repo's own demo/seed artists, since they aren't real
 people) versus an **actual lookup error** (a real API call failed — worth
 investigating, since a real artist unexpectedly getting no match usually
-means this, not a genuine absence from Spotify).
+means this, not a genuine absence from Deezer).
 
 ### Optional: Discovery Engine (finds artists for you)
 
@@ -395,16 +389,16 @@ app/                 # Next.js app router
   api/admin/         # role management (admin only)
   api/auth/          # signup/login/logout
   api/soundcharts/   # search + fetch-by-uuid + sync-all (session or CRON_SECRET)
-  api/spotify/       # top-song sync (session or CRON_SECRET)
+  api/deezer/        # top-song sync (session or CRON_SECRET) — free, keyless
   api/discovery/     # scan-soundcharts + scan-youtube triggers (session or
                      # CRON_SECRET) + candidate actions, feeding one queue
 components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory,
                      # DealsAndRevenue, InvestmentLedger, TradePanel, RoleManager,
                      # StatTile, Sparkline, FollowUpList, AuthForm, SoundchartsSearch,
-                     # SyncAllButton, SpotifySyncButton, DiscoveryQueue,
+                     # SyncAllButton, DeezerSyncButton, DiscoveryQueue,
                      # DiscoveryScanButton, YoutubeScanButton
 lib/                 # sqlite db, types, scoring logic, NEXT pricing engine,
-                     # auth/role helpers, money formatting, soundcharts + spotify
+                     # auth/role helpers, money formatting, soundcharts + deezer
                      # clients, discovery-source abstraction + Soundcharts/
                      # YouTube discovery filtering + scoring logic
 data/                # sqlite file + fallback session secret live here

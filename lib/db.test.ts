@@ -323,10 +323,10 @@ describe('Automated Soundcharts sync', () => {
   });
 });
 
-describe('Spotify top-song sync', () => {
+describe('Deezer top-song sync', () => {
   it('getArtistsMissingTopSong only returns artists with no top_song_url set', () => {
     const missing = createArtist({ name: 'No Top Song Yet' });
-    const has = createArtist({ name: 'Already Has One', top_song_url: 'https://open.spotify.com/track/abc' });
+    const has = createArtist({ name: 'Already Has One', top_song_url: 'https://www.deezer.com/track/123' });
 
     const rows = getArtistsMissingTopSong();
     const ids = rows.map((r) => r.id);
@@ -338,37 +338,37 @@ describe('Spotify top-song sync', () => {
     const artist = createArtist({ name: 'Freshly Filled' });
     expect(getArtistsMissingTopSong().map((r) => r.id)).toContain(artist.id);
 
-    updateArtist(artist.id, { name: artist.name, top_song_url: 'https://open.spotify.com/track/xyz' });
+    updateArtist(artist.id, { name: artist.name, top_song_url: 'https://www.deezer.com/track/456' });
     expect(getArtistsMissingTopSong().map((r) => r.id)).not.toContain(artist.id);
   });
 
-  it("Soundcharts and Spotify sync runs keep independent 'latest' history via the source column", () => {
+  it("Soundcharts and Deezer sync runs keep independent 'latest' history via the source column", () => {
     const soundchartsRun = createSyncRun('soundcharts');
     completeSyncRun(soundchartsRun.id, { status: 'completed', checkedCount: 5, updatedCount: 5, failedCount: 0 });
-    const spotifyRun = createSyncRun('spotify');
-    completeSyncRun(spotifyRun.id, { status: 'completed', checkedCount: 3, updatedCount: 2, failedCount: 1 });
+    const deezerRun = createSyncRun('deezer');
+    completeSyncRun(deezerRun.id, { status: 'completed', checkedCount: 3, updatedCount: 2, failedCount: 1 });
 
     const latestSoundcharts = getLatestSyncRun('soundcharts')!;
-    const latestSpotify = getLatestSyncRun('spotify')!;
+    const latestDeezer = getLatestSyncRun('deezer')!;
     expect(latestSoundcharts.id).toBe(soundchartsRun.id);
     expect(latestSoundcharts.source).toBe('soundcharts');
-    expect(latestSpotify.id).toBe(spotifyRun.id);
-    expect(latestSpotify.source).toBe('spotify');
-    expect(latestSpotify.updated_count).toBe(2);
+    expect(latestDeezer.id).toBe(deezerRun.id);
+    expect(latestDeezer.source).toBe('deezer');
+    expect(latestDeezer.updated_count).toBe(2);
   });
 
-  it('a Spotify run round-trips the no-match-vs-error breakdown — this is what tells a Scout why a REAL artist failed', () => {
-    const run = createSyncRun('spotify');
+  it('a Deezer run round-trips the no-match-vs-error breakdown — this is what tells a Scout why a REAL artist failed', () => {
+    const run = createSyncRun('deezer');
     completeSyncRun(run.id, {
       status: 'completed', checkedCount: 4, updatedCount: 0, failedCount: 4,
-      noMatchCount: 3, errorCount: 1, lastError: 'Spotify rate limit hit — try again shortly.',
+      noMatchCount: 3, errorCount: 1, lastError: 'Deezer returned 429: rate limited.',
     });
 
-    const latest = getLatestSyncRun('spotify')!;
+    const latest = getLatestSyncRun('deezer')!;
     expect(latest.id).toBe(run.id);
     expect(latest.no_match_count).toBe(3);
     expect(latest.error_count).toBe(1);
-    expect(latest.last_error).toBe('Spotify rate limit hit — try again shortly.');
+    expect(latest.last_error).toBe('Deezer returned 429: rate limited.');
   });
 
   it('a Soundcharts run (no lookup-reason breakdown) leaves those columns null, not zero', () => {
