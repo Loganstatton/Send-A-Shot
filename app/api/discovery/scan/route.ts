@@ -9,12 +9,11 @@ import { soundchartsConfigured, topArtists } from '@/lib/soundcharts';
 
 export const dynamic = 'force-dynamic';
 
-// Two ways in: a logged-in internal session (the "Run scan now" button), or
-// a shared secret for an external scheduler — Render has no built-in cron
-// on a web service, so the actual "every day" part is a scheduler (Render
-// Cron Job, GitHub Actions, cron-job.org, anything) hitting this route on a
-// schedule with the header below. No secret configured means no automatic
-// path exists yet, but the manual button still works either way.
+// Not currently wired to any UI button — Soundcharts' /top/artists needs
+// their $250/mo Growth plan to find candidates this way, which isn't worth
+// it (see README). Left in place and tested in case that changes; reachable
+// directly by a logged-in internal session or a shared secret for an
+// external scheduler in the meantime.
 async function isAuthorized(req: Request): Promise<boolean> {
   const user = await getInternalUser();
   if (user) return true;
