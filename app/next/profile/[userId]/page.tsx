@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import { getFoundingBelieverRecordsForUser, getScoutProfile } from '@/lib/db';
 import { getSessionUser, requireUser } from '@/lib/auth';
 import { EARLY_DISCOVERY_RANK_THRESHOLD } from '@/lib/scout-score';
+import { formatCents } from '@/lib/format';
 import ArtistAvatar from '@/components/ArtistAvatar';
 import NextStatTile from '@/components/next/NextStatTile';
 
@@ -33,12 +34,19 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
   return (
     <div className="flex flex-col gap-8">
       <div className="flex items-center gap-4">
-        <ArtistAvatar name={profile.user.name} size="lg" />
+        <ArtistAvatar name={profile.user.name} photoUrl={profile.user.avatar_url} size="lg" />
         <div>
           <h1 className="font-display font-bold text-[28px] m-0 tracking-[-0.01em]">
             {profile.user.name}{isOwnProfile ? ' (you)' : ''}
           </h1>
           <p className="mt-1 mb-0 text-sm" style={{ color: 'var(--text-faint)' }}>Rank #{profile.rank} of {profile.totalScouts} Scouts</p>
+          {profile.favoriteGenres.length > 0 && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              {profile.favoriteGenres.map((g) => (
+                <span key={g.genre} className="next-pill text-[11px]" style={{ padding: '3px 10px' }}>{g.genre}</span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -61,6 +69,43 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
         among the first {EARLY_DISCOVERY_RANK_THRESHOLD} backers of an artist — being early counts on its
         own, whether or not the position is still held.
       </div>
+
+      {profile.positions != null ? (
+        <div className="flex flex-col gap-3">
+          <h2 className="font-display font-bold text-lg m-0">Positions</h2>
+          {profile.positions.length === 0 ? (
+            <div className="next-card text-center py-8">
+              <p className="m-0" style={{ color: 'var(--text-muted)' }}>No open positions right now.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {profile.positions.map((p) => {
+                const up = p.unrealizedPnlCents >= 0;
+                return (
+                  <Link key={p.artist_id} href={`/next/artists/${p.artist_id}`} className="next-card next-card-hover flex items-center gap-4 px-5 py-4">
+                    <ArtistAvatar name={p.artist_name} photoUrl={p.artist_photo_url} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-display font-semibold truncate">{p.artist_name}</div>
+                      <div className="num text-sm" style={{ color: 'var(--text-muted)' }}>{p.shares.toFixed(4)} shares</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="num font-semibold">{formatCents(p.marketValueCents)}</div>
+                      <div className="num text-xs font-medium" style={{ color: up ? 'var(--up)' : 'var(--down)' }}>
+                        {up ? '+' : ''}{formatCents(p.unrealizedPnlCents)} ({up ? '+' : ''}{p.unrealizedPct.toFixed(2)}%)
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : isOwnProfile ? (
+        <div className="next-card p-4 text-xs leading-relaxed flex items-center justify-between gap-3 flex-wrap" style={{ color: 'var(--text-faint)' }}>
+          <span>Your current positions are private — only your rank, return %, and Founding Believer history show here.</span>
+          <Link href="/settings" className="next-btn-ghost text-xs px-3 py-1.5 rounded-lg shrink-0">Change in Settings</Link>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-3">
         <h2 className="font-display font-bold text-lg m-0 flex items-center gap-2">

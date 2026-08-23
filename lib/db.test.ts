@@ -13,11 +13,11 @@ const {
   createSyncRun, createUser, db, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
   getArtistsWithSoundchartsLink, getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates,
   getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun,
-  getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue, getPortfolioValueHistory, getRankMovements,
-  getRecentBackerCount, getRecentTradesForArtist, getScoreChanges, getScoutLeaderboard, getTrackedSoundchartsUuids,
-  getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
-  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified, recordPreviewListen,
-  setDiscoveryCandidateStatus, setWatchlistAlerts, updateArtist, updateUserProfile,
+  getFavoriteGenres, getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue, getPortfolioValueHistory,
+  getRankMovements, getRecentBackerCount, getRecentTradesForArtist, getScoreChanges, getScoutLeaderboard,
+  getScoutProfile, getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist,
+  getWatchCountsByArtist, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified,
+  recordPreviewListen, setDiscoveryCandidateStatus, setWatchlistAlerts, updateArtist, updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -964,5 +964,52 @@ describe('Leaderboard — time windows and rank movement', () => {
     const movements = getRankMovements();
     expect(movements[riser.id]).toBeNull();
     expect(movements[faller.id]).not.toBeNull();
+  });
+});
+
+describe('Public Scout Profile — favorite genres, positions privacy toggle', () => {
+  it('getFavoriteGenres ranks genres by how many artists in each the Scout has ever backed', () => {
+    const user = createUser({ name: 'Genre Scout', email: 'genre-scout@example.com', password_hash: 'hash' });
+    const popArtists = [
+      createArtist({ name: 'Pop One', genre: 'Pop', music_talent: 8, growth_velocity_pct: 32, engagement_rate_pct: 16, original_song_response: 8, brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8 }),
+      createArtist({ name: 'Pop Two', genre: 'Pop', music_talent: 8, growth_velocity_pct: 32, engagement_rate_pct: 16, original_song_response: 8, brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8 }),
+    ];
+    const jazzArtist = createArtist({ name: 'Jazz One', genre: 'Jazz', music_talent: 8, growth_velocity_pct: 32, engagement_rate_pct: 16, original_song_response: 8, brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8 });
+
+    for (const artist of popArtists) executeTrade(user.id, artist.id, 'buy', 10_000);
+    executeTrade(user.id, jazzArtist.id, 'buy', 10_000);
+
+    const favorites = getFavoriteGenres(user.id);
+    expect(favorites[0]).toEqual({ genre: 'Pop', count: 2 });
+    expect(favorites[1]).toEqual({ genre: 'Jazz', count: 1 });
+  });
+
+  it('updateUserProfile toggles show_positions_publicly, normalized back to a real boolean (not 0/1)', () => {
+    const user = createUser({ name: 'Privacy Scout', email: 'privacy-scout@example.com', password_hash: 'hash' });
+    expect(user.show_positions_publicly).toBe(false); // off by default
+
+    updateUserProfile(user.id, { show_positions_publicly: true });
+    expect(getUserById(user.id)!.show_positions_publicly).toBe(true);
+
+    updateUserProfile(user.id, { show_positions_publicly: false });
+    expect(getUserById(user.id)!.show_positions_publicly).toBe(false);
+  });
+
+  it("getScoutProfile hides positions (null, not an empty list) until the Scout opts in, then shows real holdings", () => {
+    const user = createUser({ name: 'Position Scout', email: 'position-scout@example.com', password_hash: 'hash' });
+    const artist = makeArtist('Position Scout Artist');
+    const buy = executeTrade(user.id, artist.id, 'buy', 50_000);
+    if (!buy.ok) throw new Error(buy.error);
+
+    const hiddenProfile = getScoutProfile(user.id)!;
+    expect(hiddenProfile.showPositionsPublicly).toBe(false);
+    expect(hiddenProfile.positions).toBeNull();
+
+    updateUserProfile(user.id, { show_positions_publicly: true });
+    const shownProfile = getScoutProfile(user.id)!;
+    expect(shownProfile.showPositionsPublicly).toBe(true);
+    expect(shownProfile.positions).toHaveLength(1);
+    expect(shownProfile.positions![0]).toMatchObject({ artist_id: artist.id, artist_name: 'Position Scout Artist' });
+    expect(shownProfile.positions![0].shares).toBeCloseTo(buy.shares, 6);
   });
 });

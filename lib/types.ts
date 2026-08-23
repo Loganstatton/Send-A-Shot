@@ -123,6 +123,7 @@ export type User = {
   email_verified_at?: string;
   tos_accepted_at?: string;
   privacy_accepted_at?: string;
+  show_positions_publicly: boolean;
 };
 
 export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change';
@@ -415,6 +416,22 @@ export type PortfolioValue = {
   totalReturnPct: number;
 };
 
+// A holding as shown on a *public* Scout Profile — only rendered at all
+// when that Scout has opted into show_positions_publicly (see
+// getScoutProfile). Real $ amounts, same public-by-precedent convention
+// the genre leaderboard and Artist Detail's recent-trade feed already use.
+export type PublicPosition = {
+  artist_id: number;
+  artist_name: string;
+  artist_photo_url?: string;
+  shares: number;
+  marketValueCents: number;
+  unrealizedPnlCents: number;
+  unrealizedPct: number;
+};
+
+export type FavoriteGenre = { genre: string; count: number };
+
 export type ScoutProfile = {
   user: PublicScout;
   portfolio: PortfolioValue;
@@ -423,6 +440,11 @@ export type ScoutProfile = {
   totalScouts: number;
   artistsBackedCount: number;
   earlyDiscoveriesCount: number;
+  favoriteGenres: FavoriteGenre[];
+  showPositionsPublicly: boolean;
+  // Null when the Scout hasn't opted in — not an empty list, so the page
+  // can tell "chose to hide this" apart from "opted in but holds nothing."
+  positions: PublicPosition[] | null;
 };
 
 export type LeaderboardWindow = 'week' | 'month' | 'all';
