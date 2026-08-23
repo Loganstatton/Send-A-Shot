@@ -1,10 +1,13 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getPortfolioValue, getUserHoldings, getUserTransactions } from '@/lib/db';
+import { getPortfolioValue, getPortfolioValueHistory, getUserHoldings, getUserTransactions } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
 import ArtistAvatar from '@/components/ArtistAvatar';
 import NextStatTile from '@/components/next/NextStatTile';
+import PriceChart from '@/components/PriceChart';
+import AllocationBreakdown from '@/components/next/AllocationBreakdown';
+import TransactionHistory from '@/components/next/TransactionHistory';
 
 export const metadata: Metadata = { title: 'Portfolio' };
 export const dynamic = 'force-dynamic';
@@ -18,21 +21,52 @@ export default async function NextPortfolioPage() {
   const holdingsWithValue = holdings.map((h) => {
     const marketValueCents = Math.round(h.shares * h.price_cents);
     const unrealizedPnlCents = marketValueCents - h.cost_basis_cents;
-    return { ...h, marketValueCents, unrealizedPnlCents };
+    const unrealizedPct = h.cost_basis_cents !== 0 ? (unrealizedPnlCents / h.cost_basis_cents) * 100 : 0;
+    return { ...h, marketValueCents, unrealizedPnlCents, unrealizedPct };
   });
 
   const totalUnrealizedPnlCents = holdingsWithValue.reduce((sum, h) => sum + h.unrealizedPnlCents, 0);
   const totalRealizedPnlCents = transactions.reduce((sum, t) => sum + (t.realized_pnl_cents ?? 0), 0);
+  const investedValueCents = holdingsWithValue.reduce((sum, h) => sum + h.cost_basis_cents, 0);
+
+  // getPortfolioValueHistory only has a point at each past trade/price
+  // event, so it can lag "right now" by however long it's been since the
+  // last one — appending the live total here keeps the chart's "current"
+  // value and the Daily return stat both true as of this page load, not
+  // as of whenever the last event happened to land.
+  const rawHistory = getPortfolioValueHistory(user.id);
+  const nowPoint = { recorded_at: new Date().toISOString(), value_cents: portfolio.totalValueCents };
+  const valueHistory = [...rawHistory, nowPoint];
+  const chartPoints = valueHistory.map((p) => ({ recorded_at: p.recorded_at, value: p.value_cents }));
+
+  const dayAgoCutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const dayAgoPoint = [...valueHistory].reverse().find((p) => new Date(p.recorded_at).getTime() <= dayAgoCutoff) ?? valueHistory[0];
+  const dailyReturnCents = nowPoint.value_cents - dayAgoPoint.value_cents;
+  const dailyReturnPct = dayAgoPoint.value_cents !== 0 ? Math.round((dailyReturnCents / dayAgoPoint.value_cents) * 1000) / 10 : 0;
+
+  let bestPosition: (typeof holdingsWithValue)[number] | null = null;
+  let worstPosition: (typeof holdingsWithValue)[number] | null = null;
+  for (const h of holdingsWithValue) {
+    if (!bestPosition || h.unrealizedPct > bestPosition.unrealizedPct) bestPosition = h;
+    if (!worstPosition || h.unrealizedPct < worstPosition.unrealizedPct) worstPosition = h;
+  }
 
   type Stat = { label: string; value: string; valueTone?: 'up' | 'down'; delta?: string; deltaTone?: 'up' | 'down' };
   const stats: Stat[] = [
     { label: 'Portfolio value', value: formatCents(portfolio.totalValueCents) },
     { label: 'Cash balance', value: formatCents(user.next_credits_cents) },
+    { label: 'Invested value', value: formatCents(investedValueCents) },
     {
       label: 'Total return',
       value: `${portfolio.totalReturnPct > 0 ? '+' : ''}${portfolio.totalReturnPct}%`,
       delta: formatCents(portfolio.totalReturnCents),
       deltaTone: portfolio.totalReturnCents >= 0 ? 'up' : 'down',
+    },
+    {
+      label: 'Daily return',
+      value: `${dailyReturnPct > 0 ? '+' : ''}${dailyReturnPct}%`,
+      delta: formatCents(dailyReturnCents),
+      deltaTone: dailyReturnCents >= 0 ? 'up' : 'down',
     },
     {
       label: 'Unrealized P&L',
@@ -44,6 +78,22 @@ export default async function NextPortfolioPage() {
       value: formatCents(totalRealizedPnlCents),
       valueTone: totalRealizedPnlCents >= 0 ? 'up' : 'down',
     },
+    ...(bestPosition
+      ? [{
+          label: 'Best performer',
+          value: bestPosition.artist_name,
+          delta: `${bestPosition.unrealizedPct >= 0 ? '+' : ''}${bestPosition.unrealizedPct.toFixed(1)}%`,
+          deltaTone: 'up' as const,
+        }]
+      : []),
+    ...(worstPosition
+      ? [{
+          label: 'Worst performer',
+          value: worstPosition.artist_name,
+          delta: `${worstPosition.unrealizedPct >= 0 ? '+' : ''}${worstPosition.unrealizedPct.toFixed(1)}%`,
+          deltaTone: 'down' as const,
+        }]
+      : []),
   ];
 
   return (
@@ -57,23 +107,35 @@ export default async function NextPortfolioPage() {
       </div>
 
       <div
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-px rounded-2xl overflow-hidden border"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px rounded-2xl overflow-hidden border"
         style={{ background: 'var(--border-soft)', borderColor: 'var(--border-soft)' }}
       >
         {stats.map((s) => <NextStatTile key={s.label} {...s} />)}
       </div>
+
+      {transactions.length > 0 && (
+        <div className="next-card p-6">
+          <PriceChart points={chartPoints} format="cents" />
+        </div>
+      )}
+
+      {holdingsWithValue.length > 0 && (
+        <AllocationBreakdown holdings={holdingsWithValue} totalValueCents={portfolio.totalValueCents} />
+      )}
 
       <div className="flex flex-col gap-3">
         <h2 className="font-display font-bold text-lg m-0">Holdings</h2>
         {holdingsWithValue.length === 0 && (
           <div className="next-card text-center py-10">
             <p className="m-0" style={{ color: 'var(--text-muted)' }}>No positions yet.</p>
+            <p className="mt-1.5 mb-0 text-sm" style={{ color: 'var(--text-faint)' }}>
+              Every account starts with {formatCents(user.next_credits_cents)} in virtual NEXT Credits — no real money, ever. Back your first artist to see your portfolio come to life here.
+            </p>
             <Link href="/next" className="next-btn-primary mt-4 inline-flex px-5 py-2.5 rounded-[10px] text-sm">Browse NEXT</Link>
           </div>
         )}
         <div className="flex flex-col gap-2.5">
           {holdingsWithValue.map((h) => {
-            const unrealizedPct = h.cost_basis_cents !== 0 ? (h.unrealizedPnlCents / h.cost_basis_cents) * 100 : 0;
             const up = h.unrealizedPnlCents >= 0;
             return (
               <Link key={h.id} href={`/next/artists/${h.artist_id}`} className="next-card next-card-hover flex flex-col gap-1.5 px-5 py-4">
@@ -86,7 +148,7 @@ export default async function NextPortfolioPage() {
                   <div className="text-right shrink-0">
                     <div className="num font-semibold">{formatCents(h.marketValueCents)}</div>
                     <div className="num text-xs sm:text-sm font-medium" style={{ color: up ? 'var(--up)' : 'var(--down)' }}>
-                      {up ? '+' : ''}{formatCents(h.unrealizedPnlCents)} ({up ? '+' : ''}{unrealizedPct.toFixed(2)}%)
+                      {up ? '+' : ''}{formatCents(h.unrealizedPnlCents)} ({up ? '+' : ''}{h.unrealizedPct.toFixed(2)}%)
                     </div>
                   </div>
                 </div>
@@ -99,50 +161,7 @@ export default async function NextPortfolioPage() {
         </div>
       </div>
 
-      {transactions.length > 0 && (
-        <div className="next-card p-6 flex flex-col gap-3">
-          <h2 className="font-display font-bold text-lg m-0">Recent activity</h2>
-          <div className="overflow-x-auto max-h-80 overflow-y-auto">
-            <table className="w-full text-sm min-w-[600px]" style={{ borderCollapse: 'collapse' }}>
-              <thead className="text-left">
-                <tr>
-                  <th className="font-normal pb-2" style={{ color: 'var(--text-faint)' }}>Date</th>
-                  <th className="font-normal pb-2" style={{ color: 'var(--text-faint)' }}>Artist</th>
-                  <th className="font-normal pb-2" style={{ color: 'var(--text-faint)' }}>Type</th>
-                  <th className="font-normal pb-2 text-right" style={{ color: 'var(--text-faint)' }}>Shares</th>
-                  <th className="font-normal pb-2 text-right" style={{ color: 'var(--text-faint)' }}>Price</th>
-                  <th className="font-normal pb-2 text-right" style={{ color: 'var(--text-faint)' }}>Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((t) => (
-                  <tr key={t.id} style={{ borderTop: '1px solid var(--border-soft)' }}>
-                    <td className="py-2.5" style={{ color: 'var(--text-faint)' }}>{new Date(t.created_at).toLocaleDateString()}</td>
-                    <td className="py-2.5">
-                      <Link href={`/next/artists/${t.artist_id}`} className="hover:underline">{t.artist_name}</Link>
-                    </td>
-                    <td className="py-2.5">
-                      <span
-                        className="next-pill"
-                        style={
-                          t.type === 'buy'
-                            ? { background: 'var(--up-dim)', borderColor: 'var(--up)', color: 'var(--up)', padding: '3px 10px', fontSize: 12 }
-                            : { background: 'var(--down-dim)', borderColor: 'var(--down)', color: 'var(--down)', padding: '3px 10px', fontSize: 12 }
-                        }
-                      >
-                        {t.type === 'buy' ? 'Buy' : 'Sell'}
-                      </span>
-                    </td>
-                    <td className="num py-2.5 text-right">{t.shares.toFixed(4)}</td>
-                    <td className="num py-2.5 text-right">{formatCents(t.price_cents_per_share)}</td>
-                    <td className="num py-2.5 text-right">{formatCents(Math.abs(t.credits_delta_cents))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {transactions.length > 0 && <TransactionHistory transactions={transactions} />}
     </div>
   );
 }
