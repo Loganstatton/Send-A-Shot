@@ -218,11 +218,14 @@ describe('Discovery Engine — candidate queue', () => {
     expect(artist!.name).toBe('Breakout Kid');
     expect(artist!.soundcharts_uuid).toBe('uuid-approve-1');
     expect(artist!.followers_count).toBe(42_000);
-    // Human judgment is still required for the qualitative categories...
-    expect(artist!.music_talent).toBe(0);
-    // ...but Growth Velocity is derived immediately from the real growth %
-    // Discovery already found — never manually rated, and never 0 just
-    // because nobody's looked at this artist yet.
+    // Human judgment still drives the qualitative categories, but approval
+    // starts them at the same neutral 5/10 the Add Artist form itself
+    // defaults to — not 0, which would make every freshly-discovered
+    // artist score as "Pass" no matter how strong its real signal was.
+    expect(artist!.music_talent).toBe(5);
+    // Growth Velocity, on the other hand, is derived immediately from the
+    // real growth % Discovery already found — never manually rated, and
+    // never 0 just because nobody's looked at this artist yet.
     expect(artist!.growth_velocity).toBeGreaterThan(0);
 
     // The candidate is now linked to the real artist and marked approved,

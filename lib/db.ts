@@ -1461,6 +1461,24 @@ export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | un
       soundcharts_uuid: candidate.soundcharts_uuid,
       why_trending: candidate.flagged_reason,
       featured_video_id: candidate.yt_video_id,
+      // The Add Artist form always starts these six human-judgment ratings
+      // at a neutral 5/10 (see ArtistForm.tsx) rather than leaving them
+      // unset — approval bypasses that form entirely and was falling
+      // through to createArtist's raw 0 default instead. At weights
+      // summing to 70% of the Breakout Score, that meant every
+      // freshly-discovered artist scored as "Pass" regardless of how
+      // strong the real momentum signal that flagged them was — a Scout
+      // had to hand-rate all six before NEXT Score reflected anything.
+      // Matching the form's own neutral starting point here means a new
+      // artist's score is driven by what's actually known (growth/
+      // engagement, both real, auto-derived below) until a Scout reviews
+      // and adjusts these to their own judgment.
+      music_talent: 5,
+      original_song_response: 5,
+      brand_personality: 5,
+      content_consistency: 5,
+      commercial_potential: 5,
+      professionalism: 5,
     },
     actor
   );
