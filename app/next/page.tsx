@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { getBackerCountsByArtist, getNextMarket, getWatchCountsByArtist, getWatchlistArtistIds } from '@/lib/db';
+import { getBackerCountsByArtist, getNextMarket, getScoreChanges, getWatchCountsByArtist, getWatchlistArtistIds } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
 import { NextMarketRow } from '@/lib/types';
@@ -16,6 +16,7 @@ export default async function NextMarketPage() {
   const watchedIds = getWatchlistArtistIds(user.id);
   const watchCounts = getWatchCountsByArtist();
   const backerCounts = getBackerCountsByArtist();
+  const scoreChanges = getScoreChanges();
 
   const growthRates = rows.map((r) => r.artist.growth_velocity_pct).filter((v): v is number => v != null);
   const avgGrowth = growthRates.length ? growthRates.reduce((a, b) => a + b, 0) / growthRates.length : null;
@@ -89,7 +90,7 @@ export default async function NextMarketPage() {
       ) : (
         <>
           {featured && <FeaturedArtist row={featured} />}
-          <DiscoverGrid rows={rows} watchedIds={watchedIds} watchCounts={watchCounts} backerCounts={backerCounts} />
+          <DiscoverGrid rows={rows} watchedIds={watchedIds} watchCounts={watchCounts} backerCounts={backerCounts} scoreChanges={scoreChanges} />
         </>
       )}
     </div>

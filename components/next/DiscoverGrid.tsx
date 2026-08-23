@@ -1,10 +1,10 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { NextMarketRow } from '@/lib/types';
+import { NextMarketRow, ScoreChange } from '@/lib/types';
 import { marketSentiment } from '@/lib/next-market';
-import ArtistCard from '@/components/next/ArtistCard';
+import ArtistCard, { SinceWatched } from '@/components/next/ArtistCard';
 
-type SortMode = 'score' | 'growth' | 'gain' | 'loss' | 'new' | 'smallest' | 'gap' | 'watched' | 'backed' | 'trending';
+type SortMode = 'score' | 'growth' | 'gain' | 'loss' | 'new' | 'smallest' | 'gap' | 'watched' | 'backed' | 'trending' | 'momentum';
 
 const SORT_LABELS: Record<SortMode, string> = {
   score: 'NEXT Score',
@@ -17,6 +17,11 @@ const SORT_LABELS: Record<SortMode, string> = {
   watched: 'Most watched',
   backed: 'Most backed',
   trending: 'Trending today',
+  // "Momentum" and "NEXT Score change" are the same underlying number in
+  // this codebase — see momentumStatus() in lib/scoring.ts and its use in
+  // the internal Screener, where "momentum" already means exactly this:
+  // Breakout Score change since the previous snapshot.
+  momentum: 'Momentum (Score change)',
 };
 const SORT_MODES = Object.keys(SORT_LABELS) as SortMode[];
 
@@ -50,12 +55,19 @@ export default function DiscoverGrid({
   watchedIds = [],
   watchCounts = {},
   backerCounts = {},
+  scoreChanges = {},
+  sinceWatchedByArtist = {},
   emptyMessage = 'No artists match these filters yet.',
 }: {
   rows: NextMarketRow[];
   watchedIds?: number[];
   watchCounts?: Record<number, number>;
   backerCounts?: Record<number, number>;
+  scoreChanges?: Record<number, ScoreChange>;
+  // Watchlist-only: when this artist was added and what Score/Price looked
+  // like then, keyed by artist id. Undefined/empty on Discover, where
+  // "since you added" doesn't apply.
+  sinceWatchedByArtist?: Record<number, SinceWatched>;
   emptyMessage?: string;
 }) {
   const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds]);
@@ -127,9 +139,10 @@ export default function DiscoverGrid({
       case 'watched': sorted.sort((a, b) => (watchCounts[b.artist.id] ?? 0) - (watchCounts[a.artist.id] ?? 0)); break;
       case 'backed': sorted.sort((a, b) => (backerCounts[b.artist.id] ?? 0) - (backerCounts[a.artist.id] ?? 0)); break;
       case 'trending': sorted.sort((a, b) => changePctForWindow(b, 24) - changePctForWindow(a, 24)); break;
+      case 'momentum': sorted.sort((a, b) => (scoreChanges[b.artist.id]?.changeAbs ?? -Infinity) - (scoreChanges[a.artist.id]?.changeAbs ?? -Infinity)); break;
     }
     return sorted;
-  }, [rows, genre, signalOnly, watchlistOnly, hiddenGemsOnly, followerMedian, followerRange, scoreRange, priceRange, sort, search, watchedSet, watchCounts, backerCounts]);
+  }, [rows, genre, signalOnly, watchlistOnly, hiddenGemsOnly, followerMedian, followerRange, scoreRange, priceRange, sort, search, watchedSet, watchCounts, backerCounts, scoreChanges]);
 
   const chip = (active: boolean) => `next-pill ${active ? 'next-pill-active' : ''}`;
 
@@ -191,7 +204,13 @@ export default function DiscoverGrid({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {visible.map((row) => (
-            <ArtistCard key={row.artist.id} row={row} hotSignal={row.artist.id === hotSignalId} watching={watchedSet.has(row.artist.id)} />
+            <ArtistCard
+              key={row.artist.id}
+              row={row}
+              hotSignal={row.artist.id === hotSignalId}
+              watching={watchedSet.has(row.artist.id)}
+              sinceWatched={sinceWatchedByArtist[row.artist.id]}
+            />
           ))}
         </div>
       )}

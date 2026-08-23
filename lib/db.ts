@@ -11,7 +11,7 @@ import {
   DiscoverySourceKey, DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput,
   LeaderboardEntry, LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction,
   NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS,
-  ScoreSnapshot, ScoutProfile, SyncRun, SyncSourceKey, User,
+  ScoreChange, ScoreSnapshot, ScoutProfile, SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -279,6 +279,11 @@ addColumnIfMissing('sync_runs', "source TEXT NOT NULL DEFAULT 'soundcharts'");
 addColumnIfMissing('sync_runs', 'no_match_count INTEGER');
 addColumnIfMissing('sync_runs', 'error_count INTEGER');
 addColumnIfMissing('sync_runs', 'last_error TEXT');
+// Per-watch alert preference — whether the Watchlist should flag this
+// artist when its Score or Price moves significantly since the user added
+// it (see getUserWatchlist below). Defaults on: watching something is
+// itself a signal you want to know if it moves.
+addColumnIfMissing('next_watchlist', 'alerts_enabled INTEGER NOT NULL DEFAULT 1');
 
 // discovery_candidates originally required `soundcharts_uuid NOT NULL
 // UNIQUE` — Soundcharts' /top/artists was the only discovery source, so
@@ -1042,8 +1047,47 @@ export function removeFromWatchlist(userId: number, artistId: number): void {
   db.prepare('DELETE FROM next_watchlist WHERE user_id = ? AND artist_id = ?').run(userId, artistId);
 }
 
-export function getUserWatchlist(userId: number): NextMarketRow[] {
-  return getWatchlistArtistIds(userId).map((id) => getNextArtist(id)).filter((r): r is NextMarketRow => r != null);
+export function setWatchlistAlerts(userId: number, artistId: number, enabled: boolean): void {
+  db.prepare('UPDATE next_watchlist SET alerts_enabled = ? WHERE user_id = ? AND artist_id = ?')
+    .run(enabled ? 1 : 0, userId, artistId);
+}
+
+// Finds the most recent value at or before `at` from a series ordered
+// oldest-first, falling back to the earliest ever recorded when everything
+// on record postdates `at` (watched right as the first snapshot/price point
+// landed) — the closest available reference rather than no comparison at
+// all. Null only when the series is completely empty.
+function valueAtOrBefore<T>(series: T[], at: string, recordedAt: (item: T) => string): T | null {
+  for (let i = series.length - 1; i >= 0; i--) {
+    if (recordedAt(series[i]) <= at) return series[i];
+  }
+  return series[0] ?? null;
+}
+
+// Every artist the user is tracking, plus what changed since they added
+// it: Score and Price as of the watch date, alongside where both stand
+// now (row.score / row.priceCents already carry "now"). Powers the
+// Watchlist page's "since you added" line and its alert highlighting.
+export function getUserWatchlist(userId: number): WatchlistEntry[] {
+  const watches = db
+    .prepare('SELECT artist_id, created_at, alerts_enabled FROM next_watchlist WHERE user_id = ? ORDER BY created_at DESC')
+    .all(userId) as { artist_id: number; created_at: string; alerts_enabled: number }[];
+
+  const entries: WatchlistEntry[] = [];
+  for (const w of watches) {
+    const market = getNextArtist(w.artist_id);
+    if (!market) continue;
+    const scoreSnapshot = valueAtOrBefore(getScoreHistory(w.artist_id), w.created_at, (s) => s.recorded_at);
+    const pricePoint = valueAtOrBefore(market.priceHistory, w.created_at, (p) => p.recorded_at);
+    entries.push({
+      ...market,
+      watchedAt: w.created_at,
+      alertsEnabled: w.alerts_enabled === 1,
+      scoreAtWatch: scoreSnapshot?.breakout_score ?? null,
+      priceAtWatchCents: pricePoint?.price_cents ?? null,
+    });
+  }
+  return entries;
 }
 
 // Cheap id-only lookup for pages that just need to know which cards to mark
@@ -1051,6 +1095,30 @@ export function getUserWatchlist(userId: number): NextMarketRow[] {
 export function getWatchlistArtistIds(userId: number): number[] {
   const rows = db.prepare('SELECT artist_id FROM next_watchlist WHERE user_id = ? ORDER BY created_at DESC').all(userId) as { artist_id: number }[];
   return rows.map((r) => r.artist_id);
+}
+
+// Score movement since the previous snapshot, for every artist that has
+// one — one query for the whole roster (see getWatchCountsByArtist /
+// getBackerCountsByArtist above for the same pattern) rather than N+1.
+// Same definition the internal Screener uses for "momentum" already
+// (getPortfolioSummary's changeAbs/hasComparison).
+export function getScoreChanges(): Record<number, ScoreChange> {
+  const rows = db
+    .prepare('SELECT artist_id, breakout_score FROM score_history ORDER BY recorded_at ASC')
+    .all() as { artist_id: number; breakout_score: number }[];
+  const byArtist = new Map<number, number[]>();
+  for (const row of rows) {
+    const list = byArtist.get(row.artist_id) ?? [];
+    list.push(row.breakout_score);
+    byArtist.set(row.artist_id, list);
+  }
+  const result: Record<number, ScoreChange> = {};
+  for (const [artistId, scores] of byArtist) {
+    if (scores.length < 2) continue;
+    const changeAbs = Math.round((scores[scores.length - 1] - scores[scores.length - 2]) * 10) / 10;
+    result[artistId] = { changeAbs, hasComparison: true };
+  }
+  return result;
 }
 
 // Records a permanent "you were early" snapshot the first time a user ever

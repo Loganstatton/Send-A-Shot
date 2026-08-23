@@ -13,10 +13,10 @@ const {
   createSyncRun, createUser, db, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
   getArtistsWithSoundchartsLink, getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates,
   getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun,
-  getNewDiscoveryCandidateCount, getNextArtist, getRecentBackerCount, getRecentTradesForArtist,
-  getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getWatchCountsByArtist,
-  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified, recordPreviewListen,
-  setDiscoveryCandidateStatus, updateArtist, updateUserProfile,
+  getNewDiscoveryCandidateCount, getNextArtist, getRecentBackerCount, getRecentTradesForArtist, getScoreChanges,
+  getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist,
+  getWatchCountsByArtist, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified,
+  recordPreviewListen, setDiscoveryCandidateStatus, setWatchlistAlerts, updateArtist, updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -743,5 +743,90 @@ describe('Trading panel — volume, recent backers, activity feed', () => {
     expect(trades[0].user_name).toBe('Bob Feed'); // most recent first
     expect(trades[1].user_name).toBe('Alice Feed');
     expect(trades[0].type).toBe('buy');
+  });
+});
+
+describe('Watchlist — since-you-added deltas, momentum sort, alert preferences', () => {
+  it('getScoreChanges only includes artists with a second snapshot, keyed off the latest minus the previous', () => {
+    const stable = makeArtist('Stable Score Artist'); // only ever gets its creation snapshot
+    const mover = makeArtist('Mover Score Artist');
+    const scoreBefore = getNextArtist(mover.id)!.score;
+    updateArtist(mover.id, { name: mover.name, music_talent: 10 }); // higher input -> higher Breakout Score -> a second snapshot
+    const scoreAfter = getNextArtist(mover.id)!.score;
+
+    const changes = getScoreChanges();
+    expect(changes[stable.id]).toBeUndefined();
+    expect(changes[mover.id]).toEqual({ changeAbs: Math.round((scoreAfter - scoreBefore) * 10) / 10, hasComparison: true });
+    expect(changes[mover.id].changeAbs).toBeGreaterThan(0);
+  });
+
+  it('getUserWatchlist reports the Score/Price as of the watch date, distinct from where they stand now', () => {
+    const artist = makeArtist('Since Watched Artist');
+    const watcher = createUser({ name: 'Watcher', email: 'since-watched@example.com', password_hash: 'hash' });
+    const mover = createUser({ name: 'Mover', email: 'since-watched-mover@example.com', password_hash: 'hash' });
+
+    const scoreAtStart = getNextArtist(artist.id)!.score;
+    const priceAtStart = getNextArtist(artist.id)!.priceCents; // seeds the first price_history row
+
+    addToWatchlist(watcher.id, artist.id);
+
+    // Move both Score and Price after the watch, then force these rows'
+    // timestamps 10 minutes into the future — sequential real-clock calls
+    // in a fast test can land in the same millisecond as the watch itself
+    // (the exact race the Trading panel section's id-tiebreaker fix dealt
+    // with for next_transactions), so this pins the ordering unambiguously
+    // rather than relying on the test happening to run slowly enough.
+    updateArtist(artist.id, { name: artist.name, music_talent: 10 });
+    executeTrade(mover.id, artist.id, 'buy', 500_000);
+    db.prepare(`
+      UPDATE score_history SET recorded_at = datetime('now', '+10 minutes')
+      WHERE id = (SELECT MAX(id) FROM score_history WHERE artist_id = ?)
+    `).run(artist.id);
+    db.prepare(`
+      UPDATE next_price_history SET recorded_at = datetime('now', '+10 minutes')
+      WHERE id = (SELECT MAX(id) FROM next_price_history WHERE artist_id = ?)
+    `).run(artist.id);
+
+    const [entry] = getUserWatchlist(watcher.id);
+    expect(entry.artist.id).toBe(artist.id);
+    expect(entry.scoreAtWatch).toBe(scoreAtStart);
+    expect(entry.priceAtWatchCents).toBe(priceAtStart);
+    expect(entry.score).toBeGreaterThan(entry.scoreAtWatch!);
+    expect(entry.priceCents).toBeGreaterThan(entry.priceAtWatchCents!);
+    expect(entry.alertsEnabled).toBe(true); // on by default
+    expect(entry.watchedAt).toBeTruthy();
+  });
+
+  it('getUserWatchlist falls back to the earliest available price point when nothing was recorded before the watch', () => {
+    // createArtist() already snapshots a score at creation, so to get a
+    // genuinely empty "before" series this checks price only: an artist
+    // whose price has never been read (no next_price_history row exists)
+    // before it gets watched.
+    const artist = createArtist({
+      name: 'Never Priced Artist', music_talent: 8, growth_velocity_pct: 32, engagement_rate_pct: 16,
+      original_song_response: 8, brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8,
+    });
+    const watcher = createUser({ name: 'Early Watcher', email: 'never-priced@example.com', password_hash: 'hash' });
+
+    addToWatchlist(watcher.id, artist.id);
+
+    // First-ever read of this artist's market data happens inside
+    // getUserWatchlist itself, which seeds next_price_history lazily — so
+    // the resulting single price point necessarily lands at/after the
+    // watch, and there is nothing genuinely "before" to compare against.
+    const [entry] = getUserWatchlist(watcher.id);
+    expect(entry.priceAtWatchCents).toBe(entry.priceCents);
+  });
+
+  it('setWatchlistAlerts toggles the per-watch alert preference', () => {
+    const artist = makeArtist('Alert Toggle Artist');
+    const user = createUser({ name: 'Alert User', email: 'alert-toggle@example.com', password_hash: 'hash' });
+    addToWatchlist(user.id, artist.id);
+
+    expect(getUserWatchlist(user.id)[0].alertsEnabled).toBe(true);
+    setWatchlistAlerts(user.id, artist.id, false);
+    expect(getUserWatchlist(user.id)[0].alertsEnabled).toBe(false);
+    setWatchlistAlerts(user.id, artist.id, true);
+    expect(getUserWatchlist(user.id)[0].alertsEnabled).toBe(true);
   });
 });
