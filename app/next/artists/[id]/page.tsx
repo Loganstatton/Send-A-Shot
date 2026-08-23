@@ -1,9 +1,14 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { getArtist, getFoundingBelieverCountForArtist, getFoundingBelieverRecord, getHolding, getNextArtist, getScoreHistory, isWatchlisted } from '@/lib/db';
+import {
+  getArtist, getBackerCountsByArtist, getFoundingBelieverCountForArtist, getFoundingBelieverRecord, getHolding,
+  getNextArtist, getScoreHistory, getWatchCountsByArtist, isWatchlisted,
+} from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
+import { scoreContributors } from '@/lib/scoring';
+import { timeAgo } from '@/lib/format';
 import AudioPreview from '@/components/AudioPreview';
 import SpotifyPreview from '@/components/SpotifyPreview';
 import PriceChart from '@/components/PriceChart';
@@ -11,6 +16,8 @@ import TradePanel from '@/components/TradePanel';
 import VideoBanner from '@/components/next/VideoBanner';
 import WatchButton from '@/components/next/WatchButton';
 import InfoTip from '@/components/next/InfoTip';
+import MissingStat from '@/components/next/MissingStat';
+import ScoreContributorBar from '@/components/next/ScoreContributorBar';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const artist = getArtist(Number(params.id));
@@ -34,8 +41,18 @@ export default async function NextArtistPage({ params }: { params: { id: string 
   const holding = getHolding(user.id, id);
   const scoreHistory = getScoreHistory(id);
   const foundingRecord = getFoundingBelieverRecord(user.id, id);
-  const backerCount = getFoundingBelieverCountForArtist(id);
+  const earlyBackerCount = getFoundingBelieverCountForArtist(id); // ever-first-bought — see the Founding Believer module below
+  const currentBackerCount = getBackerCountsByArtist()[id] ?? 0; // currently holding shares right now
+  const watchCount = getWatchCountsByArtist()[id] ?? 0;
   const watching = isWatchlisted(user.id, id);
+  const scoreParts = scoreContributors(artist);
+
+  // "Today" — the same 24h-window idea DiscoverGrid's "Trending today" sort
+  // uses, just computed here for a single artist's price display instead
+  // of a sort key.
+  const todayCutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const todayFirst = priceHistory.filter((p) => new Date(p.recorded_at).getTime() >= todayCutoff)[0]?.price_cents ?? priceHistory[0]?.price_cents ?? priceCents;
+  const todayChangePct = todayFirst !== 0 ? ((priceCents - todayFirst) / todayFirst) * 100 : 0;
 
   const links = [
     { label: 'Top song', url: artist.top_song_url },
@@ -91,13 +108,25 @@ export default async function NextArtistPage({ params }: { params: { id: string 
               {sentiment.tone === 'undervalued' ? 'Undervalued' : 'Overheated'} by {Math.round(Math.abs(sentiment.diff))}
             </div>
           )}
+          <div
+            className="flex items-center gap-1 px-3 py-[5px] rounded-lg text-[12.5px] font-semibold num"
+            style={{ color: todayChangePct >= 0 ? 'var(--up)' : 'var(--down)' }}
+          >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill={todayChangePct >= 0 ? 'var(--up)' : 'var(--down)'}>
+              {todayChangePct >= 0 ? <path d="M12 4 20 16H4Z" /> : <path d="M12 20 4 8h16Z" />}
+            </svg>
+            {todayChangePct >= 0 ? '+' : ''}{todayChangePct.toFixed(1)}% today
+          </div>
           <AudioPreview artistId={artist.id} artistName={artist.name} src={artist.song_preview_url} />
           <WatchButton artistId={artist.id} initialWatching={watching} variant="labeled" />
         </div>
-        {backerCount > 0 && (
+        <p className="m-0 text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
+          <span className="num">{currentBackerCount}</span> {currentBackerCount === 1 ? 'backer' : 'backers'} right now · <span className="num">{watchCount}</span> watching
+        </p>
+        {earlyBackerCount > 0 && (
           <p className="m-0 text-[12.5px] flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth={2}><path d="M8 21h8M12 17v4M17 5V3H7v2M17 5a5 5 0 0 1-5 5 5 5 0 0 1-5-5M17 5h2a2 2 0 0 1-2 4M7 5H5a2 2 0 0 0 2 4" /></svg>
-            {backerCount} Scout{backerCount === 1 ? '' : 's'} backed this artist
+            {earlyBackerCount} Scout{earlyBackerCount === 1 ? '' : 's'} backed this artist
           </p>
         )}
       </div>
@@ -161,26 +190,65 @@ export default async function NextArtistPage({ params }: { params: { id: string 
             <p className="mt-3.5 mb-0 text-[12.5px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
               This is the fundamentals history — see when the algorithm spotted momentum before the price caught up.
             </p>
+            <div className="mt-5 pt-5" style={{ borderTop: '1px solid var(--border-soft)' }}>
+              <div className="text-xs uppercase tracking-[0.06em] font-mono mb-3" style={{ color: 'var(--text-faint)' }}>Why the Score is what it is</div>
+              <div className="flex flex-col gap-2.5">
+                <ScoreContributorBar label="Real growth &amp; engagement data" points={scoreParts.realDataPoints} total={scoreParts.total} color="var(--up)" />
+                <ScoreContributorBar label="Scout evaluation" points={scoreParts.scoutPoints} total={scoreParts.total} color="var(--ember)" />
+              </div>
+              <p className="mt-3 mb-0 text-[12px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
+                Growth Velocity and Engagement Quality come straight from real follower/engagement numbers. The rest is a Scout&apos;s own judgment call on talent, brand, and execution — not something a formula can measure.
+              </p>
+            </div>
           </div>
 
           <div className="next-card p-6">
-            <h2 className="font-display font-bold text-[17px] m-0 mb-[18px]">Momentum</h2>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-[18px]">
+              <h2 className="font-display font-bold text-[17px] m-0">Momentum</h2>
+              <div className="flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--text-faint)' }}>
+                {artist.soundcharts_uuid ? (
+                  <span className="flex items-center gap-1" style={{ color: 'var(--up)' }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path d="M20 6 9 17l-5-5" /></svg>
+                    Linked to a live data source
+                  </span>
+                ) : (
+                  <span>Entered by hand, not auto-synced</span>
+                )}
+                <span>· Updated {timeAgo(artist.updated_at)}</span>
+              </div>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
               <div>
                 <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>Followers</div>
-                <div className="num text-[19px] font-bold">{artist.followers_count?.toLocaleString() ?? '—'}</div>
+                {artist.followers_count != null ? (
+                  <div className="num text-[19px] font-bold">{artist.followers_count.toLocaleString()}</div>
+                ) : (
+                  <MissingStat reason="Not linked yet" />
+                )}
               </div>
               <div>
                 <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>Monthly listeners</div>
-                <div className="num text-[19px] font-bold">{artist.monthly_listeners?.toLocaleString() ?? '—'}</div>
+                {artist.monthly_listeners != null ? (
+                  <div className="num text-[19px] font-bold">{artist.monthly_listeners.toLocaleString()}</div>
+                ) : (
+                  <MissingStat reason="Not available" />
+                )}
               </div>
               <div>
                 <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>30-day growth</div>
-                <div className="num text-[19px] font-bold" style={{ color: 'var(--up)' }}>{artist.growth_velocity_pct != null ? `+${artist.growth_velocity_pct}%` : '—'}</div>
+                {artist.growth_velocity_pct != null ? (
+                  <div className="num text-[19px] font-bold" style={{ color: 'var(--up)' }}>+{artist.growth_velocity_pct}%</div>
+                ) : (
+                  <MissingStat reason="Not tracked yet" />
+                )}
               </div>
               <div>
                 <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>Engagement</div>
-                <div className="num text-[19px] font-bold">{artist.engagement_rate_pct != null ? `${artist.engagement_rate_pct}%` : '—'}</div>
+                {artist.engagement_rate_pct != null ? (
+                  <div className="num text-[19px] font-bold">{artist.engagement_rate_pct}%</div>
+                ) : (
+                  <MissingStat reason="Not tracked yet" />
+                )}
               </div>
             </div>
             {links.length > 0 && (
