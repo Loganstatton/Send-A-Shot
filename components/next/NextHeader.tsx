@@ -19,6 +19,7 @@ export default function NextHeader({ user }: { user: User }) {
 
   const links = [
     { href: '/next', label: 'Discover', active: pathname === '/next' || pathname?.startsWith('/next/artists') },
+    { href: '/next/activity', label: 'Activity', active: is('/next/activity') },
     { href: '/next/portfolio', label: 'Portfolio', active: is('/next/portfolio') },
     { href: '/next/leaderboard', label: 'Leaderboard', active: is('/next/leaderboard') },
     { href: '/next/watchlist', label: 'Watchlist', active: is('/next/watchlist') },

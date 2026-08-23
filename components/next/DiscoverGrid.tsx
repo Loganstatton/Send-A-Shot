@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useState } from 'react';
 import { NextMarketRow, ScoreChange } from '@/lib/types';
-import { marketSentiment } from '@/lib/next-market';
+import { changePctForWindow as sharedChangePctForWindow, changePctSinceListing, marketSentiment } from '@/lib/next-market';
 import ArtistCard, { SinceWatched } from '@/components/next/ArtistCard';
 
 type SortMode = 'score' | 'growth' | 'gain' | 'loss' | 'new' | 'smallest' | 'gap' | 'watched' | 'backed' | 'trending' | 'momentum';
@@ -25,19 +25,14 @@ const SORT_LABELS: Record<SortMode, string> = {
 };
 const SORT_MODES = Object.keys(SORT_LABELS) as SortMode[];
 
-// A window used only for the "Trending today" sort — same idea as
-// PriceChart's own 1D range, just inlined here since sorting needs a
-// single number per artist rather than a chart's full filtered series.
+// Thin row-shaped wrappers around lib/next-market.ts's shared formulas —
+// same math the Market Activity page's "biggest movers" list now uses too.
 function changePctForWindow(row: NextMarketRow, hours: number): number {
-  const cutoff = Date.now() - hours * 60 * 60 * 1000;
-  const inWindow = row.priceHistory.filter((p) => new Date(p.recorded_at).getTime() >= cutoff);
-  const first = inWindow[0]?.price_cents ?? row.priceHistory[0]?.price_cents ?? row.priceCents;
-  return first !== 0 ? ((row.priceCents - first) / first) * 100 : 0;
+  return sharedChangePctForWindow(row.priceCents, row.priceHistory, hours);
 }
 
 function changePctFor(row: NextMarketRow): number {
-  const first = row.priceHistory[0]?.price_cents ?? row.priceCents;
-  return first !== 0 ? ((row.priceCents - first) / first) * 100 : 0;
+  return changePctSinceListing(row.priceCents, row.priceHistory);
 }
 
 type RangeFilter = { min: string; max: string };

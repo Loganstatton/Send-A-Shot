@@ -1226,6 +1226,98 @@ export function getRecentTradesForArtist(artistId: number, limit = 8): RecentTra
     .all(artistId, limit) as RecentTrade[];
 }
 
+export type MarketTrade = RecentTrade & { artist_id: number; artist_name: string };
+
+// The market-wide version of getRecentTradesForArtist — every trader's
+// activity across every artist, most recent first. Powers the Market
+// Activity feed; same public-by-precedent convention as the per-artist
+// feed above.
+export function getRecentMarketTrades(limit = 30): MarketTrade[] {
+  return db
+    .prepare(`
+      SELECT users.name AS user_name, artists.id AS artist_id, artists.name AS artist_name,
+             next_transactions.type, next_transactions.shares, next_transactions.credits_delta_cents,
+             next_transactions.created_at
+      FROM next_transactions
+      JOIN users ON users.id = next_transactions.user_id
+      JOIN artists ON artists.id = next_transactions.artist_id
+      ORDER BY next_transactions.created_at DESC, next_transactions.id DESC
+      LIMIT ?
+    `)
+    .all(limit) as MarketTrade[];
+}
+
+// "Market-wide total virtual volume" — same shape as
+// getArtistTradeVolumeCents, just without the per-artist filter.
+export function getMarketVolumeCents(hours: number): number {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const row = db
+    .prepare('SELECT COALESCE(SUM(ABS(credits_delta_cents)), 0) AS volume FROM next_transactions WHERE created_at >= ?')
+    .get(cutoff) as { volume: number };
+  return row.volume;
+}
+
+// "Recent buys" / "Recent sells" counts for the daily recap module.
+export function getMarketTradeCounts(hours: number): { buys: number; sells: number } {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const rows = db
+    .prepare("SELECT type, COUNT(*) AS c FROM next_transactions WHERE created_at >= ? GROUP BY type")
+    .all(cutoff) as { type: NextTransactionType; c: number }[];
+  const counts = { buys: 0, sells: 0 };
+  for (const r of rows) counts[r.type === 'buy' ? 'buys' : 'sells'] = r.c;
+  return counts;
+}
+
+export type ActiveArtist = { artist_id: number; artist_name: string; tradeCount: number };
+
+// "Most active artists" — ranked by trade count within the window, one
+// query for the whole roster (same pattern as getWatchCountsByArtist /
+// getBackerCountsByArtist above).
+export function getMostActiveArtists(hours: number, limit = 5): ActiveArtist[] {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  return db
+    .prepare(`
+      SELECT artists.id AS artist_id, artists.name AS artist_name, COUNT(*) AS tradeCount
+      FROM next_transactions
+      JOIN artists ON artists.id = next_transactions.artist_id
+      WHERE next_transactions.created_at >= ?
+      GROUP BY artists.id
+      ORDER BY tradeCount DESC
+      LIMIT ?
+    `)
+    .all(cutoff, limit) as ActiveArtist[];
+}
+
+// "Most backed today" — distinct buyers per artist within the window, for
+// the whole roster in one query. The time-windowed sibling of
+// getBackerCountsByArtist above (which is all-time and shares-based, not
+// "recent activity" based).
+export function getRecentBackerCountsByArtist(hours: number): Record<number, number> {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const rows = db
+    .prepare("SELECT artist_id, COUNT(DISTINCT user_id) AS c FROM next_transactions WHERE type = 'buy' AND created_at >= ? GROUP BY artist_id")
+    .all(cutoff) as { artist_id: number; c: number }[];
+  return Object.fromEntries(rows.map((r) => [r.artist_id, r.c]));
+}
+
+// "Most watched today" — the time-windowed sibling of getWatchCountsByArtist.
+export function getRecentWatchCountsByArtist(hours: number): Record<number, number> {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const rows = db
+    .prepare('SELECT artist_id, COUNT(*) AS c FROM next_watchlist WHERE created_at >= ? GROUP BY artist_id')
+    .all(cutoff) as { artist_id: number; c: number }[];
+  return Object.fromEntries(rows.map((r) => [r.artist_id, r.c]));
+}
+
+// "New artists this week" — live NEXT artists (not passed) added recently,
+// most recent first.
+export function getNewArtistsThisWeek(days = 7): Artist[] {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  return getAllArtists()
+    .filter((a) => a.stage !== 'passed' && a.created_at >= cutoff)
+    .sort((a, b) => (b.created_at > a.created_at ? 1 : -1));
+}
+
 export type TradeResult =
   | { ok: true; shares: number; priceCents: number; newBalanceCents: number; realizedPnlCents?: number }
   | { ok: false; error: string };
