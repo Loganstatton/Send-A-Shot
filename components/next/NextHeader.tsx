@@ -32,17 +32,18 @@ export default function NextHeader({ user }: { user: User }) {
             <Link
               key={l.href}
               href={l.href}
-              className={`relative pb-[22px] ${l.active ? 'text-[var(--text)] font-medium' : 'text-[var(--text-muted)]'}`}
+              className={`relative pb-[22px] ${l.active ? 'font-medium' : ''}`}
+              style={{ color: l.active ? 'var(--text)' : 'var(--text-muted)' }}
             >
               {l.label}
-              {l.active && <span className="absolute left-0 right-0 -bottom-[21px] h-0.5 rounded-full bg-[var(--ember)]" />}
+              {l.active && <span className="absolute left-0 right-0 -bottom-[21px] h-0.5 rounded-full" style={{ background: 'var(--ember)' }} />}
             </Link>
           ))}
         </nav>
       </div>
       <div className="flex items-center gap-3">
         {isInternal && (
-          <Link href="/" className="hidden md:inline text-xs text-[var(--text-faint)] hover:text-[var(--text-muted)]">
+          <Link href="/" className="hidden md:inline text-xs" style={{ color: 'var(--text-faint)' }}>
             Switch to Scout →
           </Link>
         )}
@@ -52,7 +53,8 @@ export default function NextHeader({ user }: { user: User }) {
         </div>
         <Link
           href="/next/profile"
-          className="w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] flex items-center justify-center font-display font-bold text-sm text-[var(--text-muted)]"
+          className="w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] flex items-center justify-center font-display font-bold text-sm"
+          style={{ color: 'var(--text-muted)' }}
         >
           {user.name.trim().charAt(0).toUpperCase() || '?'}
         </Link>

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { getNextMarket } from '@/lib/db';
 import { marketSentiment } from '@/lib/next-market';
 import DiscoverGrid from '@/components/next/DiscoverGrid';
+import NextStatTile from '@/components/next/NextStatTile';
 
 export const metadata: Metadata = { title: 'Discover' };
 export const dynamic = 'force-dynamic';
@@ -26,21 +27,21 @@ export default async function NextMarketPage() {
     }
   }
 
-  type Stat = { label: string; name?: string; value: string | null; tone?: 'up' | 'down' | 'ember' };
+  type Stat = { label: string; value: string; valueTone?: 'up' | 'down' | 'ember'; delta?: string; deltaTone?: 'up' | 'down' | 'ember' };
   const stats: Stat[] = [
     { label: 'Artists live', value: String(rows.length) },
-    { label: 'Avg. 30D growth', value: avgGrowth != null ? `+${avgGrowth.toFixed(0)}%` : '—', tone: 'up' },
+    { label: 'Avg. 30D growth', value: avgGrowth != null ? `+${avgGrowth.toFixed(0)}%` : '—', valueTone: 'up' },
     {
       label: "Today's biggest mover",
-      name: biggestMover?.name ?? '—',
-      value: biggestMover ? `${biggestMover.changePct >= 0 ? '+' : ''}${biggestMover.changePct.toFixed(1)}%` : null,
-      tone: (biggestMover?.changePct ?? 0) >= 0 ? 'up' : 'down',
+      value: biggestMover?.name ?? '—',
+      delta: biggestMover ? `${biggestMover.changePct >= 0 ? '+' : ''}${biggestMover.changePct.toFixed(1)}%` : undefined,
+      deltaTone: (biggestMover?.changePct ?? 0) >= 0 ? 'up' : 'down',
     },
     {
       label: 'Most undervalued',
-      name: mostUndervalued?.name ?? 'None right now',
-      value: mostUndervalued ? `+${mostUndervalued.diff.toFixed(0)}` : null,
-      tone: 'ember',
+      value: mostUndervalued?.name ?? 'None right now',
+      delta: mostUndervalued ? `+${mostUndervalued.diff.toFixed(0)}` : undefined,
+      deltaTone: 'ember',
     },
   ];
 
@@ -60,18 +61,7 @@ export default async function NextMarketPage() {
         className="grid grid-cols-2 lg:grid-cols-4 gap-px rounded-2xl overflow-hidden border"
         style={{ background: 'var(--border-soft)', borderColor: 'var(--border-soft)' }}
       >
-        {stats.map((s) => (
-          <div key={s.label} className="flex flex-col gap-1.5 px-[22px] py-5" style={{ background: 'var(--surface)' }}>
-            <span className="text-[11.5px] uppercase tracking-[0.06em] font-mono" style={{ color: 'var(--text-faint)' }}>{s.label}</span>
-            {'name' in s ? (
-              <span className="font-display font-bold text-xl">
-                {s.name}{s.value && <span className="num text-[15px] font-semibold ml-1.5" style={{ color: `var(--${s.tone})` }}>{s.value}</span>}
-              </span>
-            ) : (
-              <span className="num font-display font-bold text-2xl" style={{ color: s.tone ? `var(--${s.tone})` : undefined }}>{s.value}</span>
-            )}
-          </div>
-        ))}
+        {stats.map((s) => <NextStatTile key={s.label} {...s} />)}
       </div>
 
       {rows.length === 0 ? (

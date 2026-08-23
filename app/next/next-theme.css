@@ -30,7 +30,11 @@
   color: var(--text);
 }
 
-.next-theme a { color: inherit; text-decoration: none; }
+/* :where(a) keeps this at one-class specificity (not class+element), so it
+   loses cleanly to next-pill, next-btn-primary, next-btn-ghost, and Tailwind
+   color utilities applied to the same Link. Without it, this reset's higher
+   specificity silently won over every button/pill color rule below. */
+.next-theme :where(a) { color: inherit; text-decoration: none; }
 .next-theme .num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
 
 .next-card {

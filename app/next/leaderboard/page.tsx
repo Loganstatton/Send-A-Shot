@@ -8,8 +8,6 @@ import ArtistAvatar from '@/components/ArtistAvatar';
 export const metadata: Metadata = { title: 'Leaderboard' };
 export const dynamic = 'force-dynamic';
 
-const RANK_MEDAL: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' };
-
 export default async function LeaderboardPage({ searchParams }: { searchParams: { genre?: string } }) {
   await requireUser();
   const genres = getAvailableGenres();
@@ -18,74 +16,68 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
   const topScouts = activeGenre ? null : getScoutLeaderboard();
   const genreBoard = activeGenre ? getGenreLeaderboard(activeGenre) : null;
 
+  const pillClass = (active: boolean) => `next-pill ${active ? 'next-pill-active' : ''}`;
+
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-8">
       <div>
-        <h1 className="text-2xl font-semibold">Leaderboard</h1>
-        <p className="text-neutral-400 text-sm">Ranked by paper-trading performance. No real money changes hands.</p>
+        <h1 className="font-display font-bold text-[34px] m-0 tracking-[-0.01em]">Leaderboard</h1>
+        <p className="mt-1 mb-0 text-sm" style={{ color: 'var(--text-faint)' }}>Ranked by paper-trading performance. No real money changes hands.</p>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
-        <Link href="/next/leaderboard" className={`btn text-sm ${!activeGenre ? 'bg-white/20' : ''}`}>Top Scouts</Link>
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <Link href="/next/leaderboard" className={pillClass(!activeGenre)}>Top Scouts</Link>
         {genres.map((g) => (
-          <Link
-            key={g}
-            href={`/next/leaderboard?genre=${encodeURIComponent(g)}`}
-            className={`btn text-sm ${activeGenre === g ? 'bg-white/20' : ''}`}
-          >
+          <Link key={g} href={`/next/leaderboard?genre=${encodeURIComponent(g)}`} className={pillClass(activeGenre === g)}>
             {g} Scouts
           </Link>
         ))}
       </div>
 
       {topScouts && (
-        <div className="space-y-2">
-          {topScouts.length === 0 && <p className="text-neutral-400 text-center py-8">No Scouts yet.</p>}
-          {topScouts.map((entry) => (
-            <Link
-              key={entry.user.id}
-              href={`/next/profile/${entry.user.id}`}
-              className="card flex items-center gap-4 hover:border-neutral-600 transition-colors"
-            >
-              <span className="w-8 text-center text-neutral-500 font-mono text-sm shrink-0">
-                {RANK_MEDAL[entry.rank] ?? `#${entry.rank}`}
-              </span>
-              <ArtistAvatar name={entry.user.name} size="sm" />
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold truncate">{entry.user.name}</div>
-                <div className="text-xs text-neutral-500">{entry.artistsBackedCount} artists backed</div>
-              </div>
-              <div className={`font-semibold shrink-0 ${entry.totalReturnPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {entry.totalReturnPct >= 0 ? '+' : ''}{entry.totalReturnPct}%
-              </div>
-            </Link>
-          ))}
+        <div className="flex flex-col gap-2.5">
+          {topScouts.length === 0 && <p className="text-center py-10 m-0" style={{ color: 'var(--text-muted)' }}>No Scouts yet.</p>}
+          {topScouts.map((entry) => {
+            const up = entry.totalReturnPct >= 0;
+            return (
+              <Link key={entry.user.id} href={`/next/profile/${entry.user.id}`} className="next-card flex items-center gap-4 px-5 py-4">
+                <span className="num w-9 text-center text-sm font-semibold shrink-0" style={{ color: 'var(--text-faint)' }}>#{entry.rank}</span>
+                <ArtistAvatar name={entry.user.name} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-display font-semibold truncate">{entry.user.name}</div>
+                  <div className="text-xs" style={{ color: 'var(--text-faint)' }}>{entry.artistsBackedCount} artists backed</div>
+                </div>
+                <div className="num font-semibold shrink-0" style={{ color: up ? 'var(--up)' : 'var(--down)' }}>
+                  {up ? '+' : ''}{entry.totalReturnPct}%
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
 
       {genreBoard && (
-        <div className="space-y-2">
-          <p className="text-xs text-neutral-500">Ranked by total profit &amp; loss earned specifically from {activeGenre} artists.</p>
-          {genreBoard.length === 0 && <p className="text-neutral-400 text-center py-8">No {activeGenre} Scouts yet — be the first to back one.</p>}
-          {genreBoard.map((entry) => (
-            <Link
-              key={entry.user.id}
-              href={`/next/profile/${entry.user.id}`}
-              className="card flex items-center gap-4 hover:border-neutral-600 transition-colors"
-            >
-              <span className="w-8 text-center text-neutral-500 font-mono text-sm shrink-0">
-                {RANK_MEDAL[entry.rank] ?? `#${entry.rank}`}
-              </span>
-              <ArtistAvatar name={entry.user.name} size="sm" />
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold truncate">{entry.user.name}</div>
-                <div className="text-xs text-neutral-500">{entry.artistsBackedCount} {activeGenre} artists backed</div>
-              </div>
-              <div className={`font-semibold shrink-0 ${entry.pnlCents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {entry.pnlCents >= 0 ? '+' : ''}{formatCents(entry.pnlCents)}
-              </div>
-            </Link>
-          ))}
+        <div className="flex flex-col gap-2.5">
+          <p className="text-xs m-0" style={{ color: 'var(--text-faint)' }}>Ranked by total profit &amp; loss earned specifically from {activeGenre} artists.</p>
+          {genreBoard.length === 0 && (
+            <p className="text-center py-10 m-0" style={{ color: 'var(--text-muted)' }}>No {activeGenre} Scouts yet — be the first to back one.</p>
+          )}
+          {genreBoard.map((entry) => {
+            const up = entry.pnlCents >= 0;
+            return (
+              <Link key={entry.user.id} href={`/next/profile/${entry.user.id}`} className="next-card flex items-center gap-4 px-5 py-4">
+                <span className="num w-9 text-center text-sm font-semibold shrink-0" style={{ color: 'var(--text-faint)' }}>#{entry.rank}</span>
+                <ArtistAvatar name={entry.user.name} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-display font-semibold truncate">{entry.user.name}</div>
+                  <div className="text-xs" style={{ color: 'var(--text-faint)' }}>{entry.artistsBackedCount} {activeGenre} artists backed</div>
+                </div>
+                <div className="num font-semibold shrink-0" style={{ color: up ? 'var(--up)' : 'var(--down)' }}>
+                  {up ? '+' : ''}{formatCents(entry.pnlCents)}
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>
