@@ -13,9 +13,9 @@ const {
   createSyncRun, createUser, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
   getArtistsWithSoundchartsLink, getBackerCountsByArtist, getDiscoveryCandidates, getKnownDiscoveryUuids,
   getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun, getNewDiscoveryCandidateCount,
-  getNextArtist, getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getWatchCountsByArtist,
-  insertDiscoveryCandidate, isWatchlisted, markEmailVerified, setDiscoveryCandidateStatus, updateArtist,
-  updateUserProfile,
+  getNextArtist, getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions,
+  getWatchCountsByArtist, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified,
+  recordPreviewListen, setDiscoveryCandidateStatus, updateArtist, updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -648,5 +648,48 @@ describe('Discover aggregates — watch/backer counts', () => {
 
     const counts = getBackerCountsByArtist();
     expect(counts[artist.id]).toBe(1);
+  });
+});
+
+describe('Music experience — listen tracking', () => {
+  it('hasListenedToArtist is false until a "started" event is recorded, then true', () => {
+    const artist = makeArtist('Listened Artist');
+    const user = createUser({ name: 'Listener', email: 'listener@example.com', password_hash: 'hash' });
+    expect(hasListenedToArtist(user.id, artist.id)).toBe(false);
+
+    recordPreviewListen(user.id, artist.id, 'started');
+    expect(hasListenedToArtist(user.id, artist.id)).toBe(true);
+  });
+
+  it('a "completed" event alone does not count as having listened (started is the real signal)', () => {
+    const artist = makeArtist('Completed Only Artist');
+    const user = createUser({ name: 'Skipper', email: 'skipper@example.com', password_hash: 'hash' });
+    recordPreviewListen(user.id, artist.id, 'completed');
+    expect(hasListenedToArtist(user.id, artist.id)).toBe(false);
+  });
+
+  it('a buy is stamped listened_before_buy=true only when the listen happened first', () => {
+    const artist = makeArtist('Buy After Listen');
+    const listener = createUser({ name: 'Did Listen', email: 'did-listen@example.com', password_hash: 'hash' });
+    const skipper = createUser({ name: 'Did Not Listen', email: 'no-listen@example.com', password_hash: 'hash' });
+
+    recordPreviewListen(listener.id, artist.id, 'started');
+    executeTrade(listener.id, artist.id, 'buy', 50_000);
+    executeTrade(skipper.id, artist.id, 'buy', 50_000);
+
+    const [listenerTx] = getUserTransactions(listener.id).filter((t) => t.artist_id === artist.id);
+    const [skipperTx] = getUserTransactions(skipper.id).filter((t) => t.artist_id === artist.id);
+    expect(listenerTx.listened_before_buy).toBe(true);
+    expect(skipperTx.listened_before_buy).toBe(false);
+  });
+
+  it('sell transactions leave listened_before_buy undefined, not false', () => {
+    const artist = makeArtist('Sell Row Artist');
+    const user = createUser({ name: 'Trader', email: 'trader-sell@example.com', password_hash: 'hash' });
+    executeTrade(user.id, artist.id, 'buy', 50_000);
+    executeTrade(user.id, artist.id, 'sell', 999_999_999);
+
+    const sellTx = getUserTransactions(user.id).find((t) => t.artist_id === artist.id && t.type === 'sell');
+    expect(sellTx?.listened_before_buy).toBeUndefined();
   });
 });

@@ -1,65 +1,51 @@
 'use client';
-import { useRef, useState } from 'react';
+import { useNowPlaying } from '@/components/next/NowPlayingProvider';
 
-// A single play/pause button backed by a hidden <audio> element. Stops
-// itself at 30s so a "preview" can't accidentally play a full track.
-// variant="icon" is the compact round button used on NEXT's Discover cards;
-// default keeps the original labeled-pill look used elsewhere.
+// A trigger button for the shared mini-player (NowPlayingProvider +
+// MiniPlayer) — this file used to own its own <audio> element per
+// instance; now every preview button on NEXT shares the one player, which
+// is what makes "only one artist plays at once" and "keep playing while
+// browsing" possible. variant="icon" is the compact round button used on
+// Discover cards; default is the labeled-pill look used on Artist Detail.
 export default function AudioPreview({
+  artistId,
+  artistName,
   src,
-  label = 'Hear',
   variant = 'default',
 }: {
-  src: string;
-  label?: string;
+  artistId: number;
+  artistName: string;
+  src?: string;
   variant?: 'default' | 'icon';
 }) {
-  const ref = useRef<HTMLAudioElement>(null);
-  const [playing, setPlaying] = useState(false);
+  const { track, playing, toggle } = useNowPlaying();
+  const isCurrent = track?.artistId === artistId;
+  const isPlaying = isCurrent && playing;
+  const available = Boolean(src);
 
-  function toggle(e: React.MouseEvent) {
+  function handleClick(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const audio = ref.current;
-    if (!audio) return;
-    if (playing) {
-      audio.pause();
-    } else {
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
-    }
+    if (!available || !src) return;
+    toggle({ artistId, artistName, src });
   }
-
-  const audioEl = (
-    <audio
-      ref={ref}
-      src={src}
-      preload="none"
-      onPlay={() => setPlaying(true)}
-      onPause={() => setPlaying(false)}
-      onEnded={() => setPlaying(false)}
-      onTimeUpdate={(e) => {
-        if (e.currentTarget.currentTime >= 30) e.currentTarget.pause();
-      }}
-      className="hidden"
-    />
-  );
 
   if (variant === 'icon') {
     return (
       <button
         type="button"
-        onClick={toggle}
-        aria-label={playing ? 'Pause preview' : label}
-        className="next-icon-btn w-[34px] h-[34px] rounded-full flex items-center justify-center shrink-0 border active:scale-90"
-        style={{ background: 'var(--surface-2)', borderColor: 'var(--border-soft)' }}
+        onClick={handleClick}
+        disabled={!available}
+        aria-label={!available ? 'Preview unavailable' : isPlaying ? 'Pause preview' : `Hear ${artistName.split(' ')[0]}`}
+        title={!available ? 'No preview available for this artist yet' : undefined}
+        className="next-icon-btn w-[34px] h-[34px] rounded-full flex items-center justify-center shrink-0 border active:scale-90 disabled:active:scale-100 disabled:cursor-default"
+        style={{ background: 'var(--surface-2)', borderColor: 'var(--border-soft)', opacity: available ? 1 : 0.4 }}
       >
-        {playing ? (
+        {isPlaying ? (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--text)"><rect x="5" y="4" width="5" height="16" /><rect x="14" y="4" width="5" height="16" /></svg>
         ) : (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="var(--text)"><path d="M6 4 20 12 6 20Z" /></svg>
         )}
-        {audioEl}
       </button>
     );
   }
@@ -67,11 +53,12 @@ export default function AudioPreview({
   return (
     <button
       type="button"
-      onClick={toggle}
-      className={`btn text-sm ${playing ? 'bg-white/20' : ''}`}
+      onClick={handleClick}
+      disabled={!available}
+      title={!available ? 'No preview available for this artist yet' : undefined}
+      className={`btn text-sm ${isPlaying ? 'bg-white/20' : ''} ${!available ? 'opacity-40 cursor-default' : ''}`}
     >
-      {playing ? '⏸ Playing' : `▶ ${label}`}
-      {audioEl}
+      {!available ? 'Preview unavailable' : isPlaying ? '⏸ Playing' : `▶ Hear ${artistName.split(' ')[0]}`}
     </button>
   );
 }

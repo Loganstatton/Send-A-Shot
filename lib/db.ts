@@ -159,6 +159,19 @@ CREATE TABLE IF NOT EXISTS next_watchlist (
   UNIQUE(user_id, artist_id)
 );
 CREATE INDEX IF NOT EXISTS idx_next_watchlist_user ON next_watchlist(user_id);
+-- One row per preview play/complete — the "listen" half of NEXT's music
+-- experience. 'started' fires each time playback begins (including a
+-- replay); 'completed' fires when it reaches the natural end or the 30s
+-- preview cap. Kept as its own small table (not folded into next_transactions)
+-- since a listen isn't tied to ever trading — most won't be.
+CREATE TABLE IF NOT EXISTS preview_listens (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  event TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_preview_listens_user_artist ON preview_listens(user_id, artist_id);
 CREATE TABLE IF NOT EXISTS next_transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -239,6 +252,7 @@ addColumnIfMissing('artists', 'soundcharts_uuid TEXT');
 // yt_video_id on approval (see approveDiscoveryCandidate below), or by a
 // Scout pasting a link in the Add/Edit Artist form for any other artist.
 addColumnIfMissing('artists', 'featured_video_id TEXT');
+addColumnIfMissing('next_transactions', 'listened_before_buy INTEGER');
 // discovery_runs originally only ever meant a Soundcharts scan; `source`
 // distinguishes it from a YouTube scan run, `quota_used` is a rough count
 // of external API calls spent (search/videos/channels for YouTube) so a
@@ -947,6 +961,22 @@ export function getNextMarket(): NextMarketRow[] {
     }));
 }
 
+// The "listen" half of NEXT's music experience — see the preview_listens
+// table comment. 'started' logs every time playback begins (a replay
+// counts again — "every listen event," not "every unique listener").
+export function recordPreviewListen(userId: number, artistId: number, event: 'started' | 'completed'): void {
+  db.prepare('INSERT INTO preview_listens (user_id, artist_id, event, created_at) VALUES (?, ?, ?, ?)')
+    .run(userId, artistId, event, new Date().toISOString());
+}
+
+// Used by executeTrade to stamp "did this trader listen before backing
+// this artist" onto the buy transaction — any 'started' event for this
+// user+artist recorded before this call is a real prior listen.
+export function hasListenedToArtist(userId: number, artistId: number): boolean {
+  const row = db.prepare("SELECT 1 FROM preview_listens WHERE user_id = ? AND artist_id = ? AND event = 'started' LIMIT 1").get(userId, artistId);
+  return row != null;
+}
+
 // Global counts, not scoped to one user — powers Discover's "Most watched"
 // / "Most backed" sorts. One GROUP BY each rather than a per-artist query,
 // so sorting the whole market by either costs 2 queries total, not 2*N.
@@ -1043,14 +1073,19 @@ export function getFoundingBelieverRecord(userId: number, artistId: number): Fou
 }
 
 export function getUserTransactions(userId: number, limit = 50): (NextTransaction & { artist_name: string })[] {
-  return db.prepare(`
+  const rows = db.prepare(`
     SELECT next_transactions.*, artists.name AS artist_name
     FROM next_transactions
     JOIN artists ON artists.id = next_transactions.artist_id
     WHERE next_transactions.user_id = ?
     ORDER BY next_transactions.created_at DESC
     LIMIT ?
-  `).all(userId, limit) as (NextTransaction & { artist_name: string })[];
+  `).all(userId, limit) as (Omit<NextTransaction, 'listened_before_buy'> & { artist_name: string; listened_before_buy: number | null })[];
+  // SQLite has no boolean type — normalize the raw 0/1/null into the
+  // boolean|undefined the NextTransaction type promises (undefined for
+  // sells, where the column is never set, not a false "no" claim about
+  // something that was never tracked for that row).
+  return rows.map((r) => ({ ...r, listened_before_buy: r.type === 'buy' ? Boolean(r.listened_before_buy) : undefined }));
 }
 
 export type TradeResult =
@@ -1093,6 +1128,9 @@ export function executeTrade(
     const holding = getHolding(userId, artistId);
     const newShares = (holding?.shares ?? 0) + shares;
     const newCostBasis = (holding?.cost_basis_cents ?? 0) + creditsAmountCents;
+    // Whatever the listen history says right up to this moment — "did this
+    // trader ever hit play on this artist before backing them."
+    const listenedBeforeBuy = hasListenedToArtist(userId, artistId) ? 1 : 0;
 
     const tx = db.transaction(() => {
       if (holding) {
@@ -1105,9 +1143,9 @@ export function executeTrade(
       db.prepare('UPDATE users SET next_credits_cents = next_credits_cents - ? WHERE id = ?')
         .run(creditsAmountCents, userId);
       db.prepare(`
-        INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents)
-        VALUES (?, ?, ?, 'buy', ?, ?, ?)
-      `).run(userId, artistId, now, shares, executionCents, -creditsAmountCents);
+        INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents, listened_before_buy)
+        VALUES (?, ?, ?, 'buy', ?, ?, ?, ?)
+      `).run(userId, artistId, now, shares, executionCents, -creditsAmountCents, listenedBeforeBuy);
 
       db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
       db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);

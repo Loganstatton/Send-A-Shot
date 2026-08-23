@@ -133,7 +133,7 @@ export default function ArtistCard({
       </Link>
 
       <div className="px-5 pb-5 flex items-center gap-2.5">
-        {artist.song_preview_url && <AudioPreview src={artist.song_preview_url} label={`Hear ${artist.name.split(' ')[0]}`} variant="icon" />}
+        <AudioPreview artistId={artist.id} artistName={artist.name} src={artist.song_preview_url} variant="icon" />
         <Link
           href={`/next/artists/${artist.id}`}
           className={`flex-1 text-center py-2.5 rounded-[10px] text-[13.5px] font-bold ${undervalued ? 'next-btn-primary' : 'next-btn-ghost'}`}

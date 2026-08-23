@@ -350,6 +350,7 @@ export type NextTransaction = {
   price_cents_per_share: number;
   credits_delta_cents: number;
   realized_pnl_cents?: number;
+  listened_before_buy?: boolean;
 };
 
 export type NextPricePoint = { recorded_at: string; price_cents: number };

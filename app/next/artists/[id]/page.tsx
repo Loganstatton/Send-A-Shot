@@ -91,9 +91,7 @@ export default async function NextArtistPage({ params }: { params: { id: string 
               {sentiment.tone === 'undervalued' ? 'Undervalued' : 'Overheated'} by {Math.round(Math.abs(sentiment.diff))}
             </div>
           )}
-          {artist.song_preview_url && (
-            <AudioPreview src={artist.song_preview_url} label={`Hear ${artist.name.split(' ')[0]}`} />
-          )}
+          <AudioPreview artistId={artist.id} artistName={artist.name} src={artist.song_preview_url} />
           <WatchButton artistId={artist.id} initialWatching={watching} variant="labeled" />
         </div>
         {backerCount > 0 && (
