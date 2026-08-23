@@ -404,6 +404,7 @@ export type FoundingBelieverRecord = {
 export type PublicScout = {
   id: number;
   name: string;
+  avatar_url?: string;
 };
 
 export type PortfolioValue = {
@@ -424,11 +425,22 @@ export type ScoutProfile = {
   earlyDiscoveriesCount: number;
 };
 
+export type LeaderboardWindow = 'week' | 'month' | 'all';
+
 export type LeaderboardEntry = {
   user: PublicScout;
   rank: number;
   totalReturnPct: number;
+  portfolioValueCents: number;
   artistsBackedCount: number;
+  earlyDiscoveriesCount: number;
+  // Rank movement is always the last-7-days change in ALL-TIME rank,
+  // regardless of which time window the board is currently sorted by — a
+  // consistent "how has your standing moved lately" signal rather than a
+  // second, window-relative movement number. Positive = moved up
+  // (a lower rank number now). Null when there's nothing to compare against
+  // yet (the account didn't exist 7 days ago).
+  rankChange: number | null;
 };
 
 // A genre board ranks by realized+unrealized $ P&L earned specifically from

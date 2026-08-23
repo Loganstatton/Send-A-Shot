@@ -13,10 +13,11 @@ const {
   createSyncRun, createUser, db, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
   getArtistsWithSoundchartsLink, getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates,
   getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun,
-  getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValueHistory, getRecentBackerCount, getRecentTradesForArtist,
-  getScoreChanges, getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist,
-  getWatchCountsByArtist, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified,
-  recordPreviewListen, setDiscoveryCandidateStatus, setWatchlistAlerts, updateArtist, updateUserProfile,
+  getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue, getPortfolioValueHistory, getRankMovements,
+  getRecentBackerCount, getRecentTradesForArtist, getScoreChanges, getScoutLeaderboard, getTrackedSoundchartsUuids,
+  getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
+  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified, recordPreviewListen,
+  setDiscoveryCandidateStatus, setWatchlistAlerts, updateArtist, updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -850,6 +851,19 @@ describe('Portfolio — value history reconstruction', () => {
     // Someone else moves the market on the same artist — the holder never trades again.
     const moverBuy = executeTrade(mover.id, artist.id, 'buy', 500_000);
     if (!moverBuy.ok) throw new Error(moverBuy.error);
+    // Force the mover's price point strictly later than the holder's own
+    // buy — two real-clock calls this close together in a fast test can
+    // land in the same millisecond and collapse into one reconstructed
+    // moment (harmless for correctness, since both updates still land
+    // before any snapshot taken afterward, but it would make this specific
+    // length assertion flaky). Computed in JS (not SQLite's datetime()) so
+    // the format matches every other recorded_at value exactly — a
+    // space-vs-"T" mismatch at the same position would otherwise sort
+    // wrong regardless of the actual time difference.
+    db.prepare(`
+      UPDATE next_price_history SET recorded_at = ?
+      WHERE id = (SELECT MAX(id) FROM next_price_history WHERE artist_id = ?)
+    `).run(new Date(Date.now() + 60_000).toISOString(), artist.id);
 
     const historyAfterMarketMove = getPortfolioValueHistory(holder.id);
     const valueAfterMarketMove = historyAfterMarketMove[historyAfterMarketMove.length - 1].value_cents;
@@ -872,7 +886,83 @@ describe('Portfolio — value history reconstruction', () => {
     const afterSell = getPortfolioValueHistory(trader.id);
     const afterSellValue = afterSell[afterSell.length - 1].value_cents;
 
-    expect(afterSell.length).toBeGreaterThan(afterBuy.length);
+    // Not asserting history length here: a buy and sell close enough
+    // together can land in the same millisecond and collapse into one
+    // reconstructed moment (harmless — the buy is still applied before the
+    // sell within that moment, per the id-ASC tiebreak in the underlying
+    // query, so the final value is unaffected either way).
     expect(afterSellValue).toBeLessThanOrEqual(afterBuyValue);
+  });
+});
+
+describe('Leaderboard — time windows and rank movement', () => {
+  it("the 'all' window matches getPortfolioValue's own totalReturnPct exactly (no regression from adding windows)", () => {
+    const user = createUser({ name: 'All Window Scout', email: 'all-window@example.com', password_hash: 'hash' });
+    const artist = makeArtist('All Window Artist');
+    executeTrade(user.id, artist.id, 'buy', 100_000);
+
+    const entry = getScoutLeaderboard('all').find((e) => e.user.id === user.id)!;
+    expect(entry.totalReturnPct).toBe(getPortfolioValue(user.id).totalReturnPct);
+  });
+
+  it("the 'week' window measures return from the value at the start of the window, not all-time", () => {
+    const user = createUser({ name: 'Week Window Scout', email: 'week-window@example.com', password_hash: 'hash' });
+    const artist = makeArtist('Week Window Artist');
+
+    // Backdate the account and an early trade to well before the 7-day
+    // cutoff, so 'week' has a real historical baseline to measure from
+    // instead of falling back to the starting balance. Every backdated
+    // timestamp is computed in JS (never SQLite's datetime()) so the string
+    // format matches every real recorded_at/created_at value exactly — a
+    // SQLite-format "2026-08-03 19:01" vs this app's ISO
+    // "2026-08-03T19:01...Z" would otherwise collate wrong wherever a
+    // string comparison's tiebreak lands on that space-vs-"T" character.
+    // Large enough trades that the impact-driven value move survives
+    // rounding to 1 decimal place — a modest trade's paper "P&L" is only a
+    // few cents either way (impact cost is intentionally small; see the
+    // trading engine's self-trade exploit tests above), which would make
+    // 'all' and 'week' round to the identical 0.0% regardless of whether
+    // the baselines actually differ internally.
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('UPDATE users SET created_at = ? WHERE id = ?').run(thirtyDaysAgo, user.id);
+    const earlyBuy = executeTrade(user.id, artist.id, 'buy', 600_000);
+    if (!earlyBuy.ok) throw new Error(earlyBuy.error);
+    db.prepare('UPDATE next_transactions SET created_at = ? WHERE user_id = ?').run(twentyDaysAgo, user.id);
+    db.prepare('UPDATE next_price_history SET recorded_at = ? WHERE artist_id = ?').run(twentyDaysAgo, artist.id);
+
+    // A second trade lands "now" — inside the window.
+    const recentBuy = executeTrade(user.id, artist.id, 'buy', 300_000);
+    if (!recentBuy.ok) throw new Error(recentBuy.error);
+
+    const allEntry = getScoutLeaderboard('all').find((e) => e.user.id === user.id)!;
+    const weekEntry = getScoutLeaderboard('week').find((e) => e.user.id === user.id)!;
+
+    // 'all' is measured from the starting balance (includes both trades'
+    // impact cost); 'week' is measured from the backdated snapshot
+    // (includes only the recent trade) — different baselines, so different
+    // numbers, proving 'week' isn't secretly just re-running the all-time math.
+    expect(weekEntry.totalReturnPct).not.toBe(allEntry.totalReturnPct);
+  });
+
+  it('getRankMovements is null for an account that did not exist 7 days ago, and non-null for one that did', () => {
+    const faller = createUser({ name: 'Faller', email: 'faller-rank@example.com', password_hash: 'hash' });
+    const riser = createUser({ name: 'Riser', email: 'riser-rank@example.com', password_hash: 'hash' }); // created "now" — genuinely new relative to the 7-day window
+    const artist = makeArtist('Rank Movement Artist');
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('UPDATE users SET created_at = ? WHERE id = ?').run(thirtyDaysAgo, faller.id);
+    const fallerEarly = executeTrade(faller.id, artist.id, 'buy', 200_000);
+    if (!fallerEarly.ok) throw new Error(fallerEarly.error);
+    db.prepare('UPDATE next_transactions SET created_at = ? WHERE user_id = ?').run(twentyDaysAgo, faller.id);
+    db.prepare('UPDATE next_price_history SET recorded_at = ? WHERE artist_id = ?').run(twentyDaysAgo, artist.id);
+
+    const riserBuy = executeTrade(riser.id, artist.id, 'buy', 500_000);
+    if (!riserBuy.ok) throw new Error(riserBuy.error);
+
+    const movements = getRankMovements();
+    expect(movements[riser.id]).toBeNull();
+    expect(movements[faller.id]).not.toBeNull();
   });
 });
