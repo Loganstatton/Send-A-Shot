@@ -131,6 +131,7 @@ export type User = {
   notify_leaderboard_rank: boolean;
   email_notifications_enabled: boolean;
   notifications_emailed_through?: string;
+  last_login_at?: string;
 };
 
 export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change';
@@ -344,6 +345,36 @@ export type NextHolding = {
   shares: number;
   cost_basis_cents: number;
   updated_at: string;
+};
+
+// Every event type this app logs to analytics_events — see logEvent() in
+// lib/db.ts. audio_preview_started/completed are deliberately absent:
+// preview_listens already tracks those in more detail (it needs the
+// per-artist/per-listen shape for "did this trader listen before buying"
+// attribution anyway), so the MVP metrics dashboard reads that table for
+// those two event types instead of this one.
+export type AnalyticsEventType =
+  | 'signup_completed'
+  | 'onboarding_completed'
+  | 'discover_viewed'
+  | 'artist_card_viewed'
+  | 'artist_detail_opened'
+  | 'video_played'
+  | 'watchlist_added'
+  | 'watchlist_removed'
+  | 'buy_started'
+  | 'buy_completed'
+  | 'sell_completed'
+  | 'search_used'
+  | 'filter_used'
+  | 'session_returned';
+
+export type AnalyticsEvent = {
+  id: number;
+  user_id: number | null;
+  event_type: AnalyticsEventType;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 };
 
 export type NextTransactionType = 'buy' | 'sell';

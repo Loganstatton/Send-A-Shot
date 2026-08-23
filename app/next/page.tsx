@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
-import { getBackerCountsByArtist, getNextMarket, getScoreChanges, getWatchCountsByArtist, getWatchlistArtistIds } from '@/lib/db';
+import {
+  getBackerCountsByArtist, getNextMarket, getScoreChanges, getWatchCountsByArtist, getWatchlistArtistIds,
+  logArtistCardViews, logEvent,
+} from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
 import { NextMarketRow } from '@/lib/types';
@@ -17,6 +20,12 @@ export default async function NextMarketPage() {
   const watchCounts = getWatchCountsByArtist();
   const backerCounts = getBackerCountsByArtist();
   const scoreChanges = getScoreChanges();
+
+  // Batched, not per-card impression tracking (no client-side scroll
+  // observer or one network round trip per card) — "viewed" here means
+  // "was in the results this page load returned," logged in one write.
+  logEvent(user.id, 'discover_viewed');
+  logArtistCardViews(user.id, rows.map((r) => r.artist.id));
 
   const growthRates = rows.map((r) => r.artist.growth_velocity_pct).filter((v): v is number => v != null);
   const avgGrowth = growthRates.length ? growthRates.reduce((a, b) => a + b, 0) / growthRates.length : null;

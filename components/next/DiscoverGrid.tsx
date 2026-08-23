@@ -1,7 +1,8 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NextMarketRow, ScoreChange } from '@/lib/types';
 import { changePctForWindow as sharedChangePctForWindow, changePctSinceListing, marketSentiment } from '@/lib/next-market';
+import { track } from '@/lib/track';
 import ArtistCard, { SinceWatched } from '@/components/next/ArtistCard';
 
 type SortMode = 'score' | 'growth' | 'gain' | 'loss' | 'new' | 'smallest' | 'gap' | 'watched' | 'backed' | 'trending' | 'momentum';
@@ -99,6 +100,17 @@ export default function DiscoverGrid({
 
   const activeRangeCount = [followerRange, scoreRange, priceRange].filter((r) => r.min !== '' || r.max !== '').length;
 
+  // Debounced, not per-keystroke — logs once ~600ms after the user stops
+  // typing a non-empty term, skipping the mount itself (isFirstRun guard
+  // below) so loading the page with an empty search box never counts.
+  const isFirstSearchRun = useRef(true);
+  useEffect(() => {
+    if (isFirstSearchRun.current) { isFirstSearchRun.current = false; return; }
+    if (search.trim() === '') return;
+    const timeout = setTimeout(() => track('search_used', { term: search.trim() }), 600);
+    return () => clearTimeout(timeout);
+  }, [search]);
+
   const hotSignalId = useMemo(() => {
     let best: { id: number; diff: number } | null = null;
     for (const row of rows) {
@@ -159,7 +171,10 @@ export default function DiscoverGrid({
         </div>
         <select
           value={sort}
-          onChange={(e) => setSort(e.target.value as SortMode)}
+          onChange={(e) => {
+            setSort(e.target.value as SortMode);
+            track('filter_used', { filter: 'sort', value: e.target.value });
+          }}
           className="px-3 py-2 rounded-lg text-sm border"
           style={{ background: 'var(--surface)', borderColor: 'var(--border-soft)', color: 'var(--text)' }}
         >
@@ -170,15 +185,47 @@ export default function DiscoverGrid({
       <div className="flex items-center gap-2.5 flex-wrap">
         <button type="button" onClick={() => setGenre(null)} className={chip(genre === null)}>All</button>
         {genres.map((g) => (
-          <button key={g} type="button" onClick={() => setGenre(g)} className={chip(genre === g)}>{g}</button>
+          <button key={g} type="button" onClick={() => { setGenre(g); track('filter_used', { filter: 'genre', value: g }); }} className={chip(genre === g)}>{g}</button>
         ))}
         <div className="hidden sm:block w-px h-[22px] mx-1" style={{ background: 'var(--border-soft)' }} />
-        <button type="button" onClick={() => setSignalOnly((v) => !v)} className={signalOnly ? 'next-pill next-pill-signal' : 'next-pill'}>
+        <button
+          type="button"
+          onClick={() => {
+            // Computed outside the updater deliberately — a side effect
+            // inside a setState functional updater runs twice under
+            // React 18 StrictMode in dev (only one result is committed,
+            // but track() would still fire twice).
+            const next = !signalOnly;
+            setSignalOnly(next);
+            if (next) track('filter_used', { filter: 'undervalued' });
+          }}
+          className={signalOnly ? 'next-pill next-pill-signal' : 'next-pill'}
+        >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={signalOnly ? 'var(--ember)' : 'currentColor'} strokeWidth={2.5}><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" /></svg>
           Undervalued
         </button>
-        <button type="button" onClick={() => setWatchlistOnly((v) => !v)} className={chip(watchlistOnly)}>Watchlisted</button>
-        <button type="button" onClick={() => setHiddenGemsOnly((v) => !v)} className={chip(hiddenGemsOnly)}>Hidden gems</button>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !watchlistOnly;
+            setWatchlistOnly(next);
+            if (next) track('filter_used', { filter: 'watchlisted' });
+          }}
+          className={chip(watchlistOnly)}
+        >
+          Watchlisted
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !hiddenGemsOnly;
+            setHiddenGemsOnly(next);
+            if (next) track('filter_used', { filter: 'hidden_gems' });
+          }}
+          className={chip(hiddenGemsOnly)}
+        >
+          Hidden gems
+        </button>
         <button type="button" onClick={() => setFiltersOpen((v) => !v)} className={chip(filtersOpen || activeRangeCount > 0)}>
           Filters{activeRangeCount > 0 ? ` (${activeRangeCount})` : ''}
         </button>

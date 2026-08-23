@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { addToWatchlist, getArtist, isWatchlisted, removeFromWatchlist, setWatchlistAlerts } from '@/lib/db';
+import { addToWatchlist, getArtist, isWatchlisted, logEvent, removeFromWatchlist, setWatchlistAlerts } from '@/lib/db';
 import { getSessionUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +13,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   if (!getArtist(artistId)) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   addToWatchlist(user.id, artistId);
+  logEvent(user.id, 'watchlist_added', { artistId });
   return NextResponse.json({ ok: true, watching: true });
 }
 
@@ -24,6 +25,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   if (!Number.isInteger(artistId)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
 
   removeFromWatchlist(user.id, artistId);
+  logEvent(user.id, 'watchlist_removed', { artistId });
   return NextResponse.json({ ok: true, watching: false });
 }
 

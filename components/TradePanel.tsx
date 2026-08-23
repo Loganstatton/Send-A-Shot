@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { formatCents } from '@/lib/format';
 import { applyTradeImpact, executionPriceCents } from '@/lib/next-market';
+import { track } from '@/lib/track';
 
 const PRESETS_BUY = [25, 50, 100, 500];
 
@@ -63,6 +64,7 @@ export default function TradePanel({
     if (!canSubmit) return;
     setSuccess(null);
     setConfirming(true);
+    if (mode === 'buy') track('buy_started', { artistId, amountCents });
   }
 
   async function confirmTrade() {

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { heroGradient } from '@/components/next/heroGradient';
+import { track } from '@/lib/track';
 
 // The Artist Detail hero. A featured_video_id (see lib/db.ts) shows as a
 // real YouTube thumbnail with a play button; clicking swaps in a live
@@ -88,7 +89,10 @@ export default function VideoBanner({
       {videoId && (
         <button
           type="button"
-          onClick={() => setPlaying(true)}
+          onClick={() => {
+            setPlaying(true);
+            track('video_played', { artistId });
+          }}
           aria-label={`Play video — ${name}`}
           className="relative w-16 h-16 rounded-full flex items-center justify-center border transition-transform hover:scale-105"
           style={{ background: 'oklch(15% 0.012 40 / 0.72)', borderColor: 'var(--ember-line)', backdropFilter: 'blur(6px)' }}
