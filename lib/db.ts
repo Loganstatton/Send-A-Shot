@@ -9,7 +9,7 @@ import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
   Agreement, AgreementInput, Artist, ArtistInput, DiscoveryCandidate, DiscoveryCandidateStatus, DiscoveryRun,
   DiscoverySourceKey, DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput,
-  LeaderboardEntry, LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction,
+  LeaderboardEntry, LeaderboardWindow, LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction,
   NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS,
   ScoreChange, ScoreSnapshot, ScoutProfile, SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
@@ -1403,15 +1403,101 @@ export function getEarlyDiscoveriesCount(userId: number): number {
   return row.c;
 }
 
-// Ranked by all-time total return %; ties broken by artists backed (more
-// activity outranks a flat, untouched account at the same 0%).
-export function getScoutLeaderboard(): LeaderboardEntry[] {
-  const entries = getAllUsers().map((user) => ({
-    user: { id: user.id, name: user.name },
-    rank: 0,
-    totalReturnPct: getPortfolioValue(user.id).totalReturnPct,
-    artistsBackedCount: getArtistsBackedCount(user.id),
-  }));
+// Total portfolio value as of `cutoffIso`, reconstructed the same way
+// getPortfolioValueHistory does — the last history point at or before the
+// cutoff, or NEXT_STARTING_CREDITS_CENTS if the account existed by then but
+// hadn't traded yet. Null means the account didn't exist yet at the
+// cutoff at all (nothing to compare against, not "started at zero").
+function pastPortfolioValueCents(userId: number, userCreatedAt: string, cutoffIso: string): number | null {
+  if (userCreatedAt > cutoffIso) return null;
+  let value = NEXT_STARTING_CREDITS_CENTS;
+  for (const point of getPortfolioValueHistory(userId)) {
+    if (point.recorded_at > cutoffIso) break;
+    value = point.value_cents;
+  }
+  return value;
+}
+
+// Ranked by total return % over `window`; ties broken by artists backed
+// (more activity outranks a flat, untouched account at the same %). For
+// 'week'/'month', the baseline is each scout's own reconstructed portfolio
+// value at the start of that window (or their starting balance, if they
+// joined partway through it) — "how much have you grown lately," not just
+// all-time. 'all' keeps the original all-time-since-signup baseline
+// unchanged (NEXT_STARTING_CREDITS_CENTS for everyone), so existing callers
+// that don't pass a window see identical numbers to before.
+export function getScoutLeaderboard(window: LeaderboardWindow = 'all'): LeaderboardEntry[] {
+  const windowDays = window === 'week' ? 7 : window === 'month' ? 30 : null;
+  const cutoffIso = windowDays != null ? new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString() : null;
+
+  const entries = getAllUsers().map((user) => {
+    const portfolioValueCents = getPortfolioValue(user.id).totalValueCents;
+    const baselineCents = cutoffIso != null ? pastPortfolioValueCents(user.id, user.created_at, cutoffIso) ?? NEXT_STARTING_CREDITS_CENTS : NEXT_STARTING_CREDITS_CENTS;
+    const totalReturnPct = baselineCents !== 0 ? Math.round(((portfolioValueCents - baselineCents) / baselineCents) * 1000) / 10 : 0;
+    return {
+      user: { id: user.id, name: user.name, avatar_url: user.avatar_url },
+      rank: 0,
+      totalReturnPct,
+      portfolioValueCents,
+      artistsBackedCount: getArtistsBackedCount(user.id),
+      earlyDiscoveriesCount: getEarlyDiscoveriesCount(user.id),
+      rankChange: null as number | null,
+    };
+  });
+  entries.sort((a, b) => b.totalReturnPct - a.totalReturnPct || b.artistsBackedCount - a.artistsBackedCount);
+  entries.forEach((e, i) => { e.rank = i + 1; });
+
+  // Rank movement is always relative to all-time standing 7 days ago,
+  // independent of `window` — see the LeaderboardEntry.rankChange comment.
+  const movements = getRankMovements();
+  for (const e of entries) e.rankChange = movements[e.user.id] ?? null;
+
+  return entries;
+}
+
+// How each scout's ALL-TIME rank has moved in the last 7 days. Reuses the
+// same portfolio-value reconstruction as the leaderboard itself — no
+// separate rank-snapshot table or cron job needed, consistent with how
+// Watchlist's alert flags and Portfolio's value chart are also computed
+// on demand from existing trade/price history rather than a background job.
+export function getRankMovements(): Record<number, number | null> {
+  const users = getAllUsers();
+  const cutoffIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Past ranking uses raw reconstructed value, not %, but the order is
+  // identical to ranking by past return % here: every scout shares the same
+  // fixed starting balance, so value and (value - constant) / constant sort
+  // the same way.
+  const past = users
+    .map((user) => ({ id: user.id, value: pastPortfolioValueCents(user.id, user.created_at, cutoffIso) }))
+    .filter((p): p is { id: number; value: number } => p.value != null)
+    .sort((a, b) => b.value - a.value);
+  const pastRankById = new Map(past.map((p, i) => [p.id, i + 1]));
+
+  const current = getScoutLeaderboardUnranked(); // avoid recursing into getScoutLeaderboard's own rankChange computation
+  const result: Record<number, number | null> = {};
+  for (const e of current) {
+    const pastRank = pastRankById.get(e.user.id);
+    result[e.user.id] = pastRank != null ? pastRank - e.rank : null;
+  }
+  return result;
+}
+
+// getScoutLeaderboard('all') minus the rankChange pass — factored out so
+// getRankMovements can get current all-time ranks without recursing into
+// itself through getScoutLeaderboard.
+function getScoutLeaderboardUnranked(): Omit<LeaderboardEntry, 'rankChange'>[] {
+  const entries = getAllUsers().map((user) => {
+    const portfolio = getPortfolioValue(user.id);
+    return {
+      user: { id: user.id, name: user.name, avatar_url: user.avatar_url },
+      rank: 0,
+      totalReturnPct: portfolio.totalReturnPct,
+      portfolioValueCents: portfolio.totalValueCents,
+      artistsBackedCount: getArtistsBackedCount(user.id),
+      earlyDiscoveriesCount: getEarlyDiscoveriesCount(user.id),
+    };
+  });
   entries.sort((a, b) => b.totalReturnPct - a.totalReturnPct || b.artistsBackedCount - a.artistsBackedCount);
   entries.forEach((e, i) => { e.rank = i + 1; });
   return entries;
@@ -1425,7 +1511,7 @@ export function getScoutProfile(userId: number): ScoutProfile | undefined {
   const portfolio = getPortfolioValue(userId);
   const earlyDiscoveriesCount = getEarlyDiscoveriesCount(userId);
   return {
-    user: { id: user.id, name: user.name },
+    user: { id: user.id, name: user.name, avatar_url: user.avatar_url },
     portfolio,
     scoutScoreValue: scoutScore({ totalReturnPct: portfolio.totalReturnPct, earlyDiscoveriesCount }),
     rank: entry.rank,
@@ -1477,7 +1563,7 @@ export function getGenreLeaderboard(genre: string): GenreLeaderboardEntry[] {
     }
 
     if (artistIds.size === 0) continue;
-    entries.push({ user: { id: user.id, name: user.name }, rank: 0, pnlCents, artistsBackedCount: artistIds.size });
+    entries.push({ user: { id: user.id, name: user.name, avatar_url: user.avatar_url }, rank: 0, pnlCents, artistsBackedCount: artistIds.size });
   }
 
   entries.sort((a, b) => b.pnlCents - a.pnlCents);
