@@ -40,7 +40,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
           {topScouts.map((entry) => {
             const up = entry.totalReturnPct >= 0;
             return (
-              <Link key={entry.user.id} href={`/next/profile/${entry.user.id}`} className="next-card flex items-center gap-4 px-5 py-4">
+              <Link key={entry.user.id} href={`/next/profile/${entry.user.id}`} className="next-card next-card-hover flex items-center gap-4 px-5 py-4">
                 <span className="num w-9 text-center text-sm font-semibold shrink-0" style={{ color: 'var(--text-faint)' }}>#{entry.rank}</span>
                 <ArtistAvatar name={entry.user.name} size="sm" />
                 <div className="min-w-0 flex-1">
@@ -65,7 +65,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
           {genreBoard.map((entry) => {
             const up = entry.pnlCents >= 0;
             return (
-              <Link key={entry.user.id} href={`/next/profile/${entry.user.id}`} className="next-card flex items-center gap-4 px-5 py-4">
+              <Link key={entry.user.id} href={`/next/profile/${entry.user.id}`} className="next-card next-card-hover flex items-center gap-4 px-5 py-4">
                 <span className="num w-9 text-center text-sm font-semibold shrink-0" style={{ color: 'var(--text-faint)' }}>#{entry.rank}</span>
                 <ArtistAvatar name={entry.user.name} size="sm" />
                 <div className="min-w-0 flex-1">

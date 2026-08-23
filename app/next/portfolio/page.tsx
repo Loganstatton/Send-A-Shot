@@ -76,7 +76,7 @@ export default async function NextPortfolioPage() {
             const unrealizedPct = h.cost_basis_cents !== 0 ? (h.unrealizedPnlCents / h.cost_basis_cents) * 100 : 0;
             const up = h.unrealizedPnlCents >= 0;
             return (
-              <Link key={h.id} href={`/next/artists/${h.artist_id}`} className="next-card flex flex-col gap-1.5 px-5 py-4">
+              <Link key={h.id} href={`/next/artists/${h.artist_id}`} className="next-card next-card-hover flex flex-col gap-1.5 px-5 py-4">
                 <div className="flex items-center gap-4">
                   <ArtistAvatar name={h.artist_name} photoUrl={h.artist_photo_url} />
                   <div className="min-w-0 flex-1">

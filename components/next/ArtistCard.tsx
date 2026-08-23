@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { NextMarketRow } from '@/lib/types';
 import { formatCents } from '@/lib/format';
 import { marketSentiment } from '@/lib/next-market';
-import ArtistAvatar from '@/components/ArtistAvatar';
 import AudioPreview from '@/components/AudioPreview';
 import ScoreGapBar from '@/components/next/ScoreGapBar';
 import PriceSparkline from '@/components/next/PriceSparkline';
@@ -36,7 +35,7 @@ export default function ArtistCard({
       : artist.why_trending || null;
 
   return (
-    <div className="next-card relative flex flex-col overflow-hidden">
+    <div className="next-card next-card-hover relative flex flex-col overflow-hidden">
       {hotSignal && (
         <div
           className="absolute top-4 left-4 z-10 flex items-center gap-[5px] pl-2 pr-2.5 py-[5px] rounded-full backdrop-blur-sm border"
@@ -52,9 +51,10 @@ export default function ArtistCard({
       </div>
 
       <Link href={`/next/artists/${artist.id}`} className="flex flex-col gap-3">
-        <div className="h-[200px] flex items-center justify-center" style={{ background: artist.photo_url ? undefined : heroGradient(artist.id) }}>
+        <div className="next-card-hero-zoom relative h-[200px] flex items-center justify-center" style={{ background: artist.photo_url ? undefined : heroGradient(artist.id) }}>
           {artist.photo_url ? (
-            <ArtistAvatar name={artist.name} photoUrl={artist.photo_url} size="lg" />
+            // eslint-disable-next-line @next/next/no-img-element -- see ArtistAvatar.tsx: arbitrary Scout-entered URLs, not a next/image candidate.
+            <img src={artist.photo_url} alt={artist.name} className="absolute inset-0 w-full h-full object-cover" />
           ) : (
             <span className="font-display font-extrabold text-[64px]" style={{ color: 'oklch(96% 0.01 90 / 0.28)' }}>
               {artist.name.trim().charAt(0).toUpperCase() || '?'}

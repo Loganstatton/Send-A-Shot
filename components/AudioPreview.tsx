@@ -51,7 +51,7 @@ export default function AudioPreview({
         type="button"
         onClick={toggle}
         aria-label={playing ? 'Pause preview' : label}
-        className="w-[34px] h-[34px] rounded-full flex items-center justify-center shrink-0 border transition-colors"
+        className="next-icon-btn w-[34px] h-[34px] rounded-full flex items-center justify-center shrink-0 border active:scale-90"
         style={{ background: 'var(--surface-2)', borderColor: 'var(--border-soft)' }}
       >
         {playing ? (

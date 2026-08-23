@@ -44,7 +44,7 @@ export default function WatchButton({
       <button
         type="button"
         onClick={toggle}
-        className="flex items-center gap-1.5 px-3 py-[5px] rounded-lg border text-[12.5px] font-medium"
+        className="next-icon-btn flex items-center gap-1.5 px-3 py-[5px] rounded-lg border text-[12.5px] font-medium active:scale-95"
         style={{
           borderColor: watching ? 'var(--ember-line)' : 'var(--border-soft)',
           color: watching ? 'var(--ember)' : 'var(--text-muted)',
@@ -62,7 +62,7 @@ export default function WatchButton({
       type="button"
       onClick={toggle}
       aria-label={watching ? 'Remove from watchlist' : 'Add to watchlist'}
-      className="w-8 h-8 rounded-full flex items-center justify-center border shrink-0"
+      className="next-icon-btn w-8 h-8 rounded-full flex items-center justify-center border shrink-0 active:scale-90"
       style={{ background: 'oklch(15% 0.012 40 / 0.72)', borderColor: watching ? 'var(--ember-line)' : 'var(--border-soft)', backdropFilter: 'blur(6px)' }}
     >
       {icon}

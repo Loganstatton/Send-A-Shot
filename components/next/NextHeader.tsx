@@ -57,7 +57,7 @@ export default function NextHeader({ user }: { user: User }) {
           </div>
           <Link
             href="/next/profile"
-            className="hidden sm:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center font-display font-bold text-sm"
+            className="next-icon-btn hidden sm:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center font-display font-bold text-sm"
             style={{ color: 'var(--text-muted)' }}
           >
             {user.name.trim().charAt(0).toUpperCase() || '?'}
@@ -68,7 +68,7 @@ export default function NextHeader({ user }: { user: User }) {
             onClick={() => setMenuOpen((v) => !v)}
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
-            className="sm:hidden w-9 h-9 rounded-full flex items-center justify-center border"
+            className="next-icon-btn sm:hidden w-9 h-9 rounded-full flex items-center justify-center border active:scale-90"
             style={{ borderColor: 'var(--border-soft)', color: 'var(--text)' }}
           >
             {menuOpen ? (
@@ -82,7 +82,7 @@ export default function NextHeader({ user }: { user: User }) {
 
       {menuOpen && (
         <nav
-          className="sm:hidden absolute left-0 right-0 top-full z-30 flex flex-col px-4 py-3 gap-1"
+          className="next-menu-panel sm:hidden absolute left-0 right-0 top-full z-30 flex flex-col px-4 py-3 gap-1"
           style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border-soft)' }}
         >
           {links.map((l) => (
