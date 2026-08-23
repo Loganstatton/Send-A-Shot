@@ -5,23 +5,33 @@ import Link from 'next/link';
 
 type Props = {
   mode: 'login' | 'signup';
+  inviteRequired?: boolean;
 };
 
-export default function AuthForm({ mode }: Props) {
+export default function AuthForm({ mode, inviteRequired = false }: Props) {
   const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [policyAccepted, setPolicyAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (mode === 'signup' && !policyAccepted) {
+      setError('You must accept the Terms of Service and Privacy Policy to sign up.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const url = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
-      const body = mode === 'signup' ? { name, email, password } : { email, password };
+      const body =
+        mode === 'signup'
+          ? { name, email, password, tosAccepted: true, privacyAccepted: true, inviteCode: inviteCode || undefined }
+          : { email, password };
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -65,7 +75,33 @@ export default function AuthForm({ mode }: Props) {
             minLength={mode === 'signup' ? 8 : undefined}
             required
           />
+          {mode === 'login' && (
+            <p className="text-xs mt-1.5">
+              <Link href="/forgot-password" className="underline text-neutral-400">Forgot password?</Link>
+            </p>
+          )}
         </div>
+        {mode === 'signup' && inviteRequired && (
+          <div>
+            <label className="label">Invite code</label>
+            <input className="input" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} required />
+          </div>
+        )}
+        {mode === 'signup' && (
+          <label className="flex items-start gap-2 text-xs text-neutral-400">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={policyAccepted}
+              onChange={(e) => setPolicyAccepted(e.target.checked)}
+              required
+            />
+            <span>
+              I agree to the <Link href="/terms" target="_blank" className="underline">Terms of Service</Link> and{' '}
+              <Link href="/privacy" target="_blank" className="underline">Privacy Policy</Link>.
+            </span>
+          </label>
+        )}
         <button type="submit" className="btn btn-primary w-full" disabled={saving}>
           {saving ? 'Please wait…' : mode === 'signup' ? 'Sign up' : 'Log in'}
         </button>

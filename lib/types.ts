@@ -119,6 +119,10 @@ export type User = {
   role: Role;
   next_credits_cents: number;
   next_onboarded_at?: string;
+  avatar_url?: string;
+  email_verified_at?: string;
+  tos_accepted_at?: string;
+  privacy_accepted_at?: string;
 };
 
 export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change';

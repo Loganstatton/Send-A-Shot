@@ -56,6 +56,7 @@ export default function Header({ user, newCandidateCount = 0 }: { user: User | n
                 <span className="hidden sm:inline">{user.name}</span>
                 <span className="sm:hidden">You</span>
               </Link>
+              <Link className={navClass(is('/settings'))} style={navStyle(is('/settings'))} href="/settings">Settings</Link>
               <LogoutButton className="btn text-sm" />
             </>
           ) : (

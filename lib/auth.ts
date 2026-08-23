@@ -157,3 +157,48 @@ export function hashPassword(password: string): Promise<string> {
 export function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
 }
+
+// Short-lived, single-purpose tokens for email verification and password
+// reset — same signing primitive as the session cookie (HMAC + timing-safe
+// compare), just a different payload shape and a much shorter TTL. Stateless
+// by design: no separate token table to clean up.
+//
+// A password-reset token additionally embeds a fingerprint of the user's
+// CURRENT password hash. That makes it self-invalidating for free — once
+// the password actually changes, any old reset link's fingerprint no
+// longer matches and verification fails, without needing to track
+// "used" tokens anywhere.
+type ActionPurpose = 'verify-email' | 'reset-password';
+type ActionPayload = { uid: number; purpose: ActionPurpose; exp: number; fp?: string };
+
+function fingerprint(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('base64url').slice(0, 16);
+}
+
+export function createActionToken(userId: number, purpose: ActionPurpose, ttlSec: number, currentPasswordHash?: string): string {
+  const payload: ActionPayload = { uid: userId, purpose, exp: Math.floor(Date.now() / 1000) + ttlSec };
+  if (purpose === 'reset-password' && currentPasswordHash) payload.fp = fingerprint(currentPasswordHash);
+  return sign(payload);
+}
+
+export function verifyActionToken(token: string, purpose: ActionPurpose, currentPasswordHash?: string): { uid: number } | null {
+  const [body, sig] = token.split('.');
+  if (!body || !sig) return null;
+  const expected = crypto.createHmac('sha256', getSecret()).update(body).digest('base64url');
+  const sigBuf = Buffer.from(sig);
+  const expectedBuf = Buffer.from(expected);
+  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
+
+  let payload: ActionPayload;
+  try {
+    payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+  if (typeof payload.uid !== 'number' || payload.purpose !== purpose || typeof payload.exp !== 'number') return null;
+  if (payload.exp < Date.now() / 1000) return null;
+  if (purpose === 'reset-password') {
+    if (!payload.fp || !currentPasswordHash || payload.fp !== fingerprint(currentPasswordHash)) return null;
+  }
+  return { uid: payload.uid };
+}
