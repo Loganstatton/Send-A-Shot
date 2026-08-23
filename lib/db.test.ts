@@ -14,8 +14,9 @@ const {
   getArtist, getArtistsMissingTopSong, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
   getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates, getEventCountsByType,
   getFavoriteGenres, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
-  getLatestSyncRun, getMarketTradeCounts, getMarketVolumeCents, getMostActiveArtists, getNewArtistsThisWeek,
-  getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue, getPortfolioValueHistory, getRankMovements,
+  getLatestSyncRun, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
+  getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue,
+  getPortfolioValueHistory, getRankMovements,
   getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentEventsForUser,
   getRecentMarketTrades, getRecentSyncFailures, getRecentTradesForArtist, getRecentWatchCountsByArtist,
   getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
@@ -1364,5 +1365,45 @@ describe('YouTube quota protection (Phase 4) — daily usage ledger and re-searc
     updateArtist(artist.id, { featured_video_id: '' } as any);
     // Missing again, but the no-match stamp is still recent — still excluded.
     expect(getArtistsMissingVideo().map((a) => a.id)).not.toContain(artist.id);
+  });
+});
+
+describe('Soundcharts limitations (Phase 4) — getMissingPlatformLinksImpact', () => {
+  it('counts an artist with zero platform links, and views on it, but not one with at least one link', () => {
+    const beforeArtists = getMissingPlatformLinksImpact().artistsMissingAllLinks;
+    const unlinked = makeArtist('Zero Links Artist');
+    const linked = createArtist({
+      name: 'Has A Link Artist', spotify_url: 'https://open.spotify.com/artist/x',
+      music_talent: 8, growth_velocity_pct: 32, engagement_rate_pct: 16, original_song_response: 8,
+      brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8,
+    });
+    const viewer = createUser({ name: 'Links Viewer', email: 'links-viewer@example.com', password_hash: 'hash' });
+    expect(getMissingPlatformLinksImpact().artistsMissingAllLinks - beforeArtists).toBe(1); // only the unlinked one
+
+    const beforeViews = getMissingPlatformLinksImpact();
+    logEvent(viewer.id, 'artist_detail_opened', { artistId: unlinked.id });
+    logEvent(viewer.id, 'artist_detail_opened', { artistId: linked.id });
+
+    const afterViews = getMissingPlatformLinksImpact();
+    expect(afterViews.viewsOnArtistsMissingAllLinks - beforeViews.viewsOnArtistsMissingAllLinks).toBe(1);
+    expect(afterViews.totalArtistDetailViews - beforeViews.totalArtistDetailViews).toBe(2); // both views count toward the denominator
+  });
+
+  it('an artist missing all links but never viewed counts toward artistsMissingAllLinks but not the view count', () => {
+    const before = getMissingPlatformLinksImpact();
+    makeArtist('Unviewed Zero Links Artist');
+    const after = getMissingPlatformLinksImpact();
+    expect(after.artistsMissingAllLinks - before.artistsMissingAllLinks).toBe(1);
+    expect(after.viewsOnArtistsMissingAllLinks).toBe(before.viewsOnArtistsMissingAllLinks);
+  });
+
+  it('any one of the four platform link fields being set is enough to exclude an artist', () => {
+    const before = getMissingPlatformLinksImpact().artistsMissingAllLinks;
+    createArtist({
+      name: 'TikTok Only Artist', tiktok_url: 'https://tiktok.com/@x',
+      music_talent: 8, growth_velocity_pct: 32, engagement_rate_pct: 16, original_song_response: 8,
+      brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8,
+    });
+    expect(getMissingPlatformLinksImpact().artistsMissingAllLinks).toBe(before);
   });
 });

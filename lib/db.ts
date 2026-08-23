@@ -2117,6 +2117,37 @@ export function getUnverifiedVideoMatchCount(): number {
   return (db.prepare("SELECT COUNT(*) AS c FROM artists WHERE featured_video_match_type = 'search_unverified'").get() as { c: number }).c;
 }
 
+export type PlatformLinksImpact = {
+  artistsMissingAllLinks: number;
+  totalArtists: number;
+  viewsOnArtistsMissingAllLinks: number;
+  totalArtistDetailViews: number;
+};
+
+// "Track how often missing platform links materially hurt the product"
+// (Phase 4's Soundcharts limitations section) — Soundcharts' artist-
+// metadata endpoint doesn't return Spotify/Instagram/TikTok/YouTube links
+// on this app's plan (see README), and those stay manual. Rather than a
+// static "N artists have no links" count, this ties the gap to real usage:
+// how many actual Artist Detail views (already tracked by Phase 3's event
+// log — no new instrumentation needed) landed on an artist with NONE of
+// the four links at all, the worst case. A tiny number here across real
+// traffic is the evidence for "keep working around it"; a large one is
+// the evidence for revisiting the Soundcharts plan — see the checklist's
+// own "revisit only when real user volume/data needs justify it."
+export function getMissingPlatformLinksImpact(): PlatformLinksImpact {
+  const artists = getAllArtists();
+  const missingIds = new Set(
+    artists.filter((a) => !a.spotify_url && !a.instagram_url && !a.tiktok_url && !a.youtube_url).map((a) => a.id)
+  );
+  const views = getAllEvents().filter((e) => e.event_type === 'artist_detail_opened');
+  const viewsOnArtistsMissingAllLinks = views.filter((e) => {
+    const artistId = (e.metadata as any)?.artistId;
+    return typeof artistId === 'number' && missingIds.has(artistId);
+  }).length;
+  return { artistsMissingAllLinks: missingIds.size, totalArtists: artists.length, viewsOnArtistsMissingAllLinks, totalArtistDetailViews: views.length };
+}
+
 // Candidates already reviewed (watching/approved/passed) for a name are
 // skipped on future scans too — a "no thanks" from a Scout should stick,
 // not reappear every day just because the artist is still growing.
