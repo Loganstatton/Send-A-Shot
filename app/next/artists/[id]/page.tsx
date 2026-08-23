@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { getArtist, getFoundingBelieverCountForArtist, getFoundingBelieverRecord, getHolding, getNextArtist, getScoreHistory } from '@/lib/db';
+import { getArtist, getFoundingBelieverCountForArtist, getFoundingBelieverRecord, getHolding, getNextArtist, getScoreHistory, isWatchlisted } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
 import AudioPreview from '@/components/AudioPreview';
@@ -9,6 +9,7 @@ import SpotifyPreview from '@/components/SpotifyPreview';
 import PriceChart from '@/components/PriceChart';
 import TradePanel from '@/components/TradePanel';
 import VideoBanner from '@/components/next/VideoBanner';
+import WatchButton from '@/components/next/WatchButton';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const artist = getArtist(Number(params.id));
@@ -33,6 +34,7 @@ export default async function NextArtistPage({ params }: { params: { id: string 
   const scoreHistory = getScoreHistory(id);
   const foundingRecord = getFoundingBelieverRecord(user.id, id);
   const backerCount = getFoundingBelieverCountForArtist(id);
+  const watching = isWatchlisted(user.id, id);
 
   const links = [
     { label: 'Top song', url: artist.top_song_url },
@@ -87,6 +89,7 @@ export default async function NextArtistPage({ params }: { params: { id: string 
           {artist.song_preview_url && (
             <AudioPreview src={artist.song_preview_url} label={`Hear ${artist.name.split(' ')[0]}`} />
           )}
+          <WatchButton artistId={artist.id} initialWatching={watching} variant="labeled" />
         </div>
         {backerCount > 0 && (
           <p className="m-0 text-[12.5px] flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>

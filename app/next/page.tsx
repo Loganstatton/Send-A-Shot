@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { getNextMarket } from '@/lib/db';
+import { getNextMarket, getWatchlistArtistIds } from '@/lib/db';
+import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
 import DiscoverGrid from '@/components/next/DiscoverGrid';
 import NextStatTile from '@/components/next/NextStatTile';
@@ -8,7 +9,9 @@ export const metadata: Metadata = { title: 'Discover' };
 export const dynamic = 'force-dynamic';
 
 export default async function NextMarketPage() {
+  const user = await requireUser();
   const rows = getNextMarket();
+  const watchedIds = getWatchlistArtistIds(user.id);
 
   const growthRates = rows.map((r) => r.artist.growth_velocity_pct).filter((v): v is number => v != null);
   const avgGrowth = growthRates.length ? growthRates.reduce((a, b) => a + b, 0) / growthRates.length : null;
@@ -69,7 +72,7 @@ export default async function NextMarketPage() {
           No artists on the market yet.
         </div>
       ) : (
-        <DiscoverGrid rows={rows} />
+        <DiscoverGrid rows={rows} watchedIds={watchedIds} />
       )}
     </div>
   );

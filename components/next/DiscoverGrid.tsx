@@ -6,7 +6,16 @@ import ArtistCard from '@/components/next/ArtistCard';
 
 type SortMode = 'score' | 'rising' | 'new';
 
-export default function DiscoverGrid({ rows }: { rows: NextMarketRow[] }) {
+export default function DiscoverGrid({
+  rows,
+  watchedIds = [],
+  emptyMessage = 'No artists match these filters yet.',
+}: {
+  rows: NextMarketRow[];
+  watchedIds?: number[];
+  emptyMessage?: string;
+}) {
+  const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds]);
   const genres = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of rows) {
@@ -71,12 +80,12 @@ export default function DiscoverGrid({ rows }: { rows: NextMarketRow[] }) {
 
       {visible.length === 0 ? (
         <div className="next-card text-center py-16" style={{ color: 'var(--text-muted)' }}>
-          No artists match these filters yet.
+          {emptyMessage}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {visible.map((row) => (
-            <ArtistCard key={row.artist.id} row={row} hotSignal={row.artist.id === hotSignalId} />
+            <ArtistCard key={row.artist.id} row={row} hotSignal={row.artist.id === hotSignalId} watching={watchedSet.has(row.artist.id)} />
           ))}
         </div>
       )}

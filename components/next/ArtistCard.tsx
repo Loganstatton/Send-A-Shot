@@ -6,9 +6,18 @@ import ArtistAvatar from '@/components/ArtistAvatar';
 import AudioPreview from '@/components/AudioPreview';
 import ScoreGapBar from '@/components/next/ScoreGapBar';
 import PriceSparkline from '@/components/next/PriceSparkline';
+import WatchButton from '@/components/next/WatchButton';
 import { heroGradient } from '@/components/next/heroGradient';
 
-export default function ArtistCard({ row, hotSignal = false }: { row: NextMarketRow; hotSignal?: boolean }) {
+export default function ArtistCard({
+  row,
+  hotSignal = false,
+  watching = false,
+}: {
+  row: NextMarketRow;
+  hotSignal?: boolean;
+  watching?: boolean;
+}) {
   const { artist, score, priceCents, priceHistory } = row;
   const sentiment = marketSentiment(score, priceCents);
   const first = priceHistory[0]?.price_cents ?? priceCents;
@@ -37,6 +46,10 @@ export default function ArtistCard({ row, hotSignal = false }: { row: NextMarket
           <span className="text-[11px] font-semibold font-mono" style={{ color: 'var(--ember)' }}>HOT SIGNAL</span>
         </div>
       )}
+
+      <div className="absolute top-4 right-4 z-10">
+        <WatchButton artistId={artist.id} initialWatching={watching} />
+      </div>
 
       <Link href={`/next/artists/${artist.id}`} className="flex flex-col gap-3">
         <div className="h-[200px] flex items-center justify-center" style={{ background: artist.photo_url ? undefined : heroGradient(artist.id) }}>

@@ -151,6 +151,14 @@ CREATE TABLE IF NOT EXISTS next_holdings (
   UNIQUE(user_id, artist_id)
 );
 CREATE INDEX IF NOT EXISTS idx_next_holdings_user ON next_holdings(user_id);
+CREATE TABLE IF NOT EXISTS next_watchlist (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  UNIQUE(user_id, artist_id)
+);
+CREATE INDEX IF NOT EXISTS idx_next_watchlist_user ON next_watchlist(user_id);
 CREATE TABLE IF NOT EXISTS next_transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1033,6 +1041,33 @@ export function getUserHoldings(userId: number): (NextHolding & { artist_name: s
     const artist = getArtist(row.artist_id)!;
     return { ...row, price_cents: ensureNextPrice(artist) };
   });
+}
+
+// A bookmark with no credits spent — tracking an artist without owning
+// shares. Deliberately separate from next_holdings: watching and backing
+// are different actions, and an artist can be watched with zero position.
+export function isWatchlisted(userId: number, artistId: number): boolean {
+  return db.prepare('SELECT 1 FROM next_watchlist WHERE user_id = ? AND artist_id = ?').get(userId, artistId) != null;
+}
+
+export function addToWatchlist(userId: number, artistId: number): void {
+  db.prepare('INSERT OR IGNORE INTO next_watchlist (user_id, artist_id, created_at) VALUES (?, ?, ?)')
+    .run(userId, artistId, new Date().toISOString());
+}
+
+export function removeFromWatchlist(userId: number, artistId: number): void {
+  db.prepare('DELETE FROM next_watchlist WHERE user_id = ? AND artist_id = ?').run(userId, artistId);
+}
+
+export function getUserWatchlist(userId: number): NextMarketRow[] {
+  return getWatchlistArtistIds(userId).map((id) => getNextArtist(id)).filter((r): r is NextMarketRow => r != null);
+}
+
+// Cheap id-only lookup for pages that just need to know which cards to mark
+// as watched (Discover, Artist Detail) without loading full market rows.
+export function getWatchlistArtistIds(userId: number): number[] {
+  const rows = db.prepare('SELECT artist_id FROM next_watchlist WHERE user_id = ? ORDER BY created_at DESC').all(userId) as { artist_id: number }[];
+  return rows.map((r) => r.artist_id);
 }
 
 // Records a permanent "you were early" snapshot the first time a user ever

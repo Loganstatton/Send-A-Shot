@@ -18,6 +18,7 @@ export default function NextHeader({ user }: { user: User }) {
     { href: '/next', label: 'Discover', active: pathname === '/next' || pathname?.startsWith('/next/artists') },
     { href: '/next/portfolio', label: 'Portfolio', active: is('/next/portfolio') },
     { href: '/next/leaderboard', label: 'Leaderboard', active: is('/next/leaderboard') },
+    { href: '/next/watchlist', label: 'Watchlist', active: is('/next/watchlist') },
   ];
 
   return (
