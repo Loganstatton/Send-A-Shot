@@ -13,6 +13,7 @@ import LogoutButton from '@/components/LogoutButton';
 export default function NextHeader({ user }: { user: User }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const is = (p: string) => pathname === p || (p !== '/next' && pathname?.startsWith(p));
   const isInternal = user.role === 'internal' || user.role === 'admin';
 
@@ -57,11 +58,17 @@ export default function NextHeader({ user }: { user: User }) {
           </div>
           <Link
             href="/next/profile"
-            className="next-icon-btn hidden sm:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center font-display font-bold text-sm"
+            className="next-icon-btn hidden sm:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center font-display font-bold text-sm overflow-hidden"
             style={{ color: 'var(--text-muted)' }}
           >
-            {user.name.trim().charAt(0).toUpperCase() || '?'}
+            {user.avatar_url && !avatarFailed ? (
+              // eslint-disable-next-line @next/next/no-img-element -- arbitrary user-entered URL, not a next/image candidate.
+              <img src={user.avatar_url} alt="" onError={() => setAvatarFailed(true)} className="w-full h-full object-cover" />
+            ) : (
+              user.name.trim().charAt(0).toUpperCase() || '?'
+            )}
           </Link>
+          <Link href="/settings" className="next-btn-ghost text-xs px-3 py-2 hidden sm:inline-flex rounded-lg">Settings</Link>
           <LogoutButton className="next-btn-ghost text-xs px-3 py-2 hidden sm:inline-flex" />
           <button
             type="button"
@@ -98,6 +105,9 @@ export default function NextHeader({ user }: { user: User }) {
           ))}
           <Link href="/next/profile" onClick={() => setMenuOpen(false)} className="px-2 py-3 text-[15px] rounded-lg" style={{ color: 'var(--text-muted)' }}>
             Profile
+          </Link>
+          <Link href="/settings" onClick={() => setMenuOpen(false)} className="px-2 py-3 text-[15px] rounded-lg" style={{ color: 'var(--text-muted)' }}>
+            Settings
           </Link>
           {isInternal && (
             <Link href="/" onClick={() => setMenuOpen(false)} className="px-2 py-3 text-[15px] rounded-lg" style={{ color: 'var(--text-faint)' }}>

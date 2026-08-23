@@ -223,6 +223,10 @@ addColumnIfMissing('agreements', 'masters_owned_by TEXT');
 addColumnIfMissing('users', "role TEXT NOT NULL DEFAULT 'public'");
 addColumnIfMissing('users', 'next_credits_cents INTEGER NOT NULL DEFAULT 1000000');
 addColumnIfMissing('users', 'next_onboarded_at TEXT');
+addColumnIfMissing('users', 'avatar_url TEXT');
+addColumnIfMissing('users', 'email_verified_at TEXT');
+addColumnIfMissing('users', 'tos_accepted_at TEXT');
+addColumnIfMissing('users', 'privacy_accepted_at TEXT');
 addColumnIfMissing('artists', 'next_current_price_cents INTEGER');
 addColumnIfMissing('artists', 'photo_url TEXT');
 addColumnIfMissing('artists', 'bio TEXT');
@@ -563,17 +567,62 @@ export function getDueFollowUps(): DueFollowUp[] {
   `).all() as DueFollowUp[];
 }
 
-const USER_COLUMNS = 'id, created_at, name, email, role, next_credits_cents, next_onboarded_at';
+const USER_COLUMNS =
+  'id, created_at, name, email, role, next_credits_cents, next_onboarded_at, avatar_url, email_verified_at, tos_accepted_at, privacy_accepted_at';
 
 // New accounts always start as 'public' — internal/admin is never
 // self-selected, only granted via setUserRole (an admin) or the
-// ADMIN_EMAILS bootstrap in lib/auth.ts.
+// ADMIN_EMAILS bootstrap in lib/auth.ts. tos_accepted_at/privacy_accepted_at
+// are set here, at signup, not editable afterward — they're a one-time
+// record of "the terms shown at signup time were accepted," not a
+// re-checkable settings toggle.
 export function createUser(input: { name: string; email: string; password_hash: string }): User {
   const now = new Date().toISOString();
   const info = db
-    .prepare("INSERT INTO users (created_at, name, email, password_hash, role) VALUES (?, ?, ?, ?, 'public')")
-    .run(now, input.name, input.email.toLowerCase(), input.password_hash);
+    .prepare(
+      "INSERT INTO users (created_at, name, email, password_hash, role, tos_accepted_at, privacy_accepted_at) VALUES (?, ?, ?, ?, 'public', ?, ?)"
+    )
+    .run(now, input.name, input.email.toLowerCase(), input.password_hash, now, now);
   return getUserById(info.lastInsertRowid as number)!;
+}
+
+// Name and avatar are the only self-editable profile fields — email and
+// password go through their own dedicated, more careful flows (change
+// password needs the current password; changing email isn't built yet).
+export function updateUserProfile(userId: number, input: { name?: string; avatar_url?: string | null }): User | undefined {
+  const sets: string[] = [];
+  const params: Record<string, unknown> = { id: userId };
+  if (input.name != null) {
+    sets.push('name = @name');
+    params.name = input.name;
+  }
+  if ('avatar_url' in input) {
+    sets.push('avatar_url = @avatar_url');
+    params.avatar_url = input.avatar_url || null;
+  }
+  if (sets.length === 0) return getUserById(userId);
+  db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`).run(params);
+  return getUserById(userId);
+}
+
+export function updateUserPasswordHash(userId: number, password_hash: string): void {
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(password_hash, userId);
+}
+
+// Idempotent — verifying an already-verified email is a harmless no-op,
+// not an error (a user clicking an old email link twice shouldn't see one).
+export function markEmailVerified(userId: number): User | undefined {
+  db.prepare('UPDATE users SET email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ?').run(new Date().toISOString(), userId);
+  return getUserById(userId);
+}
+
+// Every table that stores a user's own NEXT activity (holdings,
+// transactions, founding-believer records, watchlist) is ON DELETE CASCADE;
+// Scout-side attribution (created_by, reviewed_by) is ON DELETE SET NULL,
+// so a deleted user's Scout history stays intact but anonymized. A plain
+// DELETE here is safe as-is — see the FK definitions above.
+export function deleteUser(userId: number): void {
+  db.prepare('DELETE FROM users WHERE id = ?').run(userId);
 }
 
 export function getUserByEmail(email: string): (User & { password_hash: string }) | undefined {
@@ -586,6 +635,13 @@ export function getUserById(id: number): User | undefined {
   return db
     .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
     .get(id) as User | undefined;
+}
+
+// Server-only, used solely by the change-password route to verify the
+// caller's current password before accepting a new one — never exposed on
+// the public User type.
+export function getUserPasswordHash(id: number): string | undefined {
+  return (db.prepare('SELECT password_hash FROM users WHERE id = ?').get(id) as { password_hash: string } | undefined)?.password_hash;
 }
 
 export function getAllUsers(): User[] {
