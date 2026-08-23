@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getInternalUser } from '@/lib/auth';
-import { completeSyncRun, createSyncRun, getArtistsWithSoundchartsLink, updateArtist } from '@/lib/db';
+import { completeSyncRun, createSyncRun, getArtistsWithSoundchartsLink, logSyncFailure, stampSourceSyncedAt, updateArtist } from '@/lib/db';
 import { getArtistData, soundchartsConfigured } from '@/lib/soundcharts';
+import { withRetry } from '@/lib/retry';
 import { ArtistInput } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -32,12 +33,17 @@ export async function POST(req: Request) {
   let failedCount = 0;
 
   try {
-    for (const { id, soundcharts_uuid } of linked) {
-      const result = await getArtistData(soundcharts_uuid);
+    for (const { id, name, soundcharts_uuid } of linked) {
+      // One automatic retry before counting this artist as failed — see
+      // lib/retry.ts for why this is safe for Soundcharts (no meaningful
+      // per-call quota cost) but not done for YouTube.
+      const result = await withRetry(() => getArtistData(soundcharts_uuid));
       if (!result.ok) {
         failedCount++;
+        logSyncFailure(run.id, 'soundcharts', id, name, result.error);
         continue;
       }
+      stampSourceSyncedAt(id, 'soundcharts');
       // Same rule the manual "Sync from Soundcharts" button follows: only
       // fields Soundcharts actually returned a value for get written, so a
       // transient gap in their response never blanks out something a Scout

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requireAdmin } from '@/lib/auth';
 import { getAllUsers } from '@/lib/db';
 import RoleManager from '@/components/RoleManager';
+import AdminTabs from '@/components/AdminTabs';
 
 export const metadata: Metadata = { title: { absolute: 'Manage users — Scout' } };
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,7 @@ export default async function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
+      <AdminTabs />
       <div>
         <h1 className="text-2xl font-bold">Manage users</h1>
         <p className="text-sm" style={{ color: 'var(--text-faint)' }}>

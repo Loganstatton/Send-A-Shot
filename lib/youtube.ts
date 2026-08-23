@@ -126,6 +126,13 @@ function normalizeChannelName(name: string): string {
     .toLowerCase();
 }
 
+// How a featured-video match was found, in descending order of confidence
+// — see getFeaturedVideoForArtist below. Stored on Artist.featured_video_
+// match_type so a Scout (and the Admin sync-health page) can tell a
+// verified match from one that genuinely might be the wrong artist.
+export type VideoMatchType = 'channel' | 'search_matched_name' | 'search_unverified';
+export type YoutubeVideoMatch = YoutubeVideoHit & { matchType: VideoMatchType };
+
 // One-off "find this artist's video" lookup — distinct from
 // searchRecentMusicVideos above, which is deliberately date-ordered and
 // time-boxed for discovery scans. Here the artist is already known (a
@@ -133,7 +140,7 @@ function normalizeChannelName(name: string): string {
 // bias flips: order by relevance and don't restrict to recent uploads —
 // the goal is their best/most representative video, not a signal of
 // recent momentum.
-export async function searchArtistVideo(artistName: string): Promise<YoutubeResult<YoutubeVideoHit | null>> {
+export async function searchArtistVideo(artistName: string): Promise<YoutubeResult<YoutubeVideoMatch | null>> {
   const result = await youtubeFetch('/search', {
     part: 'snippet',
     q: `${artistName} official video`,
@@ -165,7 +172,11 @@ export async function searchArtistVideo(artistName: string): Promise<YoutubeResu
   // video, cover, or unrelated compilation that just matches the query text.
   const normalized = normalizeChannelName(artistName);
   const ownChannel = hits.find((h) => normalizeChannelName(h.channelTitle).includes(normalized) || normalized.includes(normalizeChannelName(h.channelTitle)));
-  return { ok: true, data: ownChannel ?? hits[0] };
+  if (ownChannel) return { ok: true, data: { ...ownChannel, matchType: 'search_matched_name' } };
+  // No channel-name match at all — genuinely could be the wrong artist
+  // (a reaction/cover/compilation that just matches the query text).
+  // Flagged as 'search_unverified' rather than silently trusted.
+  return { ok: true, data: { ...hits[0], matchType: 'search_unverified' } };
 }
 
 // Parses a youtube.com URL (as returned by Soundcharts' platformIdentifiers,
@@ -243,23 +254,49 @@ async function getChannelUploadsVideo(channelId: string): Promise<YoutubeResult<
   return { ok: true, data: hits.find((h) => !POOR_HERO_VIDEO_TITLE.test(h.title)) ?? hits[0] };
 }
 
+// YouTube's public oEmbed endpoint — no API key, no Data API quota cost
+// (it's a separate, unauthenticated endpoint). 404s for a deleted/private
+// video and 401s for one with embedding disabled, which is a definitive
+// "this won't work as NEXT's Artist Detail hero" signal that videos.list
+// doesn't give this cheaply (it would just return an empty items array,
+// costing 1 quota unit to find out). A network hiccup fails OPEN (treated
+// as embeddable) rather than discarding a perfectly good match over a
+// transient fetch error.
+async function isVideoEmbeddable(videoId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`, { cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return true;
+  }
+}
+
 // The combined, one-call-site convenience this is actually used through.
 // When the artist's YouTube channel is already known (typically from
 // Soundcharts' platformIdentifiers), this costs 2 quota units instead of
 // searchArtistVideo's 100 — a real difference against YouTube's 10,000/day
 // free quota when adding many artists at once. Falls back to the search
 // (or turns up nothing, on a channel with no uploads) exactly like before.
-export async function getFeaturedVideoForArtist(artistName: string, channelUrl?: string): Promise<YoutubeResult<YoutubeVideoHit | null>> {
-  if (channelUrl) {
-    const channelIdResult = await resolveChannelId(channelUrl);
-    if (!channelIdResult.ok) return channelIdResult;
-    if (channelIdResult.data) {
-      const uploadsResult = await getChannelUploadsVideo(channelIdResult.data);
-      if (!uploadsResult.ok) return uploadsResult;
-      if (uploadsResult.data) return uploadsResult;
+// Every candidate is verified embeddable (see isVideoEmbeddable) before
+// being returned — a broken candidate is treated as "no match" rather than
+// handed to the caller to persist a dead video ID.
+export async function getFeaturedVideoForArtist(artistName: string, channelUrl?: string): Promise<YoutubeResult<YoutubeVideoMatch | null>> {
+  const match = await (async (): Promise<YoutubeResult<YoutubeVideoMatch | null>> => {
+    if (channelUrl) {
+      const channelIdResult = await resolveChannelId(channelUrl);
+      if (!channelIdResult.ok) return channelIdResult;
+      if (channelIdResult.data) {
+        const uploadsResult = await getChannelUploadsVideo(channelIdResult.data);
+        if (!uploadsResult.ok) return uploadsResult;
+        if (uploadsResult.data) return { ok: true, data: { ...uploadsResult.data, matchType: 'channel' } };
+      }
     }
-  }
-  return searchArtistVideo(artistName);
+    return searchArtistVideo(artistName);
+  })();
+
+  if (!match.ok || !match.data) return match;
+  const embeddable = await isVideoEmbeddable(match.data.videoId);
+  return embeddable ? match : { ok: true, data: null };
 }
 
 export type YoutubeVideoStats = {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getInternalUser } from '@/lib/auth';
-import { completeSyncRun, createSyncRun, getArtistsMissingVideo, updateArtist } from '@/lib/db';
+import { completeSyncRun, createSyncRun, getArtistsMissingVideo, logSyncFailure, setFeaturedVideoMatchType, stampSourceSyncedAt, updateArtist } from '@/lib/db';
 import { getFeaturedVideoForArtist, youtubeConfigured } from '@/lib/youtube';
 import { ArtistInput } from '@/lib/types';
 
@@ -32,18 +32,27 @@ export async function POST(req: Request) {
 
   try {
     for (const artist of artists) {
+      // No automatic retry here (unlike Soundcharts/Deezer) — a retry would
+      // double the quota cost of every failure, which fights against the
+      // "YouTube quota protection" section of this same phase.
       const result = await getFeaturedVideoForArtist(artist.name, artist.youtube_url);
       if (!result.ok) {
         errorCount++;
         lastError = result.error;
+        logSyncFailure(run.id, 'youtube_video', artist.id, artist.name, result.error);
         console.error('[youtube-video-sync] lookup failed for', artist.name, result.error);
         continue;
       }
+      // A completed, honest check either way — including "found nothing
+      // usable" (no hits, or the only candidate failed the embeddability
+      // check inside getFeaturedVideoForArtist).
+      stampSourceSyncedAt(artist.id, 'youtube');
       if (!result.data) {
         noMatchCount++;
         console.log('[youtube-video-sync] no match for', artist.name);
         continue;
       }
+      setFeaturedVideoMatchType(artist.id, result.data.matchType);
       updateArtist(artist.id, { featured_video_id: result.data.videoId } as ArtistInput);
       updatedCount++;
     }

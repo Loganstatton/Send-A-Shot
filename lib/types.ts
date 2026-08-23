@@ -89,6 +89,22 @@ export type Artist = ScoreInputs & {
   // YouTube video ID (e.g. "dQw4w9WgXcQ", not a full URL) embedded as
   // NEXT's Artist Detail hero — see lib/db.ts's addColumnIfMissing note.
   featured_video_id?: string;
+  // Provenance for the three external-data sources — when each was last
+  // successfully checked (a "no match" attempt counts; a network/API error
+  // does not, since nothing was actually confirmed). System-stamped only by
+  // the sync routes/on-create lookups in lib/db.ts — never a Scout-editable
+  // ArtistInput field, so a client PATCH can't fake freshness.
+  soundcharts_synced_at?: string;
+  deezer_synced_at?: string;
+  youtube_synced_at?: string;
+  // How featured_video_id was found — 'channel' (the artist's own known
+  // YouTube channel, high confidence), 'search_matched_name' (a keyword
+  // search hit whose channel name matched the artist's, decent confidence),
+  // or 'search_unverified' (top-relevance search hit with no channel-name
+  // match — often a reaction/cover/compilation, genuinely likely wrong).
+  // Undefined on any artist whose video predates this column, or wasn't
+  // found via the automated lookup at all (e.g. a Scout pasted a link).
+  featured_video_match_type?: 'channel' | 'search_matched_name' | 'search_unverified';
 };
 
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {
@@ -638,4 +654,20 @@ export type SyncRun = {
   no_match_count?: number;
   error_count?: number;
   last_error?: string;
+};
+
+// One row per artist-level failure within a sync run — unlike SyncRun's
+// aggregate counts/single last_error, this is queryable structured history
+// (which artists, which errors) instead of only a console.error a Scout
+// would need Render's log viewer to ever see. Only real errors are logged
+// here, never a clean "no match found" (that's already captured by
+// SyncRun.no_match_count and isn't a failure worth surfacing this way).
+export type SyncFailure = {
+  id: number;
+  run_id: number;
+  source: SyncSourceKey;
+  artist_id: number;
+  artist_name: string;
+  error: string;
+  created_at: string;
 };

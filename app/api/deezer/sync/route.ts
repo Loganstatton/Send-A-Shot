@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getInternalUser } from '@/lib/auth';
-import { completeSyncRun, createSyncRun, getArtistsMissingTopSong, updateArtist } from '@/lib/db';
+import { completeSyncRun, createSyncRun, getArtistsMissingTopSong, logSyncFailure, stampSourceSyncedAt, updateArtist } from '@/lib/db';
 import { getTopSongForArtist } from '@/lib/deezer';
+import { withRetry } from '@/lib/retry';
 import { ArtistInput } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -31,13 +32,18 @@ export async function POST(req: Request) {
 
   try {
     for (const artist of artists) {
-      const result = await getTopSongForArtist(artist.name);
+      // One automatic retry before counting this artist as a real error —
+      // see lib/retry.ts. Only wraps the failure path's cost, since a
+      // successful first attempt never retries.
+      const result = await withRetry(() => getTopSongForArtist(artist.name));
       if (!result.ok) {
         // 'no_artist_match'/'no_top_track' mean the calls succeeded and
         // genuinely found nothing. 'search_failed'/'top_track_lookup_failed'
         // mean something actually broke.
         if (result.reason === 'no_artist_match' || result.reason === 'no_top_track') {
           noMatchCount++;
+          // A completed, honest check — even though it found nothing.
+          stampSourceSyncedAt(artist.id, 'deezer');
           // Previously silent — made it impossible to tell which specific
           // artists (a famous one shouldn't ever land here) got "no match"
           // vs which genuinely have no Deezer presence, without guessing
@@ -46,10 +52,12 @@ export async function POST(req: Request) {
         } else {
           errorCount++;
           lastError = result.error;
+          logSyncFailure(run.id, 'deezer', artist.id, artist.name, result.error ?? result.reason);
           console.error('[deezer-sync] lookup failed for', artist.name, result.reason, result.error);
         }
         continue;
       }
+      stampSourceSyncedAt(artist.id, 'deezer');
       updateArtist(artist.id, result.data as ArtistInput);
       updatedCount++;
     }
