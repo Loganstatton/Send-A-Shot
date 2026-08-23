@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requireAdmin } from '@/lib/auth';
 import {
   getAllArtists, getArtistsMissingTopSong, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
-  getLatestSyncRun, getRecentSyncFailures, getUnverifiedVideoMatchCount,
+  getLatestSyncRun, getMissingPlatformLinksImpact, getRecentSyncFailures, getUnverifiedVideoMatchCount,
 } from '@/lib/db';
 import AdminTabs from '@/components/AdminTabs';
 import { SyncRun } from '@/lib/types';
@@ -53,6 +53,10 @@ export default async function AdminSyncPage() {
   const unverifiedVideo = getUnverifiedVideoMatchCount();
   const quota = youtubeConfigured() ? getYoutubeQuotaStatus() : null;
   const quotaPct = quota ? Math.min(100, Math.round((quota.usedToday / quota.budget) * 100)) : 0;
+  const linksImpact = getMissingPlatformLinksImpact();
+  const linksImpactPct = linksImpact.totalArtistDetailViews > 0
+    ? Math.round((linksImpact.viewsOnArtistsMissingAllLinks / linksImpact.totalArtistDetailViews) * 1000) / 10
+    : null;
 
   return (
     <div className="space-y-6">
@@ -158,6 +162,28 @@ export default async function AdminSyncPage() {
             </table>
           </div>
         )}
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-bold text-lg">Soundcharts limitations</h2>
+        <p className="text-sm" style={{ color: 'var(--text-faint)' }}>
+          Soundcharts&apos; artist-metadata endpoint doesn&apos;t return Spotify/Instagram/TikTok/YouTube
+          platform links on this plan — they stay manual. This app intentionally works around that rather
+          than upgrading the plan; the number below is the evidence for reconsidering, not a static gap
+          count.
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+          <div>
+            <p className="num text-xl font-semibold">{linksImpact.artistsMissingAllLinks}</p>
+            <p style={{ color: 'var(--text-faint)' }}>of {linksImpact.totalArtists} artists have zero platform links</p>
+          </div>
+          <div>
+            <p className="num text-xl font-semibold">{linksImpactPct != null ? `${linksImpactPct}%` : '—'}</p>
+            <p style={{ color: 'var(--text-faint)' }}>
+              of Artist Detail views ({linksImpact.viewsOnArtistsMissingAllLinks} of {linksImpact.totalArtistDetailViews}) landed on one of those artists
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
