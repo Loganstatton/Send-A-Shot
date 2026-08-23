@@ -1886,6 +1886,27 @@ export function getRecentEventsForUser(userId: number, limit = 50): AnalyticsEve
   return (db.prepare('SELECT * FROM analytics_events WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?').all(userId, limit) as any[]).map(parseEventRow);
 }
 
+// Whole-table reads for the MVP metrics dashboard (lib/analytics.ts) — this
+// app's scale makes "fetch everything once, compute funnels/sessions/
+// retention in JS" simpler and just as fast as SQL window functions would
+// be, and far more readable for the gap-based session grouping several of
+// those metrics need.
+export function getAllEvents(): AnalyticsEvent[] {
+  return (db.prepare('SELECT * FROM analytics_events WHERE user_id IS NOT NULL ORDER BY created_at ASC, id ASC').all() as any[]).map(parseEventRow);
+}
+
+export type PreviewListenEvent = { user_id: number; artist_id: number; event: 'started' | 'completed'; created_at: string };
+export function getAllPreviewListenEvents(): PreviewListenEvent[] {
+  return db.prepare('SELECT user_id, artist_id, event, created_at FROM preview_listens ORDER BY created_at ASC, id ASC').all() as PreviewListenEvent[];
+}
+
+export type AnalyticsTransaction = { user_id: number; artist_id: number; type: NextTransactionType; created_at: string; listened_before_buy: number | null };
+export function getAllTransactionsForAnalytics(): AnalyticsTransaction[] {
+  return db
+    .prepare('SELECT user_id, artist_id, type, created_at, listened_before_buy FROM next_transactions ORDER BY created_at ASC, id ASC')
+    .all() as AnalyticsTransaction[];
+}
+
 // Stamps last_login_at and reports whether this is a RETURNING session —
 // true only when the user already had a last_login_at before this call,
 // i.e. not their very first login right after signup. The caller decides
