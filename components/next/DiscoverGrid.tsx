@@ -65,7 +65,7 @@ export default function DiscoverGrid({
         {genres.map((g) => (
           <button key={g} type="button" onClick={() => setGenre(g)} className={chip(genre === g)}>{g}</button>
         ))}
-        <div className="w-px h-[22px] mx-1" style={{ background: 'var(--border-soft)' }} />
+        <div className="hidden sm:block w-px h-[22px] mx-1" style={{ background: 'var(--border-soft)' }} />
         <button
           type="button"
           onClick={() => setSignalOnly((v) => !v)}

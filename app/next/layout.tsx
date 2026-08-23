@@ -26,7 +26,7 @@ export default async function NextLayout({ children }: { children: React.ReactNo
       }}
     >
       <NextHeader user={user} />
-      <main style={{ maxWidth: 1280, margin: '0 auto', padding: '56px 48px 80px' }}>{children}</main>
+      <main className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14">{children}</main>
     </div>
   );
 }

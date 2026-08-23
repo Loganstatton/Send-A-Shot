@@ -57,7 +57,7 @@ export default async function NextPortfolioPage() {
       </div>
 
       <div
-        className="grid grid-cols-2 lg:grid-cols-5 gap-px rounded-2xl overflow-hidden border"
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-px rounded-2xl overflow-hidden border"
         style={{ background: 'var(--border-soft)', borderColor: 'var(--border-soft)' }}
       >
         {stats.map((s) => <NextStatTile key={s.label} {...s} />)}
@@ -76,18 +76,22 @@ export default async function NextPortfolioPage() {
             const unrealizedPct = h.cost_basis_cents !== 0 ? (h.unrealizedPnlCents / h.cost_basis_cents) * 100 : 0;
             const up = h.unrealizedPnlCents >= 0;
             return (
-              <Link key={h.id} href={`/next/artists/${h.artist_id}`} className="next-card flex items-center gap-4 px-5 py-4">
-                <ArtistAvatar name={h.artist_name} photoUrl={h.artist_photo_url} />
-                <div className="min-w-0 flex-1">
-                  <div className="font-display font-semibold truncate">{h.artist_name}</div>
-                  <div className="num text-sm" style={{ color: 'var(--text-muted)' }}>{h.shares.toFixed(4)} shares</div>
-                  <div className="num text-xs" style={{ color: 'var(--text-faint)' }}>Avg: {formatCents(h.cost_basis_cents / h.shares)} · Current: {formatCents(h.price_cents)}</div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="num font-semibold">{formatCents(h.marketValueCents)}</div>
-                  <div className="num text-sm font-medium" style={{ color: up ? 'var(--up)' : 'var(--down)' }}>
-                    {up ? '+' : ''}{formatCents(h.unrealizedPnlCents)} ({up ? '+' : ''}{unrealizedPct.toFixed(2)}%)
+              <Link key={h.id} href={`/next/artists/${h.artist_id}`} className="next-card flex flex-col gap-1.5 px-5 py-4">
+                <div className="flex items-center gap-4">
+                  <ArtistAvatar name={h.artist_name} photoUrl={h.artist_photo_url} />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-display font-semibold truncate">{h.artist_name}</div>
+                    <div className="num text-sm" style={{ color: 'var(--text-muted)' }}>{h.shares.toFixed(4)} shares</div>
                   </div>
+                  <div className="text-right shrink-0">
+                    <div className="num font-semibold">{formatCents(h.marketValueCents)}</div>
+                    <div className="num text-xs sm:text-sm font-medium" style={{ color: up ? 'var(--up)' : 'var(--down)' }}>
+                      {up ? '+' : ''}{formatCents(h.unrealizedPnlCents)} ({up ? '+' : ''}{unrealizedPct.toFixed(2)}%)
+                    </div>
+                  </div>
+                </div>
+                <div className="num text-xs pl-[72px]" style={{ color: 'var(--text-faint)' }}>
+                  Avg: {formatCents(h.cost_basis_cents / h.shares)} · Current: {formatCents(h.price_cents)}
                 </div>
               </Link>
             );
