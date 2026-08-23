@@ -168,6 +168,100 @@ export async function searchArtistVideo(artistName: string): Promise<YoutubeResu
   return { ok: true, data: ownChannel ?? hits[0] };
 }
 
+// Parses a youtube.com URL (as returned by Soundcharts' platformIdentifiers,
+// or typed in by hand) into whatever channels.list needs to resolve it.
+// /channel/UCxxxx already IS the id — no lookup call needed at all.
+// /@handle and legacy /user/name each cost 1 unit to resolve (channels.list
+// with forHandle/forUsername). /c/customname has no lookup-by-value
+// endpoint — YouTube only resolves those through search, which defeats the
+// point, so it's left unresolved here and the caller falls back to search.
+function parseChannelUrl(url: string): { channelId: string } | { handle: string } | { username: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!parsed.hostname.replace(/^www\./, '').endsWith('youtube.com')) return null;
+
+  const channelMatch = parsed.pathname.match(/^\/channel\/([\w-]+)/);
+  if (channelMatch) return { channelId: channelMatch[1] };
+
+  const handleMatch = parsed.pathname.match(/^\/@([\w.-]+)/);
+  if (handleMatch) return { handle: `@${handleMatch[1]}` };
+
+  const userMatch = parsed.pathname.match(/^\/user\/([\w.-]+)/);
+  if (userMatch) return { username: userMatch[1] };
+
+  return null;
+}
+
+async function resolveChannelId(url: string): Promise<YoutubeResult<string | null>> {
+  const parsed = parseChannelUrl(url);
+  if (!parsed) return { ok: true, data: null };
+  if ('channelId' in parsed) return { ok: true, data: parsed.channelId };
+
+  const params: Record<string, string> = 'handle' in parsed ? { forHandle: parsed.handle } : { forUsername: parsed.username };
+  const result = await youtubeFetch('/channels', { part: 'id', ...params });
+  if (!result.ok) return result;
+  const id = result.data?.items?.[0]?.id;
+  return { ok: true, data: typeof id === 'string' ? id : null };
+}
+
+// Skip titles that are technically uploads but a poor choice for a hero
+// video — shorts, livestream VODs, trailers/teasers/BTS clips.
+const POOR_HERO_VIDEO_TITLE = /\b(shorts?|live|trailer|teaser|behind the scenes)\b/i;
+
+// The channel's own uploads, cheapest path there is: channels.list (1 unit)
+// to find the uploads playlist, playlistItems.list (1 unit) to read it —
+// 2 units total versus search.list's 100. Reverse-chronological rather
+// than relevance-ranked, so it's not guaranteed to be their single best
+// video the way searchArtistVideo's ranked search is — a fair trade for a
+// 50x quota cut when the channel is already known.
+async function getChannelUploadsVideo(channelId: string): Promise<YoutubeResult<YoutubeVideoHit | null>> {
+  const channelResult = await youtubeFetch('/channels', { part: 'contentDetails', id: channelId });
+  if (!channelResult.ok) return channelResult;
+  const uploadsPlaylistId = channelResult.data?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploadsPlaylistId) return { ok: true, data: null };
+
+  const playlistResult = await youtubeFetch('/playlistItems', { part: 'snippet', playlistId: uploadsPlaylistId, maxResults: '10' });
+  if (!playlistResult.ok) return playlistResult;
+
+  const items = Array.isArray(playlistResult.data?.items) ? playlistResult.data.items : [];
+  const hits: YoutubeVideoHit[] = items
+    .map((item: any) => ({
+      videoId: item?.snippet?.resourceId?.videoId,
+      channelId: item?.snippet?.channelId,
+      channelTitle: item?.snippet?.channelTitle,
+      title: item?.snippet?.title,
+      publishedAt: item?.snippet?.publishedAt,
+      thumbnailUrl: item?.snippet?.thumbnails?.medium?.url ?? item?.snippet?.thumbnails?.default?.url,
+    }))
+    .filter((h: YoutubeVideoHit) => h.videoId);
+
+  if (hits.length === 0) return { ok: true, data: null };
+  return { ok: true, data: hits.find((h) => !POOR_HERO_VIDEO_TITLE.test(h.title)) ?? hits[0] };
+}
+
+// The combined, one-call-site convenience this is actually used through.
+// When the artist's YouTube channel is already known (typically from
+// Soundcharts' platformIdentifiers), this costs 2 quota units instead of
+// searchArtistVideo's 100 — a real difference against YouTube's 10,000/day
+// free quota when adding many artists at once. Falls back to the search
+// (or turns up nothing, on a channel with no uploads) exactly like before.
+export async function getFeaturedVideoForArtist(artistName: string, channelUrl?: string): Promise<YoutubeResult<YoutubeVideoHit | null>> {
+  if (channelUrl) {
+    const channelIdResult = await resolveChannelId(channelUrl);
+    if (!channelIdResult.ok) return channelIdResult;
+    if (channelIdResult.data) {
+      const uploadsResult = await getChannelUploadsVideo(channelIdResult.data);
+      if (!uploadsResult.ok) return uploadsResult;
+      if (uploadsResult.data) return uploadsResult;
+    }
+  }
+  return searchArtistVideo(artistName);
+}
+
 export type YoutubeVideoStats = {
   videoId: string;
   viewCount?: number;

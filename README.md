@@ -219,10 +219,18 @@ video source to pull from at all, so the hero just sat blank unless a
 Scout went and pasted a YouTube link into the "Featured video" field by
 hand.
 
-Same two-path shape as the Deezer top-song lookup above, searching
-YouTube for `"<artist name> official video"` and preferring a hit whose
-channel name actually matches the artist over an unrelated top-relevance
-result (a reaction video, a cover, etc.):
+Same two-path shape as the Deezer top-song lookup above. The actual
+lookup tries the cheap route first: if Soundcharts already found this
+artist's YouTube channel (`youtube_url`, from its platformIdentifiers),
+it reads that channel's uploads directly — `channels.list` +
+`playlistItems.list`, 2 quota units total. Only when there's no known
+channel does it fall back to `search.list` (`"<artist name> official
+video"`, preferring a hit whose channel name actually matches the artist
+over an unrelated top-relevance result like a reaction video or cover) —
+**100 units**, YouTube's own listed cost for that endpoint, against a
+10,000/day free quota. That's the one to watch: adding artists in bulk
+(see Bulk Add below) without a known channel for each can burn through a
+day's quota in well under a hundred artists.
 - **Immediately, once, when an artist enters the roster** — adding an
   artist by hand (`/artists/new`) triggers a one-time best-effort lookup,
   same as the Deezer one. Never blocks or fails the creation itself.
