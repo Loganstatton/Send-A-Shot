@@ -12,12 +12,14 @@ const {
   addToWatchlist, approveDiscoveryCandidate, completeDiscoveryRun, completeNextOnboarding, completeSyncRun,
   createArtist, createDiscoveryRun, createSyncRun, createUser, db, deleteUser, executeTrade, findArtistsByName,
   getArtist, getArtistsMissingTopSong, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
-  getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates, getEventCountsByType,
+  getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidateCountsByGenre,
+  getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getEventCountsByType,
   getFavoriteGenres, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
   getLatestSyncRun, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
   getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue,
   getPortfolioValueHistory, getRankMovements,
-  getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentEventsForUser,
+  getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentDiscoveryReviewDecisions,
+  getRecentDiscoveryRunsWithCandidateCounts, getRecentEventsForUser,
   getRecentMarketTrades, getRecentSyncFailures, getRecentTradesForArtist, getRecentWatchCountsByArtist,
   getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
   getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
@@ -553,6 +555,7 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
         subscriberOutOfBand: 40,
         belowMomentumThreshold: 8,
         bestRejectedMomentumScore: 22.5,
+        duplicateSoundchartsMatch: 3,
       },
     });
 
@@ -565,6 +568,7 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
     expect(latest.rejected_subscriber_out_of_band).toBe(40);
     expect(latest.rejected_below_momentum_threshold).toBe(8);
     expect(latest.best_rejected_momentum_score).toBe(22.5);
+    expect(latest.rejected_duplicate_soundcharts_match).toBe(3);
   });
 
   it('a Soundcharts run (no rejection filtering) leaves the breakdown columns null, not zero', () => {
@@ -1405,5 +1409,98 @@ describe('Soundcharts limitations (Phase 4) — getMissingPlatformLinksImpact', 
       brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8,
     });
     expect(getMissingPlatformLinksImpact().artistsMissingAllLinks).toBe(before);
+  });
+});
+
+describe('Discovery Engine (Phase 5) — candidate history, run attribution, and coverage', () => {
+  it('insertDiscoveryCandidate logs a "discovered" history row with no actor', () => {
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-history-1', name: 'History Test Artist', flagged_reason: 'test' });
+    const candidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-history-1')!;
+
+    const history = getDiscoveryCandidateHistory(candidate.id);
+    expect(history).toHaveLength(1);
+    expect(history[0].from_status).toBeNull();
+    expect(history[0].to_status).toBe('new');
+    expect(history[0].actor_id).toBeFalsy();
+  });
+
+  it('setDiscoveryCandidateStatus and approveDiscoveryCandidate each append a history row with the actor and both statuses', () => {
+    const scout = makeUser('history-scout@example.com');
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-history-2', name: 'Watched Then Approved', flagged_reason: 'test' });
+    const candidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-history-2')!;
+
+    setDiscoveryCandidateStatus(candidate.id, 'watching', { id: scout.id, name: scout.name });
+    approveDiscoveryCandidate(candidate.id, { id: scout.id, name: scout.name });
+
+    const history = getDiscoveryCandidateHistory(candidate.id);
+    expect(history.map((h) => [h.from_status, h.to_status])).toEqual([
+      [null, 'new'],
+      ['new', 'watching'],
+      ['watching', 'approved'],
+    ]);
+    expect(history[1].actor_id).toBe(scout.id);
+    expect(history[2].actor_name).toBe(scout.name);
+  });
+
+  it('getRecentDiscoveryReviewDecisions excludes the initial discovery row but includes real decisions, most recent first', () => {
+    const scout = makeUser('decisions-scout@example.com');
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-decision-1', name: 'Decision Test Artist', flagged_reason: 'test' });
+    const candidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-decision-1')!;
+
+    const before = getRecentDiscoveryReviewDecisions(200).length;
+    setDiscoveryCandidateStatus(candidate.id, 'passed', { id: scout.id, name: scout.name });
+
+    const decisions = getRecentDiscoveryReviewDecisions(200);
+    expect(decisions.length).toBe(before + 1);
+    expect(decisions[0].candidate_name).toBe('Decision Test Artist');
+    expect(decisions[0].candidate_source).toBe('soundcharts');
+    expect(decisions[0].to_status).toBe('passed');
+    // The "discovered" row (from_status null) for THIS candidate must never appear.
+    expect(decisions.some((d) => d.candidate_name === 'Decision Test Artist' && d.from_status === null)).toBe(false);
+  });
+
+  it('getDiscoveryCandidateCountsByStatus reflects a delta across all four statuses', () => {
+    const scout = makeUser('counts-scout@example.com');
+    const before = getDiscoveryCandidateCountsByStatus();
+
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-count-new', name: 'Count New', flagged_reason: 'test' });
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-count-watch', name: 'Count Watch', flagged_reason: 'test' });
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-count-pass', name: 'Count Pass', flagged_reason: 'test' });
+    const watchCandidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-count-watch')!;
+    const passCandidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-count-pass')!;
+    setDiscoveryCandidateStatus(watchCandidate.id, 'watching', { id: scout.id, name: scout.name });
+    setDiscoveryCandidateStatus(passCandidate.id, 'passed', { id: scout.id, name: scout.name });
+
+    const after = getDiscoveryCandidateCountsByStatus();
+    expect(after.new - before.new).toBe(1);
+    expect(after.watching - before.watching).toBe(1);
+    expect(after.passed - before.passed).toBe(1);
+  });
+
+  it('getDiscoveryCandidateCountsByGenre groups YouTube candidates by yt_genre and excludes Soundcharts (null-genre) candidates', () => {
+    const before = getDiscoveryCandidateCountsByGenre();
+    const beforeCount = (genre: string) => before.find((g) => g.genre === genre)?.count ?? 0;
+
+    insertDiscoveryCandidate({ source: 'youtube', name: 'Genre Test A', yt_channel_id: 'chan-genre-a', yt_genre: 'pop-genre-test', flagged_reason: 'test' });
+    insertDiscoveryCandidate({ source: 'youtube', name: 'Genre Test B', yt_channel_id: 'chan-genre-b', yt_genre: 'pop-genre-test', flagged_reason: 'test' });
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-genre-null', name: 'No Genre (Soundcharts)', flagged_reason: 'test' });
+
+    const after = getDiscoveryCandidateCountsByGenre();
+    expect(after.find((g) => g.genre === 'pop-genre-test')!.count - beforeCount('pop-genre-test')).toBe(2);
+    expect(after.some((g) => g.genre === null || g.genre === undefined)).toBe(false);
+  });
+
+  it('getRecentDiscoveryRunsWithCandidateCounts attributes candidates to their own run and shows 0 for a run that found none', () => {
+    const runA = createDiscoveryRun('youtube');
+    insertDiscoveryCandidate({ source: 'youtube', name: 'Run A Candidate 1', yt_channel_id: 'chan-run-a-1', flagged_reason: 'test', discovery_run_id: runA.id });
+    insertDiscoveryCandidate({ source: 'youtube', name: 'Run A Candidate 2', yt_channel_id: 'chan-run-a-2', flagged_reason: 'test', discovery_run_id: runA.id });
+    completeDiscoveryRun(runA.id, { status: 'completed', searchedCount: 50, candidatesFound: 2 });
+
+    const runB = createDiscoveryRun('youtube');
+    completeDiscoveryRun(runB.id, { status: 'completed', searchedCount: 40, candidatesFound: 0 });
+
+    const runs = getRecentDiscoveryRunsWithCandidateCounts('youtube', 50);
+    expect(runs.find((r) => r.id === runA.id)!.candidateCount).toBe(2);
+    expect(runs.find((r) => r.id === runB.id)!.candidateCount).toBe(0);
   });
 });

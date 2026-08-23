@@ -28,6 +28,13 @@ export type DiscoveryRejectionBreakdown = {
   subscriberOutOfBand: number;
   belowMomentumThreshold: number;
   bestRejectedMomentumScore?: number; // the closest miss among belowMomentumThreshold rejections
+  // A candidate whose best-effort Soundcharts enrichment resolved to a
+  // soundcharts_uuid already tracked (a live artist, or an existing
+  // discovery_candidates row of ANY status/source) — the same real artist
+  // found again under a new YouTube channel identity, not a genuinely new
+  // find. Counted AFTER the momentum-threshold gate, since enrichment only
+  // runs on candidates that already passed it.
+  duplicateSoundchartsMatch: number;
 };
 
 export type DiscoveryScanOutcome = {

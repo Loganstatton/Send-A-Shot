@@ -4,6 +4,22 @@ import { useRouter } from 'next/navigation';
 import { DiscoveryCandidate } from '@/lib/types';
 import ArtistAvatar from './ArtistAvatar';
 
+// A visible confidence/quality signal for the momentum score already
+// computed (lib/youtube-momentum.ts) but, before this, never actually
+// shown to a Scout — only used internally to sort the queue. Tiers loosely
+// match classifyYoutubeCandidate's own threshold logic: the default
+// MOMENTUM_SCORE_THRESHOLD is 25, so "borderline" spans just above that,
+// and "strong" is comfortably clear of it. Soundcharts candidates have no
+// equivalent score (see PR notes) and simply don't render this badge.
+function MomentumBadge({ score }: { score: number }) {
+  const tone = score >= 60 ? { bg: 'var(--up-dim)', fg: 'var(--up)' } : score >= 30 ? { bg: 'var(--fire-dim)', fg: 'var(--fire)' } : { bg: 'var(--surface-2)', fg: 'var(--text-muted)' };
+  return (
+    <span className="badge text-xs num" style={{ background: tone.bg, color: tone.fg }}>
+      Momentum {Math.round(score)}
+    </span>
+  );
+}
+
 export default function DiscoveryQueue({ initial }: { initial: DiscoveryCandidate[] }) {
   const router = useRouter();
   const [items, setItems] = useState(initial);
@@ -51,6 +67,7 @@ export default function DiscoveryQueue({ initial }: { initial: DiscoveryCandidat
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold">{c.name}</span>
                 <span className="badge text-xs">{c.source === 'youtube' ? '🎥 YouTube' : '🎵 Soundcharts'}</span>
+                {c.momentum_score != null && <MomentumBadge score={c.momentum_score} />}
                 {c.soundcharts_uuid && c.source === 'youtube' && <span className="badge text-xs">🔗 Soundcharts matched</span>}
                 {c.country && <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{c.country}</span>}
               </div>

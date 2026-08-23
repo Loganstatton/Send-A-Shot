@@ -227,6 +227,7 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
   const scored: Scored[] = [];
   const rejectionBreakdown: DiscoveryRejectionBreakdown = {
     notOfficialRelease: 0, belowMinViews: 0, noSubscriberCount: 0, subscriberOutOfBand: 0, belowMomentumThreshold: 0,
+    duplicateSoundchartsMatch: 0,
   };
   for (const hit of byChannel.values()) {
     const videoStats = videoStatsById.get(hit.videoId);
@@ -294,6 +295,19 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
     };
     const metrics = computeYoutubeMetrics(inputs);
     const enrichment = await matchAndEnrichWithSoundcharts(s.hit.channelTitle).catch(() => null);
+
+    // The channel itself was never seen before (that's the earlier
+    // known.youtubeChannelIds gate), but the artist behind it might be —
+    // this is only discoverable now, after enrichment resolves a
+    // Soundcharts identity. Without this check, the same real artist could
+    // pick up a second candidate row (and get re-reviewed, possibly
+    // un-passed) just because YouTube's search surfaced a different upload
+    // of theirs than whatever channel/video first got them tracked.
+    if (enrichment?.soundcharts_uuid && known.soundchartsUuids.has(enrichment.soundcharts_uuid)) {
+      rejectionBreakdown.duplicateSoundchartsMatch++;
+      continue;
+    }
+
     const bestExample = s.hype.examples[0];
 
     candidates.push({
