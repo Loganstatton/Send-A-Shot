@@ -2,6 +2,7 @@ import { Bricolage_Grotesque, IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/goo
 import './next-theme.css';
 import { requireUser } from '@/lib/auth';
 import { NEXT_STARTING_CREDITS_CENTS } from '@/lib/next-market';
+import { getNotificationsForUser } from '@/lib/notifications';
 import NextHeader from '@/components/next/NextHeader';
 import NextOnboarding from '@/components/next/NextOnboarding';
 import NowPlayingProvider from '@/components/next/NowPlayingProvider';
@@ -15,6 +16,7 @@ const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500'], variabl
 
 export default async function NextLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+  const unreadNotifications = getNotificationsForUser(user).filter((n) => !n.read).length;
 
   return (
     <div
@@ -28,7 +30,7 @@ export default async function NextLayout({ children }: { children: React.ReactNo
           'var(--bg)',
       }}
     >
-      <NextHeader user={user} />
+      <NextHeader user={user} unreadNotifications={unreadNotifications} />
       {!user.next_onboarded_at && <NextOnboarding startingCreditsCents={NEXT_STARTING_CREDITS_CENTS} />}
       <NowPlayingProvider>
         <main className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14">{children}</main>

@@ -15,6 +15,17 @@ export default function SettingsForm({ user }: { user: User }) {
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
 
+  // Notification preferences
+  const [notifyWatchlistMoves, setNotifyWatchlistMoves] = useState(user.notify_watchlist_moves);
+  const [notifyNewArtists, setNotifyNewArtists] = useState(user.notify_new_artists);
+  const [notifyFoundingBeliever, setNotifyFoundingBeliever] = useState(user.notify_founding_believer);
+  const [notifyPortfolioMilestones, setNotifyPortfolioMilestones] = useState(user.notify_portfolio_milestones);
+  const [notifyLeaderboardRank, setNotifyLeaderboardRank] = useState(user.notify_leaderboard_rank);
+  const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(user.email_notifications_enabled);
+  const [notificationsSaving, setNotificationsSaving] = useState(false);
+  const [notificationsMessage, setNotificationsMessage] = useState<string | null>(null);
+  const [notificationsError, setNotificationsError] = useState<string | null>(null);
+
   // Email verification
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
@@ -48,6 +59,34 @@ export default function SettingsForm({ user }: { user: User }) {
       setProfileError(err.message ?? 'Save failed.');
     } finally {
       setProfileSaving(false);
+    }
+  }
+
+  async function saveNotificationPreferences(e: React.FormEvent) {
+    e.preventDefault();
+    setNotificationsSaving(true);
+    setNotificationsError(null);
+    setNotificationsMessage(null);
+    try {
+      const res = await fetch('/api/account', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notify_watchlist_moves: notifyWatchlistMoves,
+          notify_new_artists: notifyNewArtists,
+          notify_founding_believer: notifyFoundingBeliever,
+          notify_portfolio_milestones: notifyPortfolioMilestones,
+          notify_leaderboard_rank: notifyLeaderboardRank,
+          email_notifications_enabled: emailNotificationsEnabled,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Save failed.');
+      setNotificationsMessage('Saved.');
+      router.refresh();
+    } catch (err: any) {
+      setNotificationsError(err.message ?? 'Save failed.');
+    } finally {
+      setNotificationsSaving(false);
     }
   }
 
@@ -158,6 +197,43 @@ export default function SettingsForm({ user }: { user: User }) {
         {profileMessage && <div className="text-sm text-green-400">{profileMessage}</div>}
         <button type="submit" className="btn btn-primary" disabled={profileSaving}>
           {profileSaving ? 'Saving…' : 'Save profile'}
+        </button>
+      </form>
+
+      <form onSubmit={saveNotificationPreferences} className="card space-y-3">
+        <h2 className="font-semibold text-neutral-100">Notifications</h2>
+        <p className="text-xs text-neutral-500 -mt-1">
+          What shows up in your notification bell. All on by default except email, which stays opt-in.
+        </p>
+        {[
+          { label: 'Watchlist moves', hint: 'Score/Price jumps, undervalued/overheated, trending today', checked: notifyWatchlistMoves, set: setNotifyWatchlistMoves },
+          { label: 'New artists in your genres', hint: 'Based on the genres you’ve backed the most', checked: notifyNewArtists, set: setNotifyNewArtists },
+          { label: 'Founding Believer milestones', hint: 'An artist you backed early crosses a backer-count milestone', checked: notifyFoundingBeliever, set: setNotifyFoundingBeliever },
+          { label: 'Portfolio milestones', hint: 'Your all-time return crosses a round number, up or down', checked: notifyPortfolioMilestones, set: setNotifyPortfolioMilestones },
+          { label: 'Leaderboard rank changes', hint: 'Your all-time rank moves up or down this week', checked: notifyLeaderboardRank, set: setNotifyLeaderboardRank },
+        ].map((pref) => (
+          <label key={pref.label} className="flex items-start gap-2.5 text-sm text-neutral-300">
+            <input type="checkbox" checked={pref.checked} onChange={(e) => pref.set(e.target.checked)} className="mt-0.5" />
+            <span>
+              {pref.label}
+              <span className="block text-xs text-neutral-500 mt-0.5">{pref.hint}</span>
+            </span>
+          </label>
+        ))}
+        <div className="pt-1" style={{ borderTop: '1px solid #333' }} />
+        <label className="flex items-start gap-2.5 text-sm text-neutral-300">
+          <input type="checkbox" checked={emailNotificationsEnabled} onChange={(e) => setEmailNotificationsEnabled(e.target.checked)} className="mt-0.5" />
+          <span>
+            Also email me
+            <span className="block text-xs text-neutral-500 mt-0.5">
+              A digest of what&apos;s new, sent next time you check your notifications — not a scheduled email.
+            </span>
+          </span>
+        </label>
+        {notificationsError && <div className="text-sm text-red-300">{notificationsError}</div>}
+        {notificationsMessage && <div className="text-sm text-green-400">{notificationsMessage}</div>}
+        <button type="submit" className="btn btn-primary" disabled={notificationsSaving}>
+          {notificationsSaving ? 'Saving…' : 'Save notification preferences'}
         </button>
       </form>
 

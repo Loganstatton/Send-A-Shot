@@ -10,7 +10,7 @@ import LogoutButton from '@/components/LogoutButton';
 // user should never see Admin/Screener/Candidates/Add Artist here; those
 // stay entirely on Scout's side. See components/Header.tsx, which now
 // renders nothing on /next/* routes so the two never double up.
-export default function NextHeader({ user }: { user: User }) {
+export default function NextHeader({ user, unreadNotifications = 0 }: { user: User; unreadNotifications?: number }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
@@ -58,6 +58,25 @@ export default function NextHeader({ user }: { user: User }) {
             <span className="num text-xs font-semibold">{formatCents(user.next_credits_cents)}</span>
           </div>
           <Link
+            href="/next/notifications"
+            aria-label={unreadNotifications > 0 ? `${unreadNotifications} unread notifications` : 'Notifications'}
+            className="next-icon-btn relative hidden sm:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center"
+            style={{ borderColor: is('/next/notifications') ? 'var(--ember-line)' : 'var(--border-soft)', color: 'var(--text-muted)' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {unreadNotifications > 0 && (
+              <span
+                className="num absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center text-[10px] font-bold"
+                style={{ background: 'var(--ember)', color: 'var(--bg)' }}
+              >
+                {unreadNotifications > 9 ? '9+' : unreadNotifications}
+              </span>
+            )}
+          </Link>
+          <Link
             href="/next/profile"
             className="next-icon-btn hidden sm:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center font-display font-bold text-sm overflow-hidden"
             style={{ color: 'var(--text-muted)' }}
@@ -104,6 +123,19 @@ export default function NextHeader({ user }: { user: User }) {
               {l.label}
             </Link>
           ))}
+          <Link
+            href="/next/notifications"
+            onClick={() => setMenuOpen(false)}
+            className="px-2 py-3 text-[15px] rounded-lg flex items-center justify-between"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Notifications
+            {unreadNotifications > 0 && (
+              <span className="num text-xs font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--ember)', color: 'var(--bg)' }}>
+                {unreadNotifications > 9 ? '9+' : unreadNotifications}
+              </span>
+            )}
+          </Link>
           <Link href="/next/profile" onClick={() => setMenuOpen(false)} className="px-2 py-3 text-[15px] rounded-lg" style={{ color: 'var(--text-muted)' }}>
             Profile
           </Link>

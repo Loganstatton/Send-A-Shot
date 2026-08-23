@@ -24,6 +24,14 @@ export function changePctSinceListing(priceCents: number, priceHistory: NextPric
   return first !== 0 ? ((priceCents - first) / first) * 100 : 0;
 }
 
+// "Significant move" thresholds shared by ArtistCard's since-you-added
+// alert flag and the Notification center's watchlist-move notifications —
+// one definition of "significant" instead of two. 5 points is
+// momentumStatus()'s own "Rising" cutoff in lib/scoring.ts; 10% has no
+// prior precedent in this codebase — a deliberately simple first-pass band.
+export const ALERT_SCORE_THRESHOLD = 5;
+export const ALERT_PRICE_PCT_THRESHOLD = 10;
+
 export const NEXT_STARTING_CREDITS_CENTS = 1_000_000; // $10,000.00 in NEXT Credits
 export const NEXT_MIN_PRICE_CENTS = 100; // price floor: $1.00
 
