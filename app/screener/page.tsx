@@ -61,7 +61,7 @@ export default async function ScreenerPage() {
 
       {rows.length === 0 && (
         <div className="card text-center py-12">
-          <p className="text-neutral-400">No artists tracked yet.</p>
+          <p style={{ color: 'var(--text-muted)' }}>No artists tracked yet.</p>
           <Link href="/artists/new" className="btn btn-primary mt-4 inline-flex">+ Add your first artist</Link>
         </div>
       )}

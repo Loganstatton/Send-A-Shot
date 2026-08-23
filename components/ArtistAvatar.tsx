@@ -18,13 +18,17 @@ export default function ArtistAvatar({
       <img
         src={photoUrl}
         alt={name}
-        className={`${dims} rounded-full object-cover shrink-0 bg-neutral-800`}
+        className={`${dims} rounded-full object-cover shrink-0`}
+        style={{ background: 'var(--surface-2)' }}
       />
     );
   }
 
   return (
-    <div className={`${dims} rounded-full shrink-0 bg-neutral-800 border border-neutral-700 flex items-center justify-center font-semibold text-neutral-400`}>
+    <div
+      className={`${dims} rounded-full shrink-0 flex items-center justify-center font-semibold`}
+      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+    >
       {initial}
     </div>
   );

@@ -2,23 +2,23 @@
 import { useEffect, useState } from 'react';
 import { LOG_TYPE_LABELS, LOG_TYPES, LogEntry, LogType } from '@/lib/types';
 
-const TYPE_CLASSES: Record<LogType, string> = {
-  note: 'bg-neutral-500/20 border-neutral-500/40 text-neutral-300',
-  outreach: 'bg-sky-500/20 border-sky-500/40 text-sky-300',
-  response: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300',
-  meeting: 'bg-violet-500/20 border-violet-500/40 text-violet-300',
-  status_change: 'bg-amber-500/20 border-amber-500/40 text-amber-300',
+const TYPE_STYLE: Record<LogType, React.CSSProperties> = {
+  note: { background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--text-muted)' },
+  outreach: { background: 'var(--accent-dim)', borderColor: 'var(--accent-line)', color: 'var(--accent)' },
+  response: { background: 'var(--up-dim)', borderColor: 'var(--up)', color: 'var(--up)' },
+  meeting: { background: 'oklch(70% 0.15 300 / 0.14)', borderColor: 'oklch(70% 0.15 300 / 0.4)', color: 'oklch(78% 0.12 300)' },
+  status_change: { background: 'var(--fire-dim)', borderColor: 'var(--fire-line)', color: 'var(--fire)' },
 };
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function followUpBadge(followUpAt: string) {
+function followUpBadge(followUpAt: string): { label: string; style: React.CSSProperties } {
   const overdue = followUpAt < todayISO();
   return overdue
-    ? { label: `Overdue ${followUpAt}`, className: 'bg-red-500/20 border-red-500/40 text-red-300' }
-    : { label: `Follow up ${followUpAt}`, className: 'bg-amber-500/20 border-amber-500/40 text-amber-300' };
+    ? { label: `Overdue ${followUpAt}`, style: { background: 'var(--down-dim)', borderColor: 'var(--down)', color: 'var(--down)' } }
+    : { label: `Follow up ${followUpAt}`, style: { background: 'var(--fire-dim)', borderColor: 'var(--fire-line)', color: 'var(--fire)' } };
 }
 
 export default function ActivityLog({ artistId }: { artistId: number }) {
@@ -82,7 +82,7 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
             ))}
           </select>
           <div className="flex items-center gap-2">
-            <label className="text-xs text-neutral-500 whitespace-nowrap">Follow up on</label>
+            <label className="text-xs whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>Follow up on</label>
             <input
               type="date"
               className="input w-auto"
@@ -103,23 +103,23 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
       </form>
 
       <div className="space-y-2">
-        {entries === null && <p className="text-sm text-neutral-500">Loading…</p>}
-        {entries?.length === 0 && <p className="text-sm text-neutral-500">No activity logged yet.</p>}
+        {entries === null && <p className="text-sm" style={{ color: 'var(--text-faint)' }}>Loading…</p>}
+        {entries?.length === 0 && <p className="text-sm" style={{ color: 'var(--text-faint)' }}>No activity logged yet.</p>}
         {entries?.map((entry) => (
-          <div key={entry.id} className="flex items-start justify-between gap-3 border-t border-neutral-800 pt-2">
+          <div key={entry.id} className="flex items-start justify-between gap-3 pt-2" style={{ borderTop: '1px solid var(--border-soft)' }}>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className={`badge ${TYPE_CLASSES[entry.type]}`}>{LOG_TYPE_LABELS[entry.type]}</span>
-                <span className="text-xs text-neutral-500">
+                <span className="badge" style={TYPE_STYLE[entry.type]}>{LOG_TYPE_LABELS[entry.type]}</span>
+                <span className="num text-xs" style={{ color: 'var(--text-faint)' }}>
                   {new Date(entry.created_at).toLocaleString()}
                   {entry.author ? ` · ${entry.author}` : ''}
                 </span>
                 {entry.follow_up_at && (
-                  <span className={`badge ${followUpBadge(entry.follow_up_at).className}`}>
+                  <span className="badge" style={followUpBadge(entry.follow_up_at).style}>
                     📅 {followUpBadge(entry.follow_up_at).label}
                     <button
                       type="button"
-                      className="ml-1 hover:text-white"
+                      className="ml-1 hover:opacity-70"
                       onClick={() => handleClearFollowUp(entry.id)}
                       aria-label="Mark follow-up done"
                     >
@@ -128,11 +128,12 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
                   </span>
                 )}
               </div>
-              <p className="text-sm text-neutral-200 mt-1 break-words">{entry.message}</p>
+              <p className="text-sm mt-1 break-words" style={{ color: 'var(--text)' }}>{entry.message}</p>
             </div>
             <button
               type="button"
-              className="text-neutral-500 hover:text-red-300 text-sm shrink-0"
+              className="text-sm shrink-0 hover:opacity-80"
+              style={{ color: 'var(--text-faint)' }}
               onClick={() => handleDelete(entry.id)}
               aria-label="Delete entry"
             >

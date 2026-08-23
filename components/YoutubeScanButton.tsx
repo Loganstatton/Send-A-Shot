@@ -45,7 +45,7 @@ export default function YoutubeScanButton() {
       <button type="button" className="btn text-sm" disabled={running} onClick={run}>
         {running ? 'Scanning…' : '🎥 Run YouTube scan now'}
       </button>
-      {result && <span className="text-sm text-neutral-400">{result}</span>}
+      {result && <span className="num text-sm" style={{ color: 'var(--text-muted)' }}>{result}</span>}
     </div>
   );
 }

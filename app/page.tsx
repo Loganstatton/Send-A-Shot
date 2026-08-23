@@ -79,7 +79,7 @@ export default async function DashboardPage() {
 
       {active.length === 0 && (
         <div className="card text-center py-12">
-          <p className="text-neutral-400">No artists tracked yet.</p>
+          <p style={{ color: 'var(--text-muted)' }}>No artists tracked yet.</p>
           <Link href="/artists/new" className="btn btn-primary mt-4 inline-flex">+ Add your first artist</Link>
         </div>
       )}
@@ -99,9 +99,9 @@ export default async function DashboardPage() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold truncate">{artist.name}</span>
                   <span className="badge">{STAGE_LABELS[artist.stage]}</span>
-                  {artist.genre && <span className="text-xs text-neutral-500">{artist.genre}</span>}
+                  {artist.genre && <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{artist.genre}</span>}
                 </div>
-                <div className="text-sm text-neutral-400 mt-1 flex gap-4 flex-wrap">
+                <div className="text-sm mt-1 flex gap-4 flex-wrap" style={{ color: 'var(--text-muted)' }}>
                   {artist.followers_count != null && <span className="num">{artist.followers_count.toLocaleString()} followers</span>}
                   {artist.growth_velocity_pct != null && <span className="num" style={{ color: 'var(--up)' }}>+{artist.growth_velocity_pct}%/mo</span>}
                   {artist.engagement_rate_pct != null && <span className="num">{artist.engagement_rate_pct}% engagement</span>}
@@ -116,7 +116,7 @@ export default async function DashboardPage() {
 
       {artists.some((a) => a.stage === 'passed') && (
         <details className="card">
-          <summary className="cursor-pointer text-neutral-400 text-sm">
+          <summary className="cursor-pointer text-sm" style={{ color: 'var(--text-muted)' }}>
             Passed ({artists.filter((a) => a.stage === 'passed').length})
           </summary>
           <div className="space-y-3 mt-3">
@@ -130,7 +130,7 @@ export default async function DashboardPage() {
         </details>
       )}
 
-      <div className="card text-sm text-neutral-400">
+      <div className="card text-sm" style={{ color: 'var(--text-muted)' }}>
         <p>
           <strong>Scout:</strong> internal tool for tracking emerging, unsigned artists and scoring
           their breakout potential before they build a professional team. Data is stored locally in

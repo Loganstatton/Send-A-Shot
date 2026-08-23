@@ -23,23 +23,26 @@ export default function FollowUpList({ initial }: { initial: DueFollowUp[] }) {
 
   return (
     <div className="card space-y-3">
-      <h2 className="font-semibold text-lg">📅 Due for follow-up</h2>
+      <h2 className="font-bold text-lg">📅 Due for follow-up</h2>
       <div className="space-y-2">
         {items.map((item) => {
           const overdue = item.follow_up_at < todayISO();
           return (
-            <div key={item.id} className="flex items-start justify-between gap-3 border-t border-neutral-800 pt-2">
+            <div key={item.id} className="flex items-start justify-between gap-3 pt-2" style={{ borderTop: '1px solid var(--border-soft)' }}>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Link href={`/artists/${item.artist_id}`} className="font-semibold hover:underline">
                     {item.artist_name}
                   </Link>
-                  <span className={`badge ${overdue ? 'bg-red-500/20 border-red-500/40 text-red-300' : 'bg-amber-500/20 border-amber-500/40 text-amber-300'}`}>
+                  <span
+                    className="num badge"
+                    style={overdue ? { background: 'var(--down-dim)', borderColor: 'var(--down)', color: 'var(--down)' } : { background: 'var(--fire-dim)', borderColor: 'var(--fire-line)', color: 'var(--fire)' }}
+                  >
                     {overdue ? 'Overdue' : 'Due'} {item.follow_up_at}
                   </span>
-                  <span className="text-xs text-neutral-500">{LOG_TYPE_LABELS[item.type]}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{LOG_TYPE_LABELS[item.type]}</span>
                 </div>
-                <p className="text-sm text-neutral-300 mt-1 break-words">{item.message}</p>
+                <p className="text-sm mt-1 break-words" style={{ color: 'var(--text-muted)' }}>{item.message}</p>
               </div>
               <button type="button" className="btn text-sm shrink-0" onClick={() => handleDone(item)}>
                 Mark done

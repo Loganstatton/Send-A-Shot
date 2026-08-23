@@ -64,7 +64,7 @@ export default async function DiscoveryPage() {
 
       {watching.length > 0 && (
         <details className="card">
-          <summary className="cursor-pointer text-neutral-400 text-sm">Watching ({watching.length})</summary>
+          <summary className="cursor-pointer text-sm" style={{ color: 'var(--text-muted)' }}>Watching ({watching.length})</summary>
           <div className="mt-3">
             <DiscoveryQueue initial={watching} />
           </div>
