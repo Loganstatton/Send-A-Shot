@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { heroGradient } from '@/components/next/heroGradient';
 
 // The Artist Detail hero. A featured_video_id (see lib/db.ts) shows as a
@@ -19,8 +19,29 @@ export default function VideoBanner({
   photoUrl?: string;
 }) {
   const [playing, setPlaying] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
   const initial = name.trim().charAt(0).toUpperCase() || '?';
   const boxClass = 'relative w-full h-[280px] md:h-[360px] rounded-[20px] overflow-hidden next-card';
+
+  const bgImageUrl = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : photoUrl;
+
+  // A broken/expired photo_url or an unavailable YouTube thumbnail both
+  // fail silently with a plain CSS background-image — there's no error
+  // signal to fall back on, so it just renders an empty box. A real <img>
+  // with onError gives us that signal instead. Reset per URL so navigating
+  // between artists (this component isn't remounted on client-side nav)
+  // doesn't carry a stale failure over to one whose image is fine.
+  useEffect(() => {
+    setImgFailed(false);
+    // The <img src> is present in the server-rendered HTML, so the browser
+    // can start loading — and failing — it before React finishes hydrating
+    // and attaches onError. A fast failure (DNS, connection refused) can
+    // fire and be missed entirely. Catch that race once, right after mount.
+    if (imgRef.current?.complete && imgRef.current.naturalWidth === 0) {
+      setImgFailed(true);
+    }
+  }, [bgImageUrl]);
 
   if (playing && videoId) {
     return (
@@ -36,25 +57,30 @@ export default function VideoBanner({
     );
   }
 
-  const bgImage = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : photoUrl;
+  const showImage = Boolean(bgImageUrl) && !imgFailed;
 
   return (
     <div
       className={`${boxClass} flex items-center justify-center`}
-      style={{
-        backgroundImage: bgImage ? `url(${bgImage})` : undefined,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        background: bgImage ? undefined : heroGradient(artistId),
-      }}
+      style={{ background: showImage ? undefined : heroGradient(artistId) }}
     >
-      {bgImage && (
-        <div
-          className="absolute inset-0"
-          style={{ background: 'linear-gradient(180deg, transparent 45%, oklch(15% 0.012 40 / 0.6))' }}
-        />
+      {showImage && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary external URL (Scout-entered photo, or a YouTube thumbnail), not a next/image candidate. */}
+          <img
+            ref={imgRef}
+            src={bgImageUrl}
+            alt={name}
+            className="absolute inset-0 w-full h-full object-cover"
+            onError={() => setImgFailed(true)}
+          />
+          <div
+            className="absolute inset-0"
+            style={{ background: 'linear-gradient(180deg, transparent 45%, oklch(15% 0.012 40 / 0.6))' }}
+          />
+        </>
       )}
-      {!bgImage && (
+      {!showImage && (
         <span className="relative font-display font-extrabold text-[110px]" style={{ color: 'oklch(96% 0.01 90 / 0.22)' }}>
           {initial}
         </span>
