@@ -354,6 +354,7 @@ tune scan size, cost, or which genres run:
 | `YOUTUBE_MOMENTUM_THRESHOLD` | 25 | Minimum Momentum Score (0–100) to become a candidate |
 | `YOUTUBE_COMMENTS_PER_CANDIDATE` | 20 | Top comments read (by relevance) per candidate for hype-sentiment detection |
 | `YOUTUBE_MAX_CANDIDATES_PER_RUN` | 25 | Caps both the Soundcharts-enrichment calls and how many new candidates one scan can add |
+| `YOUTUBE_DAILY_QUOTA_BUDGET` | 10,000 (YouTube's free-tier daily grant) | Self-imposed daily budget, tracked across discovery scans, the video backfill, and on-create lookups alike — a call that would exceed it is skipped locally (no request ever leaves the server) rather than left to fail with YouTube's own `quotaExceeded` error. See "Sync health" under `/admin` for live usage. Raise this only after Google approves a real increased-quota grant. |
 
 A channel that hides its subscriber count, or a video with likes/comments
 disabled, is never scored as if that number were 0 — the affected factor

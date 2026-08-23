@@ -6,6 +6,7 @@ import {
 } from '@/lib/db';
 import AdminTabs from '@/components/AdminTabs';
 import { SyncRun } from '@/lib/types';
+import { getYoutubeQuotaStatus, youtubeConfigured } from '@/lib/youtube';
 
 export const metadata: Metadata = { title: { absolute: 'Sync health — Scout' } };
 export const dynamic = 'force-dynamic';
@@ -50,6 +51,8 @@ export default async function AdminSyncPage() {
   const missingPreview = getArtistsMissingTopSong().length;
   const missingVideo = getArtistsMissingVideo().length;
   const unverifiedVideo = getUnverifiedVideoMatchCount();
+  const quota = youtubeConfigured() ? getYoutubeQuotaStatus() : null;
+  const quotaPct = quota ? Math.min(100, Math.round((quota.usedToday / quota.budget) * 100)) : 0;
 
   return (
     <div className="space-y-6">
@@ -69,6 +72,34 @@ export default async function AdminSyncPage() {
           <SyncRunSummary label="Deezer" run={deezer} />
           <SyncRunSummary label="YouTube video" run={youtube} />
         </div>
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-bold text-lg">YouTube quota (today, resets midnight Pacific)</h2>
+        {!quota ? (
+          <p className="text-sm" style={{ color: 'var(--text-faint)' }}>YouTube is not configured on this server.</p>
+        ) : (
+          <>
+            <div className="flex items-baseline justify-between">
+              <p className="num text-sm" style={{ color: quota.warning ? 'var(--down)' : 'var(--text-muted)' }}>
+                {quota.usedToday.toLocaleString()} / {quota.budget.toLocaleString()} units used
+                {quota.warning && ' — ⚠ approaching the daily limit'}
+              </p>
+              <p className="num text-sm" style={{ color: 'var(--text-faint)' }}>{quota.remaining.toLocaleString()} remaining</p>
+            </div>
+            <div className="w-full h-2 rounded-full" style={{ background: 'var(--surface-2)' }}>
+              <div
+                className="h-2 rounded-full"
+                style={{ width: `${quotaPct}%`, background: quota.warning ? 'var(--down)' : 'var(--accent)' }}
+              />
+            </div>
+            <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
+              Every search/channel/video lookup across discovery scans, the video backfill, and on-create lookups
+              is tracked here. Calls that would exceed the budget are skipped automatically rather than sent —
+              affected artists are left for the next run once quota resets.
+            </p>
+          </>
+        )}
       </div>
 
       <div className="card space-y-3">
