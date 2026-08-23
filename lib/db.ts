@@ -1336,6 +1336,56 @@ export function getPortfolioValue(userId: number): PortfolioValue {
   return { cashCents: user.next_credits_cents, holdingsValueCents, totalValueCents, totalReturnCents, totalReturnPct };
 }
 
+export type PortfolioValuePoint = { recorded_at: string; value_cents: number };
+
+// Reconstructs total portfolio value (cash + holdings) at every moment
+// something relevant happened — one of this user's own trades (which move
+// cash and share counts), or ANY trade on an artist they've ever held
+// (which moves that artist's next_price_history, same as every other
+// trader's fill does for everyone watching that artist's price chart).
+// That second part matters: a position's value should move with the
+// market even between the user's own trades, not just when they act.
+// Grouped by exact timestamp (not walked event-by-event with a cross-table
+// tiebreak) because a trade's own transaction row and its own price_history
+// row share the identical `now` used inside executeTrade's single
+// transaction — applying both before snapshotting is correct regardless of
+// which literal row is processed first.
+export function getPortfolioValueHistory(userId: number): PortfolioValuePoint[] {
+  const transactions = db
+    .prepare('SELECT artist_id, created_at, type, shares, credits_delta_cents FROM next_transactions WHERE user_id = ? ORDER BY created_at ASC, id ASC')
+    .all(userId) as { artist_id: number; created_at: string; type: NextTransactionType; shares: number; credits_delta_cents: number }[];
+  if (transactions.length === 0) return [];
+
+  const artistIds = [...new Set(transactions.map((t) => t.artist_id))];
+  const placeholders = artistIds.map(() => '?').join(', ');
+  const pricePoints = db
+    .prepare(`SELECT artist_id, recorded_at, price_cents FROM next_price_history WHERE artist_id IN (${placeholders}) ORDER BY recorded_at ASC, id ASC`)
+    .all(...artistIds) as { artist_id: number; recorded_at: string; price_cents: number }[];
+
+  const moments = new Map<string, { txs: typeof transactions; prices: typeof pricePoints }>();
+  const momentAt = (at: string) => moments.get(at) ?? (moments.set(at, { txs: [], prices: [] }), moments.get(at)!);
+  for (const t of transactions) momentAt(t.created_at).txs.push(t);
+  for (const p of pricePoints) momentAt(p.recorded_at).prices.push(p);
+
+  let cashCents = NEXT_STARTING_CREDITS_CENTS;
+  const sharesByArtist = new Map<number, number>();
+  const latestPriceByArtist = new Map<number, number>();
+
+  return [...moments.keys()].sort().map((at) => {
+    const m = moments.get(at)!;
+    for (const t of m.txs) {
+      cashCents += t.credits_delta_cents;
+      const delta = t.type === 'buy' ? t.shares : -t.shares;
+      sharesByArtist.set(t.artist_id, (sharesByArtist.get(t.artist_id) ?? 0) + delta);
+    }
+    for (const p of m.prices) latestPriceByArtist.set(p.artist_id, p.price_cents);
+
+    let holdingsValueCents = 0;
+    for (const [artistId, shares] of sharesByArtist) holdingsValueCents += shares * (latestPriceByArtist.get(artistId) ?? 0);
+    return { recorded_at: at, value_cents: Math.round(cashCents + holdingsValueCents) };
+  });
+}
+
 // Distinct artists ever backed — reads from next_founding_believers (never
 // updated/deleted after insert), so selling a position afterward doesn't
 // make it disappear from "artists backed."

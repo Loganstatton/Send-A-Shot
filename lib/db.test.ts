@@ -13,8 +13,8 @@ const {
   createSyncRun, createUser, db, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
   getArtistsWithSoundchartsLink, getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates,
   getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun,
-  getNewDiscoveryCandidateCount, getNextArtist, getRecentBackerCount, getRecentTradesForArtist, getScoreChanges,
-  getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist,
+  getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValueHistory, getRecentBackerCount, getRecentTradesForArtist,
+  getScoreChanges, getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist,
   getWatchCountsByArtist, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified,
   recordPreviewListen, setDiscoveryCandidateStatus, setWatchlistAlerts, updateArtist, updateUserProfile,
 } = await import('./db');
@@ -828,5 +828,51 @@ describe('Watchlist — since-you-added deltas, momentum sort, alert preferences
     expect(getUserWatchlist(user.id)[0].alertsEnabled).toBe(false);
     setWatchlistAlerts(user.id, artist.id, true);
     expect(getUserWatchlist(user.id)[0].alertsEnabled).toBe(true);
+  });
+});
+
+describe('Portfolio — value history reconstruction', () => {
+  it('returns an empty history for a user with no trades', () => {
+    const user = createUser({ name: 'No Trades', email: 'no-trades-history@example.com', password_hash: 'hash' });
+    expect(getPortfolioValueHistory(user.id)).toEqual([]);
+  });
+
+  it("reflects a price move from another trader on a held artist, not just the holder's own trades", () => {
+    const artist = makeArtist('Shared Price Artist');
+    const holder = createUser({ name: 'Holder', email: 'holder-history@example.com', password_hash: 'hash' });
+    const mover = createUser({ name: 'Mover', email: 'mover-history@example.com', password_hash: 'hash' });
+
+    const buy = executeTrade(holder.id, artist.id, 'buy', 100_000);
+    if (!buy.ok) throw new Error(buy.error);
+    const historyRightAfterOwnBuy = getPortfolioValueHistory(holder.id);
+    const valueRightAfterOwnBuy = historyRightAfterOwnBuy[historyRightAfterOwnBuy.length - 1].value_cents;
+
+    // Someone else moves the market on the same artist — the holder never trades again.
+    const moverBuy = executeTrade(mover.id, artist.id, 'buy', 500_000);
+    if (!moverBuy.ok) throw new Error(moverBuy.error);
+
+    const historyAfterMarketMove = getPortfolioValueHistory(holder.id);
+    const valueAfterMarketMove = historyAfterMarketMove[historyAfterMarketMove.length - 1].value_cents;
+
+    expect(historyAfterMarketMove.length).toBeGreaterThan(historyRightAfterOwnBuy.length);
+    expect(valueAfterMarketMove).toBeGreaterThan(valueRightAfterOwnBuy);
+  });
+
+  it('never shows a buy-then-sell round trip as profitable, same as the trading engine itself', () => {
+    const artist = makeArtist('Sell History Artist');
+    const trader = createUser({ name: 'Trader', email: 'trader-history@example.com', password_hash: 'hash' });
+
+    const buy = executeTrade(trader.id, artist.id, 'buy', 200_000);
+    if (!buy.ok) throw new Error(buy.error);
+    const afterBuy = getPortfolioValueHistory(trader.id);
+    const afterBuyValue = afterBuy[afterBuy.length - 1].value_cents;
+
+    const sell = executeTrade(trader.id, artist.id, 'sell', 100_000);
+    if (!sell.ok) throw new Error(sell.error);
+    const afterSell = getPortfolioValueHistory(trader.id);
+    const afterSellValue = afterSell[afterSell.length - 1].value_cents;
+
+    expect(afterSell.length).toBeGreaterThan(afterBuy.length);
+    expect(afterSellValue).toBeLessThanOrEqual(afterBuyValue);
   });
 });
