@@ -13,11 +13,13 @@ const {
   createSyncRun, createUser, db, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
   getArtistsWithSoundchartsLink, getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates,
   getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun,
-  getFavoriteGenres, getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue, getPortfolioValueHistory,
-  getRankMovements, getRecentBackerCount, getRecentTradesForArtist, getScoreChanges, getScoutLeaderboard,
-  getScoutProfile, getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist,
-  getWatchCountsByArtist, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified,
-  recordPreviewListen, setDiscoveryCandidateStatus, setWatchlistAlerts, updateArtist, updateUserProfile,
+  getFavoriteGenres, getMarketTradeCounts, getMarketVolumeCents, getMostActiveArtists, getNewArtistsThisWeek,
+  getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue, getPortfolioValueHistory, getRankMovements,
+  getRecentBackerCount, getRecentBackerCountsByArtist, getRecentMarketTrades, getRecentTradesForArtist,
+  getRecentWatchCountsByArtist, getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids,
+  getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
+  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified, recordPreviewListen,
+  setDiscoveryCandidateStatus, setWatchlistAlerts, updateArtist, updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -1011,5 +1013,112 @@ describe('Public Scout Profile — favorite genres, positions privacy toggle', (
     expect(shownProfile.positions).toHaveLength(1);
     expect(shownProfile.positions![0]).toMatchObject({ artist_id: artist.id, artist_name: 'Position Scout Artist' });
     expect(shownProfile.positions![0].shares).toBeCloseTo(buy.shares, 6);
+  });
+});
+
+describe('Market Activity — market-wide feed, volume, active/backed/watched, new artists', () => {
+  it('getRecentMarketTrades returns every artist\'s trades together, most recent first', () => {
+    const artistA = makeArtist('Market Feed Artist A');
+    const artistB = makeArtist('Market Feed Artist B');
+    const trader = createUser({ name: 'Market Feed Trader', email: 'market-feed@example.com', password_hash: 'hash' });
+
+    executeTrade(trader.id, artistA.id, 'buy', 10_000);
+    executeTrade(trader.id, artistB.id, 'buy', 20_000);
+
+    const trades = getRecentMarketTrades(10);
+    const names = trades.map((t) => t.artist_name);
+    expect(names).toContain('Market Feed Artist A');
+    expect(names).toContain('Market Feed Artist B');
+    expect(trades[0].artist_name).toBe('Market Feed Artist B'); // most recent first
+  });
+
+  it('getMarketVolumeCents and getMarketTradeCounts only count trades inside the window, across every artist', () => {
+    // Both queries are true market-wide aggregates with no per-test
+    // scoping, and this file shares one DB across ~120 tests that all run
+    // "now" — so asserting an exact count would really be asserting
+    // "nothing else in the whole suite traded in the last 24h," which
+    // isn't true. Instead this measures the DELTA this test's own trades
+    // cause, which holds regardless of what the rest of the suite did.
+    const before24h = getMarketTradeCounts(24);
+    const beforeVolume24h = getMarketVolumeCents(24);
+
+    const artistA = makeArtist('Volume Feed Artist A');
+    const artistB = makeArtist('Volume Feed Artist B');
+    const buyer = createUser({ name: 'Volume Feed Buyer', email: 'volume-feed-buyer@example.com', password_hash: 'hash' });
+    const seller = createUser({ name: 'Volume Feed Seller', email: 'volume-feed-seller@example.com', password_hash: 'hash' });
+
+    executeTrade(buyer.id, artistA.id, 'buy', 50_000);
+    const oldBuy = executeTrade(seller.id, artistB.id, 'buy', 40_000);
+    if (!oldBuy.ok) throw new Error(oldBuy.error);
+    executeTrade(seller.id, artistB.id, 'sell', 10_000);
+
+    // Push one artist's trade outside the 24h window entirely.
+    db.prepare("UPDATE next_transactions SET created_at = ? WHERE user_id = ? AND artist_id = ? AND type = 'buy'")
+      .run(new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(), seller.id, artistB.id);
+
+    const volume24h = getMarketVolumeCents(24);
+    const volumeAllTime = getMarketVolumeCents(24 * 365);
+    expect(volumeAllTime).toBeGreaterThan(volume24h);
+    // Only the artistA buy and the artistB sell remain inside the window —
+    // the backdated artistB buy dropped out.
+    expect(volume24h - beforeVolume24h).toBeGreaterThan(0);
+    expect(volume24h - beforeVolume24h).toBeLessThan(50_000 + 10_000);
+
+    const after24h = getMarketTradeCounts(24);
+    expect(after24h.buys - before24h.buys).toBe(1);
+    expect(after24h.sells - before24h.sells).toBe(1);
+  });
+
+  it('getMostActiveArtists ranks by trade count within the window', () => {
+    const busy = makeArtist('Busy Feed Artist');
+    const quiet = makeArtist('Quiet Feed Artist');
+    const trader = createUser({ name: 'Active Feed Trader', email: 'active-feed@example.com', password_hash: 'hash' });
+
+    executeTrade(trader.id, busy.id, 'buy', 10_000);
+    executeTrade(trader.id, busy.id, 'buy', 10_000);
+    executeTrade(trader.id, busy.id, 'buy', 10_000);
+    executeTrade(trader.id, quiet.id, 'buy', 10_000);
+
+    // A generous limit: by this point in the suite many other tests have
+    // traded other artists in the last 24h too, so a small limit could
+    // legitimately push either of these two out of a top-10.
+    const active = getMostActiveArtists(24, 1000);
+    const busyEntry = active.find((a) => a.artist_id === busy.id)!;
+    const quietEntry = active.find((a) => a.artist_id === quiet.id)!;
+    expect(busyEntry.tradeCount).toBe(3);
+    expect(quietEntry.tradeCount).toBe(1);
+    expect(active.indexOf(busyEntry)).toBeLessThan(active.indexOf(quietEntry));
+  });
+
+  it('getRecentBackerCountsByArtist and getRecentWatchCountsByArtist count distinct recent activity per artist', () => {
+    const artist = makeArtist('Recent Counts Artist');
+    const alice = createUser({ name: 'Alice Counts', email: 'alice-counts@example.com', password_hash: 'hash' });
+    const bob = createUser({ name: 'Bob Counts', email: 'bob-counts@example.com', password_hash: 'hash' });
+
+    executeTrade(alice.id, artist.id, 'buy', 10_000);
+    executeTrade(alice.id, artist.id, 'buy', 10_000); // same backer again — still counts once
+    executeTrade(bob.id, artist.id, 'buy', 10_000);
+    addToWatchlist(alice.id, artist.id);
+    addToWatchlist(bob.id, artist.id);
+
+    expect(getRecentBackerCountsByArtist(24)[artist.id]).toBe(2);
+    expect(getRecentWatchCountsByArtist(24)[artist.id]).toBe(2);
+  });
+
+  it('getNewArtistsThisWeek excludes artists older than the window and passed artists', () => {
+    const freshArtist = makeArtist('Fresh This Week Artist');
+    const oldArtist = makeArtist('Old Artist');
+    db.prepare('UPDATE artists SET created_at = ? WHERE id = ?')
+      .run(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), oldArtist.id);
+    const passedArtist = createArtist({
+      name: 'Passed This Week Artist', stage: 'passed', music_talent: 8, growth_velocity_pct: 32, engagement_rate_pct: 16,
+      original_song_response: 8, brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8,
+    });
+
+    const fresh = getNewArtistsThisWeek(7);
+    const names = fresh.map((a) => a.name);
+    expect(names).toContain('Fresh This Week Artist');
+    expect(names).not.toContain('Old Artist');
+    expect(names).not.toContain('Passed This Week Artist');
   });
 });

@@ -2,6 +2,28 @@
 // documented here and echoed in the UI, per the "the algorithm has an
 // opinion, the market has an opinion, you decide who's right" design.
 
+import type { NextPricePoint } from './types';
+
+// % price change over a rolling window — the "Trending today" sort's own
+// math, factored out so DiscoverGrid and the Market Activity page compute
+// "biggest movers" identically instead of two slightly different formulas.
+// Falls back to the earliest known point when nothing falls inside the
+// window (a quiet artist's price hasn't moved recently, not "unknown").
+export function changePctForWindow(priceCents: number, priceHistory: NextPricePoint[], hours: number): number {
+  const cutoff = Date.now() - hours * 60 * 60 * 1000;
+  const inWindow = priceHistory.filter((p) => new Date(p.recorded_at).getTime() >= cutoff);
+  const first = inWindow[0]?.price_cents ?? priceHistory[0]?.price_cents ?? priceCents;
+  return first !== 0 ? ((priceCents - first) / first) * 100 : 0;
+}
+
+// % change since the earliest recorded price — "since this artist joined
+// NEXT," the default (non-windowed) reading DiscoverGrid's price sparkline
+// and gain/loss sorts use.
+export function changePctSinceListing(priceCents: number, priceHistory: NextPricePoint[]): number {
+  const first = priceHistory[0]?.price_cents ?? priceCents;
+  return first !== 0 ? ((priceCents - first) / first) * 100 : 0;
+}
+
 export const NEXT_STARTING_CREDITS_CENTS = 1_000_000; // $10,000.00 in NEXT Credits
 export const NEXT_MIN_PRICE_CENTS = 100; // price floor: $1.00
 
