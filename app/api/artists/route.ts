@@ -29,9 +29,17 @@ export async function POST(req: Request) {
   // API error) just leaves top_song_url empty for the batch sync to try
   // again later.
   if (!artist.top_song_url) {
-    const result = await getTopSongForArtist(artist.name).catch(() => null);
+    const result = await getTopSongForArtist(artist.name).catch((err) => {
+      console.error('[deezer-lookup] on-create lookup threw for', artist.name, err?.message);
+      return null;
+    });
     if (result?.ok) {
       artist = updateArtist(artist.id, result.data as ArtistInput) ?? artist;
+    } else if (result) {
+      // Logged (not silently dropped) so a Scout wondering why a real
+      // artist's top song didn't fill in on creation can check Render's
+      // logs instead of only seeing an empty field with no explanation.
+      console.log('[deezer-lookup] on-create lookup found no top song for', artist.name, `(${result.reason})`, result.error ?? '');
     }
   }
 
