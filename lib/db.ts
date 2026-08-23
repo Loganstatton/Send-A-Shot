@@ -222,6 +222,7 @@ addColumnIfMissing('agreements', 'touring_commission_pct REAL');
 addColumnIfMissing('agreements', 'masters_owned_by TEXT');
 addColumnIfMissing('users', "role TEXT NOT NULL DEFAULT 'public'");
 addColumnIfMissing('users', 'next_credits_cents INTEGER NOT NULL DEFAULT 1000000');
+addColumnIfMissing('users', 'next_onboarded_at TEXT');
 addColumnIfMissing('artists', 'next_current_price_cents INTEGER');
 addColumnIfMissing('artists', 'photo_url TEXT');
 addColumnIfMissing('artists', 'bio TEXT');
@@ -562,7 +563,7 @@ export function getDueFollowUps(): DueFollowUp[] {
   `).all() as DueFollowUp[];
 }
 
-const USER_COLUMNS = 'id, created_at, name, email, role, next_credits_cents';
+const USER_COLUMNS = 'id, created_at, name, email, role, next_credits_cents, next_onboarded_at';
 
 // New accounts always start as 'public' — internal/admin is never
 // self-selected, only granted via setUserRole (an admin) or the
@@ -597,6 +598,15 @@ export function getAllUsers(): User[] {
 export function setUserRole(userId: number, role: Role): User | undefined {
   const info = db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
   if (info.changes === 0) return undefined;
+  return getUserById(userId);
+}
+
+// Marks the first-login NEXT walkthrough as seen. Idempotent by design —
+// once set, it's never cleared or re-triggered automatically, so a user
+// only ever sees the full walkthrough once (contextual InfoTips are how
+// they get reminded of what a term means after that).
+export function completeNextOnboarding(userId: number): User | undefined {
+  db.prepare('UPDATE users SET next_onboarded_at = ? WHERE id = ? AND next_onboarded_at IS NULL').run(new Date().toISOString(), userId);
   return getUserById(userId);
 }
 

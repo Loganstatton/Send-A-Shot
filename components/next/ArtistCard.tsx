@@ -7,6 +7,7 @@ import ScoreGapBar from '@/components/next/ScoreGapBar';
 import PriceSparkline from '@/components/next/PriceSparkline';
 import WatchButton from '@/components/next/WatchButton';
 import { heroGradient } from '@/components/next/heroGradient';
+import InfoTip from '@/components/next/InfoTip';
 
 export default function ArtistCard({
   row,
@@ -86,8 +87,12 @@ export default function ArtistCard({
               <span className="text-[11px] font-mono" style={{ color: 'var(--text-faint)' }}>SCORE</span>
               <span className="num text-sm font-bold">{score.toFixed(0)}</span>
             </div>
-            <div className="flex-1">
+            <div className="flex-1 flex items-center gap-1.5">
               <ScoreGapBar score={score} sentiment={sentiment} />
+              <InfoTip
+                label="NEXT Score vs. Price"
+                text="Score is our read on real momentum. Price is what the market currently pays. When Score runs ahead of Price, the artist is undervalued."
+              />
             </div>
           </div>
 
