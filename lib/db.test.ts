@@ -11,10 +11,11 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 const {
   addToWatchlist, approveDiscoveryCandidate, completeDiscoveryRun, completeSyncRun, createArtist, createDiscoveryRun,
   createSyncRun, createUser, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
-  getArtistsWithSoundchartsLink, getDiscoveryCandidates, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds,
-  getLatestDiscoveryRun, getLatestSyncRun, getNewDiscoveryCandidateCount, getNextArtist, getTrackedSoundchartsUuids,
-  getUserById, getUserPasswordHash, insertDiscoveryCandidate, isWatchlisted, markEmailVerified,
-  setDiscoveryCandidateStatus, updateArtist, updateUserProfile,
+  getArtistsWithSoundchartsLink, getBackerCountsByArtist, getDiscoveryCandidates, getKnownDiscoveryUuids,
+  getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun, getNewDiscoveryCandidateCount,
+  getNextArtist, getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getWatchCountsByArtist,
+  insertDiscoveryCandidate, isWatchlisted, markEmailVerified, setDiscoveryCandidateStatus, updateArtist,
+  updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -619,5 +620,33 @@ describe('Account management', () => {
     // so re-fetching the artist directly is the real assertion here: it
     // must still exist — deleting a trader must never delete the artist.
     expect(getArtist(artist.id)).toBeTruthy();
+  });
+});
+
+describe('Discover aggregates — watch/backer counts', () => {
+  it('getWatchCountsByArtist counts distinct watchers per artist, not per watchlist row', () => {
+    const artist = makeArtist('Watched Artist');
+    const other = makeArtist('Unwatched Artist');
+    const alice = createUser({ name: 'Alice', email: 'alice-watch@example.com', password_hash: 'hash' });
+    const bob = createUser({ name: 'Bob', email: 'bob-watch@example.com', password_hash: 'hash' });
+    addToWatchlist(alice.id, artist.id);
+    addToWatchlist(bob.id, artist.id);
+
+    const counts = getWatchCountsByArtist();
+    expect(counts[artist.id]).toBe(2);
+    expect(counts[other.id] ?? 0).toBe(0);
+  });
+
+  it('getBackerCountsByArtist only counts users currently holding shares (> 0)', () => {
+    const artist = makeArtist('Backed Artist');
+    const holder = createUser({ name: 'Holder', email: 'holder@example.com', password_hash: 'hash' });
+    const soldOut = createUser({ name: 'Sold Out', email: 'soldout@example.com', password_hash: 'hash' });
+
+    executeTrade(holder.id, artist.id, 'buy', 50_000);
+    executeTrade(soldOut.id, artist.id, 'buy', 50_000);
+    executeTrade(soldOut.id, artist.id, 'sell', 999_999_999); // sell everything back out
+
+    const counts = getBackerCountsByArtist();
+    expect(counts[artist.id]).toBe(1);
   });
 });
