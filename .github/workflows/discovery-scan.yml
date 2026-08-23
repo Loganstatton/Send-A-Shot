@@ -1,0 +1,66 @@
+name: Daily discovery scan
+
+# Automates what used to require clicking three buttons by hand: find new
+# YouTube candidates, fill in top songs, refresh Soundcharts stats. All
+# three endpoints already existed for exactly this (see README) — this is
+# just the "point a scheduler at them" step, since Render's web services
+# have no built-in cron.
+#
+# New candidates still land in the New Candidates queue for a human to
+# Approve/Watch/Pass — nothing here auto-adds an artist to the roster or
+# NEXT. A Momentum Score can measure disproportionate view counts; it
+# can't tell whether someone can actually sing. That judgment stays human.
+#
+# One-time setup required (this workflow does nothing without it):
+#   Repo Settings -> Secrets and variables -> Actions -> New repository secret
+#   Name: CRON_SECRET
+#   Value: the exact same value set as CRON_SECRET in Render's Environment tab
+#
+# Runs at 10:00 UTC daily — safely after YouTube's quota resets at
+# midnight Pacific (07:00 or 08:00 UTC depending on DST), so the scan
+# always starts with a full day's quota. Also runnable on demand from the
+# Actions tab (workflow_dispatch) without waiting for the schedule.
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch: {}
+
+env:
+  APP_URL: https://send-a-shot.onrender.com
+
+jobs:
+  scan-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run YouTube discovery scan
+        run: |
+          status=$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST "$APP_URL/api/discovery/scan-youtube" \
+            -H "x-cron-secret: $CRON_SECRET")
+          cat /tmp/response.json
+          echo
+          echo "HTTP $status"
+          [ "$status" -lt 400 ]
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Sync Deezer top songs
+        run: |
+          status=$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST "$APP_URL/api/deezer/sync" \
+            -H "x-cron-secret: $CRON_SECRET")
+          cat /tmp/response.json
+          echo
+          echo "HTTP $status"
+          [ "$status" -lt 400 ]
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Sync Soundcharts stats
+        run: |
+          status=$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST "$APP_URL/api/soundcharts/sync" \
+            -H "x-cron-secret: $CRON_SECRET")
+          cat /tmp/response.json
+          echo
+          echo "HTTP $status"
+          [ "$status" -lt 400 ]
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

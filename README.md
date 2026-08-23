@@ -226,6 +226,20 @@ work fine on the current plan.
 echo "CRON_SECRET=$(openssl rand -hex 32)" >> .env.local
 ```
 
+**A scheduler is already set up for you** — `.github/workflows/discovery-scan.yml`
+runs the YouTube scan, Deezer sync, and Soundcharts sync once a day via
+GitHub Actions, free, nothing to sign up for. It just needs the same
+`CRON_SECRET` value in two places:
+1. Set `CRON_SECRET` in Render's Environment tab (the value above).
+2. Add a repository secret with the *same* value: repo Settings → Secrets
+   and variables → Actions → New repository secret → name it
+   `CRON_SECRET`.
+
+That's it — no need to set up a third-party cron service or Render's own
+cron tier unless you'd rather. Trigger a run manually any time from the
+repo's Actions tab (the workflow also supports `workflow_dispatch`)
+instead of waiting for the daily schedule.
+
 ### YouTube Discovery source
 
 Finds candidates on YouTube, and separately uses Soundcharts (search +
@@ -358,6 +372,8 @@ below 55 pass. See `lib/scoring.ts`.
 
 ## Project Structure
 ```
+.github/workflows/   # discovery-scan.yml — daily GitHub Actions cron for
+                     # scan-youtube + deezer/sync + soundcharts/sync
 app/                 # Next.js app router
   page.tsx           # Scout dashboard (internal)
   screener/          # Scout portfolio/ROI screener (internal)
