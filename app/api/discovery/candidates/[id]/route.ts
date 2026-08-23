@@ -27,9 +27,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // Artist flow — a candidate becoming a real artist is another "an
     // artist enters the roster" moment, so it gets the same treatment.
     if (!artist.top_song_url) {
-      const result = await getTopSongForArtist(artist.name).catch(() => null);
+      const result = await getTopSongForArtist(artist.name).catch((err) => {
+        console.error('[deezer-lookup] on-approve lookup threw for', artist!.name, err?.message);
+        return null;
+      });
       if (result?.ok) {
         artist = updateArtist(artist.id, result.data as ArtistInput) ?? artist;
+      } else if (result) {
+        console.log('[deezer-lookup] on-approve lookup found no top song for', artist.name, `(${result.reason})`, result.error ?? '');
       }
     }
 

@@ -38,6 +38,11 @@ export async function POST(req: Request) {
         // mean something actually broke.
         if (result.reason === 'no_artist_match' || result.reason === 'no_top_track') {
           noMatchCount++;
+          // Previously silent — made it impossible to tell which specific
+          // artists (a famous one shouldn't ever land here) got "no match"
+          // vs which genuinely have no Deezer presence, without guessing
+          // from the aggregate count alone.
+          console.log('[deezer-sync] no match for', artist.name, `(${result.reason})`);
         } else {
           errorCount++;
           lastError = result.error;
