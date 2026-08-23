@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { executeTrade } from '@/lib/db';
+import { executeTrade, logEvent } from '@/lib/db';
 import { getSessionUser } from '@/lib/auth';
 import { NextTransactionType } from '@/lib/types';
 
@@ -23,5 +23,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const result = executeTrade(user.id, artistId, body.type, body.credits_amount_cents!);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  logEvent(user.id, body.type === 'buy' ? 'buy_completed' : 'sell_completed', { artistId, creditsAmountCents: body.credits_amount_cents });
   return NextResponse.json(result);
 }

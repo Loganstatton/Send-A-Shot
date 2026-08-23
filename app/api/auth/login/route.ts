@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getUserByEmail } from '@/lib/db';
+import { getUserByEmail, logEvent, recordLogin } from '@/lib/db';
 import { setSessionCookie, verifyPassword } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +23,8 @@ export async function POST(req: Request) {
   }
 
   setSessionCookie(user.id);
+  const { returning } = recordLogin(user.id);
+  if (returning) logEvent(user.id, 'session_returned');
   const { password_hash, ...publicUser } = user;
   return NextResponse.json(publicUser);
 }

@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 import {
   getArtist, getArtistTradeVolumeCents, getBackerCountsByArtist, getFoundingBelieverCountForArtist,
   getFoundingBelieverRecord, getHolding, getNextArtist, getRecentBackerCount, getRecentTradesForArtist,
-  getScoreHistory, getWatchCountsByArtist, isWatchlisted,
+  getScoreHistory, getWatchCountsByArtist, isWatchlisted, logEvent,
 } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
@@ -37,6 +37,7 @@ export default async function NextArtistPage({ params }: { params: { id: string 
   if (!Number.isInteger(id)) notFound();
   const row = getNextArtist(id);
   if (!row) notFound();
+  logEvent(user.id, 'artist_detail_opened', { artistId: id });
 
   const { artist, score, priceCents, priceHistory } = row;
   const sentiment = marketSentiment(score, priceCents);

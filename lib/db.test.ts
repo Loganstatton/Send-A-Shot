@@ -9,18 +9,19 @@ import { describe, expect, it } from 'vitest';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
 const {
-  addToWatchlist, approveDiscoveryCandidate, completeDiscoveryRun, completeSyncRun, createArtist, createDiscoveryRun,
-  createSyncRun, createUser, db, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
-  getArtistsWithSoundchartsLink, getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates,
-  getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun,
-  getFavoriteGenres, getMarketTradeCounts, getMarketVolumeCents, getMostActiveArtists, getNewArtistsThisWeek,
-  getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue, getPortfolioValueHistory, getRankMovements,
-  getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentMarketTrades,
-  getRecentTradesForArtist, getRecentWatchCountsByArtist, getScoreChanges, getScoutLeaderboard, getScoutProfile,
-  getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
-  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified, markNotificationRead,
-  markNotificationsRead, recordPreviewListen, setDiscoveryCandidateStatus, setNotificationsEmailedThrough,
-  setWatchlistAlerts, updateArtist, updateUserProfile,
+  addToWatchlist, approveDiscoveryCandidate, completeDiscoveryRun, completeNextOnboarding, completeSyncRun,
+  createArtist, createDiscoveryRun, createSyncRun, createUser, db, deleteUser, executeTrade, getArtist,
+  getArtistsMissingTopSong, getArtistsWithSoundchartsLink, getArtistTradeVolumeCents, getBackerCountsByArtist,
+  getDiscoveryCandidates, getEventCountsByType, getFavoriteGenres, getKnownDiscoveryUuids,
+  getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun, getMarketTradeCounts,
+  getMarketVolumeCents, getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist,
+  getPortfolioValue, getPortfolioValueHistory, getRankMovements, getReadNotificationKeys, getRecentBackerCount,
+  getRecentBackerCountsByArtist, getRecentEventsForUser, getRecentMarketTrades, getRecentTradesForArtist,
+  getRecentWatchCountsByArtist, getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids,
+  getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
+  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, logArtistCardViews, logEvent, markEmailVerified,
+  markNotificationRead, markNotificationsRead, recordLogin, recordPreviewListen, setDiscoveryCandidateStatus,
+  setNotificationsEmailedThrough, setWatchlistAlerts, updateArtist, updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -1172,5 +1173,70 @@ describe('Notification center — read-state persistence and preference columns'
     expect(updated.notify_new_artists).toBe(false);
     expect(updated.email_notifications_enabled).toBe(true);
     expect(updated.notify_founding_believer).toBe(true); // untouched fields stay as they were
+  });
+});
+
+describe('Product analytics — event logging', () => {
+  it('logEvent records the event type and JSON metadata, most recent first', () => {
+    const user = createUser({ name: 'Event User', email: 'event-user@example.com', password_hash: 'hash' });
+    logEvent(user.id, 'watchlist_added', { artistId: 42 });
+    logEvent(user.id, 'artist_detail_opened', { artistId: 42 });
+
+    const events = getRecentEventsForUser(user.id);
+    expect(events).toHaveLength(2);
+    expect(events[0].event_type).toBe('artist_detail_opened'); // most recent first
+    expect(events[0].metadata).toEqual({ artistId: 42 });
+    expect(events[1].event_type).toBe('watchlist_added');
+  });
+
+  it('logEvent with no metadata stores a null metadata field, not an empty object', () => {
+    const user = createUser({ name: 'No Metadata User', email: 'no-metadata@example.com', password_hash: 'hash' });
+    logEvent(user.id, 'discover_viewed');
+    expect(getRecentEventsForUser(user.id)[0].metadata).toBeNull();
+  });
+
+  it('logArtistCardViews writes one artist_card_viewed row per artist id', () => {
+    const user = createUser({ name: 'Card View User', email: 'card-view@example.com', password_hash: 'hash' });
+    logArtistCardViews(user.id, [1, 2, 3]);
+    const events = getRecentEventsForUser(user.id);
+    expect(events).toHaveLength(3);
+    expect(events.every((e) => e.event_type === 'artist_card_viewed')).toBe(true);
+    expect(events.map((e) => (e.metadata as any).artistId).sort()).toEqual([1, 2, 3]);
+  });
+
+  it('logArtistCardViews is a no-op for an empty artist list', () => {
+    const user = createUser({ name: 'Empty Card View User', email: 'empty-card-view@example.com', password_hash: 'hash' });
+    logArtistCardViews(user.id, []);
+    expect(getRecentEventsForUser(user.id)).toHaveLength(0);
+  });
+
+  it('getEventCountsByType reflects newly logged events (measured as a delta, not an exact global count — this file shares one DB across the whole suite)', () => {
+    const before = getEventCountsByType();
+    const user = createUser({ name: 'Count User', email: 'count-user@example.com', password_hash: 'hash' });
+    logEvent(user.id, 'video_played', { artistId: 1 });
+    logEvent(user.id, 'video_played', { artistId: 2 });
+    const after = getEventCountsByType();
+    expect((after.video_played ?? 0) - (before.video_played ?? 0)).toBe(2);
+  });
+
+  it('recordLogin reports returning:false on the first login and returning:true afterward, stamping last_login_at each time', () => {
+    const user = createUser({ name: 'Login User', email: 'login-user@example.com', password_hash: 'hash' });
+    expect(getUserById(user.id)!.last_login_at).toBeFalsy();
+
+    const first = recordLogin(user.id);
+    expect(first.returning).toBe(false);
+    expect(getUserById(user.id)!.last_login_at).toBeTruthy();
+
+    const second = recordLogin(user.id);
+    expect(second.returning).toBe(true);
+  });
+
+  it('completeNextOnboarding logs onboarding_completed exactly once, even if called again (idempotent)', () => {
+    const user = createUser({ name: 'Onboarding User', email: 'onboarding-user@example.com', password_hash: 'hash' });
+    completeNextOnboarding(user.id);
+    completeNextOnboarding(user.id); // already onboarded — the WHERE guard makes this a no-op
+
+    const events = getRecentEventsForUser(user.id).filter((e) => e.event_type === 'onboarding_completed');
+    expect(events).toHaveLength(1);
   });
 });

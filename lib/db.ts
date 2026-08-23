@@ -7,11 +7,12 @@ import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nex
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
-  Agreement, AgreementInput, Artist, ArtistInput, DiscoveryCandidate, DiscoveryCandidateStatus, DiscoveryRun,
-  DiscoverySourceKey, DueFollowUp, FavoriteGenre, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry,
-  InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry, LogEntryInput, NextHolding, NextMarketRow,
-  NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput, RevenueSource,
-  Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutProfile, SyncRun, SyncSourceKey, User, WatchlistEntry,
+  AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistInput, DiscoveryCandidate,
+  DiscoveryCandidateStatus, DiscoveryRun, DiscoverySourceKey, DueFollowUp, FavoriteGenre, FoundingBelieverRecord,
+  GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
+  LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
+  RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutProfile,
+  SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -174,6 +175,26 @@ CREATE TABLE IF NOT EXISTS notification_reads (
   UNIQUE(user_id, notification_key)
 );
 CREATE INDEX IF NOT EXISTS idx_notification_reads_user ON notification_reads(user_id);
+-- Generic product-analytics event log — every event type in
+-- AnalyticsEventType (lib/types.ts) writes here through logEvent(), one
+-- row per occurrence. user_id is nullable and ON DELETE SET NULL so a
+-- deleted account doesn't erase historical funnel counts, same reasoning
+-- as contact_log's user_id. metadata is a small JSON blob (artist_id,
+-- search term, filter name, etc.) — deliberately loose/schemaless rather
+-- than a column per event type, since the event shapes vary. Two things
+-- this table does NOT duplicate: preview_listens already covers
+-- audio_preview_started/completed in more detail (listened-before-buy
+-- attribution needs the per-artist table anyway), so those two event
+-- types are read from there, not written here.
+CREATE TABLE IF NOT EXISTS analytics_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  event_type TEXT NOT NULL,
+  metadata TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_user ON analytics_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type);
 -- One row per preview play/complete — the "listen" half of NEXT's music
 -- experience. 'started' fires each time playback begins (including a
 -- replay); 'completed' fires when it reaches the natural end or the 30s
@@ -273,6 +294,11 @@ addColumnIfMissing('users', 'notify_portfolio_milestones INTEGER NOT NULL DEFAUL
 addColumnIfMissing('users', 'notify_leaderboard_rank INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'email_notifications_enabled INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'notifications_emailed_through TEXT');
+// Set on every successful login (see recordLogin below) — the "session
+// returned" analytics event fires exactly when this was already non-null
+// before the current login, i.e. a real returning session, not the very
+// first one right after signup.
+addColumnIfMissing('users', 'last_login_at TEXT');
 addColumnIfMissing('artists', 'next_current_price_cents INTEGER');
 addColumnIfMissing('artists', 'photo_url TEXT');
 addColumnIfMissing('artists', 'bio TEXT');
@@ -622,7 +648,7 @@ export function getDueFollowUps(): DueFollowUp[] {
 const USER_COLUMNS =
   'id, created_at, name, email, role, next_credits_cents, next_onboarded_at, avatar_url, email_verified_at, tos_accepted_at, privacy_accepted_at, ' +
   'show_positions_publicly, notify_watchlist_moves, notify_new_artists, notify_founding_believer, notify_portfolio_milestones, ' +
-  'notify_leaderboard_rank, email_notifications_enabled, notifications_emailed_through';
+  'notify_leaderboard_rank, email_notifications_enabled, notifications_emailed_through, last_login_at';
 
 const BOOLEAN_USER_COLUMNS = [
   'show_positions_publicly', 'notify_watchlist_moves', 'notify_new_artists', 'notify_founding_believer',
@@ -778,7 +804,11 @@ export function setUserRole(userId: number, role: Role): User | undefined {
 // only ever sees the full walkthrough once (contextual InfoTips are how
 // they get reminded of what a term means after that).
 export function completeNextOnboarding(userId: number): User | undefined {
-  db.prepare('UPDATE users SET next_onboarded_at = ? WHERE id = ? AND next_onboarded_at IS NULL').run(new Date().toISOString(), userId);
+  const info = db.prepare('UPDATE users SET next_onboarded_at = ? WHERE id = ? AND next_onboarded_at IS NULL').run(new Date().toISOString(), userId);
+  // Only a genuine first completion (the WHERE guard actually matched)
+  // counts as the analytics event — a client retrying this idempotent call
+  // shouldn't inflate the funnel.
+  if (info.changes > 0) logEvent(userId, 'onboarding_completed');
   return getUserById(userId);
 }
 
@@ -1813,6 +1843,57 @@ export function getFoundingBelieverRecordsForUser(
     WHERE next_founding_believers.user_id = ?
     ORDER BY next_founding_believers.purchased_at DESC
   `).all(userId) as (FoundingBelieverRecord & { artist_name: string; artist_photo_url?: string })[];
+}
+
+// --- Product analytics ---
+
+// One row per occurrence — see the analytics_events table comment for what
+// this does and doesn't cover. userId is nullable (a signed-out event isn't
+// possible today since every tracked action requires a session, but the
+// column allows for one without a migration later).
+export function logEvent(userId: number | null, eventType: AnalyticsEventType, metadata?: Record<string, unknown>): void {
+  db.prepare('INSERT INTO analytics_events (user_id, event_type, metadata, created_at) VALUES (?, ?, ?, ?)')
+    .run(userId, eventType, metadata ? JSON.stringify(metadata) : null, new Date().toISOString());
+}
+
+// Logs the same artist_card_viewed event once per artist currently on
+// Discover — see the Discover page for why this counts as "viewed" rather
+// than true scroll-based impression tracking (no client-side observer/API
+// round trip per card; one batched write per page load instead).
+export function logArtistCardViews(userId: number, artistIds: number[]): void {
+  if (artistIds.length === 0) return;
+  const insert = db.prepare('INSERT INTO analytics_events (user_id, event_type, metadata, created_at) VALUES (?, ?, ?, ?)');
+  const now = new Date().toISOString();
+  db.transaction(() => {
+    for (const artistId of artistIds) insert.run(userId, 'artist_card_viewed', JSON.stringify({ artistId }), now);
+  })();
+}
+
+function parseEventRow(row: { id: number; user_id: number | null; event_type: string; metadata: string | null; created_at: string }): AnalyticsEvent {
+  return { ...row, event_type: row.event_type as AnalyticsEventType, metadata: row.metadata ? JSON.parse(row.metadata) : null };
+}
+
+// All-time count per event type — the simplest possible read side, enough
+// to verify events are actually being recorded. The MVP metrics dashboard
+// (funnels, conversion rates, retention) is its own, later checklist item;
+// this one is scoped to tracking, not analyzing.
+export function getEventCountsByType(): Record<AnalyticsEventType, number> {
+  const rows = db.prepare('SELECT event_type, COUNT(*) AS c FROM analytics_events GROUP BY event_type').all() as { event_type: AnalyticsEventType; c: number }[];
+  return Object.fromEntries(rows.map((r) => [r.event_type, r.c])) as Record<AnalyticsEventType, number>;
+}
+
+export function getRecentEventsForUser(userId: number, limit = 50): AnalyticsEvent[] {
+  return (db.prepare('SELECT * FROM analytics_events WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?').all(userId, limit) as any[]).map(parseEventRow);
+}
+
+// Stamps last_login_at and reports whether this is a RETURNING session —
+// true only when the user already had a last_login_at before this call,
+// i.e. not their very first login right after signup. The caller decides
+// whether to log session_returned from that (see app/api/auth/login).
+export function recordLogin(userId: number): { returning: boolean } {
+  const before = getUserById(userId);
+  db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(new Date().toISOString(), userId);
+  return { returning: Boolean(before?.last_login_at) };
 }
 
 // --- Discovery Engine ---

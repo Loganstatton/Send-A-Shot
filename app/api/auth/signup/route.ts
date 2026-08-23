@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createUser, getUserByEmail } from '@/lib/db';
+import { createUser, getUserByEmail, logEvent } from '@/lib/db';
 import { createActionToken, hashPassword, setSessionCookie } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
 
@@ -43,6 +43,7 @@ export async function POST(req: Request) {
   const password_hash = await hashPassword(password);
   const user = createUser({ name, email, password_hash });
   setSessionCookie(user.id);
+  logEvent(user.id, 'signup_completed');
 
   // Best-effort — never blocks account creation. Without RESEND_API_KEY
   // configured, sendEmail logs the link instead of delivering it (see
