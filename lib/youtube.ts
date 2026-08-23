@@ -115,6 +115,59 @@ export async function searchRecentMusicVideos(
   return { ok: true, data: hits };
 }
 
+// Strips punctuation/case and common channel-name noise ("- Topic", VEVO)
+// so "Ed Sheeran" lines up with both "Ed Sheeran" and "EdSheeranVEVO".
+function normalizeChannelName(name: string): string {
+  return name
+    .replace(/\s*-\s*topic$/i, '')
+    .replace(/\bvevo\b/gi, '')
+    .replace(/\bofficial\b/gi, '')
+    .replace(/[^a-z0-9]/gi, '')
+    .toLowerCase();
+}
+
+// One-off "find this artist's video" lookup — distinct from
+// searchRecentMusicVideos above, which is deliberately date-ordered and
+// time-boxed for discovery scans. Here the artist is already known (a
+// Scout just added them, or an existing artist has no video yet), so the
+// bias flips: order by relevance and don't restrict to recent uploads —
+// the goal is their best/most representative video, not a signal of
+// recent momentum.
+export async function searchArtistVideo(artistName: string): Promise<YoutubeResult<YoutubeVideoHit | null>> {
+  const result = await youtubeFetch('/search', {
+    part: 'snippet',
+    q: `${artistName} official video`,
+    type: 'video',
+    videoCategoryId: '10', // Music
+    order: 'relevance',
+    safeSearch: 'none',
+    maxResults: '5',
+  });
+  if (!result.ok) return result;
+
+  const items = Array.isArray(result.data?.items) ? result.data.items : [];
+  const hits: YoutubeVideoHit[] = items
+    .map((item: any) => ({
+      videoId: item?.id?.videoId,
+      channelId: item?.snippet?.channelId,
+      channelTitle: item?.snippet?.channelTitle,
+      title: item?.snippet?.title,
+      publishedAt: item?.snippet?.publishedAt,
+      thumbnailUrl: item?.snippet?.thumbnails?.medium?.url ?? item?.snippet?.thumbnails?.default?.url,
+    }))
+    .filter((h: YoutubeVideoHit) => h.videoId && h.channelId);
+
+  if (hits.length === 0) return { ok: true, data: null };
+
+  // Prefer a hit whose channel name matches the artist (their own upload —
+  // an official artist channel, VEVO, or a label channel bearing their
+  // name) over YouTube's raw top relevance hit, which is often a reaction
+  // video, cover, or unrelated compilation that just matches the query text.
+  const normalized = normalizeChannelName(artistName);
+  const ownChannel = hits.find((h) => normalizeChannelName(h.channelTitle).includes(normalized) || normalized.includes(normalizeChannelName(h.channelTitle)));
+  return { ok: true, data: ownChannel ?? hits[0] };
+}
+
 export type YoutubeVideoStats = {
   videoId: string;
   viewCount?: number;

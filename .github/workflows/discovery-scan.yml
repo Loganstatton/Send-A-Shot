@@ -1,10 +1,10 @@
 name: Daily discovery scan
 
-# Automates what used to require clicking three buttons by hand: find new
-# YouTube candidates, fill in top songs, refresh Soundcharts stats. All
-# three endpoints already existed for exactly this (see README) — this is
-# just the "point a scheduler at them" step, since Render's web services
-# have no built-in cron.
+# Automates what used to require clicking buttons by hand: find new
+# YouTube candidates, fill in top songs, backfill missing featured videos,
+# refresh Soundcharts stats. All these endpoints already existed for
+# exactly this (see README) — this is just the "point a scheduler at them"
+# step, since Render's web services have no built-in cron.
 #
 # New candidates still land in the New Candidates queue for a human to
 # Approve/Watch/Pass — nothing here auto-adds an artist to the roster or
@@ -46,6 +46,17 @@ jobs:
       - name: Sync Deezer top songs
         run: |
           status=$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST "$APP_URL/api/deezer/sync" \
+            -H "x-cron-secret: $CRON_SECRET")
+          cat /tmp/response.json
+          echo
+          echo "HTTP $status"
+          [ "$status" -lt 400 ]
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Backfill missing featured videos
+        run: |
+          status=$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST "$APP_URL/api/youtube/sync-videos" \
             -H "x-cron-secret: $CRON_SECRET")
           cat /tmp/response.json
           echo

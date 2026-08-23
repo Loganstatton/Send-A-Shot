@@ -3,6 +3,7 @@ import { createArtist, getAllArtists, updateArtist } from '@/lib/db';
 import { getInternalUser } from '@/lib/auth';
 import { ArtistInput } from '@/lib/types';
 import { getTopSongForArtist } from '@/lib/deezer';
+import { searchArtistVideo, youtubeConfigured } from '@/lib/youtube';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,22 @@ export async function POST(req: Request) {
       // artist's top song didn't fill in on creation can check Render's
       // logs instead of only seeing an empty field with no explanation.
       console.log('[deezer-lookup] on-create lookup found no top song for', artist.name, `(${result.reason})`, result.error ?? '');
+    }
+  }
+
+  // Same best-effort, one-time lookup for the featured video — a manually
+  // added artist otherwise sits with a blank NEXT hero forever, since
+  // (unlike Deezer's top song) nothing else ever fills this in for them.
+  // Never blocks or fails artist creation.
+  if (!artist.featured_video_id && youtubeConfigured()) {
+    const result = await searchArtistVideo(artist.name).catch((err) => {
+      console.error('[youtube-lookup] on-create lookup threw for', artist.name, err?.message);
+      return null;
+    });
+    if (result?.ok && result.data) {
+      artist = updateArtist(artist.id, { featured_video_id: result.data.videoId } as ArtistInput) ?? artist;
+    } else if (result && !result.ok) {
+      console.log('[youtube-lookup] on-create lookup failed for', artist.name, result.error);
     }
   }
 

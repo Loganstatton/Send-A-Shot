@@ -519,7 +519,7 @@ export type SyncRunStatus = 'running' | 'completed' | 'failed';
 // source key for this before Spotify's Client Credentials flow started
 // 403ing on every call for new apps — old rows keep that value, nothing
 // new writes it.)
-export type SyncSourceKey = 'soundcharts' | 'deezer' | 'spotify';
+export type SyncSourceKey = 'soundcharts' | 'deezer' | 'spotify' | 'youtube_video';
 
 // One row per sync run — same "last run: X ago" visibility as DiscoveryRun
 // above, so an automated daily sync that silently starts failing (bad
