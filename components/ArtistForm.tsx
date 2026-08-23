@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { breakoutScore, engagementQualityScore, growthVelocityScore } from '@/lib/scoring';
 import { Artist, ArtistInput, SCORE_LABELS, SCORE_WEIGHTS, STAGES, STAGE_LABELS, ScoreInputs } from '@/lib/types';
+import { parseYoutubeVideoId } from '@/lib/youtube-url';
 import ScoreBadge from './ScoreBadge';
 import SoundchartsSearch from './SoundchartsSearch';
 
@@ -49,6 +50,7 @@ export default function ArtistForm({ artist }: Props) {
     song_preview_url: artist?.song_preview_url ?? '',
     why_trending: artist?.why_trending ?? '',
     soundcharts_uuid: artist?.soundcharts_uuid ?? undefined,
+    featured_video_id: artist?.featured_video_id ?? '',
   }));
 
   const liveGrowthScore = growthVelocityScore(form.growth_velocity_pct);
@@ -84,10 +86,16 @@ export default function ArtistForm({ artist }: Props) {
     try {
       const url = artist ? `/api/artists/${artist.id}` : '/api/artists';
       const method = artist ? 'PATCH' : 'POST';
+      const payload = {
+        ...form,
+        // Accept a pasted watch/share/shorts URL as well as a bare ID —
+        // normalize to just the ID before it's stored.
+        featured_video_id: form.featured_video_id ? parseYoutubeVideoId(form.featured_video_id) ?? form.featured_video_id : form.featured_video_id,
+      };
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Save failed');
       const saved = await res.json();
@@ -164,6 +172,11 @@ export default function ArtistForm({ artist }: Props) {
           <div>
             <label className="label">Why they&apos;re trending</label>
             <input className="input" value={form.why_trending ?? ''} onChange={(e) => set('why_trending', e.target.value)} placeholder="One line — shown right on the card" />
+          </div>
+          <div>
+            <label className="label">Featured video</label>
+            <input className="input" value={form.featured_video_id ?? ''} onChange={(e) => set('featured_video_id', e.target.value)} placeholder="YouTube link — plays behind their NEXT profile" />
+            <p className="text-xs text-neutral-500 mt-1">✓ Filled automatically when approved from a YouTube discovery candidate — paste a link to override it</p>
           </div>
         </div>
         <div>

@@ -221,6 +221,11 @@ addColumnIfMissing('artists', 'top_song_url TEXT');
 addColumnIfMissing('artists', 'song_preview_url TEXT');
 addColumnIfMissing('artists', 'why_trending TEXT');
 addColumnIfMissing('artists', 'soundcharts_uuid TEXT');
+// The YouTube video ID (not a full URL) to embed as NEXT's Artist Detail
+// hero — set automatically from a YouTube-discovery candidate's
+// yt_video_id on approval (see approveDiscoveryCandidate below), or by a
+// Scout pasting a link in the Add/Edit Artist form for any other artist.
+addColumnIfMissing('artists', 'featured_video_id TEXT');
 // discovery_runs originally only ever meant a Soundcharts scan; `source`
 // distinguishes it from a YouTube scan run, `quota_used` is a rough count
 // of external API calls spent (search/videos/channels for YouTube) so a
@@ -517,6 +522,7 @@ const WRITABLE_FIELDS = [
   'music_talent', 'original_song_response',
   'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
   'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending', 'soundcharts_uuid',
+  'featured_video_id',
 ] as const;
 
 // growth_velocity and engagement_quality are deliberately NOT writable
@@ -1550,6 +1556,7 @@ export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | un
       growth_velocity_pct: candidate.growth_30d_pct,
       soundcharts_uuid: candidate.soundcharts_uuid,
       why_trending: candidate.flagged_reason,
+      featured_video_id: candidate.yt_video_id,
     },
     actor
   );
