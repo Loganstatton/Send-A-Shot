@@ -8,6 +8,7 @@ import ScoreBadge from '@/components/ScoreBadge';
 import FollowUpList from '@/components/FollowUpList';
 import SyncAllButton from '@/components/SyncAllButton';
 import DeezerSyncButton from '@/components/DeezerSyncButton';
+import YoutubeVideoSyncButton from '@/components/YoutubeVideoSyncButton';
 
 export const metadata: Metadata = { title: { absolute: 'Scout — Early Artist Discovery' } };
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,7 @@ export default async function DashboardPage() {
   const dueFollowUps = getDueFollowUps();
   const lastSync = getLatestSyncRun('soundcharts');
   const lastDeezerSync = getLatestSyncRun('deezer');
+  const lastVideoSync = getLatestSyncRun('youtube_video');
 
   const active = artists.filter((a) => a.stage !== 'passed');
   const fire = active.filter((a) => a.score >= 85).length;
@@ -47,6 +49,7 @@ export default async function DashboardPage() {
         <div className="flex flex-col items-start gap-2">
           <SyncAllButton />
           <DeezerSyncButton />
+          <YoutubeVideoSyncButton />
         </div>
         <div className="text-right space-y-1">
           {lastSync && (
@@ -69,6 +72,23 @@ export default async function DashboardPage() {
                       <span style={{ color: 'var(--down)' }}>
                         {' '}{lastDeezerSync.error_count} lookup error{lastDeezerSync.error_count === 1 ? '' : 's'}
                         {lastDeezerSync.last_error ? ` (${lastDeezerSync.last_error})` : ''}.
+                      </span>
+                    )}
+                  </>}
+            </p>
+          )}
+          {lastVideoSync && (
+            <p className="num text-xs" style={{ color: 'var(--text-faint)' }}>
+              Last video backfill: {new Date(lastVideoSync.started_at).toLocaleString()} —{' '}
+              {lastVideoSync.status === 'failed'
+                ? <span style={{ color: 'var(--down)' }}>failed: {lastVideoSync.error}</span>
+                : <>
+                    checked {lastVideoSync.checked_count}, updated {lastVideoSync.updated_count}.
+                    {(lastVideoSync.no_match_count ?? 0) > 0 && ` ${lastVideoSync.no_match_count} no video match.`}
+                    {(lastVideoSync.error_count ?? 0) > 0 && (
+                      <span style={{ color: 'var(--down)' }}>
+                        {' '}{lastVideoSync.error_count} lookup error{lastVideoSync.error_count === 1 ? '' : 's'}
+                        {lastVideoSync.last_error ? ` (${lastVideoSync.last_error})` : ''}.
                       </span>
                     )}
                   </>}

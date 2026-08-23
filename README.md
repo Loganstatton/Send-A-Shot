@@ -208,6 +208,41 @@ people) versus an **actual lookup error** (a real API call failed — worth
 investigating, since a real artist unexpectedly getting no match usually
 means this, not a genuine absence from Deezer).
 
+### Featured video on NEXT's Artist Detail hero
+
+Every NEXT Artist Detail page plays a `featured_video_id` (a YouTube video)
+behind the hero if one's set, falling back to `photo_url`, then to a plain
+gradient+initial. Artists that came in through the YouTube discovery
+scan already have one — the video that got them flagged carries straight
+over on Approve. Manually added artists didn't, until now: they had no
+video source to pull from at all, so the hero just sat blank unless a
+Scout went and pasted a YouTube link into the "Featured video" field by
+hand.
+
+Same two-path shape as the Deezer top-song lookup above, searching
+YouTube for `"<artist name> official video"` and preferring a hit whose
+channel name actually matches the artist over an unrelated top-relevance
+result (a reaction video, a cover, etc.):
+- **Immediately, once, when an artist enters the roster** — adding an
+  artist by hand (`/artists/new`) triggers a one-time best-effort lookup,
+  same as the Deezer one. Never blocks or fails the creation itself.
+- **In a batch, for anyone still missing one** — `POST /api/youtube/sync-videos`
+  looks up every artist still missing a `featured_video_id` and fills one
+  in. Triggered the same two ways as the other sync jobs:
+  - **Manually** — the "Backfill missing videos" button on the Scout
+    dashboard (`/`).
+  - **On a schedule** — point the same external scheduler at:
+    ```
+    POST https://<your-app>/api/youtube/sync-videos
+    Header: x-cron-secret: <the CRON_SECRET value>
+    ```
+    (reuses the same `CRON_SECRET` as the other scheduled syncs; needs
+    `YOUTUBE_API_KEY` configured, same as the discovery scan)
+
+Once `featured_video_id` is filled — by either path, or typed in by a
+Scout — it's never silently overwritten; clear the field to have sync
+fill it again.
+
 ### Optional: Discovery Engine (finds artists for you)
 
 **YouTube is the only active discovery source.** Soundcharts *can* also
@@ -227,8 +262,8 @@ echo "CRON_SECRET=$(openssl rand -hex 32)" >> .env.local
 ```
 
 **A scheduler is already set up for you** — `.github/workflows/discovery-scan.yml`
-runs the YouTube scan, Deezer sync, and Soundcharts sync once a day via
-GitHub Actions, free, nothing to sign up for. It just needs the same
+runs the YouTube scan, Deezer sync, video backfill, and Soundcharts sync
+once a day via GitHub Actions, free, nothing to sign up for. It just needs the same
 `CRON_SECRET` value in two places:
 1. Set `CRON_SECRET` in Render's Environment tab (the value above).
 2. Add a repository secret with the *same* value: repo Settings → Secrets

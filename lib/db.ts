@@ -1275,6 +1275,16 @@ export function getArtistsMissingTopSong(): { id: number; name: string }[] {
     .all() as { id: number; name: string }[];
 }
 
+// Same "touch everyone, but only fill what's missing" shape as
+// getArtistsMissingTopSong — a video a Scout picked by hand (or a
+// discovery-approval video) is never silently overwritten; clear the
+// field to have sync fill it again.
+export function getArtistsMissingVideo(): { id: number; name: string }[] {
+  return db
+    .prepare("SELECT id, name FROM artists WHERE featured_video_id IS NULL OR featured_video_id = ''")
+    .all() as { id: number; name: string }[];
+}
+
 // Candidates already reviewed (watching/approved/passed) for a name are
 // skipped on future scans too — a "no thanks" from a Scout should stick,
 // not reappear every day just because the artist is still growing.
