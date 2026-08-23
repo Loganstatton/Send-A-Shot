@@ -2,22 +2,87 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Scout's own design tokens — cool, dense, "research terminal" to NEXT's
+   warm consumer brand (see app/next/next-theme.css for that side). Global,
+   not scoped: every /next page fully overrides these via .next-theme, so
+   there's no cross-contamination the other direction. */
 :root {
-  --bg: #0b0b0c;
-  --card: #131316;
-  --muted: #9aa0a6;
+  --bg: oklch(14% 0.014 240);
+  --bg-2: oklch(11.5% 0.014 240);
+  --surface: oklch(19% 0.016 240);
+  --surface-2: oklch(24% 0.018 240);
+  --border: oklch(42% 0.02 240 / 0.55);
+  --border-soft: oklch(42% 0.02 240 / 0.3);
+  --text: oklch(95% 0.006 240);
+  --text-muted: oklch(70% 0.02 240);
+  --text-faint: oklch(50% 0.02 240);
+  --accent: oklch(78% 0.13 220);
+  --accent-dim: oklch(78% 0.13 220 / 0.14);
+  --accent-line: oklch(78% 0.13 220 / 0.4);
+  --on-accent: oklch(14% 0.02 240);
+  --up: oklch(76% 0.17 152);
+  --up-dim: oklch(76% 0.17 152 / 0.14);
+  --down: oklch(64% 0.20 19);
+  --down-dim: oklch(64% 0.20 19 / 0.14);
+  --fire: oklch(68% 0.19 30);
+  --fire-dim: oklch(68% 0.19 30 / 0.14);
+  --fire-line: oklch(68% 0.19 30 / 0.4);
+  --font-body: var(--font-scout-sans), system-ui, sans-serif;
+  --font-mono: var(--font-scout-mono), ui-monospace, 'SF Mono', monospace;
 }
+
 html, body, #__next { height: 100%; }
-body { background: var(--bg); color: white; }
-a { color: #60a5fa; }
-.container { max-width: 72rem; margin: 0 auto; padding: 0 1rem; }
-.card { background: var(--card); border-radius: 0.75rem; padding: 1rem; border: 1px solid #262629; }
-.btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 0.5rem; padding: 0.5rem 1rem; font-weight: 500; background: rgba(255,255,255,0.08); transition: background 0.2s; }
-.btn:hover { background: rgba(255,255,255,0.16); }
-.btn-primary { background: #3b82f6; }
-.btn-primary:hover { background: #2563eb; }
-.input { width: 100%; border-radius: 0.5rem; background: rgba(0,0,0,0.3); border: 1px solid #3f3f46; padding: 0.5rem 0.75rem; outline: none; }
-.input:focus { box-shadow: 0 0 0 2px #3b82f6; }
-.label { display: block; font-size: 0.875rem; color: #cbd5e1; margin-bottom: 0.25rem; }
-.badge { display: inline-flex; gap: 0.5rem; align-items: center; font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 0.375rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); }
-.slider { width: 100%; accent-color: #3b82f6; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-body); }
+a { color: var(--accent); }
+.num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+.container { max-width: 76rem; margin: 0 auto; padding: 0 1.25rem; }
+
+.card { background: var(--surface); border-radius: 10px; padding: 1rem; border: 1px solid var(--border-soft); }
+/* Deliberately more restrained than NEXT's card-hover (no lift/shadow) —
+   a utilitarian tool should feel that way in its interactions too, not
+   like a consumer product. */
+.card-hover { transition: border-color 0.15s ease, background 0.15s ease; }
+.card-hover:hover { border-color: var(--border); background: var(--surface-2); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn:hover { background: var(--surface); border-color: var(--border); }
+.btn-primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+.btn-primary:hover { filter: brightness(1.08); background: var(--accent); }
+
+.input {
+  width: 100%;
+  border-radius: 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-soft);
+  padding: 0.5rem 0.75rem;
+  outline: none;
+  color: var(--text);
+}
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+
+.label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.badge {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+}
+
+.slider { width: 100%; accent-color: var(--accent); }

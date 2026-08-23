@@ -253,9 +253,9 @@ export default function ArtistForm({ artist }: Props) {
           professionalism/commercial potential count least). Growth Velocity and Engagement Quality aren't
           rated here anymore — they're computed from the real numbers in Metrics above.
         </p>
-        <div className="flex items-center gap-4 text-sm border border-neutral-800 rounded-lg px-4 py-3">
-          <span className="text-neutral-400">Growth Velocity <strong className="text-white">{liveGrowthScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.growth_velocity}%</span>
-          <span className="text-neutral-400">Engagement Quality <strong className="text-white">{liveEngagementScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.engagement_quality}%</span>
+        <div className="flex items-center gap-4 text-sm rounded-lg px-4 py-3" style={{ border: '1px solid var(--border-soft)' }}>
+          <span className="num" style={{ color: 'var(--text-muted)' }}>Growth Velocity <strong style={{ color: 'var(--text)' }}>{liveGrowthScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.growth_velocity}%</span>
+          <span className="num" style={{ color: 'var(--text-muted)' }}>Engagement Quality <strong style={{ color: 'var(--text)' }}>{liveEngagementScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.engagement_quality}%</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
           {RATED_SCORE_FIELDS.map((field) => (

@@ -29,13 +29,17 @@ export default async function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Fastest Rising Artists</h1>
-          <p className="text-neutral-400 text-sm">Sorted by Breakout Score. Get to them before anyone else does.</p>
+          <h1 className="text-2xl font-bold">Fastest Rising Artists</h1>
+          <p className="text-sm" style={{ color: 'var(--text-faint)' }}>Sorted by Breakout Score. Get to them before anyone else does.</p>
         </div>
-        <div className="flex gap-3">
-          <div className="badge">Tracked: {active.length}</div>
-          <div className="badge">🔥 Ready to contact: {fire}</div>
-          <div className="badge">👀 Watching: {watch}</div>
+        <div className="flex gap-2">
+          <div className="badge"><span className="num">{active.length}</span> tracked</div>
+          <div className="badge" style={{ background: 'var(--fire-dim)', borderColor: 'var(--fire-line)', color: 'var(--fire)' }}>
+            🔥 <span className="num">{fire}</span> ready to contact
+          </div>
+          <div className="badge" style={{ background: 'var(--accent-dim)', borderColor: 'var(--accent-line)', color: 'var(--accent)' }}>
+            👀 <span className="num">{watch}</span> watching
+          </div>
         </div>
       </div>
 
@@ -46,23 +50,23 @@ export default async function DashboardPage() {
         </div>
         <div className="text-right space-y-1">
           {lastSync && (
-            <p className="text-xs text-neutral-500">
+            <p className="num text-xs" style={{ color: 'var(--text-faint)' }}>
               Last Soundcharts sync: {new Date(lastSync.started_at).toLocaleString()} —{' '}
               {lastSync.status === 'failed'
-                ? <span className="text-red-400">failed: {lastSync.error}</span>
+                ? <span style={{ color: 'var(--down)' }}>failed: {lastSync.error}</span>
                 : `checked ${lastSync.checked_count}, updated ${lastSync.updated_count}${lastSync.failed_count > 0 ? `, ${lastSync.failed_count} failed` : ''}`}
             </p>
           )}
           {lastDeezerSync && (
-            <p className="text-xs text-neutral-500">
+            <p className="num text-xs" style={{ color: 'var(--text-faint)' }}>
               Last Deezer sync: {new Date(lastDeezerSync.started_at).toLocaleString()} —{' '}
               {lastDeezerSync.status === 'failed'
-                ? <span className="text-red-400">failed: {lastDeezerSync.error}</span>
+                ? <span style={{ color: 'var(--down)' }}>failed: {lastDeezerSync.error}</span>
                 : <>
                     checked {lastDeezerSync.checked_count}, updated {lastDeezerSync.updated_count}.
                     {(lastDeezerSync.no_match_count ?? 0) > 0 && ` ${lastDeezerSync.no_match_count} no Deezer match.`}
                     {(lastDeezerSync.error_count ?? 0) > 0 && (
-                      <span className="text-red-400">
+                      <span style={{ color: 'var(--down)' }}>
                         {' '}{lastDeezerSync.error_count} lookup error{lastDeezerSync.error_count === 1 ? '' : 's'}
                         {lastDeezerSync.last_error ? ` (${lastDeezerSync.last_error})` : ''}.
                       </span>
@@ -87,10 +91,10 @@ export default async function DashboardPage() {
           <Link
             key={artist.id}
             href={`/artists/${artist.id}`}
-            className="card flex items-center justify-between gap-4 hover:border-neutral-600 transition-colors"
+            className="card card-hover flex items-center justify-between gap-4"
           >
             <div className="flex items-center gap-4 min-w-0">
-              <span className="text-neutral-500 font-mono text-sm w-6 shrink-0">#{idx + 1}</span>
+              <span className="num text-sm w-6 shrink-0" style={{ color: 'var(--text-faint)' }}>#{idx + 1}</span>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold truncate">{artist.name}</span>
@@ -98,9 +102,9 @@ export default async function DashboardPage() {
                   {artist.genre && <span className="text-xs text-neutral-500">{artist.genre}</span>}
                 </div>
                 <div className="text-sm text-neutral-400 mt-1 flex gap-4 flex-wrap">
-                  {artist.followers_count != null && <span>{artist.followers_count.toLocaleString()} followers</span>}
-                  {artist.growth_velocity_pct != null && <span>+{artist.growth_velocity_pct}%/mo</span>}
-                  {artist.engagement_rate_pct != null && <span>{artist.engagement_rate_pct}% engagement</span>}
+                  {artist.followers_count != null && <span className="num">{artist.followers_count.toLocaleString()} followers</span>}
+                  {artist.growth_velocity_pct != null && <span className="num" style={{ color: 'var(--up)' }}>+{artist.growth_velocity_pct}%/mo</span>}
+                  {artist.engagement_rate_pct != null && <span className="num">{artist.engagement_rate_pct}% engagement</span>}
                   {artist.created_by_name && <span>Added by {artist.created_by_name}</span>}
                 </div>
               </div>
@@ -117,7 +121,7 @@ export default async function DashboardPage() {
           </summary>
           <div className="space-y-3 mt-3">
             {artists.filter((a) => a.stage === 'passed').map((artist) => (
-              <Link key={artist.id} href={`/artists/${artist.id}`} className="card flex items-center justify-between gap-4 opacity-60 hover:opacity-100">
+              <Link key={artist.id} href={`/artists/${artist.id}`} className="card card-hover flex items-center justify-between gap-4 opacity-60 hover:opacity-100">
                 <span className="font-semibold">{artist.name}</span>
                 <ScoreBadge score={artist.score} size="sm" />
               </Link>

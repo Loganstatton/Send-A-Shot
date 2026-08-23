@@ -13,8 +13,8 @@ export default async function AdminUsersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Manage users</h1>
-        <p className="text-neutral-400 text-sm">
+        <h1 className="text-2xl font-bold">Manage users</h1>
+        <p className="text-sm" style={{ color: 'var(--text-faint)' }}>
           Grant Scout (internal) or Admin access. New signups always start as Public — this is the
           only way roles change.
         </p>

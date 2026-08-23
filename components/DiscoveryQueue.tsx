@@ -35,7 +35,7 @@ export default function DiscoveryQueue({ initial }: { initial: DiscoveryCandidat
   if (items.length === 0) {
     return (
       <div className="card text-center py-12">
-        <p className="text-neutral-400">No new candidates right now. Run a scan, or check back after the next one.</p>
+        <p style={{ color: 'var(--text-muted)' }}>No new candidates right now. Run a scan, or check back after the next one.</p>
       </div>
     );
   }
@@ -52,15 +52,15 @@ export default function DiscoveryQueue({ initial }: { initial: DiscoveryCandidat
                 <span className="font-semibold">{c.name}</span>
                 <span className="badge text-xs">{c.source === 'youtube' ? '🎥 YouTube' : '🎵 Soundcharts'}</span>
                 {c.soundcharts_uuid && c.source === 'youtube' && <span className="badge text-xs">🔗 Soundcharts matched</span>}
-                {c.country && <span className="text-xs text-neutral-500">{c.country}</span>}
+                {c.country && <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{c.country}</span>}
               </div>
-              <p className="text-sm text-emerald-400 mt-1">{c.flagged_reason}</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--accent)' }}>{c.flagged_reason}</p>
               {c.yt_example_comment_2 && (
-                <p className="text-xs text-neutral-400 mt-1">
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
                   💬 &ldquo;{c.yt_example_comment_2}&rdquo; ({c.yt_example_comment_2_likes ?? 0} like{c.yt_example_comment_2_likes === 1 ? '' : 's'})
                 </p>
               )}
-              <div className="text-xs text-neutral-500 mt-1 flex gap-3 flex-wrap">
+              <div className="num text-xs mt-1 flex gap-3 flex-wrap" style={{ color: 'var(--text-faint)' }}>
                 {c.followers_count != null && <span>{c.followers_count.toLocaleString()} Spotify followers</span>}
                 {c.yt_view_count != null && <span>{c.yt_view_count.toLocaleString()} YouTube views</span>}
                 {c.yt_channel_subscriber_count != null && <span>{c.yt_channel_subscriber_count.toLocaleString()} subscribers</span>}
