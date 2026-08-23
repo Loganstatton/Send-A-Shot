@@ -121,13 +121,18 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
           </div>
         )}
         {founded.map((f) => (
-          <Link key={f.id} href={`/next/artists/${f.artist_id}`} className="next-card next-card-hover flex items-center gap-4 px-5 py-4">
+          <Link
+            key={f.id}
+            href={isOwnProfile ? `/next/artists/${f.artist_id}/founding-believer` : `/next/artists/${f.artist_id}`}
+            className="next-card next-card-hover flex items-center gap-4 px-5 py-4"
+          >
             <ArtistAvatar name={f.artist_name} photoUrl={f.artist_photo_url} />
             <div className="min-w-0 flex-1">
               <div className="font-display font-semibold truncate">{f.artist_name}</div>
               <div className="text-sm" style={{ color: 'var(--text-faint)' }}>
                 Backed {new Date(f.purchased_at).toLocaleDateString()}
                 {f.followers_count != null && ` · ${f.followers_count.toLocaleString()} followers then`}
+                {isOwnProfile && ' · View full receipt →'}
               </div>
             </div>
             {f.discovery_rank <= EARLY_DISCOVERY_RANK_THRESHOLD && (

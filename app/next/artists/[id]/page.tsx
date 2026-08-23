@@ -9,7 +9,7 @@ import {
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
 import { scoreContributors } from '@/lib/scoring';
-import { timeAgo } from '@/lib/format';
+import { formatCents, timeAgo } from '@/lib/format';
 import AudioPreview from '@/components/AudioPreview';
 import SpotifyPreview from '@/components/SpotifyPreview';
 import PriceChart from '@/components/PriceChart';
@@ -162,7 +162,7 @@ export default async function NextArtistPage({ params }: { params: { id: string 
           <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--gold-dim)', border: '1px solid var(--gold-line)' }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth={2}><path d="M8 21h8M12 17v4M17 5V3H7v2M17 5a5 5 0 0 1-5 5 5 5 0 0 1-5-5M17 5h2a2 2 0 0 1-2 4M7 5H5a2 2 0 0 0 2 4" /></svg>
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="m-0 font-display font-bold text-[14.5px]" style={{ color: 'var(--gold)' }}>Founding Believer</p>
             <p className="mt-[3px] mb-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
               You backed {artist.name} on {new Date(foundingRecord.purchased_at).toLocaleDateString()}
@@ -171,7 +171,19 @@ export default async function NextArtistPage({ params }: { params: { id: string 
               )}
               . You were backer <strong style={{ color: 'var(--text)' }}>#{foundingRecord.discovery_rank}</strong>. This stays true even if you sell.
             </p>
+            <p className="mt-1.5 mb-0 text-xs" style={{ color: 'var(--text-faint)' }}>
+              Score <span className="num">{foundingRecord.next_score.toFixed(0)}</span> then → <span className="num">{score.toFixed(0)}</span> now
+              {' · '}
+              Price <span className="num">{formatCents(foundingRecord.next_price_cents)}</span> then → <span className="num">{formatCents(priceCents)}</span> now
+            </p>
           </div>
+          <Link
+            href={`/next/artists/${id}/founding-believer`}
+            className="next-btn-primary text-xs px-3.5 py-2 rounded-lg shrink-0 whitespace-nowrap"
+            style={{ background: 'var(--gold)', color: 'oklch(15% 0.02 90)' }}
+          >
+            View receipt
+          </Link>
         </div>
       )}
 
