@@ -159,6 +159,21 @@ CREATE TABLE IF NOT EXISTS next_watchlist (
   UNIQUE(user_id, artist_id)
 );
 CREATE INDEX IF NOT EXISTS idx_next_watchlist_user ON next_watchlist(user_id);
+-- The notification center's ONLY persisted state — everything else about a
+-- notification (its text, its trigger, whether it's still true) is
+-- recomputed fresh from existing tables every time (score_history,
+-- next_price_history, next_founding_believers, etc. — see
+-- lib/notifications.ts), so a missed cron run or a server restart can never
+-- leave it stale or duplicated. This table only remembers "the user has
+-- already seen notification X" so a dismissed one stays dismissed.
+CREATE TABLE IF NOT EXISTS notification_reads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  notification_key TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(user_id, notification_key)
+);
+CREATE INDEX IF NOT EXISTS idx_notification_reads_user ON notification_reads(user_id);
 -- One row per preview play/complete — the "listen" half of NEXT's music
 -- experience. 'started' fires each time playback begins (including a
 -- replay); 'completed' fires when it reaches the natural end or the 30s
@@ -245,6 +260,19 @@ addColumnIfMissing('users', 'privacy_accepted_at TEXT');
 // live holdings list is closer to "what am I currently exposed to," so it
 // stays opt-in. See getScoutProfile below.
 addColumnIfMissing('users', 'show_positions_publicly INTEGER NOT NULL DEFAULT 0');
+// Notification category preferences — all on by default (opt-out, not
+// opt-in), except email which stays opt-in like every other email this app
+// sends (see emailConfigured()/sendEmail() in lib/email.ts: nothing here
+// requires email to arrive). notifications_emailed_through is a cursor
+// ("everything at or before this timestamp has already been emailed"), not
+// a full send-log — see lib/notifications.ts for why one cursor is enough.
+addColumnIfMissing('users', 'notify_watchlist_moves INTEGER NOT NULL DEFAULT 1');
+addColumnIfMissing('users', 'notify_new_artists INTEGER NOT NULL DEFAULT 1');
+addColumnIfMissing('users', 'notify_founding_believer INTEGER NOT NULL DEFAULT 1');
+addColumnIfMissing('users', 'notify_portfolio_milestones INTEGER NOT NULL DEFAULT 1');
+addColumnIfMissing('users', 'notify_leaderboard_rank INTEGER NOT NULL DEFAULT 1');
+addColumnIfMissing('users', 'email_notifications_enabled INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'notifications_emailed_through TEXT');
 addColumnIfMissing('artists', 'next_current_price_cents INTEGER');
 addColumnIfMissing('artists', 'photo_url TEXT');
 addColumnIfMissing('artists', 'bio TEXT');
@@ -592,13 +620,22 @@ export function getDueFollowUps(): DueFollowUp[] {
 }
 
 const USER_COLUMNS =
-  'id, created_at, name, email, role, next_credits_cents, next_onboarded_at, avatar_url, email_verified_at, tos_accepted_at, privacy_accepted_at, show_positions_publicly';
+  'id, created_at, name, email, role, next_credits_cents, next_onboarded_at, avatar_url, email_verified_at, tos_accepted_at, privacy_accepted_at, ' +
+  'show_positions_publicly, notify_watchlist_moves, notify_new_artists, notify_founding_believer, notify_portfolio_milestones, ' +
+  'notify_leaderboard_rank, email_notifications_enabled, notifications_emailed_through';
 
-// SQLite has no boolean type — normalizes the raw 0/1 into the boolean
-// User.show_positions_publicly promises. Applied at every USER_COLUMNS read
-// site so nothing downstream has to remember the raw column is a number.
-function normalizeUser<T extends { show_positions_publicly: unknown }>(row: T): Omit<T, 'show_positions_publicly'> & { show_positions_publicly: boolean } {
-  return { ...row, show_positions_publicly: row.show_positions_publicly === 1 };
+const BOOLEAN_USER_COLUMNS = [
+  'show_positions_publicly', 'notify_watchlist_moves', 'notify_new_artists', 'notify_founding_believer',
+  'notify_portfolio_milestones', 'notify_leaderboard_rank', 'email_notifications_enabled',
+] as const;
+
+// SQLite has no boolean type — normalizes every raw 0/1 boolean column into
+// the booleans the User type promises. Applied at every USER_COLUMNS read
+// site so nothing downstream has to remember which columns are numbers.
+function normalizeUser<T extends Record<(typeof BOOLEAN_USER_COLUMNS)[number], unknown>>(row: T): T {
+  const normalized = { ...row };
+  for (const field of BOOLEAN_USER_COLUMNS) (normalized as any)[field] = row[field] === 1;
+  return normalized;
 }
 
 // New accounts always start as 'public' — internal/admin is never
@@ -620,9 +657,17 @@ export function createUser(input: { name: string; email: string; password_hash: 
 // Name and avatar are the only self-editable profile fields — email and
 // password go through their own dedicated, more careful flows (change
 // password needs the current password; changing email isn't built yet).
+// The boolean notification-preference columns — looped over generically
+// in updateUserProfile below instead of six near-identical if-blocks.
+const NOTIFICATION_PREF_FIELDS = [
+  'notify_watchlist_moves', 'notify_new_artists', 'notify_founding_believer',
+  'notify_portfolio_milestones', 'notify_leaderboard_rank', 'email_notifications_enabled',
+] as const;
+type NotificationPrefField = (typeof NOTIFICATION_PREF_FIELDS)[number];
+
 export function updateUserProfile(
   userId: number,
-  input: { name?: string; avatar_url?: string | null; show_positions_publicly?: boolean }
+  input: { name?: string; avatar_url?: string | null; show_positions_publicly?: boolean } & Partial<Record<NotificationPrefField, boolean>>
 ): User | undefined {
   const sets: string[] = [];
   const params: Record<string, unknown> = { id: userId };
@@ -638,6 +683,12 @@ export function updateUserProfile(
     sets.push('show_positions_publicly = @show_positions_publicly');
     params.show_positions_publicly = input.show_positions_publicly ? 1 : 0;
   }
+  for (const field of NOTIFICATION_PREF_FIELDS) {
+    if (input[field] != null) {
+      sets.push(`${field} = @${field}`);
+      params[field] = input[field] ? 1 : 0;
+    }
+  }
   if (sets.length === 0) return getUserById(userId);
   db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`).run(params);
   return getUserById(userId);
@@ -645,6 +696,33 @@ export function updateUserProfile(
 
 export function updateUserPasswordHash(userId: number, password_hash: string): void {
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(password_hash, userId);
+}
+
+// The notification center's read/dismiss state — see the notification_reads
+// table comment. All computed notification content lives in
+// lib/notifications.ts; this file only ever stores/reads the key.
+export function getReadNotificationKeys(userId: number): Set<string> {
+  const rows = db.prepare('SELECT notification_key FROM notification_reads WHERE user_id = ?').all(userId) as { notification_key: string }[];
+  return new Set(rows.map((r) => r.notification_key));
+}
+
+export function markNotificationRead(userId: number, key: string): void {
+  db.prepare('INSERT OR IGNORE INTO notification_reads (user_id, notification_key, created_at) VALUES (?, ?, ?)')
+    .run(userId, key, new Date().toISOString());
+}
+
+export function markNotificationsRead(userId: number, keys: string[]): void {
+  const insert = db.prepare('INSERT OR IGNORE INTO notification_reads (user_id, notification_key, created_at) VALUES (?, ?, ?)');
+  const now = new Date().toISOString();
+  db.transaction(() => { for (const key of keys) insert.run(userId, key, now); })();
+}
+
+// A cursor, not a send-log: "everything at or before this timestamp has
+// already been emailed." Simpler than tracking per-notification send state,
+// and sufficient since email is a digest of what's new, not a guaranteed
+// per-item delivery record.
+export function setNotificationsEmailedThrough(userId: number, iso: string): void {
+  db.prepare('UPDATE users SET notifications_emailed_through = ? WHERE id = ?').run(iso, userId);
 }
 
 // Idempotent — verifying an already-verified email is a harmless no-op,
@@ -1076,7 +1154,7 @@ export function setWatchlistAlerts(userId: number, artistId: number, enabled: bo
 // on record postdates `at` (watched right as the first snapshot/price point
 // landed) — the closest available reference rather than no comparison at
 // all. Null only when the series is completely empty.
-function valueAtOrBefore<T>(series: T[], at: string, recordedAt: (item: T) => string): T | null {
+export function valueAtOrBefore<T>(series: T[], at: string, recordedAt: (item: T) => string): T | null {
   for (let i = series.length - 1; i >= 0; i--) {
     if (recordedAt(series[i]) <= at) return series[i];
   }

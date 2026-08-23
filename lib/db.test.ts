@@ -15,11 +15,12 @@ const {
   getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun,
   getFavoriteGenres, getMarketTradeCounts, getMarketVolumeCents, getMostActiveArtists, getNewArtistsThisWeek,
   getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue, getPortfolioValueHistory, getRankMovements,
-  getRecentBackerCount, getRecentBackerCountsByArtist, getRecentMarketTrades, getRecentTradesForArtist,
-  getRecentWatchCountsByArtist, getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids,
-  getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
-  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified, recordPreviewListen,
-  setDiscoveryCandidateStatus, setWatchlistAlerts, updateArtist, updateUserProfile,
+  getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentMarketTrades,
+  getRecentTradesForArtist, getRecentWatchCountsByArtist, getScoreChanges, getScoutLeaderboard, getScoutProfile,
+  getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
+  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified, markNotificationRead,
+  markNotificationsRead, recordPreviewListen, setDiscoveryCandidateStatus, setNotificationsEmailedThrough,
+  setWatchlistAlerts, updateArtist, updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -1120,5 +1121,56 @@ describe('Market Activity — market-wide feed, volume, active/backed/watched, n
     expect(names).toContain('Fresh This Week Artist');
     expect(names).not.toContain('Old Artist');
     expect(names).not.toContain('Passed This Week Artist');
+  });
+});
+
+describe('Notification center — read-state persistence and preference columns', () => {
+  it('markNotificationRead/markNotificationsRead persist keys, and re-marking the same key is a harmless no-op', () => {
+    const user = createUser({ name: 'Notif Reader', email: 'notif-reader@example.com', password_hash: 'hash' });
+    expect(getReadNotificationKeys(user.id).size).toBe(0);
+
+    markNotificationRead(user.id, 'watchlist_score:1:1');
+    markNotificationRead(user.id, 'watchlist_score:1:1'); // duplicate — should not throw or double-insert
+    markNotificationsRead(user.id, ['leaderboard_rank:2026-01-01', 'portfolio_milestone:25']);
+
+    const keys = getReadNotificationKeys(user.id);
+    expect(keys.size).toBe(3);
+    expect(keys.has('watchlist_score:1:1')).toBe(true);
+    expect(keys.has('portfolio_milestone:25')).toBe(true);
+    expect(keys.has('some-other-key')).toBe(false);
+  });
+
+  it('read state is scoped per user — one user marking a key read does not affect another', () => {
+    const alice = createUser({ name: 'Notif Alice', email: 'notif-alice@example.com', password_hash: 'hash' });
+    const bob = createUser({ name: 'Notif Bob', email: 'notif-bob@example.com', password_hash: 'hash' });
+    markNotificationRead(alice.id, 'shared-key');
+    expect(getReadNotificationKeys(alice.id).has('shared-key')).toBe(true);
+    expect(getReadNotificationKeys(bob.id).has('shared-key')).toBe(false);
+  });
+
+  it('setNotificationsEmailedThrough updates the cursor column', () => {
+    const user = createUser({ name: 'Notif Cursor', email: 'notif-cursor@example.com', password_hash: 'hash' });
+    expect(getUserById(user.id)!.notifications_emailed_through).toBeFalsy();
+    const now = new Date().toISOString();
+    setNotificationsEmailedThrough(user.id, now);
+    expect(getUserById(user.id)!.notifications_emailed_through).toBe(now);
+  });
+
+  it('updateUserProfile round-trips every notification preference as a real boolean, defaulting on except email', () => {
+    const user = createUser({ name: 'Notif Prefs', email: 'notif-prefs@example.com', password_hash: 'hash' });
+    expect(user.notify_watchlist_moves).toBe(true);
+    expect(user.notify_new_artists).toBe(true);
+    expect(user.notify_founding_believer).toBe(true);
+    expect(user.notify_portfolio_milestones).toBe(true);
+    expect(user.notify_leaderboard_rank).toBe(true);
+    expect(user.email_notifications_enabled).toBe(false); // opt-in, unlike the rest
+
+    const updated = updateUserProfile(user.id, {
+      notify_watchlist_moves: false, notify_new_artists: false, email_notifications_enabled: true,
+    })!;
+    expect(updated.notify_watchlist_moves).toBe(false);
+    expect(updated.notify_new_artists).toBe(false);
+    expect(updated.email_notifications_enabled).toBe(true);
+    expect(updated.notify_founding_believer).toBe(true); // untouched fields stay as they were
   });
 });

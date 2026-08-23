@@ -124,6 +124,13 @@ export type User = {
   tos_accepted_at?: string;
   privacy_accepted_at?: string;
   show_positions_publicly: boolean;
+  notify_watchlist_moves: boolean;
+  notify_new_artists: boolean;
+  notify_founding_believer: boolean;
+  notify_portfolio_milestones: boolean;
+  notify_leaderboard_rank: boolean;
+  email_notifications_enabled: boolean;
+  notifications_emailed_through?: string;
 };
 
 export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change';

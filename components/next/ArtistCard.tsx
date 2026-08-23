@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { NextMarketRow } from '@/lib/types';
 import { formatCents, timeAgo } from '@/lib/format';
-import { marketSentiment } from '@/lib/next-market';
+import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, marketSentiment } from '@/lib/next-market';
 import AudioPreview from '@/components/AudioPreview';
 import ScoreGapBar from '@/components/next/ScoreGapBar';
 import PriceSparkline from '@/components/next/PriceSparkline';
@@ -11,13 +11,6 @@ import WatchButton from '@/components/next/WatchButton';
 import AlertToggle from '@/components/next/AlertToggle';
 import { heroGradient } from '@/components/next/heroGradient';
 import InfoTip from '@/components/next/InfoTip';
-
-// "Significant" thresholds for the since-you-added alert flag: 5 points
-// matches momentumStatus()'s own "Rising" cutoff in lib/scoring.ts (the
-// same Score-change definition, reused here). 10% has no prior precedent
-// in this codebase — a deliberately simple first-pass band for price.
-const ALERT_SCORE_THRESHOLD = 5;
-const ALERT_PRICE_PCT_THRESHOLD = 10;
 
 export type SinceWatched = {
   watchedAt: string;
