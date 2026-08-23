@@ -10,12 +10,13 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
 const {
   addToWatchlist, approveDiscoveryCandidate, completeDiscoveryRun, completeSyncRun, createArtist, createDiscoveryRun,
-  createSyncRun, createUser, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
-  getArtistsWithSoundchartsLink, getBackerCountsByArtist, getDiscoveryCandidates, getKnownDiscoveryUuids,
-  getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun, getNewDiscoveryCandidateCount,
-  getNextArtist, getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions,
-  getWatchCountsByArtist, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified,
-  recordPreviewListen, setDiscoveryCandidateStatus, updateArtist, updateUserProfile,
+  createSyncRun, createUser, db, deleteUser, executeTrade, getArtist, getArtistsMissingTopSong,
+  getArtistsWithSoundchartsLink, getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates,
+  getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun,
+  getNewDiscoveryCandidateCount, getNextArtist, getRecentBackerCount, getRecentTradesForArtist,
+  getTrackedSoundchartsUuids, getUserById, getUserPasswordHash, getUserTransactions, getWatchCountsByArtist,
+  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, markEmailVerified, recordPreviewListen,
+  setDiscoveryCandidateStatus, updateArtist, updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -691,5 +692,56 @@ describe('Music experience — listen tracking', () => {
 
     const sellTx = getUserTransactions(user.id).find((t) => t.artist_id === artist.id && t.type === 'sell');
     expect(sellTx?.listened_before_buy).toBeUndefined();
+  });
+});
+
+describe('Trading panel — volume, recent backers, activity feed', () => {
+  it('getArtistTradeVolumeCents sums both buys and sells within the window, excludes trades outside it', () => {
+    const artist = makeArtist('Volume Artist');
+    const buyer = createUser({ name: 'Buyer', email: 'volume-buyer@example.com', password_hash: 'hash' });
+    const seller = createUser({ name: 'Seller', email: 'volume-seller@example.com', password_hash: 'hash' });
+
+    executeTrade(buyer.id, artist.id, 'buy', 50_000);
+    executeTrade(seller.id, artist.id, 'buy', 30_000);
+    executeTrade(seller.id, artist.id, 'sell', 10_000);
+
+    // Backdate the buyer's trade to 48h ago so it falls outside a 24h window.
+    db.prepare("UPDATE next_transactions SET created_at = datetime('now', '-48 hours') WHERE user_id = ?").run(buyer.id);
+
+    const volume24h = getArtistTradeVolumeCents(artist.id, 24);
+    // Only seller's buy (30,000) and sell (some proceeds close to 10,000,
+    // adjusted by market impact) should count — never the backdated 50,000 buy.
+    expect(volume24h).toBeGreaterThan(0);
+    expect(volume24h).toBeLessThan(50_000 + 30_000 + 10_000);
+
+    const volumeAllTime = getArtistTradeVolumeCents(artist.id, 24 * 365);
+    expect(volumeAllTime).toBeGreaterThan(volume24h);
+  });
+
+  it('getRecentBackerCount counts distinct buyers in the window, not total buy transactions', () => {
+    const artist = makeArtist('Recent Backers Artist');
+    const alice = createUser({ name: 'Alice R', email: 'alice-recent@example.com', password_hash: 'hash' });
+    const bob = createUser({ name: 'Bob R', email: 'bob-recent@example.com', password_hash: 'hash' });
+
+    executeTrade(alice.id, artist.id, 'buy', 10_000);
+    executeTrade(alice.id, artist.id, 'buy', 10_000); // same person, second buy — still counts once
+    executeTrade(bob.id, artist.id, 'buy', 10_000);
+
+    expect(getRecentBackerCount(artist.id, 24)).toBe(2);
+  });
+
+  it('getRecentTradesForArtist returns most-recent-first with the buyer/seller name attached', () => {
+    const artist = makeArtist('Feed Artist');
+    const alice = createUser({ name: 'Alice Feed', email: 'alice-feed@example.com', password_hash: 'hash' });
+    const bob = createUser({ name: 'Bob Feed', email: 'bob-feed@example.com', password_hash: 'hash' });
+
+    executeTrade(alice.id, artist.id, 'buy', 10_000);
+    executeTrade(bob.id, artist.id, 'buy', 20_000);
+
+    const trades = getRecentTradesForArtist(artist.id);
+    expect(trades).toHaveLength(2);
+    expect(trades[0].user_name).toBe('Bob Feed'); // most recent first
+    expect(trades[1].user_name).toBe('Alice Feed');
+    expect(trades[0].type).toBe('buy');
   });
 });

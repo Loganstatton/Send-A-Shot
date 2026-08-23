@@ -2,8 +2,9 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import {
-  getArtist, getBackerCountsByArtist, getFoundingBelieverCountForArtist, getFoundingBelieverRecord, getHolding,
-  getNextArtist, getScoreHistory, getWatchCountsByArtist, isWatchlisted,
+  getArtist, getArtistTradeVolumeCents, getBackerCountsByArtist, getFoundingBelieverCountForArtist,
+  getFoundingBelieverRecord, getHolding, getNextArtist, getRecentBackerCount, getRecentTradesForArtist,
+  getScoreHistory, getWatchCountsByArtist, isWatchlisted,
 } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
@@ -18,6 +19,7 @@ import WatchButton from '@/components/next/WatchButton';
 import InfoTip from '@/components/next/InfoTip';
 import MissingStat from '@/components/next/MissingStat';
 import ScoreContributorBar from '@/components/next/ScoreContributorBar';
+import RecentActivity from '@/components/next/RecentActivity';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const artist = getArtist(Number(params.id));
@@ -46,6 +48,9 @@ export default async function NextArtistPage({ params }: { params: { id: string 
   const watchCount = getWatchCountsByArtist()[id] ?? 0;
   const watching = isWatchlisted(user.id, id);
   const scoreParts = scoreContributors(artist);
+  const volumeCents24h = getArtistTradeVolumeCents(id, 24);
+  const recentBackerCount24h = getRecentBackerCount(id, 24);
+  const recentTrades = getRecentTradesForArtist(id);
 
   // "Today" — the same 24h-window idea DiscoverGrid's "Trending today" sort
   // uses, just computed here for a single artist's price display instead
@@ -269,14 +274,19 @@ export default async function NextArtistPage({ params }: { params: { id: string 
               </div>
             )}
           </div>
+
+          <RecentActivity trades={recentTrades} />
         </div>
 
         <TradePanel
           artistId={id}
+          artistName={artist.name}
           priceCents={priceCents}
           ownedShares={holding?.shares ?? 0}
           costBasisCents={holding?.cost_basis_cents ?? 0}
           creditsCents={user.next_credits_cents}
+          volumeCents24h={volumeCents24h}
+          recentBackerCount24h={recentBackerCount24h}
         />
       </div>
     </div>
