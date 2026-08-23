@@ -10,6 +10,10 @@ export default function Header({ user, newCandidateCount = 0 }: { user: User | n
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
   const isAdmin = user?.role === 'admin';
 
+  // NEXT has its own header (components/next/NextHeader.tsx) with its own
+  // visual identity — never render this Scout/Admin nav on top of it.
+  if (pathname?.startsWith('/next')) return null;
+
   return (
     <header className="border-b border-neutral-800">
       <div className="container flex items-center justify-between py-4 flex-wrap gap-2">

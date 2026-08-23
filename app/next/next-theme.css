@@ -1,0 +1,77 @@
+/* Design tokens + a few compound classes for the public NEXT market —
+   deliberately scoped under .next-theme so Scout/Admin (globals.css's
+   .card/.btn/etc) are completely untouched. NEXT gets its own visual
+   identity; Scout gets its own later, separately (see README roadmap). */
+
+.next-theme {
+  --bg: oklch(15% 0.012 40);
+  --bg-2: oklch(12.5% 0.012 40);
+  --surface: oklch(19.5% 0.013 40);
+  --surface-2: oklch(24% 0.015 40);
+  --border: oklch(38% 0.014 40 / 0.5);
+  --border-soft: oklch(38% 0.014 40 / 0.28);
+  --text: oklch(96% 0.006 90);
+  --text-muted: oklch(72% 0.014 60);
+  --text-faint: oklch(52% 0.013 60);
+  --ember: oklch(70% 0.19 35);
+  --ember-dim: oklch(70% 0.19 35 / 0.14);
+  --ember-line: oklch(70% 0.19 35 / 0.4);
+  --gold: oklch(80% 0.14 85);
+  --gold-dim: oklch(80% 0.14 85 / 0.12);
+  --gold-line: oklch(80% 0.14 85 / 0.4);
+  --up: oklch(76% 0.17 152);
+  --up-dim: oklch(76% 0.17 152 / 0.13);
+  --down: oklch(64% 0.20 19);
+  --down-dim: oklch(64% 0.20 19 / 0.13);
+  --on-ember: oklch(15% 0.02 40);
+  --on-ember-soft: oklch(88% 0.05 40);
+
+  background: var(--bg);
+  color: var(--text);
+}
+
+.next-theme a { color: inherit; text-decoration: none; }
+.next-theme .num { font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+
+.next-card {
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+}
+
+.next-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: 100px;
+  border: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.next-pill-active { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 600; }
+.next-pill-signal { background: var(--ember-dim); border-color: var(--ember-line); color: var(--ember); font-weight: 500; }
+
+.next-btn-primary {
+  background: var(--ember);
+  color: var(--on-ember);
+  font-weight: 700;
+  border-radius: 10px;
+  transition: filter 0.15s;
+}
+.next-btn-primary:hover { filter: brightness(1.08); }
+
+.next-btn-ghost {
+  border: 1px solid var(--border-soft);
+  color: var(--text);
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+.next-btn-ghost:hover { background: var(--surface-2); }
+
+.next-fullbleed {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
