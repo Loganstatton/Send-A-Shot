@@ -1088,6 +1088,57 @@ export function getUserTransactions(userId: number, limit = 50): (NextTransactio
   return rows.map((r) => ({ ...r, listened_before_buy: r.type === 'buy' ? Boolean(r.listened_before_buy) : undefined }));
 }
 
+// "Volume" for the Trading panel's market-volume stat — total notional
+// traded (both buys and sells, both count) in the window. credits_delta_cents
+// is negative for a buy (credits spent) and positive for a sell (credits
+// received); the absolute value of each is that trade's real dollar size.
+export function getArtistTradeVolumeCents(artistId: number, hours: number): number {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const row = db
+    .prepare('SELECT COALESCE(SUM(ABS(credits_delta_cents)), 0) AS volume FROM next_transactions WHERE artist_id = ? AND created_at >= ?')
+    .get(artistId, cutoff) as { volume: number };
+  return row.volume;
+}
+
+// Distinct traders who backed (bought) this artist within the window —
+// "number of people who backed the artist recently." Deliberately counts
+// anyone who bought, not just first-time buyers — a repeat backer adding
+// to their position is still real recent activity.
+export function getRecentBackerCount(artistId: number, hours: number): number {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const row = db
+    .prepare("SELECT COUNT(DISTINCT user_id) AS c FROM next_transactions WHERE artist_id = ? AND type = 'buy' AND created_at >= ?")
+    .get(artistId, cutoff) as { c: number };
+  return row.c;
+}
+
+export type RecentTrade = {
+  user_name: string;
+  type: NextTransactionType;
+  shares: number;
+  credits_delta_cents: number;
+  created_at: string;
+};
+
+// The Trading panel's "recent activity" feed — every trader's activity on
+// this one artist, most recent first. Public by the same convention the
+// Leaderboard already uses (a trader's chosen display name and portfolio
+// figures are visible there too) — nothing here is more sensitive than
+// that.
+export function getRecentTradesForArtist(artistId: number, limit = 8): RecentTrade[] {
+  return db
+    .prepare(`
+      SELECT users.name AS user_name, next_transactions.type, next_transactions.shares,
+             next_transactions.credits_delta_cents, next_transactions.created_at
+      FROM next_transactions
+      JOIN users ON users.id = next_transactions.user_id
+      WHERE next_transactions.artist_id = ?
+      ORDER BY next_transactions.created_at DESC, next_transactions.id DESC
+      LIMIT ?
+    `)
+    .all(artistId, limit) as RecentTrade[];
+}
+
 export type TradeResult =
   | { ok: true; shares: number; priceCents: number; newBalanceCents: number; realizedPnlCents?: number }
   | { ok: false; error: string };
