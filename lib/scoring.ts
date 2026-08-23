@@ -16,6 +16,23 @@ export function breakoutScore(inputs: ScoreInputs): number {
   return Math.round(total * 10) / 10;
 }
 
+// Splits the same total breakoutScore() computes into the two buckets that
+// actually explain "why is the score what it is" for NEXT's public Artist
+// Detail page (see the "Why the NEXT Score is what it is" module): the
+// growth_velocity/engagement_quality pair (real, auto-derived numbers) vs.
+// the other six (a Scout's own rating). Deliberately NOT broken out
+// category-by-category on NEXT — publicly showing "Professionalism: 4/10"
+// about a real artist is a different, harsher thing than the same number
+// sitting in Scout's internal tool, and the two-bucket split is honest
+// about the real/judgment split without that.
+export type ScoreContributors = { realDataPoints: number; scoutPoints: number; total: number };
+
+export function scoreContributors(inputs: ScoreInputs): ScoreContributors {
+  const realDataPoints = inputs.growth_velocity * (SCORE_WEIGHTS.growth_velocity / 10) + inputs.engagement_quality * (SCORE_WEIGHTS.engagement_quality / 10);
+  const total = breakoutScore(inputs);
+  return { realDataPoints: Math.round(realDataPoints * 10) / 10, scoutPoints: Math.round((total - realDataPoints) * 10) / 10, total };
+}
+
 // Converts a real 30-day follower growth % into the 0-10 Growth Velocity
 // category. Diminishing-returns curve (sqrt, not linear): going from 0% to
 // 10% growth matters more than going from 40% to 50% — sustained modest
