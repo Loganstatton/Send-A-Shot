@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 const schema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   avatar_url: z.string().trim().max(2000).nullable().optional(),
+  show_positions_publicly: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request) {

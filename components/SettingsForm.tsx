@@ -10,6 +10,7 @@ export default function SettingsForm({ user }: { user: User }) {
   const [name, setName] = useState(user.name);
   const [avatarUrl, setAvatarUrl] = useState(user.avatar_url ?? '');
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [showPositionsPublicly, setShowPositionsPublicly] = useState(user.show_positions_publicly);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -38,7 +39,7 @@ export default function SettingsForm({ user }: { user: User }) {
       const res = await fetch('/api/account', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, avatar_url: avatarUrl || null }),
+        body: JSON.stringify({ name, avatar_url: avatarUrl || null, show_positions_publicly: showPositionsPublicly }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Save failed.');
       setProfileMessage('Saved.');
@@ -138,6 +139,21 @@ export default function SettingsForm({ user }: { user: User }) {
           )}
         </div>
         {resendMessage && <p className="text-xs text-neutral-400">{resendMessage}</p>}
+        <label className="flex items-start gap-2.5 text-sm text-neutral-300">
+          <input
+            type="checkbox"
+            checked={showPositionsPublicly}
+            onChange={(e) => setShowPositionsPublicly(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            Show my current NEXT positions on my public Scout Profile
+            <span className="block text-xs text-neutral-500 mt-0.5">
+              Off by default. Your rank, return %, and Founding Believer history are always visible to other
+              Scouts — this only controls whether your live holdings (shares, value, P&amp;L per artist) are too.
+            </span>
+          </span>
+        </label>
         {profileError && <div className="text-sm text-red-300">{profileError}</div>}
         {profileMessage && <div className="text-sm text-green-400">{profileMessage}</div>}
         <button type="submit" className="btn btn-primary" disabled={profileSaving}>

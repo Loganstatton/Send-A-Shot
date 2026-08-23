@@ -8,10 +8,10 @@ import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
   Agreement, AgreementInput, Artist, ArtistInput, DiscoveryCandidate, DiscoveryCandidateStatus, DiscoveryRun,
-  DiscoverySourceKey, DueFollowUp, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput,
-  LeaderboardEntry, LeaderboardWindow, LogEntry, LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction,
-  NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS,
-  ScoreChange, ScoreSnapshot, ScoutProfile, SyncRun, SyncSourceKey, User, WatchlistEntry,
+  DiscoverySourceKey, DueFollowUp, FavoriteGenre, FoundingBelieverRecord, GenreLeaderboardEntry, InvestmentEntry,
+  InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry, LogEntryInput, NextHolding, NextMarketRow,
+  NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue, RevenueEntry, RevenueEntryInput, RevenueSource,
+  Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutProfile, SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -240,6 +240,11 @@ addColumnIfMissing('users', 'avatar_url TEXT');
 addColumnIfMissing('users', 'email_verified_at TEXT');
 addColumnIfMissing('users', 'tos_accepted_at TEXT');
 addColumnIfMissing('users', 'privacy_accepted_at TEXT');
+// Off by default — unlike return %/rank/Founding Believer records (all
+// public-by-precedent elsewhere in NEXT, since credits are virtual), a
+// live holdings list is closer to "what am I currently exposed to," so it
+// stays opt-in. See getScoutProfile below.
+addColumnIfMissing('users', 'show_positions_publicly INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('artists', 'next_current_price_cents INTEGER');
 addColumnIfMissing('artists', 'photo_url TEXT');
 addColumnIfMissing('artists', 'bio TEXT');
@@ -587,7 +592,14 @@ export function getDueFollowUps(): DueFollowUp[] {
 }
 
 const USER_COLUMNS =
-  'id, created_at, name, email, role, next_credits_cents, next_onboarded_at, avatar_url, email_verified_at, tos_accepted_at, privacy_accepted_at';
+  'id, created_at, name, email, role, next_credits_cents, next_onboarded_at, avatar_url, email_verified_at, tos_accepted_at, privacy_accepted_at, show_positions_publicly';
+
+// SQLite has no boolean type — normalizes the raw 0/1 into the boolean
+// User.show_positions_publicly promises. Applied at every USER_COLUMNS read
+// site so nothing downstream has to remember the raw column is a number.
+function normalizeUser<T extends { show_positions_publicly: unknown }>(row: T): Omit<T, 'show_positions_publicly'> & { show_positions_publicly: boolean } {
+  return { ...row, show_positions_publicly: row.show_positions_publicly === 1 };
+}
 
 // New accounts always start as 'public' — internal/admin is never
 // self-selected, only granted via setUserRole (an admin) or the
@@ -608,7 +620,10 @@ export function createUser(input: { name: string; email: string; password_hash: 
 // Name and avatar are the only self-editable profile fields — email and
 // password go through their own dedicated, more careful flows (change
 // password needs the current password; changing email isn't built yet).
-export function updateUserProfile(userId: number, input: { name?: string; avatar_url?: string | null }): User | undefined {
+export function updateUserProfile(
+  userId: number,
+  input: { name?: string; avatar_url?: string | null; show_positions_publicly?: boolean }
+): User | undefined {
   const sets: string[] = [];
   const params: Record<string, unknown> = { id: userId };
   if (input.name != null) {
@@ -618,6 +633,10 @@ export function updateUserProfile(userId: number, input: { name?: string; avatar
   if ('avatar_url' in input) {
     sets.push('avatar_url = @avatar_url');
     params.avatar_url = input.avatar_url || null;
+  }
+  if (input.show_positions_publicly != null) {
+    sets.push('show_positions_publicly = @show_positions_publicly');
+    params.show_positions_publicly = input.show_positions_publicly ? 1 : 0;
   }
   if (sets.length === 0) return getUserById(userId);
   db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = @id`).run(params);
@@ -645,15 +664,15 @@ export function deleteUser(userId: number): void {
 }
 
 export function getUserByEmail(email: string): (User & { password_hash: string }) | undefined {
-  return db
+  const row = db
     .prepare(`SELECT ${USER_COLUMNS}, password_hash FROM users WHERE email = ?`)
     .get(email.toLowerCase()) as (User & { password_hash: string }) | undefined;
+  return row && normalizeUser(row);
 }
 
 export function getUserById(id: number): User | undefined {
-  return db
-    .prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`)
-    .get(id) as User | undefined;
+  const row = db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).get(id) as User | undefined;
+  return row && normalizeUser(row);
 }
 
 // Server-only, used solely by the change-password route to verify the
@@ -664,7 +683,7 @@ export function getUserPasswordHash(id: number): string | undefined {
 }
 
 export function getAllUsers(): User[] {
-  return db.prepare(`SELECT ${USER_COLUMNS} FROM users ORDER BY created_at ASC`).all() as User[];
+  return (db.prepare(`SELECT ${USER_COLUMNS} FROM users ORDER BY created_at ASC`).all() as User[]).map(normalizeUser);
 }
 
 // The only way a user's role changes after signup — called by an admin-only
@@ -1503,6 +1522,23 @@ function getScoutLeaderboardUnranked(): Omit<LeaderboardEntry, 'rankChange'>[] {
   return entries;
 }
 
+// Ranked by how many artists in that genre this Scout has ever backed —
+// reads from next_founding_believers (never erased after a sell), so a
+// genre stays "yours" even once you've moved on from every position in it,
+// same permanence next_founding_believers already gives the trophy case.
+export function getFavoriteGenres(userId: number, limit = 3): FavoriteGenre[] {
+  const rows = db.prepare(`
+    SELECT artists.genre AS genre, COUNT(*) AS count
+    FROM next_founding_believers
+    JOIN artists ON artists.id = next_founding_believers.artist_id
+    WHERE next_founding_believers.user_id = ? AND artists.genre IS NOT NULL AND artists.genre != ''
+    GROUP BY artists.genre
+    ORDER BY count DESC, artists.genre ASC
+    LIMIT ?
+  `).all(userId, limit) as FavoriteGenre[];
+  return rows;
+}
+
 export function getScoutProfile(userId: number): ScoutProfile | undefined {
   const user = getUserById(userId);
   if (!user) return undefined;
@@ -1510,6 +1546,24 @@ export function getScoutProfile(userId: number): ScoutProfile | undefined {
   const entry = leaderboard.find((e) => e.user.id === userId)!;
   const portfolio = getPortfolioValue(userId);
   const earlyDiscoveriesCount = getEarlyDiscoveriesCount(userId);
+
+  const positions = user.show_positions_publicly
+    ? getUserHoldings(userId).map((h) => {
+        const marketValueCents = Math.round(h.shares * h.price_cents);
+        const unrealizedPnlCents = marketValueCents - h.cost_basis_cents;
+        const unrealizedPct = h.cost_basis_cents !== 0 ? (unrealizedPnlCents / h.cost_basis_cents) * 100 : 0;
+        return {
+          artist_id: h.artist_id,
+          artist_name: h.artist_name,
+          artist_photo_url: h.artist_photo_url,
+          shares: h.shares,
+          marketValueCents,
+          unrealizedPnlCents,
+          unrealizedPct,
+        };
+      })
+    : null;
+
   return {
     user: { id: user.id, name: user.name, avatar_url: user.avatar_url },
     portfolio,
@@ -1518,6 +1572,9 @@ export function getScoutProfile(userId: number): ScoutProfile | undefined {
     totalScouts: leaderboard.length,
     artistsBackedCount: entry.artistsBackedCount,
     earlyDiscoveriesCount,
+    favoriteGenres: getFavoriteGenres(userId),
+    showPositionsPublicly: user.show_positions_publicly,
+    positions,
   };
 }
 
