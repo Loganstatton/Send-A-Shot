@@ -10,6 +10,7 @@ import PriceChart from '@/components/PriceChart';
 import TradePanel from '@/components/TradePanel';
 import VideoBanner from '@/components/next/VideoBanner';
 import WatchButton from '@/components/next/WatchButton';
+import InfoTip from '@/components/next/InfoTip';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const artist = getArtist(Number(params.id));
@@ -72,6 +73,10 @@ export default async function NextArtistPage({ params }: { params: { id: string 
           <div className="flex items-center gap-1.5 px-3 py-[5px] rounded-lg border" style={{ background: 'var(--surface-2)', borderColor: 'var(--border-soft)' }}>
             <span className="text-[11px] font-mono" style={{ color: 'var(--text-faint)' }}>SCORE</span>
             <span className="num text-[15px] font-bold">{score.toFixed(0)}</span>
+            <InfoTip
+              label="NEXT Score"
+              text="Our read on this artist's real momentum — growth, engagement, and buzz, boiled into one number. Compare it to NEXT Price below to see if the market agrees."
+            />
           </div>
           {sentiment.tone !== 'fair' && (
             <div
@@ -141,7 +146,10 @@ export default async function NextArtistPage({ params }: { params: { id: string 
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6 items-start">
         <div className="flex flex-col gap-5">
           <div className="next-card p-6">
-            <div className="text-xs uppercase tracking-[0.06em] font-mono mb-1.5" style={{ color: 'var(--text-faint)' }}>NEXT Price</div>
+            <div className="text-xs uppercase tracking-[0.06em] font-mono mb-1.5 flex items-center gap-1.5" style={{ color: 'var(--text-faint)' }}>
+              NEXT Price
+              <InfoTip label="NEXT Price" text="What the market currently pays for this artist — everyone else's trades, not our own model. When it disagrees with NEXT Score, that's the signal." />
+            </div>
             <PriceChart points={priceHistory.map((p) => ({ recorded_at: p.recorded_at, value: p.price_cents }))} format="cents" />
           </div>
 

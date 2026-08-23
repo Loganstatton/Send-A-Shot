@@ -1,7 +1,9 @@
 import { Bricolage_Grotesque, IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import './next-theme.css';
 import { requireUser } from '@/lib/auth';
+import { NEXT_STARTING_CREDITS_CENTS } from '@/lib/next-market';
 import NextHeader from '@/components/next/NextHeader';
+import NextOnboarding from '@/components/next/NextOnboarding';
 
 // Self-hosted via next/font (no runtime <link> tag, no layout shift) —
 // scoped to just the /next/* route group. Scout keeps the default globals.css
@@ -26,6 +28,7 @@ export default async function NextLayout({ children }: { children: React.ReactNo
       }}
     >
       <NextHeader user={user} />
+      {!user.next_onboarded_at && <NextOnboarding startingCreditsCents={NEXT_STARTING_CREDITS_CENTS} />}
       <main className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14">{children}</main>
     </div>
   );
