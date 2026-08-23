@@ -98,16 +98,16 @@ export default function InvestmentLedger({ artistId }: { artistId: number }) {
   return (
     <div className="card space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="font-semibold text-lg">Investment &amp; ROI</h2>
-        <div className="flex gap-4 text-sm text-neutral-400 flex-wrap">
-          <span>Invested: <strong className="text-white">{formatCents(totalInvested)}</strong></span>
-          <span>Recovered: <strong className="text-white">{formatCents(totalRecovered)}</strong></span>
+        <h2 className="font-bold text-lg">Investment &amp; ROI</h2>
+        <div className="num flex gap-4 text-sm flex-wrap" style={{ color: 'var(--text-muted)' }}>
+          <span>Invested: <strong style={{ color: 'var(--text)' }}>{formatCents(totalInvested)}</strong></span>
+          <span>Recovered: <strong style={{ color: 'var(--text)' }}>{formatCents(totalRecovered)}</strong></span>
           {roiPct != null && (
-            <span>ROI: <strong className={roiPct >= 0 ? 'text-emerald-400' : 'text-red-400'}>{roiPct > 0 ? '+' : ''}{roiPct}%</strong></span>
+            <span>ROI: <strong style={{ color: roiPct >= 0 ? 'var(--up)' : 'var(--down)' }}>{roiPct > 0 ? '+' : ''}{roiPct}%</strong></span>
           )}
         </div>
       </div>
-      <p className="text-xs text-neutral-500 -mt-3">
+      <p className="text-xs -mt-3" style={{ color: 'var(--text-faint)' }}>
         Actual categorized spend (marketing/studio/video/etc), separate from an agreement's negotiated
         investment ceiling. Recovered = commission earned on logged revenue.
       </p>
@@ -118,11 +118,11 @@ export default function InvestmentLedger({ artistId }: { artistId: number }) {
             const pct = totalInvested > 0 ? Math.round((cents / totalInvested) * 100) : 0;
             return (
               <div key={c} className="flex items-center gap-3 text-sm">
-                <span className="w-20 shrink-0 text-neutral-400">{INVESTMENT_CATEGORY_LABELS[c]}</span>
-                <div className="flex-1 h-1.5 bg-neutral-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-sky-500" style={{ width: `${pct}%` }} />
+                <span className="w-20 shrink-0" style={{ color: 'var(--text-muted)' }}>{INVESTMENT_CATEGORY_LABELS[c]}</span>
+                <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                  <div className="h-full" style={{ width: `${pct}%`, background: 'var(--accent)' }} />
                 </div>
-                <span className="w-20 shrink-0 text-right text-neutral-300">{formatCents(cents)}</span>
+                <span className="num w-20 shrink-0 text-right" style={{ color: 'var(--text-muted)' }}>{formatCents(cents)}</span>
               </div>
             );
           })}
@@ -131,14 +131,14 @@ export default function InvestmentLedger({ artistId }: { artistId: number }) {
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium text-neutral-200">Spend log</h3>
+          <h3 className="font-medium" style={{ color: 'var(--text-muted)' }}>Spend log</h3>
           <button type="button" className="btn text-sm" onClick={() => setShowForm((s) => !s)}>
             {showForm ? 'Cancel' : '+ Log spend'}
           </button>
         </div>
 
         {showForm && (
-          <form onSubmit={handleAdd} className="space-y-2 border border-neutral-800 rounded-lg p-3">
+          <form onSubmit={handleAdd} className="space-y-2 rounded-lg p-3" style={{ border: '1px solid var(--border-soft)' }}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
               <select className="input" value={category} onChange={(e) => setCategory(e.target.value as InvestmentCategory)}>
@@ -160,28 +160,28 @@ export default function InvestmentLedger({ artistId }: { artistId: number }) {
         )}
 
         {entries?.length === 0 && !showForm && (
-          <p className="text-sm text-neutral-500">No spend logged yet.</p>
+          <p className="text-sm" style={{ color: 'var(--text-faint)' }}>No spend logged yet.</p>
         )}
 
         {entries && entries.length > 0 && (
           <div className="max-h-64 overflow-y-auto text-sm">
             <table className="w-full">
-              <thead className="text-neutral-500 text-left">
+              <thead className="text-left">
                 <tr>
-                  <th className="font-normal pb-1">Date</th>
-                  <th className="font-normal pb-1">Category</th>
-                  <th className="font-normal pb-1 text-right">Amount</th>
+                  <th className="font-normal pb-1" style={{ color: 'var(--text-faint)' }}>Date</th>
+                  <th className="font-normal pb-1" style={{ color: 'var(--text-faint)' }}>Category</th>
+                  <th className="font-normal pb-1 text-right" style={{ color: 'var(--text-faint)' }}>Amount</th>
                   <th className="font-normal pb-1"></th>
                 </tr>
               </thead>
               <tbody>
                 {entries.map((e) => (
-                  <tr key={e.id} className="border-t border-neutral-800">
-                    <td className="py-1 text-neutral-400">{e.recorded_at}</td>
-                    <td className="py-1 text-neutral-400">{INVESTMENT_CATEGORY_LABELS[e.category]}</td>
-                    <td className="py-1 text-right">{formatCents(e.amount_cents)}</td>
+                  <tr key={e.id} style={{ borderTop: '1px solid var(--border-soft)' }}>
+                    <td className="num py-1" style={{ color: 'var(--text-muted)' }}>{e.recorded_at}</td>
+                    <td className="py-1" style={{ color: 'var(--text-muted)' }}>{INVESTMENT_CATEGORY_LABELS[e.category]}</td>
+                    <td className="num py-1 text-right">{formatCents(e.amount_cents)}</td>
                     <td className="py-1 text-right">
-                      <button type="button" className="text-neutral-500 hover:text-red-300" onClick={() => handleDelete(e.id)} aria-label="Delete entry">✕</button>
+                      <button type="button" className="hover:opacity-80" style={{ color: 'var(--text-faint)' }} onClick={() => handleDelete(e.id)} aria-label="Delete entry">✕</button>
                     </td>
                   </tr>
                 ))}

@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { breakoutScore, engagementQualityScore, growthVelocityScore } from '@/lib/scoring';
 import { Artist, ArtistInput, SCORE_LABELS, SCORE_WEIGHTS, STAGES, STAGE_LABELS, ScoreInputs } from '@/lib/types';
+import { parseYoutubeVideoId } from '@/lib/youtube-url';
 import ScoreBadge from './ScoreBadge';
 import SoundchartsSearch from './SoundchartsSearch';
 
@@ -49,6 +50,7 @@ export default function ArtistForm({ artist }: Props) {
     song_preview_url: artist?.song_preview_url ?? '',
     why_trending: artist?.why_trending ?? '',
     soundcharts_uuid: artist?.soundcharts_uuid ?? undefined,
+    featured_video_id: artist?.featured_video_id ?? '',
   }));
 
   const liveGrowthScore = growthVelocityScore(form.growth_velocity_pct);
@@ -84,10 +86,16 @@ export default function ArtistForm({ artist }: Props) {
     try {
       const url = artist ? `/api/artists/${artist.id}` : '/api/artists';
       const method = artist ? 'PATCH' : 'POST';
+      const payload = {
+        ...form,
+        // Accept a pasted watch/share/shorts URL as well as a bare ID —
+        // normalize to just the ID before it's stored.
+        featured_video_id: form.featured_video_id ? parseYoutubeVideoId(form.featured_video_id) ?? form.featured_video_id : form.featured_video_id,
+      };
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('Save failed');
       const saved = await res.json();
@@ -110,12 +118,12 @@ export default function ArtistForm({ artist }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {error && <div className="card border-red-500/40 text-red-300">{error}</div>}
+      {error && <div className="card" style={{ borderColor: 'var(--down)', color: 'var(--down)' }}>{error}</div>}
 
       <SoundchartsSearch soundchartsUuid={form.soundcharts_uuid} onFill={fillFromSoundcharts} />
 
       <div className="card space-y-4">
-        <h2 className="font-semibold text-lg">Basics</h2>
+        <h2 className="font-bold text-lg">Basics</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">Name *</label>
@@ -145,7 +153,7 @@ export default function ArtistForm({ artist }: Props) {
       </div>
 
       <div className="card space-y-4">
-        <h2 className="font-semibold text-lg">Media <span className="font-normal text-sm text-neutral-500">— what NEXT users actually see</span></h2>
+        <h2 className="font-bold text-lg">Media <span className="font-normal text-sm" style={{ color: 'var(--text-faint)' }}>— what NEXT users actually see</span></h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">Photo URL</label>
@@ -154,16 +162,21 @@ export default function ArtistForm({ artist }: Props) {
           <div>
             <label className="label">30-second preview clip URL</label>
             <input className="input" value={form.song_preview_url ?? ''} onChange={(e) => set('song_preview_url', e.target.value)} placeholder="Direct link to an audio file (.mp3, .m4a…)" />
-            <p className="text-xs text-neutral-500 mt-1">✓ Deezer sync fills this automatically when it finds a top track — only type one in to override it</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Deezer sync fills this automatically when it finds a top track — only type one in to override it</p>
           </div>
           <div>
             <label className="label">Top song link</label>
             <input className="input" value={form.top_song_url ?? ''} onChange={(e) => set('top_song_url', e.target.value)} placeholder="Link to their best/most popular track" />
-            <p className="text-xs text-neutral-500 mt-1">✓ Deezer sync fills this automatically (dashboard) — only type one in to override it</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Deezer sync fills this automatically (dashboard) — only type one in to override it</p>
           </div>
           <div>
             <label className="label">Why they&apos;re trending</label>
             <input className="input" value={form.why_trending ?? ''} onChange={(e) => set('why_trending', e.target.value)} placeholder="One line — shown right on the card" />
+          </div>
+          <div>
+            <label className="label">Featured video</label>
+            <input className="input" value={form.featured_video_id ?? ''} onChange={(e) => set('featured_video_id', e.target.value)} placeholder="YouTube link — plays behind their NEXT profile" />
+            <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Filled automatically when approved from a YouTube discovery candidate — paste a link to override it</p>
           </div>
         </div>
         <div>
@@ -173,7 +186,7 @@ export default function ArtistForm({ artist }: Props) {
       </div>
 
       <div className="card space-y-4">
-        <h2 className="font-semibold text-lg">Platforms</h2>
+        <h2 className="font-bold text-lg">Platforms</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">TikTok URL</label>
@@ -199,8 +212,8 @@ export default function ArtistForm({ artist }: Props) {
       </div>
 
       <div className="card space-y-4">
-        <h2 className="font-semibold text-lg">Metrics</h2>
-        <p className="text-sm text-neutral-400">
+        <h2 className="font-bold text-lg">Metrics</h2>
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
           30-day growth and engagement rate directly drive two of the Breakout Score categories below —
           no separate rating needed. Followers and 30-day growth fill automatically via Soundcharts sync
           when linked; monthly listeners and engagement rate stay manual — no API (Soundcharts&apos; or
@@ -210,46 +223,46 @@ export default function ArtistForm({ artist }: Props) {
           <div>
             <label className="label">Followers</label>
             <input type="number" min={0} className="input" value={form.followers_count ?? ''} onChange={(e) => set('followers_count', e.target.value === '' ? undefined : Number(e.target.value))} />
-            <p className="text-xs text-neutral-500 mt-1">✓ Soundcharts sync fills this when linked</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Soundcharts sync fills this when linked</p>
           </div>
           <div>
             <label className="label">Monthly listeners</label>
             <input type="number" min={0} className="input" value={form.monthly_listeners ?? ''} onChange={(e) => set('monthly_listeners', e.target.value === '' ? undefined : Number(e.target.value))} />
-            <p className="text-xs text-neutral-500 mt-1">Manual only — Spotify doesn&apos;t expose this via any API</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>Manual only — Spotify doesn&apos;t expose this via any API</p>
           </div>
           <div>
             <label className="label">30-day growth %</label>
             <input type="number" step="0.1" className="input" value={form.growth_velocity_pct ?? ''} onChange={(e) => set('growth_velocity_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
-            <p className="text-xs text-neutral-500 mt-1">✓ Soundcharts sync fills this when linked · → Growth Velocity {liveGrowthScore.toFixed(1)}/10</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Soundcharts sync fills this when linked · → Growth Velocity {liveGrowthScore.toFixed(1)}/10</p>
           </div>
           <div>
             <label className="label">Engagement rate %</label>
             <input type="number" step="0.1" className="input" value={form.engagement_rate_pct ?? ''} onChange={(e) => set('engagement_rate_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
-            <p className="text-xs text-neutral-500 mt-1">Manual only — not returned by Soundcharts on this plan · → Engagement Quality {liveEngagementScore.toFixed(1)}/10</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>Manual only — not returned by Soundcharts on this plan · → Engagement Quality {liveEngagementScore.toFixed(1)}/10</p>
           </div>
         </div>
       </div>
 
       <div className="card space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h2 className="font-semibold text-lg">Breakout Score inputs</h2>
+          <h2 className="font-bold text-lg">Breakout Score inputs</h2>
           <ScoreBadge score={liveScore} size="lg" />
         </div>
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
           Rate each category 0–10. Weighted automatically into the Breakout Score (music/talent counts most,
           professionalism/commercial potential count least). Growth Velocity and Engagement Quality aren't
           rated here anymore — they're computed from the real numbers in Metrics above.
         </p>
-        <div className="flex items-center gap-4 text-sm border border-neutral-800 rounded-lg px-4 py-3">
-          <span className="text-neutral-400">Growth Velocity <strong className="text-white">{liveGrowthScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.growth_velocity}%</span>
-          <span className="text-neutral-400">Engagement Quality <strong className="text-white">{liveEngagementScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.engagement_quality}%</span>
+        <div className="flex items-center gap-4 text-sm rounded-lg px-4 py-3" style={{ border: '1px solid var(--border-soft)' }}>
+          <span className="num" style={{ color: 'var(--text-muted)' }}>Growth Velocity <strong style={{ color: 'var(--text)' }}>{liveGrowthScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.growth_velocity}%</span>
+          <span className="num" style={{ color: 'var(--text-muted)' }}>Engagement Quality <strong style={{ color: 'var(--text)' }}>{liveEngagementScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.engagement_quality}%</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
           {RATED_SCORE_FIELDS.map((field) => (
             <div key={field}>
               <div className="flex items-center justify-between">
                 <label className="label mb-0">{SCORE_LABELS[field]}</label>
-                <span className="text-sm text-neutral-400">
+                <span className="num text-sm" style={{ color: 'var(--text-muted)' }}>
                   {(form[field] as number) ?? 0}/10 · weight {SCORE_WEIGHTS[field]}%
                 </span>
               </div>
@@ -285,7 +298,7 @@ export default function ArtistForm({ artist }: Props) {
           <button type="button" className="btn" onClick={() => router.back()}>Cancel</button>
         </div>
         {artist && (
-          <button type="button" className="btn text-red-300" onClick={handleDelete}>
+          <button type="button" className="btn" style={{ color: 'var(--down)' }} onClick={handleDelete}>
             Remove artist
           </button>
         )}

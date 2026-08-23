@@ -8,11 +8,11 @@ import {
   REVENUE_SOURCE_LABELS, REVENUE_SOURCES, RevenueEntry, RevenueSource,
 } from '@/lib/types';
 
-const STATUS_CLASSES: Record<AgreementStatus, string> = {
-  draft: 'bg-neutral-500/20 border-neutral-500/40 text-neutral-300',
-  active: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300',
-  completed: 'bg-sky-500/20 border-sky-500/40 text-sky-300',
-  terminated: 'bg-red-500/20 border-red-500/40 text-red-300',
+const STATUS_STYLE: Record<AgreementStatus, React.CSSProperties> = {
+  draft: { background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--text-muted)' },
+  active: { background: 'var(--up-dim)', borderColor: 'var(--up)', color: 'var(--up)' },
+  completed: { background: 'var(--accent-dim)', borderColor: 'var(--accent-line)', color: 'var(--accent)' },
+  terminated: { background: 'var(--down-dim)', borderColor: 'var(--down)', color: 'var(--down)' },
 };
 
 function todayISO() {
@@ -161,13 +161,13 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
   return (
     <div className="card space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="font-semibold text-lg">Deals &amp; revenue</h2>
-        <div className="flex gap-4 text-sm text-neutral-400">
-          <span>Gross tracked: <strong className="text-white">{formatCents(totals.gross)}</strong></span>
-          <span>Commission earned: <strong className="text-white">{formatCents(totals.commission)}</strong></span>
+        <h2 className="font-bold text-lg">Deals &amp; revenue</h2>
+        <div className="num flex gap-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+          <span>Gross tracked: <strong style={{ color: 'var(--text)' }}>{formatCents(totals.gross)}</strong></span>
+          <span>Commission earned: <strong style={{ color: 'var(--text)' }}>{formatCents(totals.commission)}</strong></span>
         </div>
       </div>
-      <p className="text-xs text-neutral-500 -mt-3">
+      <p className="text-xs -mt-3" style={{ color: 'var(--text-faint)' }}>
         This is a ledger of negotiated terms and logged revenue, not an accounting system — real
         payout splits are whatever the actual contract says.
       </p>
@@ -175,14 +175,14 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
       {/* Agreements */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium text-neutral-200">Agreements</h3>
+          <h3 className="font-medium" style={{ color: 'var(--text-muted)' }}>Agreements</h3>
           <button type="button" className="btn text-sm" onClick={() => setShowAgreementForm((s) => !s)}>
             {showAgreementForm ? 'Cancel' : '+ Add agreement'}
           </button>
         </div>
 
         {showAgreementForm && (
-          <form onSubmit={handleAddAgreement} className="space-y-2 border border-neutral-800 rounded-lg p-3">
+          <form onSubmit={handleAddAgreement} className="space-y-2 rounded-lg p-3" style={{ border: '1px solid var(--border-soft)' }}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <select className="input" value={agreementType} onChange={(e) => setAgreementType(e.target.value as AgreementType)}>
                 {AGREEMENT_TYPES.map((t) => <option key={t} value={t}>{AGREEMENT_TYPE_LABELS[t]}</option>)}
@@ -219,21 +219,21 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
         )}
 
         {agreements?.length === 0 && !showAgreementForm && (
-          <p className="text-sm text-neutral-500">No agreements yet.</p>
+          <p className="text-sm" style={{ color: 'var(--text-faint)' }}>No agreements yet.</p>
         )}
 
         {agreements?.map((a) => {
           const recoup = recoupFor(a);
           const term = termMonths(a.start_date, a.end_date);
           return (
-            <div key={a.id} className="border-t border-neutral-800 pt-2 flex items-start justify-between gap-3">
+            <div key={a.id} className="pt-2 flex items-start justify-between gap-3" style={{ borderTop: '1px solid var(--border-soft)' }}>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium">{AGREEMENT_TYPE_LABELS[a.type]}</span>
-                  <span className={`badge ${STATUS_CLASSES[a.status]}`}>{AGREEMENT_STATUS_LABELS[a.status]}</span>
-                  {a.commission_pct != null && <span className="text-xs text-neutral-500">{a.commission_pct}% commission</span>}
+                  <span className="badge" style={STATUS_STYLE[a.status]}>{AGREEMENT_STATUS_LABELS[a.status]}</span>
+                  {a.commission_pct != null && <span className="num text-xs" style={{ color: 'var(--text-faint)' }}>{a.commission_pct}% commission</span>}
                 </div>
-                <div className="text-xs text-neutral-500 mt-1 flex gap-3 flex-wrap">
+                <div className="num text-xs mt-1 flex gap-3 flex-wrap" style={{ color: 'var(--text-faint)' }}>
                   {a.investment_amount_cents != null && <span>Investment: {formatCents(a.investment_amount_cents)}</span>}
                   {a.start_date && <span>Start {a.start_date}</span>}
                   {a.end_date && <span>End {a.end_date}</span>}
@@ -241,23 +241,23 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
                   {a.created_by_name && <span>by {a.created_by_name}</span>}
                 </div>
                 {(a.sponsorship_commission_pct != null || a.touring_commission_pct != null || a.masters_owned_by) && (
-                  <div className="text-xs text-neutral-500 mt-1 flex gap-3 flex-wrap">
+                  <div className="num text-xs mt-1 flex gap-3 flex-wrap" style={{ color: 'var(--text-faint)' }}>
                     <span>Sponsorship: {a.sponsorship_commission_pct != null ? `${a.sponsorship_commission_pct}%` : 'same as commission'}</span>
                     <span>Touring: {a.touring_commission_pct != null ? `${a.touring_commission_pct}%` : 'same as commission'}</span>
                     {a.masters_owned_by && <span>Masters: {MASTERS_OWNER_LABELS[a.masters_owned_by]}</span>}
                   </div>
                 )}
                 {recoup && (
-                  <div className="mt-1 text-xs text-neutral-400">
+                  <div className="num mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                     Recouped {formatCents(recoup.earned)} of {formatCents(a.investment_amount_cents)} ({recoup.pct}%)
-                    <div className="w-full max-w-[200px] h-1.5 bg-neutral-800 rounded-full mt-1 overflow-hidden">
-                      <div className="h-full bg-emerald-500" style={{ width: `${recoup.pct}%` }} />
+                    <div className="w-full max-w-[200px] h-1.5 rounded-full mt-1 overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                      <div className="h-full" style={{ width: `${recoup.pct}%`, background: 'var(--up)' }} />
                     </div>
                   </div>
                 )}
-                {a.notes && <p className="text-sm text-neutral-300 mt-1">{a.notes}</p>}
+                {a.notes && <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{a.notes}</p>}
               </div>
-              <button type="button" className="text-neutral-500 hover:text-red-300 text-sm shrink-0" onClick={() => handleDeleteAgreement(a.id)} aria-label="Delete agreement">✕</button>
+              <button type="button" className="text-sm shrink-0 hover:opacity-80" style={{ color: 'var(--text-faint)' }} onClick={() => handleDeleteAgreement(a.id)} aria-label="Delete agreement">✕</button>
             </div>
           );
         })}
@@ -266,14 +266,14 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
       {/* Revenue */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium text-neutral-200">Revenue log</h3>
+          <h3 className="font-medium" style={{ color: 'var(--text-muted)' }}>Revenue log</h3>
           <button type="button" className="btn text-sm" onClick={() => setShowRevenueForm((s) => !s)}>
             {showRevenueForm ? 'Cancel' : '+ Log revenue'}
           </button>
         </div>
 
         {showRevenueForm && (
-          <form onSubmit={handleAddRevenue} className="space-y-2 border border-neutral-800 rounded-lg p-3">
+          <form onSubmit={handleAddRevenue} className="space-y-2 rounded-lg p-3" style={{ border: '1px solid var(--border-soft)' }}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <input className="input" type="date" value={revenueDate} onChange={(e) => setRevenueDate(e.target.value)} required />
               <select className="input" value={revenueSource} onChange={(e) => setRevenueSource(e.target.value as RevenueSource)}>
@@ -295,32 +295,32 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
         )}
 
         {revenue?.length === 0 && !showRevenueForm && (
-          <p className="text-sm text-neutral-500">No revenue logged yet.</p>
+          <p className="text-sm" style={{ color: 'var(--text-faint)' }}>No revenue logged yet.</p>
         )}
 
         {revenue && revenue.length > 0 && (
           <div className="max-h-64 overflow-y-auto text-sm">
             <table className="w-full">
-              <thead className="text-neutral-500 text-left">
+              <thead className="text-left">
                 <tr>
-                  <th className="font-normal pb-1">Date</th>
-                  <th className="font-normal pb-1">Source</th>
-                  <th className="font-normal pb-1 text-right">Gross</th>
-                  <th className="font-normal pb-1 text-right">Commission</th>
+                  <th className="font-normal pb-1" style={{ color: 'var(--text-faint)' }}>Date</th>
+                  <th className="font-normal pb-1" style={{ color: 'var(--text-faint)' }}>Source</th>
+                  <th className="font-normal pb-1 text-right" style={{ color: 'var(--text-faint)' }}>Gross</th>
+                  <th className="font-normal pb-1 text-right" style={{ color: 'var(--text-faint)' }}>Commission</th>
                   <th className="font-normal pb-1"></th>
                 </tr>
               </thead>
               <tbody>
                 {revenue.map((r) => (
-                  <tr key={r.id} className="border-t border-neutral-800">
-                    <td className="py-1 text-neutral-400">{r.recorded_at}</td>
-                    <td className="py-1 text-neutral-400">{REVENUE_SOURCE_LABELS[r.source]}</td>
-                    <td className="py-1 text-right">{formatCents(r.gross_amount_cents)}</td>
-                    <td className="py-1 text-right text-neutral-400">
+                  <tr key={r.id} style={{ borderTop: '1px solid var(--border-soft)' }}>
+                    <td className="num py-1" style={{ color: 'var(--text-muted)' }}>{r.recorded_at}</td>
+                    <td className="py-1" style={{ color: 'var(--text-muted)' }}>{REVENUE_SOURCE_LABELS[r.source]}</td>
+                    <td className="num py-1 text-right">{formatCents(r.gross_amount_cents)}</td>
+                    <td className="num py-1 text-right" style={{ color: 'var(--text-muted)' }}>
                       {r.commission_amount_cents != null ? formatCents(r.commission_amount_cents) : '—'}
                     </td>
                     <td className="py-1 text-right">
-                      <button type="button" className="text-neutral-500 hover:text-red-300" onClick={() => handleDeleteRevenue(r.id)} aria-label="Delete entry">✕</button>
+                      <button type="button" className="hover:opacity-80" style={{ color: 'var(--text-faint)' }} onClick={() => handleDeleteRevenue(r.id)} aria-label="Delete entry">✕</button>
                     </td>
                   </tr>
                 ))}

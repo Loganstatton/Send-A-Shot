@@ -30,8 +30,8 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">{artist.name}</h1>
-          <p className="text-neutral-400 text-sm">
+          <h1 className="text-2xl font-bold">{artist.name}</h1>
+          <p className="text-sm" style={{ color: 'var(--text-faint)' }}>
             Added {new Date(artist.created_at).toLocaleDateString()}
             {artist.created_by_name ? ` by ${artist.created_by_name}` : ''}
             {' · '}Last updated {new Date(artist.updated_at).toLocaleDateString()}

@@ -15,8 +15,8 @@ export default function ScoreHistory({ artistId }: { artistId: number }) {
   if (history === null) {
     return (
       <div className="card">
-        <h2 className="font-semibold text-lg">Score history</h2>
-        <p className="text-sm text-neutral-500 mt-2">Loading…</p>
+        <h2 className="font-bold text-lg">Score history</h2>
+        <p className="text-sm mt-2" style={{ color: 'var(--text-faint)' }}>Loading…</p>
       </div>
     );
   }
@@ -24,8 +24,8 @@ export default function ScoreHistory({ artistId }: { artistId: number }) {
   if (history.length === 0) {
     return (
       <div className="card">
-        <h2 className="font-semibold text-lg">Score history</h2>
-        <p className="text-sm text-neutral-500 mt-2">No snapshots yet — history is recorded automatically on every save.</p>
+        <h2 className="font-bold text-lg">Score history</h2>
+        <p className="text-sm mt-2" style={{ color: 'var(--text-faint)' }}>No snapshots yet — history is recorded automatically on every save.</p>
       </div>
     );
   }
@@ -38,9 +38,9 @@ export default function ScoreHistory({ artistId }: { artistId: number }) {
   return (
     <div className="card space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-lg">Score history</h2>
+        <h2 className="font-bold text-lg">Score history</h2>
         {history.length > 1 && (
-          <span className={`text-sm font-medium ${delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-red-400' : 'text-neutral-400'}`}>
+          <span className="num text-sm font-medium" style={{ color: delta > 0 ? 'var(--up)' : delta < 0 ? 'var(--down)' : 'var(--text-muted)' }}>
             {delta > 0 ? '+' : ''}{delta} since first tracked
           </span>
         )}
@@ -48,19 +48,19 @@ export default function ScoreHistory({ artistId }: { artistId: number }) {
       <Sparkline points={scores} />
       <div className="max-h-40 overflow-y-auto text-sm">
         <table className="w-full">
-          <thead className="text-neutral-500 text-left">
+          <thead className="text-left">
             <tr>
-              <th className="font-normal pb-1">Date</th>
-              <th className="font-normal pb-1">Stage</th>
-              <th className="font-normal pb-1 text-right">Score</th>
+              <th className="font-normal pb-1" style={{ color: 'var(--text-faint)' }}>Date</th>
+              <th className="font-normal pb-1" style={{ color: 'var(--text-faint)' }}>Stage</th>
+              <th className="font-normal pb-1 text-right" style={{ color: 'var(--text-faint)' }}>Score</th>
             </tr>
           </thead>
           <tbody>
             {[...history].reverse().map((snap) => (
-              <tr key={snap.id} className="border-t border-neutral-800">
-                <td className="py-1 text-neutral-400">{new Date(snap.recorded_at).toLocaleDateString()}</td>
-                <td className="py-1 text-neutral-400 capitalize">{snap.stage}</td>
-                <td className="py-1 text-right font-medium">{snap.breakout_score.toFixed(1)}</td>
+              <tr key={snap.id} style={{ borderTop: '1px solid var(--border-soft)' }}>
+                <td className="num py-1" style={{ color: 'var(--text-muted)' }}>{new Date(snap.recorded_at).toLocaleDateString()}</td>
+                <td className="py-1 capitalize" style={{ color: 'var(--text-muted)' }}>{snap.stage}</td>
+                <td className="num py-1 text-right font-medium">{snap.breakout_score.toFixed(1)}</td>
               </tr>
             ))}
           </tbody>

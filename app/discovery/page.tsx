@@ -25,10 +25,10 @@ function LastRunLine({ label, run }: { label: string; run?: DiscoveryRun }) {
   if (!run) return null;
   const rejected = run.status === 'completed' ? rejectionSummary(run) : null;
   return (
-    <p className="text-xs text-neutral-500">
+    <p className="num text-xs" style={{ color: 'var(--text-faint)' }}>
       {label}: {new Date(run.started_at).toLocaleString()} —{' '}
       {run.status === 'failed'
-        ? <span className="text-red-400">failed: {run.error}</span>
+        ? <span style={{ color: 'var(--down)' }}>failed: {run.error}</span>
         : `searched ${run.searched_count}, found ${run.candidates_found}.`}
       {rejected && <span> {rejected}</span>}
     </p>
@@ -45,8 +45,8 @@ export default async function DiscoveryPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">New Candidates</h1>
-          <p className="text-neutral-400 text-sm">
+          <h1 className="text-2xl font-bold">New Candidates</h1>
+          <p className="text-sm" style={{ color: 'var(--text-faint)' }}>
             Artists YouTube flagged for unusual momentum — nobody searched for these by name.
             Approve to add them to Scout&apos;s roster and rate them; Watch to keep an eye without committing; Pass to drop them for good.
           </p>
@@ -64,7 +64,7 @@ export default async function DiscoveryPage() {
 
       {watching.length > 0 && (
         <details className="card">
-          <summary className="cursor-pointer text-neutral-400 text-sm">Watching ({watching.length})</summary>
+          <summary className="cursor-pointer text-sm" style={{ color: 'var(--text-muted)' }}>Watching ({watching.length})</summary>
           <div className="mt-3">
             <DiscoveryQueue initial={watching} />
           </div>

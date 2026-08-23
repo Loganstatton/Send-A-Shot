@@ -67,23 +67,26 @@ export default function TradePanel({
     else setDollars((marketValueCents / 100).toFixed(2));
   }
 
+  const row = 'flex justify-between';
+  const rowLabel = { color: 'var(--text-faint)' };
+
   return (
-    <div className="card space-y-4">
+    <div className="next-card p-[22px] flex flex-col gap-4 sticky top-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="font-semibold text-lg">Trade</h2>
-        <span className="text-sm text-neutral-400">
-          Balance: <strong className="text-white">{formatCents(creditsCents)}</strong> NEXT Credits
+        <h2 className="font-display font-bold text-[17px] m-0">Trade</h2>
+        <span className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
+          Balance <span className="num font-semibold" style={{ color: 'var(--text)' }}>{formatCents(creditsCents)}</span>
         </span>
       </div>
 
       {ownedShares > 0 && (
-        <div className="text-sm border border-neutral-800 rounded-lg p-3 space-y-1">
-          <div className="flex justify-between"><span className="text-neutral-400">Shares owned</span><span>{ownedShares.toFixed(4)}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-400">Avg cost</span><span>{formatCents(ownedShares > 0 ? costBasisCents / ownedShares : 0)}</span></div>
-          <div className="flex justify-between"><span className="text-neutral-400">Market value</span><span>{formatCents(marketValueCents)}</span></div>
-          <div className="flex justify-between">
-            <span className="text-neutral-400">Unrealized P&amp;L</span>
-            <span className={unrealizedPnlCents >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+        <div className="text-[13px] rounded-xl border p-3 flex flex-col gap-1.5" style={{ borderColor: 'var(--border-soft)' }}>
+          <div className={row}><span style={rowLabel}>Shares owned</span><span className="num">{ownedShares.toFixed(4)}</span></div>
+          <div className={row}><span style={rowLabel}>Avg cost</span><span className="num">{formatCents(ownedShares > 0 ? costBasisCents / ownedShares : 0)}</span></div>
+          <div className={row}><span style={rowLabel}>Market value</span><span className="num">{formatCents(marketValueCents)}</span></div>
+          <div className={row}>
+            <span style={rowLabel}>Unrealized P&amp;L</span>
+            <span className="num" style={{ color: unrealizedPnlCents >= 0 ? 'var(--up)' : 'var(--down)' }}>
               {unrealizedPnlCents >= 0 ? '+' : ''}{formatCents(unrealizedPnlCents)}
             </span>
           </div>
@@ -91,46 +94,86 @@ export default function TradePanel({
       )}
 
       <div className="flex gap-2">
-        <button type="button" className={`btn flex-1 ${mode === 'buy' ? 'btn-primary' : ''}`} onClick={() => setMode('buy')}>Buy</button>
-        <button type="button" className={`btn flex-1 ${mode === 'sell' ? 'bg-red-600 text-white' : ''}`} onClick={() => setMode('sell')} disabled={ownedShares <= 0}>Sell</button>
+        <button
+          type="button"
+          className="flex-1 text-center py-2.5 rounded-[10px] text-[13.5px] font-bold"
+          style={mode === 'buy' ? { background: 'var(--ember)', color: 'var(--on-ember)' } : { border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
+          onClick={() => setMode('buy')}
+        >
+          Buy
+        </button>
+        <button
+          type="button"
+          className="flex-1 text-center py-2.5 rounded-[10px] text-[13.5px] font-bold disabled:opacity-40"
+          style={mode === 'sell' ? { background: 'var(--down)', color: 'var(--on-ember)' } : { border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
+          onClick={() => setMode('sell')}
+          disabled={ownedShares <= 0}
+        >
+          Sell
+        </button>
       </div>
 
-      <form onSubmit={handleTrade} className="space-y-2">
-        <label className="label">{mode === 'buy' ? 'Spend' : 'Sell'} (NEXT Credits $)</label>
+      <form onSubmit={handleTrade} className="flex flex-col gap-2">
+        <label className="text-[12.5px]" style={rowLabel}>{mode === 'buy' ? 'Spend' : 'Sell'} (NEXT Credits $)</label>
         <input
           type="number"
           step="0.01"
           min="0.01"
-          className="input"
+          className="num rounded-[10px] px-3.5 py-3 text-lg font-semibold outline-none"
+          style={{ border: '1px solid var(--ember-line)', background: 'var(--bg)', color: 'var(--text)' }}
           value={dollars}
           onChange={(e) => setDollars(e.target.value)}
         />
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap">
           {PRESETS_BUY.map((amt) => (
-            <button key={amt} type="button" className="btn text-xs px-2 py-1" onClick={() => setDollars(String(amt))}>${amt}</button>
+            <button
+              key={amt}
+              type="button"
+              className="px-3 py-[5px] rounded-full text-xs"
+              style={{ border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
+              onClick={() => setDollars(String(amt))}
+            >
+              ${amt}
+            </button>
           ))}
-          <button type="button" className="btn text-xs px-2 py-1" onClick={setMax}>MAX</button>
+          <button
+            type="button"
+            className="px-3 py-[5px] rounded-full text-xs"
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            onClick={setMax}
+          >
+            MAX
+          </button>
         </div>
 
         {hasAmount && (
-          <div className="text-xs text-neutral-400 border border-neutral-800 rounded-lg p-3 space-y-1 mt-2">
-            <div className="flex justify-between"><span>You&apos;re {mode === 'buy' ? 'buying' : 'selling'} approximately</span><span className="text-white">{estimatedShares.toFixed(4)} shares</span></div>
-            <div className="flex justify-between"><span>Average execution</span><span className="text-white">{formatCents(executionCents)}</span></div>
-            <div className="flex justify-between"><span>Estimated price after trade</span><span className="text-white">{formatCents(postTradePriceCents)}</span></div>
-            <div className="flex justify-between"><span>Available credits after</span><span className="text-white">{formatCents(Math.max(0, creditsAfterCents))}</span></div>
+          <div className="text-[12.5px] rounded-xl p-3 flex flex-col gap-1.5 mt-1" style={{ background: 'var(--surface-2)' }}>
+            <div className={row}><span style={rowLabel}>You&apos;re {mode === 'buy' ? 'buying' : 'selling'} approximately</span><span className="num" style={{ color: 'var(--text)' }}>{estimatedShares.toFixed(4)} shares</span></div>
+            <div className={row}><span style={rowLabel}>Average execution</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(executionCents)}</span></div>
+            <div className={row}><span style={rowLabel}>Estimated price after trade</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(postTradePriceCents)}</span></div>
+            <div className={row}><span style={rowLabel}>Available credits after</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(Math.max(0, creditsAfterCents))}</span></div>
           </div>
         )}
 
-        {error && <p className="text-sm text-red-300">{error}</p>}
-        <button type="submit" className={`btn w-full ${mode === 'buy' ? 'btn-primary' : 'bg-red-600 text-white'}`} disabled={saving}>
+        {error && <p className="text-sm" style={{ color: 'var(--down)' }}>{error}</p>}
+        <button
+          type="submit"
+          className="text-center py-[13px] rounded-xl text-[14.5px] font-bold disabled:opacity-60"
+          style={
+            mode === 'buy'
+              ? { background: 'var(--ember)', color: 'var(--on-ember)', boxShadow: '0 8px 24px -8px var(--ember-line)' }
+              : { background: 'var(--down)', color: 'var(--on-ember)' }
+          }
+          disabled={saving}
+        >
           {saving ? 'Placing order…' : mode === 'buy' ? 'Back this artist' : 'Sell'}
         </button>
         {ownedShares > 0 && mode === 'sell' && (
-          <button type="button" className="btn w-full text-sm" onClick={sellAll}>Sell all</button>
+          <button type="button" className="next-btn-ghost text-sm py-2 rounded-[10px]" onClick={sellAll}>Sell all</button>
         )}
       </form>
 
-      <p className="text-xs text-neutral-500">
+      <p className="text-[11px] leading-relaxed m-0" style={{ color: 'var(--text-faint)' }}>
         NEXT Credits are virtual — no real monetary value. Price moves ~5% per $10,000 traded on one side.
       </p>
     </div>

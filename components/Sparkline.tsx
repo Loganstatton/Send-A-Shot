@@ -11,7 +11,7 @@ export default function Sparkline({ points, className = 'w-full h-16' }: { point
   const coords = points
     .map((p, i) => `${(i * step).toFixed(1)},${(h - ((p - min) / range) * h).toFixed(1)}`)
     .join(' ');
-  const color = points[points.length - 1] >= points[0] ? '#34d399' : '#f87171';
+  const color = points[points.length - 1] >= points[0] ? 'var(--up)' : 'var(--down)';
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className={className} preserveAspectRatio="none">
       <polyline points={coords} fill="none" stroke={color} strokeWidth={2} />

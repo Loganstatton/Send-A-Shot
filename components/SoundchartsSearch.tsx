@@ -74,7 +74,7 @@ export default function SoundchartsSearch({
 
   return (
     <div className="card space-y-3">
-      <h2 className="font-semibold text-lg">Soundcharts</h2>
+      <h2 className="font-bold text-lg">Soundcharts</h2>
       {soundchartsUuid ? (
         <div className="flex items-center gap-3 flex-wrap">
           <span className="badge text-xs">🔗 Linked</span>
@@ -97,23 +97,26 @@ export default function SoundchartsSearch({
             onFocus={() => hits.length > 0 && setOpen(true)}
           />
           {open && (
-            <div className="absolute z-10 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-neutral-700 bg-neutral-900 shadow-lg">
+            <div
+              className="absolute z-10 mt-1 w-full max-h-72 overflow-y-auto rounded-lg shadow-lg"
+              style={{ border: '1px solid var(--border)', background: 'var(--bg-2)' }}
+            >
               {hits.length === 0 && !searching && (
-                <p className="text-sm text-neutral-500 p-3">No matches.</p>
+                <p className="text-sm p-3" style={{ color: 'var(--text-faint)' }}>No matches.</p>
               )}
               {hits.map((hit) => (
                 <button
                   key={hit.uuid}
                   type="button"
-                  className="w-full flex items-center gap-3 p-2 hover:bg-white/5 text-left"
+                  className="w-full flex items-center gap-3 p-2 text-left hover:bg-[var(--surface-2)]"
                   onClick={() => fill(hit.uuid, hit.name)}
                   disabled={filling}
                 >
                   {hit.imageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={hit.imageUrl} alt="" className="w-8 h-8 rounded-full object-cover bg-neutral-800" />
+                    <img src={hit.imageUrl} alt="" className="w-8 h-8 rounded-full object-cover" style={{ background: 'var(--surface-2)' }} />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700" />
+                    <div className="w-8 h-8 rounded-full" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }} />
                   )}
                   <span className="text-sm">{hit.name}</span>
                 </button>
@@ -122,10 +125,10 @@ export default function SoundchartsSearch({
           )}
         </div>
       )}
-      {searching && <p className="text-xs text-neutral-500">Searching…</p>}
-      {status && <p className="text-xs text-emerald-400">{status}</p>}
-      {error && <p className="text-xs text-red-300">{error}</p>}
-      <p className="text-xs text-neutral-500">
+      {searching && <p className="text-xs" style={{ color: 'var(--text-faint)' }}>Searching…</p>}
+      {status && <p className="text-xs" style={{ color: 'var(--up)' }}>{status}</p>}
+      {error && <p className="text-xs" style={{ color: 'var(--down)' }}>{error}</p>}
+      <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
         Fills in photo, bio, genre, location, and platform stats — never overwrites the Breakout Score
         inputs, which are your own rating. Fields Soundcharts doesn&apos;t return are left untouched.
       </p>

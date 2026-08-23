@@ -86,6 +86,9 @@ export type Artist = ScoreInputs & {
   song_preview_url?: string;
   why_trending?: string;
   soundcharts_uuid?: string;
+  // YouTube video ID (e.g. "dQw4w9WgXcQ", not a full URL) embedded as
+  // NEXT's Artist Detail hero — see lib/db.ts's addColumnIfMissing note.
+  featured_video_id?: string;
 };
 
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {

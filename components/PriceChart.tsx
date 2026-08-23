@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { formatCents } from '@/lib/format';
 
 type Point = { recorded_at: string; value: number };
@@ -37,6 +37,7 @@ export default function PriceChart({
 }) {
   const [range, setRange] = useState<RangeKey>('ALL');
   const formatValue = FORMATTERS[format];
+  const gradientId = `chart-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
   const filtered = useMemo(() => {
     const cfg = RANGES.find((r) => r.key === range)!;
@@ -51,7 +52,7 @@ export default function PriceChart({
   }, [points, range]);
 
   if (points.length === 0) {
-    return <p className="text-sm text-neutral-500 py-8 text-center">No history yet.</p>;
+    return <p className="text-sm py-8 text-center" style={{ color: 'var(--text-faint)' }}>No history yet.</p>;
   }
 
   const current = points[points.length - 1].value;
@@ -59,7 +60,7 @@ export default function PriceChart({
   const changeAbs = current - start;
   const changePct = start !== 0 ? (changeAbs / start) * 100 : 0;
   const up = changeAbs >= 0;
-  const lineColor = color !== 'auto' ? color : up ? '#34d399' : '#f87171';
+  const lineColor = color !== 'auto' ? color : up ? 'var(--up)' : 'var(--down)';
 
   const w = 600;
   const h = 160;
@@ -78,12 +79,12 @@ export default function PriceChart({
 
   return (
     <div>
-      <div className="flex items-end justify-between flex-wrap gap-2 mb-3">
-        <div>
-          <div className="text-3xl font-semibold">{formatValue(current)}</div>
-          <div className={`text-sm font-medium ${up ? 'text-emerald-400' : 'text-red-400'}`}>
+      <div className="flex items-end justify-between flex-wrap gap-2 mb-4">
+        <div className="flex items-baseline gap-2.5">
+          <span className="num font-display font-bold text-[28px] md:text-[32px]">{formatValue(current)}</span>
+          <span className="num text-sm font-semibold" style={{ color: up ? 'var(--up)' : 'var(--down)' }}>
             {up ? '+' : ''}{formatValue(changeAbs).replace('-', '')} ({up ? '+' : ''}{changePct.toFixed(2)}%) {range === 'ALL' ? 'all time' : range}
-          </div>
+          </span>
         </div>
         <div className="flex gap-1">
           {RANGES.map((r) => (
@@ -91,7 +92,12 @@ export default function PriceChart({
               key={r.key}
               type="button"
               onClick={() => setRange(r.key)}
-              className={`px-2 py-1 text-xs rounded-md ${range === r.key ? 'bg-white/20 font-semibold' : 'text-neutral-500 hover:text-neutral-300'}`}
+              className="px-3 py-[5px] text-xs rounded-lg"
+              style={
+                range === r.key
+                  ? { background: 'var(--ember-dim)', border: '1px solid var(--ember-line)', color: 'var(--ember)', fontWeight: 600 }
+                  : { color: 'var(--text-faint)' }
+              }
             >
               {r.label}
             </button>
@@ -99,18 +105,18 @@ export default function PriceChart({
         </div>
       </div>
       {hasLine ? (
-        <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-40" preserveAspectRatio="none">
+        <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-[180px]" preserveAspectRatio="none">
           <defs>
-            <linearGradient id={`fill-${lineColor.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={lineColor} stopOpacity="0.25" />
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={lineColor} stopOpacity="0.3" />
               <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
             </linearGradient>
           </defs>
-          <path d={areaPath} fill={`url(#fill-${lineColor.replace('#', '')})`} stroke="none" />
-          <polyline points={coords} fill="none" stroke={lineColor} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+          <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
+          <polyline points={coords} fill="none" stroke={lineColor} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </svg>
       ) : (
-        <p className="text-sm text-neutral-500 h-40 flex items-center justify-center">Not enough history yet.</p>
+        <p className="text-sm h-[180px] flex items-center justify-center" style={{ color: 'var(--text-faint)' }}>Not enough history yet.</p>
       )}
     </div>
   );
