@@ -3,7 +3,7 @@ import { createArtist, getAllArtists, updateArtist } from '@/lib/db';
 import { getInternalUser } from '@/lib/auth';
 import { ArtistInput } from '@/lib/types';
 import { getTopSongForArtist } from '@/lib/deezer';
-import { searchArtistVideo, youtubeConfigured } from '@/lib/youtube';
+import { getFeaturedVideoForArtist, youtubeConfigured } from '@/lib/youtube';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,9 +47,11 @@ export async function POST(req: Request) {
   // Same best-effort, one-time lookup for the featured video — a manually
   // added artist otherwise sits with a blank NEXT hero forever, since
   // (unlike Deezer's top song) nothing else ever fills this in for them.
-  // Never blocks or fails artist creation.
+  // Never blocks or fails artist creation. Passes the artist's YouTube
+  // channel (from Soundcharts, if it found one) so this can skip the
+  // 100-unit search call in favor of a 2-unit channel lookup when possible.
   if (!artist.featured_video_id && youtubeConfigured()) {
-    const result = await searchArtistVideo(artist.name).catch((err) => {
+    const result = await getFeaturedVideoForArtist(artist.name, artist.youtube_url ?? undefined).catch((err) => {
       console.error('[youtube-lookup] on-create lookup threw for', artist.name, err?.message);
       return null;
     });

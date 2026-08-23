@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getInternalUser } from '@/lib/auth';
 import { completeSyncRun, createSyncRun, getArtistsMissingVideo, updateArtist } from '@/lib/db';
-import { searchArtistVideo, youtubeConfigured } from '@/lib/youtube';
+import { getFeaturedVideoForArtist, youtubeConfigured } from '@/lib/youtube';
 import { ArtistInput } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
 
   try {
     for (const artist of artists) {
-      const result = await searchArtistVideo(artist.name);
+      const result = await getFeaturedVideoForArtist(artist.name, artist.youtube_url);
       if (!result.ok) {
         errorCount++;
         lastError = result.error;

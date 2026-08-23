@@ -1279,10 +1279,10 @@ export function getArtistsMissingTopSong(): { id: number; name: string }[] {
 // getArtistsMissingTopSong — a video a Scout picked by hand (or a
 // discovery-approval video) is never silently overwritten; clear the
 // field to have sync fill it again.
-export function getArtistsMissingVideo(): { id: number; name: string }[] {
+export function getArtistsMissingVideo(): { id: number; name: string; youtube_url?: string }[] {
   return db
-    .prepare("SELECT id, name FROM artists WHERE featured_video_id IS NULL OR featured_video_id = ''")
-    .all() as { id: number; name: string }[];
+    .prepare("SELECT id, name, youtube_url FROM artists WHERE featured_video_id IS NULL OR featured_video_id = ''")
+    .all() as { id: number; name: string; youtube_url?: string }[];
 }
 
 // Candidates already reviewed (watching/approved/passed) for a name are
