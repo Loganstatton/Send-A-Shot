@@ -2,23 +2,40 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { NextMarketRow } from '@/lib/types';
-import { formatCents } from '@/lib/format';
+import { formatCents, timeAgo } from '@/lib/format';
 import { marketSentiment } from '@/lib/next-market';
 import AudioPreview from '@/components/AudioPreview';
 import ScoreGapBar from '@/components/next/ScoreGapBar';
 import PriceSparkline from '@/components/next/PriceSparkline';
 import WatchButton from '@/components/next/WatchButton';
+import AlertToggle from '@/components/next/AlertToggle';
 import { heroGradient } from '@/components/next/heroGradient';
 import InfoTip from '@/components/next/InfoTip';
+
+// "Significant" thresholds for the since-you-added alert flag: 5 points
+// matches momentumStatus()'s own "Rising" cutoff in lib/scoring.ts (the
+// same Score-change definition, reused here). 10% has no prior precedent
+// in this codebase — a deliberately simple first-pass band for price.
+const ALERT_SCORE_THRESHOLD = 5;
+const ALERT_PRICE_PCT_THRESHOLD = 10;
+
+export type SinceWatched = {
+  watchedAt: string;
+  alertsEnabled: boolean;
+  scoreAtWatch: number | null;
+  priceAtWatchCents: number | null;
+};
 
 export default function ArtistCard({
   row,
   hotSignal = false,
   watching = false,
+  sinceWatched,
 }: {
   row: NextMarketRow;
   hotSignal?: boolean;
   watching?: boolean;
+  sinceWatched?: SinceWatched;
 }) {
   const { artist, score, priceCents, priceHistory } = row;
   const sentiment = marketSentiment(score, priceCents);
@@ -26,6 +43,16 @@ export default function ArtistCard({
   const changePct = first !== 0 ? ((priceCents - first) / first) * 100 : 0;
   const up = changePct >= 0;
   const undervalued = sentiment.tone === 'undervalued';
+
+  const scoreChangeSinceWatch = sinceWatched?.scoreAtWatch != null ? Math.round((score - sinceWatched.scoreAtWatch) * 10) / 10 : null;
+  const priceChangePctSinceWatch =
+    sinceWatched?.priceAtWatchCents != null && sinceWatched.priceAtWatchCents !== 0
+      ? Math.round(((priceCents - sinceWatched.priceAtWatchCents) / sinceWatched.priceAtWatchCents) * 1000) / 10
+      : null;
+  const hasMovedSinceWatch =
+    (scoreChangeSinceWatch != null && Math.abs(scoreChangeSinceWatch) >= ALERT_SCORE_THRESHOLD) ||
+    (priceChangePctSinceWatch != null && Math.abs(priceChangePctSinceWatch) >= ALERT_PRICE_PCT_THRESHOLD);
+  const showAlertFlag = Boolean(sinceWatched?.alertsEnabled) && hasMovedSinceWatch;
 
   // A Scout-curated photo wins when there is one; otherwise fall back to
   // the YouTube thumbnail for whatever video Discovery/Approve attached —
@@ -131,6 +158,26 @@ export default function ArtistCard({
           {priceHistory.length > 1 && <PriceSparkline points={priceHistory.map((p) => p.price_cents)} filled={hotSignal} />}
         </div>
       </Link>
+
+      {sinceWatched && (
+        <div
+          className="mx-5 mb-4 px-3 py-2.5 rounded-[10px] border flex items-start justify-between gap-2 text-xs leading-snug"
+          style={
+            showAlertFlag
+              ? { background: 'var(--ember-dim)', borderColor: 'var(--ember-line)', color: 'var(--on-ember-soft)' }
+              : { background: 'var(--surface-2)', borderColor: 'var(--border-soft)', color: 'var(--text-muted)' }
+          }
+        >
+          <span>
+            {showAlertFlag && '⚡ '}
+            Since you added ({timeAgo(sinceWatched.watchedAt)}):{' '}
+            {scoreChangeSinceWatch != null ? `Score ${scoreChangeSinceWatch >= 0 ? '+' : ''}${scoreChangeSinceWatch.toFixed(1)}` : 'Score —'}
+            {' · '}
+            {priceChangePctSinceWatch != null ? `Price ${priceChangePctSinceWatch >= 0 ? '+' : ''}${priceChangePctSinceWatch.toFixed(1)}%` : 'Price —'}
+          </span>
+          <AlertToggle artistId={artist.id} initialEnabled={sinceWatched.alertsEnabled} />
+        </div>
+      )}
 
       <div className="px-5 pb-5 flex items-center gap-2.5">
         <AudioPreview artistId={artist.id} artistName={artist.name} src={artist.song_preview_url} variant="icon" />

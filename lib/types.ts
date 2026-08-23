@@ -362,6 +362,25 @@ export type NextMarketRow = {
   priceHistory: NextPricePoint[];
 };
 
+// One row of a user's Watchlist — the market data every artist has, plus
+// the watch-specific facts DiscoverGrid's shared card can show only here:
+// when it was added, and what Score/Price looked like at that moment (so
+// "what changed since you added it" doesn't need a second round trip).
+// scoreAtWatch/priceAtWatchCents are null only when no snapshot/price point
+// exists at or before watchedAt at all (nothing to compare against yet).
+export type WatchlistEntry = NextMarketRow & {
+  watchedAt: string;
+  alertsEnabled: boolean;
+  scoreAtWatch: number | null;
+  priceAtWatchCents: number | null;
+};
+
+// Score movement since the previous score_history snapshot — the same
+// "momentum" definition the internal Screener already uses
+// (see momentumStatus() in lib/scoring.ts). Keyed by artist id, computed
+// for the whole roster in one query rather than N+1 per artist.
+export type ScoreChange = { changeAbs: number; hasComparison: boolean };
+
 // A permanent, never-erased snapshot of the moment a user first bought an
 // artist on NEXT — recorded on the very first buy, before any UI surfaces
 // it, because the underlying facts (follower count that day, how many
