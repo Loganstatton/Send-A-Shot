@@ -947,6 +947,24 @@ export function getNextMarket(): NextMarketRow[] {
     }));
 }
 
+// Global counts, not scoped to one user — powers Discover's "Most watched"
+// / "Most backed" sorts. One GROUP BY each rather than a per-artist query,
+// so sorting the whole market by either costs 2 queries total, not 2*N.
+export function getWatchCountsByArtist(): Record<number, number> {
+  const rows = db.prepare('SELECT artist_id, COUNT(*) AS c FROM next_watchlist GROUP BY artist_id').all() as { artist_id: number; c: number }[];
+  return Object.fromEntries(rows.map((r) => [r.artist_id, r.c]));
+}
+
+// "Backed" means currently holding shares (shares > 0) — someone who sold
+// out entirely no longer counts, same as how the Trade panel's own
+// "Shares owned" would read 0 for them.
+export function getBackerCountsByArtist(): Record<number, number> {
+  const rows = db
+    .prepare('SELECT artist_id, COUNT(DISTINCT user_id) AS c FROM next_holdings WHERE shares > 0 GROUP BY artist_id')
+    .all() as { artist_id: number; c: number }[];
+  return Object.fromEntries(rows.map((r) => [r.artist_id, r.c]));
+}
+
 export function getNextArtist(artistId: number): NextMarketRow | undefined {
   const artist = getArtist(artistId);
   if (!artist) return undefined;

@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
-import { getNextMarket, getWatchlistArtistIds } from '@/lib/db';
+import { getBackerCountsByArtist, getNextMarket, getWatchCountsByArtist, getWatchlistArtistIds } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
+import { NextMarketRow } from '@/lib/types';
 import DiscoverGrid from '@/components/next/DiscoverGrid';
 import NextStatTile from '@/components/next/NextStatTile';
+import FeaturedArtist from '@/components/next/FeaturedArtist';
 
 export const metadata: Metadata = { title: 'Discover' };
 export const dynamic = 'force-dynamic';
@@ -12,12 +14,20 @@ export default async function NextMarketPage() {
   const user = await requireUser();
   const rows = getNextMarket();
   const watchedIds = getWatchlistArtistIds(user.id);
+  const watchCounts = getWatchCountsByArtist();
+  const backerCounts = getBackerCountsByArtist();
 
   const growthRates = rows.map((r) => r.artist.growth_velocity_pct).filter((v): v is number => v != null);
   const avgGrowth = growthRates.length ? growthRates.reduce((a, b) => a + b, 0) / growthRates.length : null;
 
   let biggestMover: { name: string; changePct: number } | null = null;
   let mostUndervalued: { name: string; diff: number } | null = null;
+  // The single most undervalued artist (highest Score-vs-Price gap) is also
+  // Discover's featured pick below — falls back to the highest Score
+  // overall on a quiet day when nothing's currently undervalued, so the
+  // module never just disappears.
+  let featured: NextMarketRow | null = null;
+  let featuredDiff = -Infinity;
   for (const row of rows) {
     const first = row.priceHistory[0]?.price_cents ?? row.priceCents;
     const changePct = first !== 0 ? ((row.priceCents - first) / first) * 100 : 0;
@@ -27,6 +37,11 @@ export default async function NextMarketPage() {
     const sentiment = marketSentiment(row.score, row.priceCents);
     if (sentiment.tone === 'undervalued' && (!mostUndervalued || sentiment.diff > mostUndervalued.diff)) {
       mostUndervalued = { name: row.artist.name, diff: sentiment.diff };
+    }
+    const rank = sentiment.tone === 'undervalued' ? 1000 + sentiment.diff : row.score;
+    if (rank > featuredDiff) {
+      featuredDiff = rank;
+      featured = row;
     }
   }
 
@@ -72,7 +87,10 @@ export default async function NextMarketPage() {
           No artists on the market yet.
         </div>
       ) : (
-        <DiscoverGrid rows={rows} watchedIds={watchedIds} />
+        <>
+          {featured && <FeaturedArtist row={featured} />}
+          <DiscoverGrid rows={rows} watchedIds={watchedIds} watchCounts={watchCounts} backerCounts={backerCounts} />
+        </>
       )}
     </div>
   );
