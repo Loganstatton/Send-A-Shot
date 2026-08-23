@@ -19,17 +19,75 @@
 // was never there, so every parse below keeps that distinction as
 // undefined, not 0.
 
+import { getYoutubeQuotaUsedToday, recordYoutubeQuotaUsage } from './db';
+
 const BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
 export function youtubeConfigured(): boolean {
   return Boolean(process.env.YOUTUBE_API_KEY);
 }
 
-type YoutubeResult<T> = { ok: true; data: T } | { ok: false; error: string };
+// YouTube's free tier grants 10,000 units/day; overridable once a real
+// increased-quota grant is approved (see the checklist's "apply for
+// increased YouTube quota if real usage justifies it" — a real-world,
+// non-code step this env var is what you'd bump afterward).
+const DEFAULT_DAILY_QUOTA_BUDGET = 10_000;
+function dailyQuotaBudget(): number {
+  const raw = Number(process.env.YOUTUBE_DAILY_QUOTA_BUDGET);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DAILY_QUOTA_BUDGET;
+}
+
+// YouTube's quota resets at midnight Pacific — format "today" in that
+// timezone (not the server's, not UTC) so our own daily counter rolls over
+// at the same moment YouTube's does. 'en-CA' formats as YYYY-MM-DD.
+export function currentYoutubeQuotaDay(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+export type YoutubeQuotaStatus = { usedToday: number; budget: number; remaining: number; warning: boolean };
+
+// warning fires at 80% of budget — early enough to actually act on (finish
+// the current batch, wait for reset) rather than finding out right as the
+// last unit is spent.
+const QUOTA_WARNING_RATIO = 0.8;
+
+export function getYoutubeQuotaStatus(): YoutubeQuotaStatus {
+  const budget = dailyQuotaBudget();
+  const usedToday = getYoutubeQuotaUsedToday(currentYoutubeQuotaDay());
+  return { usedToday, budget, remaining: Math.max(0, budget - usedToday), warning: usedToday >= budget * QUOTA_WARNING_RATIO };
+}
+
+// YouTube's own published cost per endpoint — see the file header. Anything
+// not listed (there is nothing else this client calls) defaults to 1, the
+// cheapest real cost, rather than under-tracking silently.
+const QUOTA_COST_BY_PATH: Record<string, number> = {
+  '/search': 100,
+  '/channels': 1,
+  '/playlistItems': 1,
+  '/videos': 1,
+};
+
+type YoutubeResult<T> = { ok: true; data: T } | { ok: false; error: string; quotaExceeded?: boolean };
 
 async function youtubeFetch(path: string, params: Record<string, string>): Promise<YoutubeResult<any>> {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) return { ok: false, error: 'YouTube is not configured on this server.' };
+
+  const cost = QUOTA_COST_BY_PATH[path] ?? 1;
+  const quotaDay = currentYoutubeQuotaDay();
+  const status = getYoutubeQuotaStatus();
+  // Self-imposed budget check, ahead of YouTube's own — turns "warn before
+  // hitting the daily limit" into an actual guardrail instead of only a
+  // number on a dashboard nobody's watching in real time. Refusing here
+  // costs nothing (no request ever leaves this server), unlike letting
+  // YouTube itself reject it with a quotaExceeded 403.
+  if (status.usedToday + cost > status.budget) {
+    return {
+      ok: false,
+      quotaExceeded: true,
+      error: `YouTube daily quota budget (${status.budget} units) would be exceeded by this call (${status.usedToday} already used) — skipping to preserve remaining quota. Resets at midnight Pacific.`,
+    };
+  }
 
   const url = new URL(`${BASE_URL}${path}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -39,6 +97,7 @@ async function youtubeFetch(path: string, params: Record<string, string>): Promi
   try {
     res = await fetch(url.toString(), { cache: 'no-store' });
   } catch (err: any) {
+    // Never reached Google's servers — nothing was actually spent.
     return { ok: false, error: `Could not reach YouTube: ${err?.message ?? 'network error'}` };
   }
 
@@ -47,11 +106,16 @@ async function youtubeFetch(path: string, params: Record<string, string>): Promi
     const reason = body?.error?.errors?.[0]?.reason;
     const message = body?.error?.message ?? `YouTube returned ${res.status}`;
     if (reason === 'quotaExceeded') {
-      return { ok: false, error: 'YouTube API daily quota exceeded — try again after the quota resets (midnight Pacific).' };
+      // Google's quota check happens before the request executes — a
+      // rejection here means nothing was actually spent either, so this
+      // (unlike every other outcome below) is deliberately NOT recorded.
+      return { ok: false, quotaExceeded: true, error: 'YouTube API daily quota exceeded — try again after the quota resets (midnight Pacific).' };
     }
+    recordYoutubeQuotaUsage(cost, path, quotaDay);
     return { ok: false, error: `YouTube API error (${res.status}): ${message}` };
   }
 
+  recordYoutubeQuotaUsage(cost, path, quotaDay);
   try {
     return { ok: true, data: await res.json() };
   } catch {

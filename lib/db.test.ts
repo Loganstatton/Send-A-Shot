@@ -20,10 +20,11 @@ const {
   getRecentMarketTrades, getRecentSyncFailures, getRecentTradesForArtist, getRecentWatchCountsByArtist,
   getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
   getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
-  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, logArtistCardViews, logEvent, logSyncFailure,
-  markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin, recordPreviewListen,
-  setDiscoveryCandidateStatus, setFeaturedVideoMatchType, setNotificationsEmailedThrough, setWatchlistAlerts,
-  stampSourceSyncedAt, updateArtist, updateUserProfile,
+  getYoutubeQuotaUsedToday, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, logArtistCardViews,
+  logEvent, logSyncFailure, markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin,
+  recordPreviewListen, recordYoutubeQuotaUsage, setDiscoveryCandidateStatus, setFeaturedVideoMatchType,
+  setNotificationsEmailedThrough, setWatchlistAlerts, stampSourceSyncedAt, stampYoutubeNoMatch, updateArtist,
+  updateUserProfile, YOUTUBE_NO_MATCH_RECHECK_DAYS,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -1316,5 +1317,52 @@ describe('Data reliability (Phase 4) — sync provenance, failure logging, dupli
     const linked = getArtistsWithSoundchartsLink().find((a) => a.id === artist.id);
     expect(linked).toBeDefined();
     expect(linked!.name).toBe('Linked Name Artist');
+  });
+});
+
+describe('YouTube quota protection (Phase 4) — daily usage ledger and re-search backoff', () => {
+  it('recordYoutubeQuotaUsage and getYoutubeQuotaUsedToday sum only same-day usage', () => {
+    const day = 'quota-test-day-1';
+    const otherDay = 'quota-test-day-2';
+    expect(getYoutubeQuotaUsedToday(day)).toBe(0);
+
+    recordYoutubeQuotaUsage(100, '/search', day);
+    recordYoutubeQuotaUsage(1, '/channels', day);
+    recordYoutubeQuotaUsage(1, '/videos', day);
+    recordYoutubeQuotaUsage(50, '/search', otherDay); // a different day — must not count toward `day`
+
+    expect(getYoutubeQuotaUsedToday(day)).toBe(102);
+    expect(getYoutubeQuotaUsedToday(otherDay)).toBe(50);
+  });
+
+  it('getArtistsMissingVideo excludes an artist recently confirmed to have no match, but includes one checked long ago', () => {
+    const recentlyChecked = makeArtist('Recently No-Match Artist');
+    const longAgoChecked = makeArtist('Long-Ago No-Match Artist');
+    const neverChecked = makeArtist('Never Checked Artist');
+
+    stampYoutubeNoMatch(recentlyChecked.id); // "now" — well within the backoff window
+    const beforeWindow = new Date(Date.now() - (YOUTUBE_NO_MATCH_RECHECK_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
+    stampYoutubeNoMatch(longAgoChecked.id, beforeWindow);
+
+    const missing = getArtistsMissingVideo().map((a) => a.id);
+    expect(missing).not.toContain(recentlyChecked.id);
+    expect(missing).toContain(longAgoChecked.id);
+    expect(missing).toContain(neverChecked.id);
+  });
+
+  it('getArtistsMissingVideo re-includes an artist once featured_video_id is cleared, even if it was previously no-matched', () => {
+    // A Scout typing in a video link by hand after an automated "no match"
+    // must not be silently overridden — but if they later remove it again,
+    // the backoff window (still fresh) should still apply.
+    const artist = makeArtist('Cleared Video Artist');
+    stampYoutubeNoMatch(artist.id);
+    expect(getArtistsMissingVideo().map((a) => a.id)).not.toContain(artist.id);
+
+    updateArtist(artist.id, { featured_video_id: 'manually-pasted-id' } as any);
+    expect(getArtistsMissingVideo().map((a) => a.id)).not.toContain(artist.id); // has a video now, not missing
+
+    updateArtist(artist.id, { featured_video_id: '' } as any);
+    // Missing again, but the no-match stamp is still recent — still excluded.
+    expect(getArtistsMissingVideo().map((a) => a.id)).not.toContain(artist.id);
   });
 });

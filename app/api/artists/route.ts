@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createArtist, findArtistsByName, getAllArtists, setFeaturedVideoMatchType, stampSourceSyncedAt, updateArtist } from '@/lib/db';
+import { createArtist, findArtistsByName, getAllArtists, setFeaturedVideoMatchType, stampSourceSyncedAt, stampYoutubeNoMatch, updateArtist } from '@/lib/db';
 import { getInternalUser } from '@/lib/auth';
 import { Artist, ArtistInput } from '@/lib/types';
 import { getTopSongForArtist } from '@/lib/deezer';
@@ -83,6 +83,11 @@ export async function POST(req: Request) {
       if (result.data) {
         setFeaturedVideoMatchType(artist.id, result.data.matchType);
         artist = updateArtist(artist.id, { featured_video_id: result.data.videoId } as ArtistInput) ?? artist;
+      } else {
+        // A genuine no-match, stamped so the next scheduled backfill sync
+        // (app/api/youtube/sync-videos) doesn't immediately re-spend quota
+        // re-checking an artist that was just honestly checked right now.
+        stampYoutubeNoMatch(artist.id);
       }
     } else if (result && !result.ok) {
       console.log('[youtube-lookup] on-create lookup failed for', artist.name, result.error);

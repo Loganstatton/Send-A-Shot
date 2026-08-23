@@ -264,6 +264,14 @@ CREATE TABLE IF NOT EXISTS sync_failures (
 );
 CREATE INDEX IF NOT EXISTS idx_sync_failures_run ON sync_failures(run_id);
 CREATE INDEX IF NOT EXISTS idx_sync_failures_source ON sync_failures(source);
+CREATE TABLE IF NOT EXISTS youtube_quota_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  quota_day TEXT NOT NULL,
+  units INTEGER NOT NULL,
+  endpoint TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_youtube_quota_usage_day ON youtube_quota_usage(quota_day);
 `);
 
 // Lightweight migrations for columns added after the initial table creation.
@@ -330,6 +338,12 @@ addColumnIfMissing('artists', 'soundcharts_synced_at TEXT');
 addColumnIfMissing('artists', 'deezer_synced_at TEXT');
 addColumnIfMissing('artists', 'youtube_synced_at TEXT');
 addColumnIfMissing('artists', 'featured_video_match_type TEXT');
+// Stamped whenever a YouTube lookup genuinely completes with no usable
+// video found (not a quota-blocked skip — see getArtistsMissingVideo below
+// and app/api/youtube/sync-videos/route.ts). Backs off re-searching an
+// artist with no YouTube presence every single day; still checked again
+// after RECHECK_NO_MATCH_DAYS in case a video shows up later.
+addColumnIfMissing('artists', 'youtube_no_match_at TEXT');
 addColumnIfMissing('next_transactions', 'listened_before_buy INTEGER');
 // discovery_runs originally only ever meant a Soundcharts scan; `source`
 // distinguishes it from a YouTube scan run, `quota_used` is a rough count
@@ -2041,6 +2055,22 @@ export function getRecentSyncFailures(source?: SyncSourceKey, limit = 50): SyncF
   return db.prepare('SELECT * FROM sync_failures ORDER BY created_at DESC, id DESC LIMIT ?').all(limit) as SyncFailure[];
 }
 
+// YouTube quota tracking — `quotaDay` is a caller-computed "YYYY-MM-DD in
+// Pacific time" string (see lib/youtube.ts), not computed here, so this
+// stays a plain "N units for day X" ledger with no timezone logic of its
+// own. Every call through lib/youtube.ts's youtubeFetch records here,
+// covering discovery scans, artist backfills, and on-create lookups alike
+// — the first true cross-route daily total (discovery_runs.quota_used is
+// only ever a single run's own estimate).
+export function recordYoutubeQuotaUsage(units: number, endpoint: string, quotaDay: string): void {
+  db.prepare('INSERT INTO youtube_quota_usage (quota_day, units, endpoint, created_at) VALUES (?, ?, ?, ?)')
+    .run(quotaDay, units, endpoint, new Date().toISOString());
+}
+
+export function getYoutubeQuotaUsedToday(quotaDay: string): number {
+  return (db.prepare('SELECT COALESCE(SUM(units), 0) AS total FROM youtube_quota_usage WHERE quota_day = ?').get(quotaDay) as { total: number }).total;
+}
+
 // Artists still missing a top song link, for Deezer top-track sync —
 // unlike Soundcharts sync (which only touches artists explicitly linked
 // by uuid, but always re-fetches), this touches every artist regardless
@@ -2058,10 +2088,25 @@ export function getArtistsMissingTopSong(): { id: number; name: string }[] {
 // getArtistsMissingTopSong — a video a Scout picked by hand (or a
 // discovery-approval video) is never silently overwritten; clear the
 // field to have sync fill it again.
+// How long a genuine "no YouTube video found" result sticks before an
+// artist is worth re-checking — avoids burning quota re-searching someone
+// with no YouTube presence every single day, while still catching it if a
+// video eventually appears (see the youtube_no_match_at column comment).
+export const YOUTUBE_NO_MATCH_RECHECK_DAYS = 14;
+
 export function getArtistsMissingVideo(): { id: number; name: string; youtube_url?: string }[] {
+  const recheckCutoff = new Date(Date.now() - YOUTUBE_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
   return db
-    .prepare("SELECT id, name, youtube_url FROM artists WHERE featured_video_id IS NULL OR featured_video_id = ''")
-    .all() as { id: number; name: string; youtube_url?: string }[];
+    .prepare(`
+      SELECT id, name, youtube_url FROM artists
+      WHERE (featured_video_id IS NULL OR featured_video_id = '')
+        AND (youtube_no_match_at IS NULL OR youtube_no_match_at < ?)
+    `)
+    .all(recheckCutoff) as { id: number; name: string; youtube_url?: string }[];
+}
+
+export function stampYoutubeNoMatch(artistId: number, at: string = new Date().toISOString()): void {
+  db.prepare('UPDATE artists SET youtube_no_match_at = ? WHERE id = ?').run(at, artistId);
 }
 
 // A featured video matched via an unverified top-relevance search hit
