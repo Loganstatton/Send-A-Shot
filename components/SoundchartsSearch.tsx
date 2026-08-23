@@ -11,9 +11,11 @@ type Hit = { uuid: string; name: string; imageUrl?: string; appUrl?: string };
 export default function SoundchartsSearch({
   soundchartsUuid,
   onFill,
+  onUnlink,
 }: {
   soundchartsUuid?: string;
   onFill: (data: Partial<ArtistInput>) => void;
+  onUnlink: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
@@ -85,6 +87,19 @@ export default function SoundchartsSearch({
             onClick={() => fill(soundchartsUuid, 'synced')}
           >
             {filling ? 'Syncing…' : '🔄 Sync from Soundcharts'}
+          </button>
+          <button
+            type="button"
+            className="btn text-sm"
+            style={{ color: 'var(--down)' }}
+            onClick={() => {
+              if (!confirm('Unlink this Soundcharts match? You can search and relink to a different artist after saving.')) return;
+              onUnlink();
+              setStatus(null);
+              setError(null);
+            }}
+          >
+            Unlink
           </button>
         </div>
       ) : (

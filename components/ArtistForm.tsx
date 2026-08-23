@@ -6,6 +6,7 @@ import { Artist, ArtistInput, SCORE_LABELS, SCORE_WEIGHTS, STAGES, STAGE_LABELS,
 import { parseYoutubeVideoId } from '@/lib/youtube-url';
 import ScoreBadge from './ScoreBadge';
 import SoundchartsSearch from './SoundchartsSearch';
+import SyncProvenance from './SyncProvenance';
 
 // Growth Velocity and Engagement Quality are excluded here — they're no
 // longer a human-rated slider, see the computed-value note in the Metrics
@@ -22,6 +23,12 @@ export default function ArtistForm({ artist }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set only right after a successful create whose name collided with an
+  // existing artist — see the duplicate-name handling comment in
+  // app/api/artists/route.ts. Holds the redirect so the Scout gets a real
+  // chance to notice before landing on the new artist's page.
+  const [duplicateWarning, setDuplicateWarning] = useState<{ id: number; name: string; stage: string }[] | null>(null);
+  const [createdArtistId, setCreatedArtistId] = useState<number | null>(null);
   const [form, setForm] = useState<ArtistInput>(() => ({
     name: artist?.name ?? '',
     stage: artist?.stage ?? 'watchlist',
@@ -75,6 +82,10 @@ export default function ArtistForm({ artist }: Props) {
     setForm((f) => ({ ...f, ...data }));
   }
 
+  function unlinkSoundcharts() {
+    setForm((f) => ({ ...f, soundcharts_uuid: '' }));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) {
@@ -97,12 +108,22 @@ export default function ArtistForm({ artist }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('Save failed');
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? 'Save failed');
+      }
       const saved = await res.json();
+      if (!artist && saved.duplicateNameWarning?.length > 0) {
+        // Hold the redirect — this is the one moment a Scout can actually
+        // notice and act on a likely duplicate before it's just another row.
+        setCreatedArtistId(saved.id);
+        setDuplicateWarning(saved.duplicateNameWarning);
+        return;
+      }
       router.push(`/artists/${saved.id}`);
       router.refresh();
-    } catch (err) {
-      setError('Something went wrong saving this artist.');
+    } catch (err: any) {
+      setError(err?.message ?? 'Something went wrong saving this artist.');
     } finally {
       setSaving(false);
     }
@@ -116,11 +137,40 @@ export default function ArtistForm({ artist }: Props) {
     router.refresh();
   }
 
+  if (duplicateWarning && createdArtistId) {
+    return (
+      <div className="card space-y-4" style={{ borderColor: 'var(--fire-line)' }}>
+        <h2 className="font-bold text-lg">Heads up — possible duplicate</h2>
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+          &quot;{form.name}&quot; was created, but an artist with this exact name already exists on the roster.
+          If this is the same real artist, use the existing one instead — Scout doesn&apos;t merge duplicates
+          automatically.
+        </p>
+        <ul className="text-sm space-y-1">
+          {duplicateWarning.map((d) => (
+            <li key={d.id}>
+              <a className="underline" href={`/artists/${d.id}`}>{d.name}</a>{' '}
+              <span style={{ color: 'var(--text-faint)' }}>({d.stage})</span>
+            </li>
+          ))}
+        </ul>
+        <div className="flex gap-3">
+          <button type="button" className="btn btn-primary" onClick={() => { router.push(`/artists/${createdArtistId}`); router.refresh(); }}>
+            Continue to the new artist
+          </button>
+          <button type="button" className="btn" onClick={() => router.push('/')}>Back to dashboard</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && <div className="card" style={{ borderColor: 'var(--down)', color: 'var(--down)' }}>{error}</div>}
 
-      <SoundchartsSearch soundchartsUuid={form.soundcharts_uuid} onFill={fillFromSoundcharts} />
+      {artist && <SyncProvenance artist={artist} />}
+
+      <SoundchartsSearch soundchartsUuid={form.soundcharts_uuid} onFill={fillFromSoundcharts} onUnlink={unlinkSoundcharts} />
 
       <div className="card space-y-4">
         <h2 className="font-bold text-lg">Basics</h2>

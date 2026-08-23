@@ -10,18 +10,20 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
 const {
   addToWatchlist, approveDiscoveryCandidate, completeDiscoveryRun, completeNextOnboarding, completeSyncRun,
-  createArtist, createDiscoveryRun, createSyncRun, createUser, db, deleteUser, executeTrade, getArtist,
-  getArtistsMissingTopSong, getArtistsWithSoundchartsLink, getArtistTradeVolumeCents, getBackerCountsByArtist,
-  getDiscoveryCandidates, getEventCountsByType, getFavoriteGenres, getKnownDiscoveryUuids,
-  getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun, getLatestSyncRun, getMarketTradeCounts,
-  getMarketVolumeCents, getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist,
-  getPortfolioValue, getPortfolioValueHistory, getRankMovements, getReadNotificationKeys, getRecentBackerCount,
-  getRecentBackerCountsByArtist, getRecentEventsForUser, getRecentMarketTrades, getRecentTradesForArtist,
-  getRecentWatchCountsByArtist, getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids,
+  createArtist, createDiscoveryRun, createSyncRun, createUser, db, deleteUser, executeTrade, findArtistsByName,
+  getArtist, getArtistsMissingTopSong, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
+  getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidates, getEventCountsByType,
+  getFavoriteGenres, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
+  getLatestSyncRun, getMarketTradeCounts, getMarketVolumeCents, getMostActiveArtists, getNewArtistsThisWeek,
+  getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue, getPortfolioValueHistory, getRankMovements,
+  getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentEventsForUser,
+  getRecentMarketTrades, getRecentSyncFailures, getRecentTradesForArtist, getRecentWatchCountsByArtist,
+  getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
   getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
-  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, logArtistCardViews, logEvent, markEmailVerified,
-  markNotificationRead, markNotificationsRead, recordLogin, recordPreviewListen, setDiscoveryCandidateStatus,
-  setNotificationsEmailedThrough, setWatchlistAlerts, updateArtist, updateUserProfile,
+  hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, logArtistCardViews, logEvent, logSyncFailure,
+  markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin, recordPreviewListen,
+  setDiscoveryCandidateStatus, setFeaturedVideoMatchType, setNotificationsEmailedThrough, setWatchlistAlerts,
+  stampSourceSyncedAt, updateArtist, updateUserProfile,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -1238,5 +1240,81 @@ describe('Product analytics — event logging', () => {
 
     const events = getRecentEventsForUser(user.id).filter((e) => e.event_type === 'onboarding_completed');
     expect(events).toHaveLength(1);
+  });
+});
+
+describe('Data reliability (Phase 4) — sync provenance, failure logging, duplicate detection', () => {
+  it('stampSourceSyncedAt writes the correct per-source column and leaves the others untouched', () => {
+    const artist = makeArtist('Provenance Artist');
+    const before = new Date(Date.now() - 60_000).toISOString();
+
+    stampSourceSyncedAt(artist.id, 'soundcharts', before);
+    let updated = getArtist(artist.id)!;
+    expect(updated.soundcharts_synced_at).toBe(before);
+    expect(updated.deezer_synced_at).toBeFalsy();
+    expect(updated.youtube_synced_at).toBeFalsy();
+
+    stampSourceSyncedAt(artist.id, 'deezer');
+    stampSourceSyncedAt(artist.id, 'youtube');
+    updated = getArtist(artist.id)!;
+    expect(updated.deezer_synced_at).toBeTruthy();
+    expect(updated.youtube_synced_at).toBeTruthy();
+    // The earlier soundcharts stamp is untouched by the later calls for
+    // other sources.
+    expect(updated.soundcharts_synced_at).toBe(before);
+  });
+
+  it('setFeaturedVideoMatchType stores and clears the match-confidence flag', () => {
+    const artist = makeArtist('Match Type Artist');
+    setFeaturedVideoMatchType(artist.id, 'search_unverified');
+    expect(getArtist(artist.id)!.featured_video_match_type).toBe('search_unverified');
+    expect(getUnverifiedVideoMatchCount()).toBeGreaterThanOrEqual(1);
+
+    setFeaturedVideoMatchType(artist.id, null);
+    expect(getArtist(artist.id)!.featured_video_match_type).toBeFalsy();
+  });
+
+  it('findArtistsByName matches case-insensitively and excludes unrelated names', () => {
+    const artist = makeArtist('Duplicate Name Check Artist');
+    const matches = findArtistsByName('duplicate name check artist');
+    expect(matches.map((m) => m.id)).toContain(artist.id);
+    expect(findArtistsByName('Definitely Not A Real Artist Name XYZ')).toHaveLength(0);
+  });
+
+  it('creating a second artist with an already-linked soundcharts_uuid throws (unique index enforced)', () => {
+    const first = createArtist({ name: 'First Linked Artist', soundcharts_uuid: 'dup-uuid-test-1' });
+    expect(first.soundcharts_uuid).toBe('dup-uuid-test-1');
+    expect(() => createArtist({ name: 'Second Linked Artist', soundcharts_uuid: 'dup-uuid-test-1' })).toThrow(/UNIQUE constraint failed/i);
+  });
+
+  it('two artists may each have soundcharts_uuid = null without violating the partial unique index', () => {
+    const a = makeArtist('Unlinked Artist A');
+    const b = makeArtist('Unlinked Artist B');
+    expect(a.soundcharts_uuid).toBeFalsy();
+    expect(b.soundcharts_uuid).toBeFalsy();
+  });
+
+  it('logSyncFailure and getRecentSyncFailures record and retrieve structured per-artist failures, filterable by source', () => {
+    const artist = makeArtist('Failure Log Artist');
+    const run = createSyncRun('soundcharts');
+
+    const before = getRecentSyncFailures('soundcharts').length;
+    logSyncFailure(run.id, 'soundcharts', artist.id, artist.name, 'Simulated Soundcharts timeout');
+    logSyncFailure(run.id, 'deezer', artist.id, artist.name, 'Simulated Deezer error');
+
+    const soundchartsFailures = getRecentSyncFailures('soundcharts');
+    expect(soundchartsFailures.length).toBe(before + 1);
+    expect(soundchartsFailures[0].error).toBe('Simulated Soundcharts timeout');
+    expect(soundchartsFailures[0].artist_name).toBe(artist.name);
+
+    const all = getRecentSyncFailures();
+    expect(all.some((f) => f.error === 'Simulated Deezer error')).toBe(true);
+  });
+
+  it('getArtistsWithSoundchartsLink includes name (needed for failure logging by the sync route)', () => {
+    const artist = createArtist({ name: 'Linked Name Artist', soundcharts_uuid: 'name-check-uuid-1' });
+    const linked = getArtistsWithSoundchartsLink().find((a) => a.id === artist.id);
+    expect(linked).toBeDefined();
+    expect(linked!.name).toBe('Linked Name Artist');
   });
 });

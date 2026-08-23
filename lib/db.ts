@@ -12,7 +12,7 @@ import {
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
   RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutProfile,
-  SyncRun, SyncSourceKey, User, WatchlistEntry,
+  SyncFailure, SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -253,6 +253,17 @@ CREATE TABLE IF NOT EXISTS sync_runs (
   failed_count INTEGER NOT NULL DEFAULT 0,
   error TEXT
 );
+CREATE TABLE IF NOT EXISTS sync_failures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL REFERENCES sync_runs(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  artist_name TEXT NOT NULL,
+  error TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sync_failures_run ON sync_failures(run_id);
+CREATE INDEX IF NOT EXISTS idx_sync_failures_source ON sync_failures(source);
 `);
 
 // Lightweight migrations for columns added after the initial table creation.
@@ -311,6 +322,14 @@ addColumnIfMissing('artists', 'soundcharts_uuid TEXT');
 // yt_video_id on approval (see approveDiscoveryCandidate below), or by a
 // Scout pasting a link in the Add/Edit Artist form for any other artist.
 addColumnIfMissing('artists', 'featured_video_id TEXT');
+// Per-source sync provenance — see the Artist type's comment for exactly
+// what "synced" means (a completed check, success or clean no-match; never
+// a network/API error). featured_video_match_type records how confident
+// the automated YouTube lookup was in featured_video_id — see lib/youtube.ts.
+addColumnIfMissing('artists', 'soundcharts_synced_at TEXT');
+addColumnIfMissing('artists', 'deezer_synced_at TEXT');
+addColumnIfMissing('artists', 'youtube_synced_at TEXT');
+addColumnIfMissing('artists', 'featured_video_match_type TEXT');
 addColumnIfMissing('next_transactions', 'listened_before_buy INTEGER');
 // discovery_runs originally only ever meant a Soundcharts scan; `source`
 // distinguishes it from a YouTube scan run, `quota_used` is a rough count
@@ -461,6 +480,21 @@ addColumnIfMissing('discovery_candidates', 'yt_example_comment_1_likes INTEGER')
 addColumnIfMissing('discovery_candidates', 'yt_example_comment_2 TEXT');
 addColumnIfMissing('discovery_candidates', 'yt_example_comment_2_likes INTEGER');
 
+// Duplicate-artist detection at the roster level: two live artists sharing
+// the same Soundcharts identity are definitely the same real artist, not a
+// coincidence — block it at the DB layer the same way discovery_candidates
+// already does (see ensureDiscoveryCandidatesIndexes above), rather than
+// trusting every call site to check first. Best-effort: if a database that
+// predates this migration already has accidental duplicates, creating the
+// index throws and is skipped with a warning rather than silently deleting
+// someone's data — an admin needs to resolve those by hand once, not have
+// them vanish on a routine deploy.
+try {
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_artists_soundcharts_uuid ON artists(soundcharts_uuid) WHERE soundcharts_uuid IS NOT NULL');
+} catch (err) {
+  console.error('[db] could not enforce a unique Soundcharts link across artists — existing duplicates present. Resolve them by hand, then restart.', err);
+}
+
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
   FROM artists
@@ -473,6 +507,14 @@ export function getAllArtists(): Artist[] {
 
 export function getArtist(id: number): Artist | undefined {
   return db.prepare(`${ARTIST_SELECT} WHERE artists.id = ?`).get(id) as Artist | undefined;
+}
+
+// Case-insensitive exact-name lookup, used to flag (not block) a likely
+// duplicate at creation time — two different real artists can legitimately
+// share a name, so this is a heads-up for the Scout to double-check, not an
+// enforced constraint like the soundcharts_uuid unique index above.
+export function findArtistsByName(name: string): { id: number; name: string; stage: string }[] {
+  return db.prepare('SELECT id, name, stage FROM artists WHERE LOWER(name) = LOWER(?)').all(name.trim()) as { id: number; name: string; stage: string }[];
 }
 
 const WRITABLE_FIELDS = [
@@ -1927,10 +1969,10 @@ export function getTrackedSoundchartsUuids(): Set<string> {
 // Every artist linked to a Soundcharts profile — the exact set a sync run
 // needs to refresh. Unlinked artists (no soundcharts_uuid) are untouched by
 // automated sync; their stats stay manual-entry only, same as today.
-export function getArtistsWithSoundchartsLink(): { id: number; soundcharts_uuid: string }[] {
+export function getArtistsWithSoundchartsLink(): { id: number; name: string; soundcharts_uuid: string }[] {
   return db
-    .prepare("SELECT id, soundcharts_uuid FROM artists WHERE soundcharts_uuid IS NOT NULL")
-    .all() as { id: number; soundcharts_uuid: string }[];
+    .prepare("SELECT id, name, soundcharts_uuid FROM artists WHERE soundcharts_uuid IS NOT NULL")
+    .all() as { id: number; name: string; soundcharts_uuid: string }[];
 }
 
 export function createSyncRun(source: SyncSourceKey = 'soundcharts'): SyncRun {
@@ -1968,6 +2010,37 @@ export function getLatestSyncRun(source: SyncSourceKey = 'soundcharts'): SyncRun
     .get(source) as SyncRun | undefined;
 }
 
+// A per-artist, per-source "last checked" timestamp — distinct from
+// SyncRun, which only records a whole batch run, not which artists it
+// actually touched. Called by each sync route (and the on-create lookups in
+// app/api/artists/route.ts) whenever a check against that source genuinely
+// completed for this artist, success or a clean no-match alike — never on a
+// network/API error, where nothing was actually confirmed one way or the
+// other. See the Artist type for the exact semantics.
+export function stampSourceSyncedAt(artistId: number, source: 'soundcharts' | 'deezer' | 'youtube', at: string = new Date().toISOString()): void {
+  const column = source === 'soundcharts' ? 'soundcharts_synced_at' : source === 'deezer' ? 'deezer_synced_at' : 'youtube_synced_at';
+  db.prepare(`UPDATE artists SET ${column} = ? WHERE id = ?`).run(at, artistId);
+}
+
+export function setFeaturedVideoMatchType(artistId: number, matchType: Artist['featured_video_match_type'] | null): void {
+  db.prepare('UPDATE artists SET featured_video_match_type = ? WHERE id = ?').run(matchType ?? null, artistId);
+}
+
+// Structured, queryable failure history — see the SyncFailure type for why
+// this exists alongside SyncRun's aggregate counters. Deliberately only
+// ever called for a real error, never a clean no-match.
+export function logSyncFailure(runId: number, source: SyncSourceKey, artistId: number, artistName: string, error: string): void {
+  db.prepare('INSERT INTO sync_failures (run_id, source, artist_id, artist_name, error, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(runId, source, artistId, artistName, error, new Date().toISOString());
+}
+
+export function getRecentSyncFailures(source?: SyncSourceKey, limit = 50): SyncFailure[] {
+  if (source) {
+    return db.prepare('SELECT * FROM sync_failures WHERE source = ? ORDER BY created_at DESC, id DESC LIMIT ?').all(source, limit) as SyncFailure[];
+  }
+  return db.prepare('SELECT * FROM sync_failures ORDER BY created_at DESC, id DESC LIMIT ?').all(limit) as SyncFailure[];
+}
+
 // Artists still missing a top song link, for Deezer top-track sync —
 // unlike Soundcharts sync (which only touches artists explicitly linked
 // by uuid, but always re-fetches), this touches every artist regardless
@@ -1989,6 +2062,14 @@ export function getArtistsMissingVideo(): { id: number; name: string; youtube_ur
   return db
     .prepare("SELECT id, name, youtube_url FROM artists WHERE featured_video_id IS NULL OR featured_video_id = ''")
     .all() as { id: number; name: string; youtube_url?: string }[];
+}
+
+// A featured video matched via an unverified top-relevance search hit
+// (see lib/youtube.ts's 'search_unverified' match type) — genuinely likely
+// to be the wrong video, not just an artist with no video at all. Powers
+// the Admin sync-health page's data-reliability summary.
+export function getUnverifiedVideoMatchCount(): number {
+  return (db.prepare("SELECT COUNT(*) AS c FROM artists WHERE featured_video_match_type = 'search_unverified'").get() as { c: number }).c;
 }
 
 // Candidates already reviewed (watching/approved/passed) for a name are
