@@ -18,6 +18,8 @@ export default function ArtistAvatar({
       <img
         src={photoUrl}
         alt={name}
+        loading="lazy"
+        decoding="async"
         className={`${dims} rounded-full object-cover shrink-0`}
         style={{ background: 'var(--surface-2)' }}
       />

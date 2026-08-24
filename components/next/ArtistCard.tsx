@@ -94,7 +94,7 @@ export default function ArtistCard({
         <div className="next-card-hero-zoom relative h-[200px] flex items-center justify-center" style={{ background: showImage ? undefined : heroGradient(artist.id) }}>
           {showImage ? (
             // eslint-disable-next-line @next/next/no-img-element -- see ArtistAvatar.tsx: arbitrary Scout-entered/YouTube-thumbnail URL, not a next/image candidate.
-            <img ref={imgRef} src={heroImageUrl} alt={artist.name} onError={() => setImgFailed(true)} className="absolute inset-0 w-full h-full object-cover" />
+            <img ref={imgRef} src={heroImageUrl} alt={artist.name} loading="lazy" decoding="async" onError={() => setImgFailed(true)} className="absolute inset-0 w-full h-full object-cover" />
           ) : (
             <span className="font-display font-extrabold text-[64px]" style={{ color: 'oklch(96% 0.01 90 / 0.28)' }}>
               {artist.name.trim().charAt(0).toUpperCase() || '?'}

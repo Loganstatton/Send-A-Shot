@@ -86,3 +86,13 @@ a { color: var(--accent); }
 }
 
 .slider { width: 100%; accent-color: var(--accent); }
+
+/* Same reduced-motion respect as app/next/next-theme.css — see its comment. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

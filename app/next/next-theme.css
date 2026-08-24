@@ -105,3 +105,18 @@
 
 @keyframes next-menu-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 .next-menu-panel { animation: next-menu-in 0.15s ease-out; }
+
+/* Every transition/animation above is subtle by design, but "subtle" isn't
+   the same as "off" for someone who's told their OS they don't want
+   motion (vestibular disorders, motion sensitivity) — respect that
+   setting globally rather than case-by-case. Scroll-smoothing (the
+   MobileTradeBar -> #trade-panel jump, PriceChart range switches) is
+   included since a large sudden scroll jump can be its own trigger. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
