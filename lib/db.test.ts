@@ -15,7 +15,7 @@ const {
   deleteUser, executeTrade, findArtistsByName,
   getApprovedDiscoveriesCount, getArtist, getArtistClaim, getArtistFieldHistory, getArtistLastActivityMap,
   getArtistLog, getArtistsClaimedByUser,
-  getArtistsMissingTopSong,
+  getArtistsMissingTopSong, getErrorReportCount, getRecentErrorReports, insertErrorReport,
   getArtistsInVideoBackoff, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
   getArtistTradeVolumeCents, getBackerCountsByArtist, getBreakoutDiscoveriesCount, getDiscoveriesForUser,
   getDiscoveryCandidateCountsByGenre,
@@ -2101,5 +2101,50 @@ describe('Anti-abuse and market integrity (Phase 8)', () => {
     expect(rapidFlag).toBeDefined();
     expect(rapidFlag!.userNames).toEqual(['Rapid Trader']);
     expect(rapidFlag!.artistName).toBe('Rapid Trading Flag Artist');
+  });
+});
+
+describe('Performance and reliability (Phase 10) — error reports', () => {
+  it('insertErrorReport round-trips every field, and getRecentErrorReports resolves the reporting user\'s name', () => {
+    const user = createUser({ name: 'Error Reporter', email: 'error-reporter@example.com', password_hash: 'hash' });
+    const before = getErrorReportCount(24);
+
+    insertErrorReport({
+      source: 'client',
+      message: 'TypeError: cannot read properties of undefined',
+      stack: 'TypeError: ...\n  at Component (file.tsx:42:10)',
+      digest: 'abc123',
+      path: '/next/artists/1',
+      userId: user.id,
+    });
+
+    expect(getErrorReportCount(24)).toBe(before + 1);
+    const recent = getRecentErrorReports(10);
+    const mine = recent.find((r) => r.digest === 'abc123')!;
+    expect(mine).toBeDefined();
+    expect(mine.source).toBe('client');
+    expect(mine.message).toBe('TypeError: cannot read properties of undefined');
+    expect(mine.stack).toContain('Component (file.tsx:42:10)');
+    expect(mine.path).toBe('/next/artists/1');
+    expect(mine.user_name).toBe('Error Reporter');
+  });
+
+  it('insertErrorReport works without a user (an unauthenticated visitor hit the error boundary)', () => {
+    insertErrorReport({ source: 'server', message: 'Unhandled exception in route handler' });
+    const recent = getRecentErrorReports(10);
+    const mine = recent.find((r) => r.message === 'Unhandled exception in route handler')!;
+    expect(mine).toBeDefined();
+    expect(mine.user_name).toBeFalsy(); // null from the LEFT JOIN, not a real name
+    expect(mine.stack).toBeFalsy();
+  });
+
+  it('getErrorReportCount only counts reports within the given hour window', () => {
+    insertErrorReport({ source: 'server', message: 'Window test error' });
+    const row = db.prepare("SELECT id FROM error_reports WHERE message = 'Window test error' ORDER BY id DESC LIMIT 1").get() as { id: number };
+    db.prepare('UPDATE error_reports SET created_at = ? WHERE id = ?').run(new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(), row.id);
+
+    const countIn24h = getErrorReportCount(24);
+    const countIn72h = getErrorReportCount(72);
+    expect(countIn72h).toBeGreaterThan(countIn24h); // the backdated row only shows up in the wider window
   });
 });

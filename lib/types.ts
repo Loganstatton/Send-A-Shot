@@ -417,6 +417,20 @@ export type AnalyticsEvent = {
   created_at: string;
 };
 
+// Self-hosted error monitoring (Phase 10) — see error_reports' own DDL
+// comment in lib/db.ts and lib/error-log.ts for how these get written.
+export type ErrorReport = {
+  id: number;
+  source: 'client' | 'server';
+  message: string;
+  stack?: string;
+  digest?: string;
+  path?: string;
+  user_id?: number;
+  user_name?: string;
+  created_at: string;
+};
+
 // A heuristic flag from lib/market-integrity.ts, not a verdict — surfaced to
 // an admin (app/admin/market-integrity) to investigate, never acted on
 // automatically (see that module's own header comment for why). userNames/

@@ -4,6 +4,7 @@ import {
   completeDiscoveryRun, createDiscoveryRun, getKnownDiscoveryUuids, getTrackedSoundchartsUuids,
   insertDiscoveryCandidate,
 } from '@/lib/db';
+import { notifyAdminsOfRunFailure } from '@/lib/ops-alerts';
 import { evaluateCandidates } from '@/lib/discovery';
 import { soundchartsConfigured, topArtists } from '@/lib/soundcharts';
 
@@ -34,6 +35,7 @@ export async function POST(req: Request) {
     const topResult = await topArtists();
     if (!topResult.ok) {
       completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: topResult.error });
+      await notifyAdminsOfRunFailure('Soundcharts discovery scan', topResult.error);
       return NextResponse.json({ error: topResult.error, runId: run.id }, { status: 502 });
     }
 
@@ -49,6 +51,7 @@ export async function POST(req: Request) {
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during scan.';
     completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: message });
+    await notifyAdminsOfRunFailure('Soundcharts discovery scan', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }
 }
