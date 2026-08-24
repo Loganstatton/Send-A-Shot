@@ -8,7 +8,8 @@ import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
   AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistInput, DiscoveryCandidate,
-  DiscoveryCandidateStatus, DiscoveryRun, DiscoverySourceKey, DueFollowUp, FavoriteGenre, FoundingBelieverRecord,
+  DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryRun, DiscoverySourceKey, DueFollowUp,
+  FavoriteGenre, FoundingBelieverRecord,
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
   RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutProfile,
@@ -360,6 +361,12 @@ addColumnIfMissing('discovery_runs', 'rejected_no_subscriber_count INTEGER');
 addColumnIfMissing('discovery_runs', 'rejected_subscriber_out_of_band INTEGER');
 addColumnIfMissing('discovery_runs', 'rejected_below_momentum_threshold INTEGER');
 addColumnIfMissing('discovery_runs', 'best_rejected_momentum_score REAL');
+// A YouTube candidate whose best-effort Soundcharts enrichment resolved to
+// a soundcharts_uuid already tracked (a live artist, or an existing
+// discovery_candidates row of ANY status/source) — the same real artist
+// already known under a different identity, not a genuinely new find. See
+// lib/youtube-discovery.ts's rejectionBreakdown.duplicateSoundchartsMatch.
+addColumnIfMissing('discovery_runs', 'rejected_duplicate_soundcharts_match INTEGER');
 // Same treatment for sync_runs — it originally only ever meant a
 // Soundcharts stats sync; `source` distinguishes a Deezer top-track sync
 // run (lib/deezer.ts) from it, so each has its own independent history.
@@ -428,7 +435,8 @@ const DISCOVERY_CANDIDATES_DDL = `
     discovered_at TEXT NOT NULL,
     reviewed_at TEXT,
     reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    artist_id INTEGER REFERENCES artists(id) ON DELETE SET NULL
+    artist_id INTEGER REFERENCES artists(id) ON DELETE SET NULL,
+    discovery_run_id INTEGER REFERENCES discovery_runs(id) ON DELETE SET NULL
   )
 `;
 
@@ -481,6 +489,25 @@ function ensureDiscoveryCandidatesSchema() {
   ensureDiscoveryCandidatesIndexes();
 }
 ensureDiscoveryCandidatesSchema();
+// Created here, AFTER the discovery_candidates rebuild above, not in the
+// main DDL block up top — SQLite's ALTER TABLE RENAME (used by that
+// rebuild) automatically rewrites OTHER tables' foreign keys that pointed
+// at the renamed table, so a history table created earlier and referencing
+// discovery_candidates would get silently repointed at the temporary
+// discovery_candidates_pre_youtube name, then orphaned the moment that
+// temp table is dropped. Creating it only after the rebuild is done means
+// its foreign key is always defined against the table's FINAL name.
+db.exec(`
+CREATE TABLE IF NOT EXISTS discovery_candidate_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  candidate_id INTEGER NOT NULL REFERENCES discovery_candidates(id) ON DELETE CASCADE,
+  from_status TEXT,
+  to_status TEXT NOT NULL,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_candidate_history_candidate ON discovery_candidate_history(candidate_id);
+`);
 // Added after the table-rebuild migration above already shipped — a
 // database that went through that migration but predates comment-based
 // scoring needs these added the ordinary way (they're new nullable
@@ -493,6 +520,12 @@ addColumnIfMissing('discovery_candidates', 'yt_example_comment_1 TEXT');
 addColumnIfMissing('discovery_candidates', 'yt_example_comment_1_likes INTEGER');
 addColumnIfMissing('discovery_candidates', 'yt_example_comment_2 TEXT');
 addColumnIfMissing('discovery_candidates', 'yt_example_comment_2_likes INTEGER');
+// Which scan run found this candidate — added after DISCOVERY_CANDIDATES_DDL
+// already shipped without it; a database that predates this migration just
+// gets NULL on its existing rows (never backfillable, no run history for
+// them), which getRecentDiscoveryRunsWithCandidateCounts treats the same as
+// any other run with zero attributed candidates.
+addColumnIfMissing('discovery_candidates', 'discovery_run_id INTEGER REFERENCES discovery_runs(id) ON DELETE SET NULL');
 
 // Duplicate-artist detection at the roster level: two live artists sharing
 // the same Soundcharts identity are definitely the same real artist, not a
@@ -2188,12 +2221,13 @@ export function completeDiscoveryRun(
     UPDATE discovery_runs
     SET completed_at = ?, status = ?, searched_count = ?, candidates_found = ?, error = ?, quota_used = ?,
         rejected_not_official_release = ?, rejected_below_min_views = ?, rejected_no_subscriber_count = ?,
-        rejected_subscriber_out_of_band = ?, rejected_below_momentum_threshold = ?, best_rejected_momentum_score = ?
+        rejected_subscriber_out_of_band = ?, rejected_below_momentum_threshold = ?, best_rejected_momentum_score = ?,
+        rejected_duplicate_soundcharts_match = ?
     WHERE id = ?
   `).run(
     new Date().toISOString(), result.status, result.searchedCount, result.candidatesFound, result.error ?? null, result.quotaUsed ?? null,
     r?.notOfficialRelease ?? null, r?.belowMinViews ?? null, r?.noSubscriberCount ?? null, r?.subscriberOutOfBand ?? null,
-    r?.belowMomentumThreshold ?? null, r?.bestRejectedMomentumScore ?? null, id
+    r?.belowMomentumThreshold ?? null, r?.bestRejectedMomentumScore ?? null, r?.duplicateSoundchartsMatch ?? null, id
   );
 }
 
@@ -2237,6 +2271,11 @@ export type NewDiscoveryCandidate = {
   yt_example_comment_2_likes?: number;
   momentum_score?: number;
   flagged_reason: string;
+  // Which scan run found this candidate — see the discovery_run_id column
+  // comment. Optional because the (dormant) Soundcharts source predates
+  // this and hasn't been wired to pass it; a candidate without it just
+  // never shows up attributed to a run on the Admin discovery page.
+  discovery_run_id?: number;
 };
 
 const DISCOVERY_CANDIDATE_COLUMNS = [
@@ -2246,18 +2285,29 @@ const DISCOVERY_CANDIDATE_COLUMNS = [
   'yt_comment_count', 'yt_published_at', 'yt_channel_subscriber_count', 'yt_channel_view_count',
   'yt_views_per_day', 'yt_like_rate', 'yt_comment_rate', 'yt_views_per_subscriber', 'yt_hype_comment_rate',
   'yt_comments_analyzed', 'yt_example_comment_1', 'yt_example_comment_1_likes', 'yt_example_comment_2',
-  'yt_example_comment_2_likes', 'momentum_score', 'flagged_reason',
+  'yt_example_comment_2_likes', 'momentum_score', 'flagged_reason', 'discovery_run_id',
 ] as const;
+
+// candidate_id isn't known until the INSERT above returns its rowid — a
+// second statement, not a trigger, keeps this readable and matches how
+// every other history/audit table in this app is written (see
+// logSyncFailure). from_status is always null here: this row IS the
+// candidate's discovery, not a transition from some prior state.
+function logDiscoveryCandidateDiscovered(candidateId: number): void {
+  db.prepare('INSERT INTO discovery_candidate_history (candidate_id, from_status, to_status, actor_id, created_at) VALUES (?, NULL, ?, NULL, ?)')
+    .run(candidateId, 'new', new Date().toISOString());
+}
 
 export function insertDiscoveryCandidate(c: NewDiscoveryCandidate): void {
   const columns = [...DISCOVERY_CANDIDATE_COLUMNS, 'status', 'discovered_at'];
   const placeholders = DISCOVERY_CANDIDATE_COLUMNS.map((col) => `@${col}`).join(', ');
   const row: Record<string, unknown> = { discovered_at: new Date().toISOString() };
   for (const col of DISCOVERY_CANDIDATE_COLUMNS) row[col] = (c as any)[col] ?? null;
-  db.prepare(`
+  const info = db.prepare(`
     INSERT INTO discovery_candidates (${columns.join(', ')})
     VALUES (${placeholders}, 'new', @discovered_at)
   `).run(row);
+  logDiscoveryCandidateDiscovered(info.lastInsertRowid as number);
 }
 
 const DISCOVERY_CANDIDATE_SELECT = `
@@ -2290,16 +2340,90 @@ export function getDiscoveryCandidate(id: number): DiscoveryCandidate | undefine
   return db.prepare(`${DISCOVERY_CANDIDATE_SELECT} WHERE discovery_candidates.id = ?`).get(id) as DiscoveryCandidate | undefined;
 }
 
+function logDiscoveryCandidateHistory(candidateId: number, fromStatus: DiscoveryCandidateStatus, toStatus: DiscoveryCandidateStatus, actorId: number): void {
+  db.prepare('INSERT INTO discovery_candidate_history (candidate_id, from_status, to_status, actor_id, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run(candidateId, fromStatus, toStatus, actorId, new Date().toISOString());
+}
+
 export function setDiscoveryCandidateStatus(
   id: number,
   status: 'watching' | 'passed',
   actor: Actor
 ): DiscoveryCandidate | undefined {
+  const existing = getDiscoveryCandidate(id);
+  if (!existing) return undefined;
   const info = db
     .prepare('UPDATE discovery_candidates SET status = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?')
     .run(status, new Date().toISOString(), actor.id, id);
   if (info.changes === 0) return undefined;
+  logDiscoveryCandidateHistory(id, existing.status, status, actor.id);
   return getDiscoveryCandidate(id);
+}
+
+export function getDiscoveryCandidateHistory(candidateId: number): DiscoveryCandidateHistoryEntry[] {
+  return db
+    .prepare(`
+      SELECT discovery_candidate_history.*, users.name AS actor_name
+      FROM discovery_candidate_history
+      LEFT JOIN users ON users.id = discovery_candidate_history.actor_id
+      WHERE candidate_id = ?
+      ORDER BY discovery_candidate_history.created_at ASC, discovery_candidate_history.id ASC
+    `)
+    .all(candidateId) as DiscoveryCandidateHistoryEntry[];
+}
+
+// A cross-candidate audit feed for the Admin discovery page — every real
+// review decision (not the initial "discovered" row, which isn't a
+// decision anyone made), most recent first.
+export function getRecentDiscoveryReviewDecisions(limit = 30): (DiscoveryCandidateHistoryEntry & { candidate_name: string; candidate_source: DiscoverySourceKey })[] {
+  return db
+    .prepare(`
+      SELECT discovery_candidate_history.*, users.name AS actor_name,
+             discovery_candidates.name AS candidate_name, discovery_candidates.source AS candidate_source
+      FROM discovery_candidate_history
+      JOIN discovery_candidates ON discovery_candidates.id = discovery_candidate_history.candidate_id
+      LEFT JOIN users ON users.id = discovery_candidate_history.actor_id
+      WHERE discovery_candidate_history.from_status IS NOT NULL
+      ORDER BY discovery_candidate_history.created_at DESC, discovery_candidate_history.id DESC
+      LIMIT ?
+    `)
+    .all(limit) as (DiscoveryCandidateHistoryEntry & { candidate_name: string; candidate_source: DiscoverySourceKey })[];
+}
+
+export function getDiscoveryCandidateCountsByStatus(): Record<DiscoveryCandidateStatus, number> {
+  const rows = db.prepare('SELECT status, COUNT(*) AS c FROM discovery_candidates GROUP BY status').all() as { status: DiscoveryCandidateStatus; c: number }[];
+  const counts: Record<DiscoveryCandidateStatus, number> = { new: 0, watching: 0, approved: 0, passed: 0 };
+  for (const row of rows) counts[row.status] = row.c;
+  return counts;
+}
+
+// Genre coverage monitoring — YouTube-only (yt_genre is null for every
+// Soundcharts candidate), so a genre that's gone quiet (0 candidates for
+// several runs) is visible instead of invisible inside one aggregate count.
+export function getDiscoveryCandidateCountsByGenre(): { genre: string; count: number }[] {
+  return db
+    .prepare("SELECT yt_genre AS genre, COUNT(*) AS count FROM discovery_candidates WHERE yt_genre IS NOT NULL GROUP BY yt_genre ORDER BY count DESC")
+    .all() as { genre: string; count: number }[];
+}
+
+// "Candidate count by scan" — the run history the Admin discovery page
+// actually needs (getLatestDiscoveryRun alone only ever shows one row).
+// candidateCount reflects insertDiscoveryCandidate's own bookkeeping via
+// discovery_run_id, which can differ from a run's own candidates_found if
+// an insert failed after scoring (see app/api/discovery/scan-youtube) —
+// showing both side by side surfaces that gap instead of hiding it.
+export function getRecentDiscoveryRunsWithCandidateCounts(source: DiscoverySourceKey, limit = 10): (DiscoveryRun & { candidateCount: number })[] {
+  return db
+    .prepare(`
+      SELECT discovery_runs.*, COUNT(discovery_candidates.id) AS candidateCount
+      FROM discovery_runs
+      LEFT JOIN discovery_candidates ON discovery_candidates.discovery_run_id = discovery_runs.id
+      WHERE discovery_runs.source = ?
+      GROUP BY discovery_runs.id
+      ORDER BY discovery_runs.started_at DESC, discovery_runs.id DESC
+      LIMIT ?
+    `)
+    .all(source, limit) as (DiscoveryRun & { candidateCount: number })[];
 }
 
 // Approving a candidate creates the real, editable artist row — pre-filled
@@ -2310,7 +2434,7 @@ export function setDiscoveryCandidateStatus(
 // The scan-bucket keys used internally by lib/youtube-discovery.ts
 // (DEFAULT_YOUTUBE_GENRES) — a Scout approving a candidate should see
 // "Hip-Hop/Rap," not the raw search-bucket key "hip-hop-rap".
-const YOUTUBE_GENRE_LABELS: Record<string, string> = {
+export const YOUTUBE_GENRE_LABELS: Record<string, string> = {
   'hip-hop-rap': 'Hip-Hop/Rap',
   pop: 'Pop',
   rnb: 'R&B',
@@ -2358,6 +2482,7 @@ export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | un
 
   db.prepare('UPDATE discovery_candidates SET status = ?, reviewed_at = ?, reviewed_by = ?, artist_id = ? WHERE id = ?')
     .run('approved', new Date().toISOString(), actor.id, artist.id, id);
+  logDiscoveryCandidateHistory(id, candidate.status, 'approved', actor.id);
 
   return artist;
 }

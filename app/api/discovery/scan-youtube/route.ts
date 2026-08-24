@@ -50,7 +50,7 @@ export async function POST(req: Request) {
       // an otherwise-good scan — see roadmap requirement that a YouTube
       // failure never crashes the whole thing.
       try {
-        insertDiscoveryCandidate(candidate);
+        insertDiscoveryCandidate({ ...candidate, discovery_run_id: run.id });
         insertedCount++;
       } catch (err: any) {
         insertFailedCount++;

@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     const { candidates, searchedCount } = await evaluateCandidates(topResult.data, alreadyKnown);
 
     for (const candidate of candidates) {
-      insertDiscoveryCandidate(candidate);
+      insertDiscoveryCandidate({ ...candidate, discovery_run_id: run.id });
     }
 
     completeDiscoveryRun(run.id, { status: 'completed', searchedCount, candidatesFound: candidates.length });

@@ -596,6 +596,26 @@ export type DiscoveryCandidate = {
   reviewed_by?: number;
   reviewed_by_name?: string;
   artist_id?: number;
+  // Which scan run found this candidate — undefined on a row that predates
+  // this column, or if it was somehow inserted outside a run. See
+  // getRecentDiscoveryRunsWithCandidateCounts in lib/db.ts.
+  discovery_run_id?: number;
+};
+
+// One row per status transition — see discovery_candidate_history in
+// lib/db.ts. from_status is null for the very first row (discovery
+// itself), so a candidate's full lifecycle (discovered -> watching ->
+// approved, or discovered -> passed, etc.) is reconstructable, unlike the
+// single overwritten status/reviewed_at/reviewed_by columns on the
+// candidate row itself.
+export type DiscoveryCandidateHistoryEntry = {
+  id: number;
+  candidate_id: number;
+  from_status: DiscoveryCandidateStatus | null;
+  to_status: DiscoveryCandidateStatus;
+  actor_id?: number;
+  actor_name?: string;
+  created_at: string;
 };
 
 export type DiscoveryRunStatus = 'running' | 'completed' | 'failed';
@@ -622,6 +642,7 @@ export type DiscoveryRun = {
   rejected_subscriber_out_of_band?: number;
   rejected_below_momentum_threshold?: number;
   best_rejected_momentum_score?: number;
+  rejected_duplicate_soundcharts_match?: number;
 };
 
 export type SyncRunStatus = 'running' | 'completed' | 'failed';
