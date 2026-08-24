@@ -121,6 +121,62 @@
   -webkit-user-select: none;
 }
 .holo-card-wrap:active { cursor: grabbing; }
+/* Idle ambient sway — plays continuously so the card feels alive before
+   anyone touches it, not just on drag. Paused (via the
+   .holo-card-idle-paused class HoloCard.tsx adds on pointerdown) so it
+   never fights the JS-driven tilt on .holo-card-tilt underneath — see the
+   component's own comment for why these must live on separate elements.
+   Every keyframe here starts and ends at the neutral pose on purpose: the
+   global prefers-reduced-motion rule below forces a single ~0ms iteration
+   instead of removing the animation outright, so a reduced-motion visitor
+   still lands on a flat, untilted card rather than freezing mid-sway. */
+.holo-card-idle {
+  animation: holo-card-sway 9s ease-in-out infinite;
+}
+.holo-card-idle.holo-card-idle-paused {
+  animation-play-state: paused;
+}
+@keyframes holo-card-sway {
+  0% { transform: perspective(1000px) rotateX(0deg) rotateY(0deg); }
+  25% { transform: perspective(1000px) rotateX(2.5deg) rotateY(-6deg); }
+  50% { transform: perspective(1000px) rotateX(0deg) rotateY(0deg); }
+  75% { transform: perspective(1000px) rotateX(-2.5deg) rotateY(6deg); }
+  100% { transform: perspective(1000px) rotateX(0deg) rotateY(0deg); }
+}
+/* A dim, constantly-sweeping version of the foil layer — the "catching
+   the light while sitting still" shimmer. Left running during an active
+   drag too (only the rotation pauses); a little extra shimmer under the
+   interactive shine while dragging reads as more foil, not a bug. */
+.holo-card-idle-shine {
+  position: absolute;
+  inset: 0;
+  /* Matches the keyframe's own start/end values — once the animation
+     completes (immediately, under prefers-reduced-motion's forced single
+     iteration) an element reverts to this base style, not the keyframe's
+     last frame, so this has to already look like a settled resting state
+     on its own rather than assuming the animation left it here. */
+  opacity: 0.4;
+  background-position: 15% 20%;
+  pointer-events: none;
+  mix-blend-mode: color-dodge;
+  background-image: repeating-linear-gradient(
+    115deg,
+    oklch(75% 0.18 20 / 0.35) 0%,
+    oklch(80% 0.16 85 / 0.35) 8%,
+    oklch(85% 0.16 140 / 0.35) 16%,
+    oklch(80% 0.16 200 / 0.35) 24%,
+    oklch(75% 0.18 260 / 0.35) 32%,
+    oklch(78% 0.18 320 / 0.35) 40%,
+    oklch(75% 0.18 20 / 0.35) 48%
+  );
+  background-size: 320% 320%;
+  animation: holo-card-idle-shine-sweep 6.5s ease-in-out infinite;
+}
+@keyframes holo-card-idle-shine-sweep {
+  0% { background-position: 15% 20%; opacity: 0.4; }
+  50% { background-position: 85% 80%; opacity: 0.6; }
+  100% { background-position: 15% 20%; opacity: 0.4; }
+}
 .holo-card-tilt {
   position: relative;
   border-radius: 28px;

@@ -13,8 +13,19 @@ import { useEffect, useRef } from 'react';
 // display refresh rate, and routing that through setState would mean a
 // full React re-render per frame. The imperative writes here are the
 // entire reason this stays smooth.
+//
+// Two independent transform layers, deliberately on two different DOM
+// nodes: an outer .holo-card-idle plays a slow CSS @keyframes sway so the
+// card looks alive the moment it's on screen, not just when touched; the
+// inner .holo-card-tilt (this component's own ref writes) takes over for
+// direct pointer control. Putting both on the SAME element would fail —
+// a running CSS animation's value for a property beats an inline style
+// set from JS for that same property, so the idle sway would silently
+// override every pointermove write. Splitting them onto parent/child
+// avoids that fight entirely; their transforms just compose normally.
 export default function HoloCard({ children, className }: { children: React.ReactNode; className?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const idleRef = useRef<HTMLDivElement>(null);
   const tiltRef = useRef<HTMLDivElement>(null);
   const shineRef = useRef<HTMLDivElement>(null);
   const glareRef = useRef<HTMLDivElement>(null);
@@ -70,6 +81,7 @@ export default function HoloCard({ children, className }: { children: React.Reac
   function reset() {
     activeRef.current = false;
     setTransition(false);
+    idleRef.current?.classList.remove('holo-card-idle-paused');
     const tilt = tiltRef.current;
     const shine = shineRef.current;
     const glare = glareRef.current;
@@ -82,16 +94,24 @@ export default function HoloCard({ children, className }: { children: React.Reac
     <div
       ref={wrapRef}
       className={`holo-card-wrap ${className ?? ''}`}
-      onPointerDown={(e) => { activeRef.current = true; setTransition(true); update(e.clientX, e.clientY); }}
+      onPointerDown={(e) => {
+        activeRef.current = true;
+        idleRef.current?.classList.add('holo-card-idle-paused');
+        setTransition(true);
+        update(e.clientX, e.clientY);
+      }}
       onPointerMove={(e) => { if (activeRef.current) update(e.clientX, e.clientY); }}
       onPointerUp={reset}
       onPointerCancel={reset}
       onPointerLeave={reset}
     >
-      <div ref={tiltRef} className="holo-card-tilt">
-        {children}
-        <div ref={shineRef} className="holo-card-shine" aria-hidden="true" />
-        <div ref={glareRef} className="holo-card-glare" aria-hidden="true" />
+      <div ref={idleRef} className="holo-card-idle">
+        <div ref={tiltRef} className="holo-card-tilt">
+          {children}
+          <div className="holo-card-idle-shine" aria-hidden="true" />
+          <div ref={shineRef} className="holo-card-shine" aria-hidden="true" />
+          <div ref={glareRef} className="holo-card-glare" aria-hidden="true" />
+        </div>
       </div>
     </div>
   );
