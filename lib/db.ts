@@ -7,13 +7,13 @@ import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nex
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
-  AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistInput, DiscoveryCandidate,
-  DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryRun, DiscoverySourceKey, DueFollowUp,
-  FavoriteGenre, FoundingBelieverRecord,
+  AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistFieldChange, ArtistInput,
+  DiscoveryCandidate, DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryRun, DiscoverySourceKey,
+  DueFollowUp, FavoriteGenre, FoundingBelieverRecord,
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
   RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutProfile,
-  SyncFailure, SyncRun, SyncSourceKey, User, WatchlistEntry,
+  Stage, SyncFailure, SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
 
 export type Actor = { id: number; name: string };
@@ -75,6 +75,22 @@ CREATE TABLE IF NOT EXISTS contact_log (
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_contact_log_artist ON contact_log(artist_id);
+-- Field-level audit trail for direct edits to an artist record — see
+-- updateArtist below. Only logged when a human actor made the change
+-- (never an automated sync), and never for 'stage' (already tracked as a
+-- contact_log status_change entry). Distinct from score_history, which
+-- snapshots the RESULTING numbers on every write but never who changed
+-- them or what the previous value was.
+CREATE TABLE IF NOT EXISTS artist_field_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  field TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_artist_field_history_artist ON artist_field_history(artist_id);
 CREATE TABLE IF NOT EXISTS score_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
@@ -641,7 +657,73 @@ export function updateArtist(id: number, input: ArtistInput, actor?: Actor | nul
       message: `Stage changed from "${existing.stage}" to "${updated.stage}"`,
     }, actor);
   }
+  // Field-level audit trail — only for a real human edit (an automated
+  // sync route never passes an actor), and never for 'stage' (already
+  // covered by the status_change log entry above).
+  if (sets.length > 0 && actor?.id != null) {
+    logArtistFieldChanges(id, existing, input, actor.id);
+  }
   if (sets.length > 0) snapshotScore(updated);
+  return updated;
+}
+
+// null/undefined/'' all mean "no value" — ArtistForm always submits every
+// field on every save (an untouched optional field comes through as '',
+// never omitted), so comparing raw values against the DB's null would log
+// a spurious "changed" row for every blank field on every single save.
+function normalizeFieldValue(v: unknown): string | null {
+  return v == null || v === '' ? null : String(v);
+}
+
+function logArtistFieldChanges(artistId: number, existing: Artist, input: ArtistInput, actorId: number): void {
+  const now = new Date().toISOString();
+  const insert = db.prepare('INSERT INTO artist_field_history (artist_id, field, old_value, new_value, actor_id, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+  for (const field of WRITABLE_FIELDS) {
+    if (field === 'stage' || !(field in input)) continue;
+    const oldValue = normalizeFieldValue((existing as any)[field]);
+    const newValue = normalizeFieldValue((input as any)[field]);
+    if (oldValue === newValue) continue;
+    insert.run(artistId, field, oldValue, newValue, actorId, now);
+  }
+}
+
+export function getArtistFieldHistory(artistId: number, limit = 50): ArtistFieldChange[] {
+  return db
+    .prepare(`
+      SELECT artist_field_history.*, users.name AS actor_name
+      FROM artist_field_history
+      LEFT JOIN users ON users.id = artist_field_history.actor_id
+      WHERE artist_id = ?
+      ORDER BY artist_field_history.created_at DESC, artist_field_history.id DESC
+      LIMIT ?
+    `)
+    .all(artistId, limit) as ArtistFieldChange[];
+}
+
+// "Most recent activity" for roster sorting — the later of the artist's
+// own last field edit (updated_at) and its most recent contact_log entry
+// (a note/outreach/meeting logged with no field actually changing doesn't
+// touch updated_at at all, so relying on updated_at alone would miss it).
+// Both are ISO strings, so the 2-arg scalar MAX() below picks whichever
+// sorts later — nested inside the same SELECT as the aggregate MAX() per
+// group, which SQLite evaluates correctly.
+export function getArtistLastActivityMap(): Map<number, string> {
+  const rows = db
+    .prepare(`
+      SELECT artists.id AS id, MAX(artists.updated_at, COALESCE(MAX(contact_log.created_at), '')) AS last_activity_at
+      FROM artists
+      LEFT JOIN contact_log ON contact_log.artist_id = artists.id
+      GROUP BY artists.id
+    `)
+    .all() as { id: number; last_activity_at: string }[];
+  return new Map(rows.map((r) => [r.id, r.last_activity_at]));
+}
+
+export function bulkSetArtistStage(ids: number[], stage: Stage, actor: Actor): number {
+  let updated = 0;
+  for (const id of ids) {
+    if (updateArtist(id, { stage } as ArtistInput, actor)) updated++;
+  }
   return updated;
 }
 

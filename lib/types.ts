@@ -172,6 +172,21 @@ export type LogEntry = {
   follow_up_at?: string;
 };
 
+// One row per changed field on a direct artist edit — see updateArtist in
+// lib/db.ts. old_value/new_value are stored as plain strings (every
+// writable field is a string or number) so this stays a simple, generic
+// log rather than a typed column per field.
+export type ArtistFieldChange = {
+  id: number;
+  artist_id: number;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  actor_id?: number;
+  actor_name?: string;
+  created_at: string;
+};
+
 export type LogEntryInput = {
   type: LogType;
   message: string;

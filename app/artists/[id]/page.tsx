@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { getArtist } from '@/lib/db';
+import { getArtist, getArtistFieldHistory } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import ArtistForm from '@/components/ArtistForm';
 import { breakoutScore } from '@/lib/scoring';
@@ -9,6 +9,7 @@ import ActivityLog from '@/components/ActivityLog';
 import ScoreHistory from '@/components/ScoreHistory';
 import DealsAndRevenue from '@/components/DealsAndRevenue';
 import InvestmentLedger from '@/components/InvestmentLedger';
+import ArtistFieldHistory from '@/components/ArtistFieldHistory';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const artist = getArtist(Number(params.id));
@@ -25,6 +26,7 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
   if (!artist) notFound();
 
   const score = breakoutScore(artist);
+  const fieldHistory = getArtistFieldHistory(artist.id);
 
   return (
     <div className="space-y-6">
@@ -48,6 +50,8 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
       <DealsAndRevenue artistId={artist.id} />
 
       <InvestmentLedger artistId={artist.id} />
+
+      <ArtistFieldHistory history={fieldHistory} />
 
       <ArtistForm artist={artist} />
     </div>

@@ -1,11 +1,10 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getAllArtists, getDueFollowUps, getLatestSyncRun } from '@/lib/db';
+import { getAllArtists, getArtistLastActivityMap, getDueFollowUps, getLatestSyncRun, getNewDiscoveryCandidateCount } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import { breakoutScore } from '@/lib/scoring';
-import { STAGE_LABELS } from '@/lib/types';
-import ScoreBadge from '@/components/ScoreBadge';
-import FollowUpList from '@/components/FollowUpList';
+import RosterList from '@/components/RosterList';
+import NeedsActionToday from '@/components/NeedsActionToday';
 import SyncAllButton from '@/components/SyncAllButton';
 import DeezerSyncButton from '@/components/DeezerSyncButton';
 import YoutubeVideoSyncButton from '@/components/YoutubeVideoSyncButton';
@@ -15,10 +14,12 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   await requireInternal();
+  const lastActivity = getArtistLastActivityMap();
   const artists = getAllArtists()
-    .map((a) => ({ ...a, score: breakoutScore(a) }))
+    .map((a) => ({ ...a, score: breakoutScore(a), last_activity_at: lastActivity.get(a.id) }))
     .sort((a, b) => b.score - a.score);
   const dueFollowUps = getDueFollowUps();
+  const newCandidateCount = getNewDiscoveryCandidateCount();
   const lastSync = getLatestSyncRun('soundcharts');
   const lastDeezerSync = getLatestSyncRun('deezer');
   const lastVideoSync = getLatestSyncRun('youtube_video');
@@ -104,51 +105,9 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      <FollowUpList initial={dueFollowUps} />
+      <NeedsActionToday initialFollowUps={dueFollowUps} newCandidateCount={newCandidateCount} />
 
-      <div className="space-y-3">
-        {active.map((artist, idx) => (
-          <Link
-            key={artist.id}
-            href={`/artists/${artist.id}`}
-            className="card card-hover flex items-center justify-between gap-4"
-          >
-            <div className="flex items-center gap-4 min-w-0">
-              <span className="num text-sm w-6 shrink-0" style={{ color: 'var(--text-faint)' }}>#{idx + 1}</span>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold truncate">{artist.name}</span>
-                  <span className="badge">{STAGE_LABELS[artist.stage]}</span>
-                  {artist.genre && <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{artist.genre}</span>}
-                </div>
-                <div className="text-sm mt-1 flex gap-4 flex-wrap" style={{ color: 'var(--text-muted)' }}>
-                  {artist.followers_count != null && <span className="num">{artist.followers_count.toLocaleString()} followers</span>}
-                  {artist.growth_velocity_pct != null && <span className="num" style={{ color: 'var(--up)' }}>+{artist.growth_velocity_pct}%/mo</span>}
-                  {artist.engagement_rate_pct != null && <span className="num">{artist.engagement_rate_pct}% engagement</span>}
-                  {artist.created_by_name && <span>Added by {artist.created_by_name}</span>}
-                </div>
-              </div>
-            </div>
-            <ScoreBadge score={artist.score} />
-          </Link>
-        ))}
-      </div>
-
-      {artists.some((a) => a.stage === 'passed') && (
-        <details className="card">
-          <summary className="cursor-pointer text-sm" style={{ color: 'var(--text-muted)' }}>
-            Passed ({artists.filter((a) => a.stage === 'passed').length})
-          </summary>
-          <div className="space-y-3 mt-3">
-            {artists.filter((a) => a.stage === 'passed').map((artist) => (
-              <Link key={artist.id} href={`/artists/${artist.id}`} className="card card-hover flex items-center justify-between gap-4 opacity-60 hover:opacity-100">
-                <span className="font-semibold">{artist.name}</span>
-                <ScoreBadge score={artist.score} size="sm" />
-              </Link>
-            ))}
-          </div>
-        </details>
-      )}
+      <RosterList artists={artists} />
 
       <div className="card text-sm" style={{ color: 'var(--text-muted)' }}>
         <p>
