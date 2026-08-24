@@ -7,6 +7,7 @@ const TABS = [
   { href: '/admin/sync', label: 'Sync health' },
   { href: '/admin/discovery', label: 'Discovery' },
   { href: '/admin/scout-accuracy', label: 'Scout accuracy' },
+  { href: '/admin/market-integrity', label: 'Market integrity' },
 ];
 
 export default function AdminTabs() {

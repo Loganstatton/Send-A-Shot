@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createUser, getUserByEmail, logEvent } from '@/lib/db';
+import { createUser, findUserByNormalizedEmail, getUserByEmail, logEvent } from '@/lib/db';
 import { createActionToken, hashPassword, setSessionCookie } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
 
@@ -37,6 +37,14 @@ export async function POST(req: Request) {
   }
 
   if (getUserByEmail(email)) {
+    return NextResponse.json({ error: 'An account with that email already exists.' }, { status: 409 });
+  }
+  // Same message as the exact-match check above — this catches the most
+  // common trivial-alias trick (a Gmail dot variant, a +tag) someone might
+  // use to spin up a second account, but there's no reason to reveal to
+  // the caller WHICH check caught it. See findUserByNormalizedEmail's own
+  // comment for what this can't catch.
+  if (findUserByNormalizedEmail(email)) {
     return NextResponse.json({ error: 'An account with that email already exists.' }, { status: 409 });
   }
 

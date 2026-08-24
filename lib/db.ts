@@ -6,6 +6,7 @@ import { DATA_DIR } from './data-dir';
 import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents } from './next-market';
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import { getScoutBadges } from './scout-badges';
+import { getCoordinatedPairFlags, getRapidTradingFlags, MarketTradeRow } from './market-integrity';
 import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
   AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistClaim, ArtistFieldChange, ArtistInput,
@@ -15,7 +16,7 @@ import {
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
   RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutDiscoveryEntry,
-  ScoutProfile,
+  ScoutProfile, SuspiciousTradingFlag,
   Stage, SyncFailure, SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
 
@@ -241,6 +242,24 @@ CREATE TABLE IF NOT EXISTS next_transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_next_transactions_user ON next_transactions(user_id);
 CREATE INDEX IF NOT EXISTS idx_next_transactions_artist ON next_transactions(artist_id);
+CREATE INDEX IF NOT EXISTS idx_next_transactions_user_created ON next_transactions(user_id, created_at);
+-- Trade double-submit protection: a client-generated key ridden along with
+-- a trade request, one row per (user, key) ever. A retried/duplicated
+-- request with the same key returns the ORIGINAL trade's stored response
+-- instead of executing a second real trade — see executeTradeIdempotent in
+-- this file and the trade route. Rows are never pruned (same tradeoff as
+-- sync_runs/discovery_runs history — not yet worth a cleanup job at this
+-- scale); a key is only ever looked up by (user_id, idempotency_key), so an
+-- unbounded table doesn't slow anything else down.
+CREATE TABLE IF NOT EXISTS trade_idempotency_keys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  idempotency_key TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  response_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(user_id, idempotency_key)
+);
 CREATE TABLE IF NOT EXISTS next_founding_believers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1013,6 +1032,32 @@ export function getUserByEmail(email: string): (User & { password_hash: string }
   return row && normalizeUser(row);
 }
 
+// The casual, no-new-infrastructure half of "prevent self-created duplicate
+// accounts" — catches the most common trivial-alias trick (Gmail's
+// dot-insensitivity and the universal +tag convention most providers
+// support), not a real identity check. Someone determined enough to use an
+// entirely different mailbox is still outside what an email address alone
+// can ever prove; real device/IP-based duplicate detection would need new
+// instrumentation this app doesn't collect today.
+export function normalizeEmailForDuplicateCheck(email: string): string {
+  const lower = email.trim().toLowerCase();
+  const [local, domain] = lower.split('@');
+  if (!domain) return lower;
+  const noTag = local.split('+')[0];
+  const isGmail = domain === 'gmail.com' || domain === 'googlemail.com';
+  return `${isGmail ? noTag.replace(/\./g, '') : noTag}@${domain}`;
+}
+
+// Scans every existing account for one whose email normalizes to the same
+// address — see normalizeEmailForDuplicateCheck. A full-table scan, same
+// tradeoff getScoutLeaderboard's getAllUsers().map() already makes at this
+// app's current scale; there's no index to build this against since it's
+// not a stored column, just a signup-time check.
+export function findUserByNormalizedEmail(email: string): User | undefined {
+  const target = normalizeEmailForDuplicateCheck(email);
+  return getAllUsers().find((u) => normalizeEmailForDuplicateCheck(u.email) === target);
+}
+
 export function getUserById(id: number): User | undefined {
   const row = db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).get(id) as User | undefined;
   return row && normalizeUser(row);
@@ -1709,6 +1754,16 @@ export function executeTrade(
     // trader ever hit play on this artist before backing them."
     const listenedBeforeBuy = hasListenedToArtist(userId, artistId) ? 1 : 0;
 
+    // Prevent negative balances: the check above is a fast pre-check, but
+    // the actual debit re-checks the balance atomically in the same
+    // statement (`AND next_credits_cents >= ?`), inside the same
+    // transaction as everything else. better-sqlite3 is synchronous and
+    // this Node process is single-threaded, so a true interleaved race
+    // between two calls to executeTrade can't happen today — but this
+    // guard is what actually makes that a property of the code, not just
+    // an accident of the current runtime, and it costs nothing to keep in
+    // place if trade execution is ever moved off this single-process model.
+    let insufficientAtDebit = false;
     const tx = db.transaction(() => {
       if (holding) {
         db.prepare('UPDATE next_holdings SET shares = ?, cost_basis_cents = ?, updated_at = ? WHERE id = ?')
@@ -1717,8 +1772,13 @@ export function executeTrade(
         db.prepare('INSERT INTO next_holdings (user_id, artist_id, shares, cost_basis_cents, updated_at) VALUES (?, ?, ?, ?, ?)')
           .run(userId, artistId, newShares, newCostBasis, now);
       }
-      db.prepare('UPDATE users SET next_credits_cents = next_credits_cents - ? WHERE id = ?')
-        .run(creditsAmountCents, userId);
+      const debit = db
+        .prepare('UPDATE users SET next_credits_cents = next_credits_cents - ? WHERE id = ? AND next_credits_cents >= ?')
+        .run(creditsAmountCents, userId, creditsAmountCents);
+      if (debit.changes === 0) {
+        insufficientAtDebit = true;
+        throw new Error('insufficient balance at debit time'); // rolls back the whole transaction
+      }
       db.prepare(`
         INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents, listened_before_buy)
         VALUES (?, ?, ?, 'buy', ?, ?, ?, ?)
@@ -1729,7 +1789,12 @@ export function executeTrade(
 
       recordFoundingBelieverIfFirstBuy(userId, artistId, artist, breakoutScore(artist), executionCents, now);
     });
-    tx();
+    try {
+      tx();
+    } catch (err) {
+      if (insufficientAtDebit) return { ok: false, error: 'not enough NEXT Credits' };
+      throw err;
+    }
 
     return { ok: true, shares, priceCents: executionCents, newBalanceCents: user.next_credits_cents - creditsAmountCents };
   }
@@ -1780,6 +1845,72 @@ export function executeTrade(
     newBalanceCents: user.next_credits_cents + proceedsCents,
     realizedPnlCents,
   };
+}
+
+// Anti-spam on trading itself — a generous cap, not a serious abuse
+// defense (see lib/market-integrity.ts for the behavioral pattern
+// detection that actually targets manipulation). This just stops one
+// account from hammering the endpoint faster than any real person trades.
+export const TRADE_RATE_LIMIT_PER_MINUTE = 20;
+
+export function getRecentTradeCount(userId: number, minutes: number): number {
+  const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+  const row = db
+    .prepare('SELECT COUNT(*) AS c FROM next_transactions WHERE user_id = ? AND created_at >= ?')
+    .get(userId, cutoff) as { c: number };
+  return row.c;
+}
+
+// Trade idempotency — see trade_idempotency_keys' own comment in the DDL
+// above. The route checks getStoredTradeResponse BEFORE calling
+// executeTrade at all; a hit means this exact client-generated key was
+// already processed, so the route replays the stored response instead of
+// trading a second time. storeTradeResponse is called after either a
+// successful or a rejected trade — a rejection (e.g. "not enough NEXT
+// Credits") is just as worth deduplicating as a success, so a retried
+// request doesn't re-run the (cheap but real) validation work either.
+export function getStoredTradeResponse(userId: number, idempotencyKey: string): { status: number; body: unknown } | undefined {
+  const row = db
+    .prepare('SELECT status, response_json FROM trade_idempotency_keys WHERE user_id = ? AND idempotency_key = ?')
+    .get(userId, idempotencyKey) as { status: number; response_json: string } | undefined;
+  return row ? { status: row.status, body: JSON.parse(row.response_json) } : undefined;
+}
+
+export function storeTradeResponse(userId: number, idempotencyKey: string, status: number, body: unknown): void {
+  try {
+    db.prepare('INSERT INTO trade_idempotency_keys (user_id, idempotency_key, status, response_json, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(userId, idempotencyKey, status, JSON.stringify(body), new Date().toISOString());
+  } catch (err: any) {
+    // A duplicate (user_id, idempotency_key) landing here means two
+    // concurrent requests raced to store the same key — the first writer
+    // wins and this one is a no-op, not an error the caller needs to see.
+    if (!/UNIQUE/i.test(err?.message ?? '')) throw err;
+  }
+}
+
+// Suspicious-trading review — see lib/market-integrity.ts's own header
+// comment for what these flags do and don't mean. Pulls the whole trade
+// history (small at this app's current scale — see the same tradeoff
+// getScoutLeaderboard's getAllUsers().map() already makes) and enriches
+// the pure detectors' raw ids with names for the admin page to render.
+export function getSuspiciousTradingFlags(): SuspiciousTradingFlag[] {
+  const transactions = db
+    .prepare('SELECT user_id, artist_id, created_at FROM next_transactions ORDER BY created_at ASC')
+    .all() as MarketTradeRow[];
+
+  const flags = [...getRapidTradingFlags(transactions), ...getCoordinatedPairFlags(transactions)];
+  if (flags.length === 0) return flags;
+
+  const userIds = [...new Set(flags.flatMap((f) => f.userIds))];
+  const artistIds = [...new Set(flags.map((f) => f.artistId).filter((id): id is number => id != null))];
+  const userNamesById = new Map(userIds.map((id) => [id, getUserById(id)?.name]));
+  const artistNamesById = new Map(artistIds.map((id) => [id, getArtist(id)?.name]));
+
+  return flags.map((f) => ({
+    ...f,
+    userNames: f.userIds.map((id) => userNamesById.get(id) ?? `User #${id}`),
+    artistName: f.artistId != null ? artistNamesById.get(f.artistId) ?? `Artist #${f.artistId}` : undefined,
+  }));
 }
 
 // --- Scout Identity: public profiles, leaderboards, Founding Believer ---

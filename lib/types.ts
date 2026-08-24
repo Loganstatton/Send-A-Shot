@@ -417,6 +417,23 @@ export type AnalyticsEvent = {
   created_at: string;
 };
 
+// A heuristic flag from lib/market-integrity.ts, not a verdict — surfaced to
+// an admin (app/admin/market-integrity) to investigate, never acted on
+// automatically (see that module's own header comment for why). userNames/
+// artistName are joined in for display only when the flag is enriched via
+// getSuspiciousTradingFlags in lib/db.ts; the pure detector functions only
+// ever see raw ids.
+export type SuspiciousTradingFlagKind = 'rapid_trading' | 'coordinated_pair';
+
+export type SuspiciousTradingFlag = {
+  kind: SuspiciousTradingFlagKind;
+  userIds: number[];
+  userNames?: string[];
+  artistId?: number;
+  artistName?: string;
+  detail: string;
+};
+
 export type NextTransactionType = 'buy' | 'sell';
 
 export type NextTransaction = {

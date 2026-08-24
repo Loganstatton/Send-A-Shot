@@ -53,6 +53,11 @@ export default function AuthForm({ mode, inviteRequired = false }: Props) {
   return (
     <div className="max-w-sm mx-auto card space-y-4">
       <h1 className="text-xl font-semibold">{mode === 'signup' ? 'Create an account' : 'Log in'}</h1>
+      {mode === 'signup' && (
+        <p className="text-xs text-neutral-400 -mt-2">
+          NEXT is paper trading — every account starts with virtual NEXT Credits, and no real money ever changes hands.
+        </p>
+      )}
       {error && <div className="text-sm text-red-300">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-3">
         {mode === 'signup' && (
