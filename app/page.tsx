@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getAllArtists, getArtistLastActivityMap, getArtistsInVideoBackoff, getDueFollowUps, getLatestSyncRun, getNewDiscoveryCandidateCount } from '@/lib/db';
+import { getAllArtists, getArtistLastActivityMap, getArtistsInPhotoBackoff, getArtistsInVideoBackoff, getDueFollowUps, getLatestSyncRun, getNewDiscoveryCandidateCount } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import { breakoutScore } from '@/lib/scoring';
 import RosterList from '@/components/RosterList';
@@ -8,6 +8,7 @@ import NeedsActionToday from '@/components/NeedsActionToday';
 import SyncAllButton from '@/components/SyncAllButton';
 import DeezerSyncButton from '@/components/DeezerSyncButton';
 import YoutubeVideoSyncButton from '@/components/YoutubeVideoSyncButton';
+import SoundchartsPhotoBackfillButton from '@/components/SoundchartsPhotoBackfillButton';
 
 export const metadata: Metadata = { title: { absolute: 'Scout — Early Artist Discovery' } };
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,8 @@ export default async function DashboardPage() {
   const lastDeezerSync = getLatestSyncRun('deezer');
   const lastVideoSync = getLatestSyncRun('youtube_video');
   const videoBackoff = getArtistsInVideoBackoff();
+  const lastPhotoBackfill = getLatestSyncRun('soundcharts_photo');
+  const photoBackoff = getArtistsInPhotoBackoff();
 
   const active = artists.filter((a) => a.stage !== 'passed');
   const fire = active.filter((a) => a.score >= 85).length;
@@ -52,6 +55,7 @@ export default async function DashboardPage() {
           <SyncAllButton />
           <DeezerSyncButton />
           <YoutubeVideoSyncButton />
+          <SoundchartsPhotoBackfillButton />
         </div>
         <div className="text-right space-y-1">
           {lastSync && (
@@ -98,6 +102,26 @@ export default async function DashboardPage() {
                         recheck backoff — say which, right where this is seen. */}
                     {lastVideoSync.checked_count === 0 && lastVideoSync.updated_count === 0 && videoBackoff.count > 0 && (
                       ` ${videoBackoff.count} artist(s) were checked recently with no match and are excluded until their recheck window opens.`
+                    )}
+                  </>}
+            </p>
+          )}
+          {lastPhotoBackfill && (
+            <p className="num text-xs" style={{ color: 'var(--text-faint)' }}>
+              Last photo backfill: {new Date(lastPhotoBackfill.started_at).toLocaleString()} —{' '}
+              {lastPhotoBackfill.status === 'failed'
+                ? <span style={{ color: 'var(--down)' }}>failed: {lastPhotoBackfill.error}</span>
+                : <>
+                    checked {lastPhotoBackfill.checked_count}, updated {lastPhotoBackfill.updated_count}.
+                    {(lastPhotoBackfill.no_match_count ?? 0) > 0 && ` ${lastPhotoBackfill.no_match_count} no photo match.`}
+                    {(lastPhotoBackfill.error_count ?? 0) > 0 && (
+                      <span style={{ color: 'var(--down)' }}>
+                        {' '}{lastPhotoBackfill.error_count} lookup error{lastPhotoBackfill.error_count === 1 ? '' : 's'}
+                        {lastPhotoBackfill.last_error ? ` (${lastPhotoBackfill.last_error})` : ''}.
+                      </span>
+                    )}
+                    {lastPhotoBackfill.checked_count === 0 && lastPhotoBackfill.updated_count === 0 && photoBackoff.count > 0 && (
+                      ` ${photoBackoff.count} artist(s) were checked recently with no match and are excluded until their recheck window opens.`
                     )}
                   </>}
             </p>

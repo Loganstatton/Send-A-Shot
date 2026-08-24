@@ -407,6 +407,11 @@ addColumnIfMissing('artists', 'youtube_no_match_at TEXT');
 // required to save (encouraged, not enforced), and never auto-cleared —
 // if every rating later drops back down, the note still explains why they
 // were once rated that high.
+// Same purpose as youtube_no_match_at, for the Soundcharts equivalent — see
+// getArtistsMissingPhoto below and app/api/soundcharts/backfill/route.ts.
+// Without this, an artist Soundcharts genuinely has no listing for would
+// get re-searched on every single scheduled backfill run forever.
+addColumnIfMissing('artists', 'soundcharts_no_match_at TEXT');
 addColumnIfMissing('artists', 'high_rating_note TEXT');
 // The verified user account behind this artist row, set only by
 // reviewArtistClaim on approval — see the Artist type's own comment. Never
@@ -2513,6 +2518,49 @@ export function getArtistsWithSoundchartsLink(): { id: number; name: string; sou
   return db
     .prepare("SELECT id, name, soundcharts_uuid FROM artists WHERE soundcharts_uuid IS NOT NULL")
     .all() as { id: number; name: string; soundcharts_uuid: string }[];
+}
+
+// The gap getArtistsWithSoundchartsLink above never covered: an artist that
+// never got linked in the first place (a failed on-create lookup — see
+// app/api/artists/route.ts and components/BulkAddArtists.tsx — or one added
+// before Soundcharts was wired in) sits with no photo forever, since the
+// regular sync only re-syncs artists ALREADY linked by uuid. This is the
+// search-and-link backfill that's missing that step, mirroring
+// getArtistsMissingVideo's "touch everyone still missing it, but respect a
+// recent honest no-match" shape.
+export const SOUNDCHARTS_NO_MATCH_RECHECK_DAYS = 14;
+
+export function getArtistsMissingPhoto(): { id: number; name: string }[] {
+  const recheckCutoff = new Date(Date.now() - SOUNDCHARTS_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  return db
+    .prepare(`
+      SELECT id, name FROM artists
+      WHERE (photo_url IS NULL OR photo_url = '') AND soundcharts_uuid IS NULL
+        AND (soundcharts_no_match_at IS NULL OR soundcharts_no_match_at < ?)
+    `)
+    .all(recheckCutoff) as { id: number; name: string }[];
+}
+
+export function stampSoundchartsNoMatch(artistId: number, at: string = new Date().toISOString()): void {
+  db.prepare('UPDATE artists SET soundcharts_no_match_at = ? WHERE id = ?').run(at, artistId);
+}
+
+export type PhotoBackoffStatus = { count: number; earliestRecheckAt?: string };
+
+// Same "why did this say checked 0" visibility as getArtistsInVideoBackoff.
+export function getArtistsInPhotoBackoff(): PhotoBackoffStatus {
+  const cutoff = new Date(Date.now() - SOUNDCHARTS_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const rows = db
+    .prepare(`
+      SELECT soundcharts_no_match_at FROM artists
+      WHERE (photo_url IS NULL OR photo_url = '') AND soundcharts_uuid IS NULL
+        AND soundcharts_no_match_at IS NOT NULL AND soundcharts_no_match_at >= ?
+      ORDER BY soundcharts_no_match_at ASC
+    `)
+    .all(cutoff) as { soundcharts_no_match_at: string }[];
+  if (rows.length === 0) return { count: 0 };
+  const earliestRecheckAt = new Date(new Date(rows[0].soundcharts_no_match_at).getTime() + SOUNDCHARTS_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  return { count: rows.length, earliestRecheckAt };
 }
 
 export function createSyncRun(source: SyncSourceKey = 'soundcharts'): SyncRun {
