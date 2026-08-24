@@ -3,8 +3,21 @@ import { NextResponse } from 'next/server';
 import { getFoundingBelieverRecord, getNextArtist } from '@/lib/db';
 import { getSessionUser } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
+import { foundingBelieverSerial, getFoundingBelieverTier, type FoundingBelieverTierKey } from '@/lib/founding-believer';
 
 export const dynamic = 'force-dynamic';
+
+// Satori (next/og's renderer) doesn't support oklch() — the color function
+// every other tier accent in next-theme.css is defined in — so these are
+// hand-picked hex approximations of the same four tier accents, not a
+// shared constant. Keep them in the same hue family as .holo-tier-* if
+// those ever move.
+const TIER_ACCENT_HEX: Record<FoundingBelieverTierKey, string> = {
+  genesis: '#d4a342',
+  founding: '#dda35c',
+  early: '#c7bdb0',
+  'first-wave': '#e8825f',
+};
 
 // Renders this Scout's own Founding Believer receipt as a downloadable/
 // shareable 1200x630 PNG — real, generated server-side from the exact same
@@ -26,6 +39,18 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const { artist, score, priceCents } = row;
   const scoreUp = score >= record.next_score;
   const priceUp = priceCents >= record.next_price_cents;
+  const followersUp = artist.followers_count != null && record.followers_count != null && artist.followers_count >= record.followers_count;
+
+  const tier = getFoundingBelieverTier(record.discovery_rank);
+  const accent = TIER_ACCENT_HEX[tier.key];
+  const serial = foundingBelieverSerial(artist.name, record.discovery_rank);
+  const lockedDate = new Date(record.purchased_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const stats = [
+    { label: 'FOLLOWERS', then: record.followers_count != null ? record.followers_count.toLocaleString() : '—', now: artist.followers_count != null ? artist.followers_count.toLocaleString() : '—', up: followersUp },
+    { label: 'NEXT SCORE', then: record.next_score.toFixed(0), now: score.toFixed(0), up: scoreUp },
+    { label: 'NEXT PRICE', then: formatCents(record.next_price_cents), now: formatCents(priceCents), up: priceUp },
+  ];
 
   return new ImageResponse(
     (
@@ -42,42 +67,48 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
           fontFamily: 'sans-serif',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ display: 'flex', width: 52, height: 52, borderRadius: 14, background: 'rgba(212,163,66,0.16)', border: '2px solid rgba(212,163,66,0.4)', alignItems: 'center', justifyContent: 'center' }}>
-            {/* Same trophy glyph as the app's own Founding Believer icon elsewhere — an emoji here would silently render blank, since Satori (next/og's renderer) has no emoji font loaded. */}
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#d4a342" strokeWidth={2}>
-              <path d="M8 21h8M12 17v4M17 5V3H7v2M17 5a5 5 0 0 1-5 5 5 5 0 0 1-5-5M17 5h2a2 2 0 0 1-2 4M7 5H5a2 2 0 0 0 2 4" />
-            </svg>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ display: 'flex', width: 52, height: 52, borderRadius: 14, background: `${accent}29`, border: `2px solid ${accent}66`, alignItems: 'center', justifyContent: 'center' }}>
+              {/* Same trophy glyph as the app's own Founding Believer icon elsewhere — an emoji here would silently render blank, since Satori has no emoji font loaded. */}
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth={2}>
+                <path d="M8 21h8M12 17v4M17 5V3H7v2M17 5a5 5 0 0 1-5 5 5 5 0 0 1-5-5M17 5h2a2 2 0 0 1-2 4M7 5H5a2 2 0 0 0 2 4" />
+              </svg>
+            </div>
+            <div style={{ display: 'flex', fontSize: 22, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: accent }}>
+              {tier.label}
+            </div>
           </div>
-          <div style={{ display: 'flex', fontSize: 22, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase', color: '#d4a342' }}>
-            Founding Believer
-          </div>
+          <div style={{ display: 'flex', fontSize: 15, letterSpacing: 1, color: '#6b6156' }}>{serial}</div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', fontSize: 64, fontWeight: 800, lineHeight: 1.05 }}>{artist.name}</div>
-          <div style={{ display: 'flex', fontSize: 26, color: '#c9beac' }}>
-            You were backer #{record.discovery_rank} — {new Date(record.purchased_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+          <div style={{ display: 'flex', fontSize: 24, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: accent }}>
+            Backer #{record.discovery_rank} · Locked {lockedDate}
+          </div>
+          <div style={{ display: 'flex', fontSize: 18, color: '#8a8074' }}>
+            This early-backer record is permanent — it stays attached even if sold.
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 20 }}>
-          {[
-            { label: 'NEXT SCORE', then: record.next_score.toFixed(0), now: score.toFixed(0), up: scoreUp },
-            { label: 'NEXT PRICE', then: formatCents(record.next_price_cents), now: formatCents(priceCents), up: priceUp },
-          ].map((stat) => (
-            <div key={stat.label} style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, padding: '20px 24px', borderRadius: 16, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <div style={{ display: 'flex', fontSize: 16, letterSpacing: 1.5, color: '#8a8074' }}>{stat.label}</div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                <div style={{ display: 'flex', fontSize: 22, color: '#8a8074' }}>{stat.then}</div>
-                <div style={{ display: 'flex', fontSize: 20, color: '#8a8074' }}>→</div>
-                <div style={{ display: 'flex', fontSize: 34, fontWeight: 800, color: stat.up ? '#5fd98a' : '#f27a6b' }}>{stat.now}</div>
+        <div style={{ display: 'flex', gap: 16 }}>
+          {stats.map((stat) => (
+            <div key={stat.label} style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1, padding: '18px 22px', borderRadius: 16, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <div style={{ display: 'flex', fontSize: 15, letterSpacing: 1.5, color: '#8a8074' }}>{stat.label}</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <div style={{ display: 'flex', fontSize: 19, color: '#8a8074' }}>{stat.then}</div>
+                <div style={{ display: 'flex', fontSize: 17, color: '#8a8074' }}>→</div>
+                <div style={{ display: 'flex', fontSize: 28, fontWeight: 800, color: stat.up ? '#5fd98a' : '#f27a6b' }}>{stat.now}</div>
               </div>
             </div>
           ))}
         </div>
 
-        <div style={{ display: 'flex', fontSize: 18, color: '#6b6156' }}>NEXT by Scout — paper trading, no real money changes hands.</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, color: '#6b6156' }}>
+          <div style={{ display: 'flex' }}>Edition · {tier.edition}</div>
+          <div style={{ display: 'flex' }}>NEXT by Scout — paper trading, no real money changes hands.</div>
+        </div>
       </div>
     ),
     { width: 1200, height: 630 }

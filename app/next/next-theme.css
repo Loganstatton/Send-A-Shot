@@ -106,6 +106,33 @@
 @keyframes next-menu-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 .next-menu-panel { animation: next-menu-in 0.15s ease-out; }
 
+/* Founding Believer rarity tiers — see lib/founding-believer.ts for the
+   discovery_rank -> tier mapping. One accent color per tier, consumed by
+   the card's seal/serial/badge text and border glow; the card's base
+   obsidian background stays the same across tiers on purpose (matches
+   NEXT's own dark surface language) — only the accent differentiates
+   rarity, not a different background per tier. */
+.holo-tier-genesis {
+  --tier-accent: var(--gold);
+  --tier-accent-line: var(--gold-line);
+  --tier-accent-dim: var(--gold-dim);
+}
+.holo-tier-founding {
+  --tier-accent: oklch(76% 0.15 62);
+  --tier-accent-line: oklch(76% 0.15 62 / 0.4);
+  --tier-accent-dim: oklch(76% 0.15 62 / 0.12);
+}
+.holo-tier-early {
+  --tier-accent: oklch(80% 0.03 50);
+  --tier-accent-line: oklch(80% 0.03 50 / 0.4);
+  --tier-accent-dim: oklch(80% 0.03 50 / 0.12);
+}
+.holo-tier-first-wave {
+  --tier-accent: var(--ember);
+  --tier-accent-line: var(--ember-line);
+  --tier-accent-dim: var(--ember-dim);
+}
+
 /* Pokémon-card-style holo tilt — see components/next/HoloCard.tsx for the
    pointer-tracking logic; this is just the visual layers it drives.
    border-radius/overflow here must match whatever card is wrapped (28px is
@@ -155,27 +182,18 @@
      iteration) an element reverts to this base style, not the keyframe's
      last frame, so this has to already look like a settled resting state
      on its own rather than assuming the animation left it here. */
-  opacity: 0.4;
+  opacity: 0.22;
   background-position: 15% 20%;
   pointer-events: none;
   mix-blend-mode: color-dodge;
-  background-image: repeating-linear-gradient(
-    115deg,
-    oklch(75% 0.18 20 / 0.35) 0%,
-    oklch(80% 0.16 85 / 0.35) 8%,
-    oklch(85% 0.16 140 / 0.35) 16%,
-    oklch(80% 0.16 200 / 0.35) 24%,
-    oklch(75% 0.18 260 / 0.35) 32%,
-    oklch(78% 0.18 320 / 0.35) 40%,
-    oklch(75% 0.18 20 / 0.35) 48%
-  );
+  background-image: var(--holo-shine-gradient);
   background-size: 320% 320%;
   animation: holo-card-idle-shine-sweep 6.5s ease-in-out infinite;
 }
 @keyframes holo-card-idle-shine-sweep {
-  0% { background-position: 15% 20%; opacity: 0.4; }
-  50% { background-position: 85% 80%; opacity: 0.6; }
-  100% { background-position: 15% 20%; opacity: 0.4; }
+  0% { background-position: 15% 20%; opacity: 0.22; }
+  50% { background-position: 85% 80%; opacity: 0.34; }
+  100% { background-position: 15% 20%; opacity: 0.22; }
 }
 .holo-card-tilt {
   position: relative;
@@ -188,27 +206,36 @@
      off the page needs a shadow with real presence, not a faint hint. */
   box-shadow: 0px 28px 70px -18px oklch(0% 0 0 / 0.6);
 }
-/* The rainbow foil layer — a diagonal repeating spectrum, oversized so
-   sliding its background-position (driven by pointer x/y in JS) reveals a
-   different slice of color as the card tilts, same trick real holo foil
-   packaging uses. color-dodge is what gives it that saturated shine-over-
-   the-art look instead of just tinting the image underneath. */
+/* The foil layer — a diagonal repeating band, oversized so sliding its
+   background-position (driven by pointer x/y in JS) reveals a different
+   slice as the card tilts, same trick real holo foil packaging uses.
+   color-dodge is what gives it that saturated shine-over-the-art look
+   instead of just tinting the image underneath.
+   Deliberately NOT a full rainbow — a narrow gold-to-coral band (the same
+   hues as --gold/--ember below) with a wide transparent gap between
+   repeats, so it reads as an occasional glint catching the light rather
+   than a constant oil-slick wash across the whole card. --holo-shine-
+   gradient is shared with .holo-card-idle-shine above so both layers stay
+   the same color story. */
+.holo-card-tilt {
+  --holo-shine-gradient: repeating-linear-gradient(
+    115deg,
+    oklch(80% 0.14 85 / 0.55) 0%,
+    oklch(78% 0.15 60 / 0.55) 6%,
+    oklch(70% 0.19 35 / 0.55) 12%,
+    oklch(78% 0.15 60 / 0.55) 18%,
+    oklch(80% 0.14 85 / 0.55) 24%,
+    transparent 46%,
+    transparent 54%
+  );
+}
 .holo-card-shine {
   position: absolute;
   inset: 0;
   opacity: 0;
   pointer-events: none;
   mix-blend-mode: color-dodge;
-  background-image: repeating-linear-gradient(
-    115deg,
-    oklch(75% 0.18 20 / 0.65) 0%,
-    oklch(80% 0.16 85 / 0.65) 8%,
-    oklch(85% 0.16 140 / 0.65) 16%,
-    oklch(80% 0.16 200 / 0.65) 24%,
-    oklch(75% 0.18 260 / 0.65) 32%,
-    oklch(78% 0.18 320 / 0.65) 40%,
-    oklch(75% 0.18 20 / 0.65) 48%
-  );
+  background-image: var(--holo-shine-gradient);
   background-size: 300% 300%;
   background-position: 50% 50%;
 }

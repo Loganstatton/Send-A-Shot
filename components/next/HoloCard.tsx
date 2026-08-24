@@ -95,7 +95,9 @@ export default function HoloCard({ children, className }: { children: React.Reac
       shine.style.opacity = activeRef.current ? '0.85' : '0';
     }
     if (glare) {
-      glare.style.background = `radial-gradient(circle at ${x * 100}% ${y * 100}%, oklch(100% 0 0 / 0.55), transparent 45%)`;
+      // Warm ivory-gold, not pure white — a stark white glare read as
+      // "gaming cosmetic," a warm one reads as light catching foil.
+      glare.style.background = `radial-gradient(circle at ${x * 100}% ${y * 100}%, oklch(96% 0.03 85 / 0.5), transparent 45%)`;
       glare.style.opacity = activeRef.current ? '1' : '0';
     }
   }
