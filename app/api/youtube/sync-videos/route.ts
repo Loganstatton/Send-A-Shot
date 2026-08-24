@@ -4,6 +4,7 @@ import {
   completeSyncRun, createSyncRun, getArtistsInVideoBackoff, getArtistsMissingVideo, logSyncFailure,
   setFeaturedVideoMatchType, stampSourceSyncedAt, stampYoutubeNoMatch, updateArtist,
 } from '@/lib/db';
+import { notifyAdminsOfRunFailure } from '@/lib/ops-alerts';
 import { getFeaturedVideoForArtist, youtubeConfigured } from '@/lib/youtube';
 import { ArtistInput } from '@/lib/types';
 
@@ -92,6 +93,7 @@ export async function POST(req: Request) {
     const message = err?.message ?? 'Unknown error during YouTube video sync.';
     const failedCount = noMatchCount + errorCount;
     completeSyncRun(run.id, { status: 'failed', checkedCount: attemptedCount, updatedCount, failedCount, error: message, noMatchCount, errorCount, lastError });
+    await notifyAdminsOfRunFailure('YouTube video sync', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }
 }

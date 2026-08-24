@@ -8,6 +8,8 @@ const TABS = [
   { href: '/admin/discovery', label: 'Discovery' },
   { href: '/admin/scout-accuracy', label: 'Scout accuracy' },
   { href: '/admin/market-integrity', label: 'Market integrity' },
+  { href: '/admin/errors', label: 'Errors' },
+  { href: '/admin/backups', label: 'Backups' },
 ];
 
 export default function AdminTabs() {

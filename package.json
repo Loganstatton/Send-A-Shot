@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
     "postinstall": "node scripts/postinstall.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "backup": "node scripts/backup-db.js",
+    "restore": "node scripts/restore-db.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

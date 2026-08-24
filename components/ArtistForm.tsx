@@ -27,6 +27,7 @@ type Props = {
 export default function ArtistForm({ artist }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Set only right after a successful create whose name collided with an
   // existing artist — see the duplicate-name handling comment in
@@ -142,6 +143,7 @@ export default function ArtistForm({ artist }: Props) {
   async function handleDelete() {
     if (!artist) return;
     if (!confirm(`Remove ${artist.name} from the roster? This can't be undone.`)) return;
+    setDeleting(true);
     await fetch(`/api/artists/${artist.id}`, { method: 'DELETE' });
     router.push('/');
     router.refresh();
@@ -365,14 +367,14 @@ export default function ArtistForm({ artist }: Props) {
 
       <div className="flex items-center justify-between">
         <div className="flex gap-3">
-          <button type="submit" className="btn btn-primary" disabled={saving}>
+          <button type="submit" className="btn btn-primary" disabled={saving || deleting}>
             {saving ? 'Saving…' : artist ? 'Save changes' : 'Add to watchlist'}
           </button>
           <button type="button" className="btn" onClick={() => router.back()}>Cancel</button>
         </div>
         {artist && (
-          <button type="button" className="btn" style={{ color: 'var(--down)' }} onClick={handleDelete}>
-            Remove artist
+          <button type="button" className="btn" style={{ color: 'var(--down)' }} disabled={saving || deleting} onClick={handleDelete}>
+            {deleting ? 'Removing…' : 'Remove artist'}
           </button>
         )}
       </div>

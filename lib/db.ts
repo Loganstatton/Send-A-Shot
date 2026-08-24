@@ -11,7 +11,7 @@ import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
   AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistClaim, ArtistFieldChange, ArtistInput,
   DiscoveryCandidate, DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryLeaderboardEntry, DiscoveryRun,
-  DiscoverySourceKey,
+  DiscoverySourceKey, ErrorReport,
   DueFollowUp, FavoriteGenre, FoundingBelieverRecord,
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
@@ -311,6 +311,25 @@ CREATE TABLE IF NOT EXISTS youtube_quota_usage (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_youtube_quota_usage_day ON youtube_quota_usage(quota_day);
+-- Phase 10 — error monitoring, self-hosted rather than a third-party SDK
+-- (this app has no paid-service accounts to wire up). 'client' rows come
+-- from app/error.tsx and friends via POST /api/errors (an uncaught render
+-- exception, reported best-effort from the browser); 'server' rows come
+-- from lib/error-log.ts's logServerError, called from route handlers that
+-- catch an unexpected exception. digest is Next.js's own error-boundary
+-- correlation id (present on client reports only) — cross-reference it
+-- against Render's own log output for the matching server-side stack.
+CREATE TABLE IF NOT EXISTS error_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT NOT NULL,
+  message TEXT NOT NULL,
+  stack TEXT,
+  digest TEXT,
+  path TEXT,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_error_reports_created ON error_reports(created_at);
 `);
 
 // Lightweight migrations for columns added after the initial table creation.
@@ -519,22 +538,30 @@ function ensureDiscoveryCandidatesSchema() {
     return;
   }
 
-  db.exec('ALTER TABLE discovery_candidates RENAME TO discovery_candidates_pre_youtube');
-  db.exec(DISCOVERY_CANDIDATES_DDL);
-  db.exec(`
-    INSERT INTO discovery_candidates (
-      id, source, soundcharts_uuid, name, photo_url, country,
-      followers_count, followers_7d_ago, followers_30d_ago, growth_7d_pct, growth_30d_pct,
-      flagged_reason, status, discovered_at, reviewed_at, reviewed_by, artist_id
-    )
-    SELECT
-      id, 'soundcharts', soundcharts_uuid, name, photo_url, country,
-      followers_count, followers_7d_ago, followers_30d_ago, growth_7d_pct, growth_30d_pct,
-      flagged_reason, status, discovered_at, reviewed_at, reviewed_by, artist_id
-    FROM discovery_candidates_pre_youtube
-  `);
-  db.exec('DROP TABLE discovery_candidates_pre_youtube');
-  ensureDiscoveryCandidatesIndexes();
+  // Phase 10 — migration safety: rename/create/copy/drop as one atomic unit
+  // rather than four independent autocommit statements, so a crash
+  // mid-rebuild (process killed, disk full on the copy) rolls back to the
+  // original table instead of leaving the DB in a half-migrated state
+  // (discovery_candidates_pre_youtube present with no discovery_candidates,
+  // or an empty new table with the old one already gone).
+  db.transaction(() => {
+    db.exec('ALTER TABLE discovery_candidates RENAME TO discovery_candidates_pre_youtube');
+    db.exec(DISCOVERY_CANDIDATES_DDL);
+    db.exec(`
+      INSERT INTO discovery_candidates (
+        id, source, soundcharts_uuid, name, photo_url, country,
+        followers_count, followers_7d_ago, followers_30d_ago, growth_7d_pct, growth_30d_pct,
+        flagged_reason, status, discovered_at, reviewed_at, reviewed_by, artist_id
+      )
+      SELECT
+        id, 'soundcharts', soundcharts_uuid, name, photo_url, country,
+        followers_count, followers_7d_ago, followers_30d_ago, growth_7d_pct, growth_30d_pct,
+        flagged_reason, status, discovered_at, reviewed_at, reviewed_by, artist_id
+      FROM discovery_candidates_pre_youtube
+    `);
+    db.exec('DROP TABLE discovery_candidates_pre_youtube');
+    ensureDiscoveryCandidatesIndexes();
+  })();
 }
 ensureDiscoveryCandidatesSchema();
 // Created here, AFTER the discovery_candidates rebuild above, not in the
@@ -2395,6 +2422,50 @@ export function getEventCountsByType(): Record<AnalyticsEventType, number> {
 
 export function getRecentEventsForUser(userId: number, limit = 50): AnalyticsEvent[] {
   return (db.prepare('SELECT * FROM analytics_events WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?').all(userId, limit) as any[]).map(parseEventRow);
+}
+
+// Error monitoring (Phase 10) — see error_reports' own DDL comment. Stack
+// traces are capped at a generous-but-bounded length so one runaway report
+// can't bloat the table; message has no such cap since it's normally short
+// and truncating it risks losing the one line that actually explains what
+// broke.
+const ERROR_STACK_MAX_CHARS = 4000;
+
+export function insertErrorReport(input: {
+  source: 'client' | 'server';
+  message: string;
+  stack?: string;
+  digest?: string;
+  path?: string;
+  userId?: number;
+}): void {
+  db.prepare('INSERT INTO error_reports (source, message, stack, digest, path, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+    input.source,
+    input.message.slice(0, 2000),
+    input.stack ? input.stack.slice(0, ERROR_STACK_MAX_CHARS) : null,
+    input.digest ?? null,
+    input.path ?? null,
+    input.userId ?? null,
+    new Date().toISOString()
+  );
+}
+
+export function getRecentErrorReports(limit = 100): ErrorReport[] {
+  return db
+    .prepare(`
+      SELECT error_reports.*, users.name AS user_name
+      FROM error_reports
+      LEFT JOIN users ON users.id = error_reports.user_id
+      ORDER BY error_reports.created_at DESC, error_reports.id DESC
+      LIMIT ?
+    `)
+    .all(limit) as any[];
+}
+
+export function getErrorReportCount(hours = 24): number {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const row = db.prepare('SELECT COUNT(*) AS c FROM error_reports WHERE created_at >= ?').get(cutoff) as { c: number };
+  return row.c;
 }
 
 // Whole-table reads for the MVP metrics dashboard (lib/analytics.ts) — this

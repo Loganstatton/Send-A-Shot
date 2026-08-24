@@ -5,6 +5,8 @@ data/*.db-journal
 data/*.db-wal
 data/*.db-shm
 data/.session-secret
+data/backups/
+data/pre-restore-*.db
 .env.local
 *.log
 *.tsbuildinfo

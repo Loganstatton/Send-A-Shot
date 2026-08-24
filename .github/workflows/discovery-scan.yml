@@ -75,3 +75,14 @@ jobs:
           [ "$status" -lt 400 ]
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Back up database
+        run: |
+          status=$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST "$APP_URL/api/admin/backup" \
+            -H "x-cron-secret: $CRON_SECRET")
+          cat /tmp/response.json
+          echo
+          echo "HTTP $status"
+          [ "$status" -lt 400 ]
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

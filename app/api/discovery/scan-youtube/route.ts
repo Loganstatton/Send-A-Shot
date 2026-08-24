@@ -4,6 +4,7 @@ import {
   completeDiscoveryRun, createDiscoveryRun, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds,
   getTrackedSoundchartsUuids, insertDiscoveryCandidate,
 } from '@/lib/db';
+import { notifyAdminsOfRunFailure } from '@/lib/ops-alerts';
 import { youtubeDiscoverySource } from '@/lib/youtube-discovery';
 import { youtubeConfigured } from '@/lib/youtube';
 
@@ -67,6 +68,7 @@ export async function POST(req: Request) {
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during YouTube scan.';
     completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: message });
+    await notifyAdminsOfRunFailure('YouTube discovery scan', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }
 }

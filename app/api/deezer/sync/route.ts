@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getInternalUser } from '@/lib/auth';
 import { completeSyncRun, createSyncRun, getArtistsMissingTopSong, logSyncFailure, stampSourceSyncedAt, updateArtist } from '@/lib/db';
+import { notifyAdminsOfRunFailure } from '@/lib/ops-alerts';
 import { getTopSongForArtist } from '@/lib/deezer';
 import { withRetry } from '@/lib/retry';
 import { ArtistInput } from '@/lib/types';
@@ -69,6 +70,7 @@ export async function POST(req: Request) {
     const message = err?.message ?? 'Unknown error during Deezer sync.';
     const failedCount = noMatchCount + errorCount;
     completeSyncRun(run.id, { status: 'failed', checkedCount: artists.length, updatedCount, failedCount, error: message, noMatchCount, errorCount, lastError });
+    await notifyAdminsOfRunFailure('Deezer sync', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }
 }

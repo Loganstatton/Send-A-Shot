@@ -392,6 +392,57 @@ filled in by Soundcharts sync), so there's no slider for them anymore. See
 Score bands: 85–100 immediate outreach, 70–84 watch closely, 55–69 monitor,
 below 55 pass. See `lib/scoring.ts`.
 
+## Operations
+
+**Health check** — `GET /api/health` is unauthenticated and checks real
+database connectivity (not just "the process is up"). Point an external
+uptime monitor (UptimeRobot, Render's own health check, etc.) at it.
+
+**Error monitoring** — self-hosted, since this app has no third-party APM
+account (Sentry, etc.) configured. Every uncaught page-render exception
+(`app/error.tsx`, `app/next/error.tsx`, `app/global-error.tsx`) and every
+unexpected route-handler exception logged via `lib/error-log.ts`'s
+`logServerError` lands in the `error_reports` table, reviewable at
+`/admin/errors` (admin only). `console.error` still fires alongside every
+write — Render's own log capture is the fallback if the DB write itself
+somehow fails.
+
+**Cron/job monitoring** — the daily GitHub Actions workflow
+(`.github/workflows/discovery-scan.yml`) already fails its own run on any
+non-2xx response, which shows up in the repo's Actions tab. On top of that,
+a failed sync or discovery run now emails every current admin (best-effort,
+via the existing `RESEND_API_KEY`/`EMAIL_FROM` setup — see
+`lib/ops-alerts.ts`) so a broken daily job doesn't go unnoticed until
+someone happens to check `/admin/sync`.
+
+**Database backups and restore** — the whole app is one SQLite file
+(`data/app.db`), so "backup" means a consistent point-in-time copy of it.
+`lib/db-backup.ts`'s `runBackup()` uses SQLite's own `VACUUM INTO` (crash-
+consistent even in WAL mode, unlike a raw file copy) to write into
+`data/backups/`, keeping the most recent 14 and pruning older ones. The
+daily GitHub Actions workflow triggers this automatically via
+`POST /api/admin/backup` (same `CRON_SECRET` auth as the sync endpoints);
+an admin can also trigger one on demand from `/admin/backups`.
+
+These backups live on the SAME persistent disk as the live database —
+they protect against a bad migration or an accidental delete, **not**
+against losing the disk itself. True off-site backup (S3, etc.) needs real
+storage credentials this app doesn't have configured; that's a follow-up
+once those exist.
+
+To restore, **stop the app first** (restoring into a live database out
+from under a running server risks the app reading a half-swapped file),
+then from the server's disk:
+```bash
+node scripts/restore-db.js latest          # picks the newest file in data/backups
+node scripts/restore-db.js /path/to/app-2026-01-01T00-00-00-000-ab12cd.db
+```
+`restore-db.js` always copies whatever's currently live to
+`data/pre-restore-<timestamp>.db` before overwriting, so a wrong or aborted
+restore is never unrecoverable. `npm run backup` runs the same backup
+logic as a one-off CLI command (useful for local dev, or a shell with
+direct disk access rather than going through the web route).
+
 ## What This MVP Does Not Include
 - Full CRM tooling (email sequences, reminders/follow-up scheduling)
 - Real payments/invoicing, or actual payout-waterfall accounting (recoup-then-
@@ -417,7 +468,7 @@ below 55 pass. See `lib/scoring.ts`.
 ## Project Structure
 ```
 .github/workflows/   # discovery-scan.yml — daily GitHub Actions cron for
-                     # scan-youtube + deezer/sync + soundcharts/sync
+                     # scan-youtube + deezer/sync + soundcharts/sync + db backup
 app/                 # Next.js app router
   page.tsx           # Scout dashboard (internal)
   screener/          # Scout portfolio/ROI screener (internal)

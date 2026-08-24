@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getInternalUser } from '@/lib/auth';
 import { completeSyncRun, createSyncRun, getArtistsWithSoundchartsLink, logSyncFailure, stampSourceSyncedAt, updateArtist } from '@/lib/db';
+import { notifyAdminsOfRunFailure } from '@/lib/ops-alerts';
 import { getArtistData, soundchartsConfigured } from '@/lib/soundcharts';
 import { withRetry } from '@/lib/retry';
 import { ArtistInput } from '@/lib/types';
@@ -67,6 +68,7 @@ export async function POST(req: Request) {
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during sync.';
     completeSyncRun(run.id, { status: 'failed', checkedCount: linked.length, updatedCount, failedCount, error: message });
+    await notifyAdminsOfRunFailure('Soundcharts sync', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }
 }
