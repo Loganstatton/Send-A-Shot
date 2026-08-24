@@ -1,5 +1,5 @@
 'use client';
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { formatCents } from '@/lib/format';
 
 type Point = { recorded_at: string; value: number };
@@ -36,8 +36,10 @@ export default function PriceChart({
   color?: 'auto' | string;
 }) {
   const [range, setRange] = useState<RangeKey>('ALL');
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const formatValue = FORMATTERS[format];
   const gradientId = `chart-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const svgRef = useRef<SVGSVGElement>(null);
 
   const filtered = useMemo(() => {
     const cfg = RANGES.find((r) => r.key === range)!;
@@ -72,10 +74,31 @@ export default function PriceChart({
   const step = vals.length > 1 ? w / (vals.length - 1) : w;
   // Center a flat single-value line vertically instead of letting it settle
   // at the plot's floor — with min === max the naive formula puts it at y=0.
-  const coords = hasLine
-    ? vals.map((v, i) => `${(i * step).toFixed(1)},${(h - ((v - min) / range_) * h).toFixed(1)}`).join(' ')
-    : '';
+  const pointCoords = hasLine
+    ? vals.map((v, i) => ({ x: i * step, y: h - ((v - min) / range_) * h }))
+    : [];
+  const coords = pointCoords.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   const areaPath = hasLine ? `M0,${h} L${coords} L${w},${h} Z` : '';
+
+  // Only real, per-point-dated data (not the synthetic 2-point line drawn
+  // when there isn't enough history in the selected range) gets a
+  // hoverable tooltip — there's no real date to show for a made-up point.
+  const canShowTooltip = hasLine && filtered.length > 1;
+
+  function pointerToIndex(clientX: number): number | null {
+    if (!svgRef.current || vals.length < 2) return null;
+    const rect = svgRef.current.getBoundingClientRect();
+    if (rect.width === 0) return null;
+    const xInBox = ((clientX - rect.left) / rect.width) * w;
+    return Math.max(0, Math.min(vals.length - 1, Math.round((xInBox / w) * (vals.length - 1))));
+  }
+
+  function handlePointer(e: React.PointerEvent<SVGSVGElement>) {
+    if (!canShowTooltip) return;
+    setHoverIndex(pointerToIndex(e.clientX));
+  }
+
+  const hovered = canShowTooltip && hoverIndex != null ? { point: filtered[hoverIndex], coord: pointCoords[hoverIndex] } : null;
 
   return (
     <div>
@@ -91,8 +114,8 @@ export default function PriceChart({
             <button
               key={r.key}
               type="button"
-              onClick={() => setRange(r.key)}
-              className="px-3 py-[5px] text-xs rounded-lg"
+              onClick={() => { setRange(r.key); setHoverIndex(null); }}
+              className="px-3 py-2 text-xs rounded-lg"
               style={
                 range === r.key
                   ? { background: 'var(--ember-dim)', border: '1px solid var(--ember-line)', color: 'var(--ember)', fontWeight: 600 }
@@ -105,16 +128,46 @@ export default function PriceChart({
         </div>
       </div>
       {hasLine ? (
-        <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-[180px]" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={lineColor} stopOpacity="0.3" />
-              <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
-          <polyline points={coords} fill="none" stroke={lineColor} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-        </svg>
+        <div className="relative">
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${w} ${h}`}
+            className="w-full h-[180px] touch-none"
+            preserveAspectRatio="none"
+            onPointerMove={handlePointer}
+            onPointerDown={handlePointer}
+            onPointerLeave={() => setHoverIndex(null)}
+          >
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={lineColor} stopOpacity="0.3" />
+                <stop offset="100%" stopColor={lineColor} stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path d={areaPath} fill={`url(#${gradientId})`} stroke="none" />
+            <polyline points={coords} fill="none" stroke={lineColor} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            {hovered && (
+              <>
+                <line x1={hovered.coord.x} y1={0} x2={hovered.coord.x} y2={h} stroke="var(--border)" strokeWidth={1} strokeDasharray="4,3" vectorEffect="non-scaling-stroke" />
+                <circle cx={hovered.coord.x} cy={hovered.coord.y} r={4} fill={lineColor} stroke="var(--bg)" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+              </>
+            )}
+          </svg>
+          {hovered && (
+            <div
+              className="absolute top-1 pointer-events-none text-[11px] rounded-lg px-2.5 py-1.5 whitespace-nowrap num"
+              style={{
+                left: `${Math.min(88, Math.max(12, (hovered.coord.x / w) * 100))}%`,
+                transform: 'translateX(-50%)',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+              }}
+            >
+              {new Date(hovered.point.recorded_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {formatValue(hovered.point.value)}
+            </div>
+          )}
+        </div>
       ) : (
         <p className="text-sm h-[180px] flex items-center justify-center" style={{ color: 'var(--text-faint)' }}>Not enough history yet.</p>
       )}

@@ -117,7 +117,7 @@ export default function TradePanel({
   const rowLabel = { color: 'var(--text-faint)' };
 
   return (
-    <div className="next-card p-[22px] flex flex-col gap-4 sticky top-6">
+    <div id="trade-panel" className="next-card p-[22px] flex flex-col gap-4 sticky top-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="font-display font-bold text-[17px] m-0">Trade</h2>
         <span className="text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
@@ -182,6 +182,7 @@ export default function TradePanel({
           <label className="text-[12.5px]" style={rowLabel}>{mode === 'buy' ? 'Spend' : 'Sell'} (NEXT Credits $)</label>
           <input
             type="number"
+            inputMode="decimal"
             step="0.01"
             min="0.01"
             className="num rounded-[10px] px-3.5 py-3 text-lg font-semibold outline-none"

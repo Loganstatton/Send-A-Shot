@@ -44,7 +44,7 @@ export default function WatchButton({
       <button
         type="button"
         onClick={toggle}
-        className="next-icon-btn flex items-center gap-1.5 px-3 py-[5px] rounded-lg border text-[12.5px] font-medium active:scale-95"
+        className="next-icon-btn flex items-center gap-1.5 px-3 py-2.5 rounded-lg border text-[12.5px] font-medium active:scale-95"
         style={{
           borderColor: watching ? 'var(--ember-line)' : 'var(--border-soft)',
           color: watching ? 'var(--ember)' : 'var(--text-muted)',

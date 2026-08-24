@@ -21,6 +21,7 @@ import MissingStat from '@/components/next/MissingStat';
 import ScoreContributorBar from '@/components/next/ScoreContributorBar';
 import RecentActivity from '@/components/next/RecentActivity';
 import ClaimArtistPanel from '@/components/next/ClaimArtistPanel';
+import MobileTradeBar from '@/components/next/MobileTradeBar';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const artist = getArtist(Number(params.id));
@@ -84,7 +85,7 @@ export default async function NextArtistPage({ params }: { params: { id: string 
       : null;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 pb-20 lg:pb-0">
       <Link href="/next" className="text-[13px] flex items-center gap-1.5 w-fit" style={{ color: 'var(--text-faint)' }}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M15 18 9 12l6-6" /></svg>
         Back to Discover
@@ -311,6 +312,8 @@ export default async function NextArtistPage({ params }: { params: { id: string 
           recentBackerCount24h={recentBackerCount24h}
         />
       </div>
+
+      <MobileTradeBar artistName={artist.name} priceCents={priceCents} changePct={todayChangePct} />
     </div>
   );
 }

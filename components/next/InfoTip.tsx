@@ -28,10 +28,10 @@ export default function InfoTip({ text, label }: { text: string; label?: string 
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0"
+        className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
         style={{ background: 'var(--surface-2)', border: '1px solid var(--border-soft)', color: 'var(--text-faint)' }}
       >
-        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}>
           <circle cx="12" cy="8" r="0.5" />
           <path d="M12 11v6" strokeLinecap="round" />
         </svg>
