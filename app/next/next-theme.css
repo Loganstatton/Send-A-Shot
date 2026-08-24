@@ -106,6 +106,64 @@
 @keyframes next-menu-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 .next-menu-panel { animation: next-menu-in 0.15s ease-out; }
 
+/* Pokémon-card-style holo tilt — see components/next/HoloCard.tsx for the
+   pointer-tracking logic; this is just the visual layers it drives.
+   border-radius/overflow here must match whatever card is wrapped (28px is
+   the Founding Believer receipt's own rounded-[28px] — its only user
+   today); keep them in sync if a differently-shaped card adopts this. */
+.holo-card-wrap {
+  touch-action: none;
+  cursor: grab;
+  /* Without this, dragging with a mouse (not a finger — a real touch drag
+     never triggers text selection) to tilt the card also selects the text
+     underneath, which looks broken rather than like a physical card. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.holo-card-wrap:active { cursor: grabbing; }
+.holo-card-tilt {
+  position: relative;
+  border-radius: 28px;
+  overflow: hidden;
+  transform: perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1);
+  will-change: transform;
+  box-shadow: 0 24px 60px -20px oklch(0% 0 0 / 0.55);
+}
+/* The rainbow foil layer — a diagonal repeating spectrum, oversized so
+   sliding its background-position (driven by pointer x/y in JS) reveals a
+   different slice of color as the card tilts, same trick real holo foil
+   packaging uses. color-dodge is what gives it that saturated shine-over-
+   the-art look instead of just tinting the image underneath. */
+.holo-card-shine {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: color-dodge;
+  background-image: repeating-linear-gradient(
+    115deg,
+    oklch(75% 0.18 20 / 0.65) 0%,
+    oklch(80% 0.16 85 / 0.65) 8%,
+    oklch(85% 0.16 140 / 0.65) 16%,
+    oklch(80% 0.16 200 / 0.65) 24%,
+    oklch(75% 0.18 260 / 0.65) 32%,
+    oklch(78% 0.18 320 / 0.65) 40%,
+    oklch(75% 0.18 20 / 0.65) 48%
+  );
+  background-size: 300% 300%;
+  background-position: 50% 50%;
+}
+/* A soft directional glare on top of the foil, positioned at the pointer —
+   the layer that actually sells "glossy card catching the light" rather
+   than just a static rainbow sticker. */
+.holo-card-glare {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
 /* Every transition/animation above is subtle by design, but "subtle" isn't
    the same as "off" for someone who's told their OS they don't want
    motion (vestibular disorders, motion sensitivity) — respect that
