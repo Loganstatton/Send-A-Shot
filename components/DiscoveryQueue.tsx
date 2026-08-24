@@ -66,11 +66,24 @@ export default function DiscoveryQueue({ initial }: { initial: DiscoveryCandidat
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold">{c.name}</span>
-                <span className="badge text-xs">{c.source === 'youtube' ? '🎥 YouTube' : '🎵 Soundcharts'}</span>
+                <span className="badge text-xs">
+                  {c.source === 'youtube' ? '🎥 YouTube' : c.source === 'public_submission' ? '🙋 Fan submission' : '🎵 Soundcharts'}
+                </span>
                 {c.momentum_score != null && <MomentumBadge score={c.momentum_score} />}
                 {c.soundcharts_uuid && c.source === 'youtube' && <span className="badge text-xs">🔗 Soundcharts matched</span>}
                 {c.country && <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{c.country}</span>}
               </div>
+              {c.source === 'public_submission' && (
+                <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
+                  Submitted by {c.submitted_by_name ?? 'a NEXT user'}
+                  {c.submission_url && (
+                    <>
+                      {' · '}
+                      <a href={c.submission_url} target="_blank" rel="noreferrer" className="underline">{c.submission_url}</a>
+                    </>
+                  )}
+                </p>
+              )}
               <p className="text-sm mt-1" style={{ color: 'var(--accent)' }}>{c.flagged_reason}</p>
               {c.yt_example_comment_2 && (
                 <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>

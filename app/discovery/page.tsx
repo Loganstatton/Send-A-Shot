@@ -47,7 +47,7 @@ export default async function DiscoveryPage() {
         <div>
           <h1 className="text-2xl font-bold">New Candidates</h1>
           <p className="text-sm" style={{ color: 'var(--text-faint)' }}>
-            Artists YouTube flagged for unusual momentum — nobody searched for these by name.
+            Artists YouTube flagged for unusual momentum, plus anyone a NEXT user submitted by hand.
             Approve to add them to Scout&apos;s roster and rate them; Watch to keep an eye without committing; Pass to drop them for good.
           </p>
         </div>

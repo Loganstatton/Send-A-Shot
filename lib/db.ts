@@ -7,7 +7,7 @@ import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nex
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
-  AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistFieldChange, ArtistInput,
+  AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistClaim, ArtistFieldChange, ArtistInput,
   DiscoveryCandidate, DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryRun, DiscoverySourceKey,
   DueFollowUp, FavoriteGenre, FoundingBelieverRecord,
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
@@ -367,6 +367,10 @@ addColumnIfMissing('artists', 'youtube_no_match_at TEXT');
 // if every rating later drops back down, the note still explains why they
 // were once rated that high.
 addColumnIfMissing('artists', 'high_rating_note TEXT');
+// The verified user account behind this artist row, set only by
+// reviewArtistClaim on approval — see the Artist type's own comment. Never
+// part of WRITABLE_FIELDS, so a Scout's ordinary PATCH can't set or clear it.
+addColumnIfMissing('artists', 'claimed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
 addColumnIfMissing('next_transactions', 'listened_before_buy INTEGER');
 // discovery_runs originally only ever meant a Soundcharts scan; `source`
 // distinguishes it from a YouTube scan run, `quota_used` is a rough count
@@ -548,6 +552,12 @@ addColumnIfMissing('discovery_candidates', 'yt_example_comment_2_likes INTEGER')
 // them), which getRecentDiscoveryRunsWithCandidateCounts treats the same as
 // any other run with zero attributed candidates.
 addColumnIfMissing('discovery_candidates', 'discovery_run_id INTEGER REFERENCES discovery_runs(id) ON DELETE SET NULL');
+// source='public_submission' only — see DiscoverySourceKey's comment.
+// submission_url is whatever single link the fan pasted (any platform);
+// submitted_by_name isn't stored here, it's joined from users at read time
+// (see DISCOVERY_CANDIDATE_SELECT), same pattern as reviewed_by_name.
+addColumnIfMissing('discovery_candidates', 'submitted_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+addColumnIfMissing('discovery_candidates', 'submission_url TEXT');
 
 // Duplicate-artist detection at the roster level: two live artists sharing
 // the same Soundcharts identity are definitely the same real artist, not a
@@ -563,6 +573,30 @@ try {
 } catch (err) {
   console.error('[db] could not enforce a unique Soundcharts link across artists — existing duplicates present. Resolve them by hand, then restart.', err);
 }
+
+// A "claim this profile" request — see the ArtistClaim type's own comment
+// for why this stays a request/review row rather than writing
+// artists.claimed_by_user_id directly. The partial unique index blocks a
+// second PENDING request from the same user on the same artist (spam
+// double-clicks, not a real second ask); a rejected claim can always be
+// resubmitted as a fresh row, kept as its own history rather than
+// overwriting the rejected one.
+db.exec(`
+CREATE TABLE IF NOT EXISTS artist_claims (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL,
+  reviewed_at TEXT,
+  reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_artist_claims_artist ON artist_claims(artist_id);
+CREATE INDEX IF NOT EXISTS idx_artist_claims_user ON artist_claims(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_artist_claims_pending_unique
+  ON artist_claims(artist_id, user_id) WHERE status = 'pending';
+`);
 
 const ARTIST_SELECT = `
   SELECT artists.*, users.name AS created_by_name
@@ -2412,6 +2446,9 @@ export type NewDiscoveryCandidate = {
   // this and hasn't been wired to pass it; a candidate without it just
   // never shows up attributed to a run on the Admin discovery page.
   discovery_run_id?: number;
+  // source='public_submission' only — see DiscoverySourceKey's comment.
+  submitted_by_user_id?: number;
+  submission_url?: string;
 };
 
 const DISCOVERY_CANDIDATE_COLUMNS = [
@@ -2422,6 +2459,7 @@ const DISCOVERY_CANDIDATE_COLUMNS = [
   'yt_views_per_day', 'yt_like_rate', 'yt_comment_rate', 'yt_views_per_subscriber', 'yt_hype_comment_rate',
   'yt_comments_analyzed', 'yt_example_comment_1', 'yt_example_comment_1_likes', 'yt_example_comment_2',
   'yt_example_comment_2_likes', 'momentum_score', 'flagged_reason', 'discovery_run_id',
+  'submitted_by_user_id', 'submission_url',
 ] as const;
 
 // candidate_id isn't known until the INSERT above returns its rowid — a
@@ -2447,9 +2485,10 @@ export function insertDiscoveryCandidate(c: NewDiscoveryCandidate): void {
 }
 
 const DISCOVERY_CANDIDATE_SELECT = `
-  SELECT discovery_candidates.*, users.name AS reviewed_by_name
+  SELECT discovery_candidates.*, users.name AS reviewed_by_name, submitters.name AS submitted_by_name
   FROM discovery_candidates
   LEFT JOIN users ON users.id = discovery_candidates.reviewed_by
+  LEFT JOIN users submitters ON submitters.id = discovery_candidates.submitted_by_user_id
 `;
 
 // Soundcharts candidates rank by 30-day growth %, YouTube candidates by
@@ -2621,4 +2660,93 @@ export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | un
   logDiscoveryCandidateHistory(id, candidate.status, 'approved', actor.id);
 
   return artist;
+}
+
+// Artist claims — see the ArtistClaim type's own comment for why this is a
+// review queue rather than a direct write to artists.claimed_by_user_id.
+const ARTIST_CLAIM_SELECT = `
+  SELECT artist_claims.*, artists.name AS artist_name,
+         claimants.name AS user_name, claimants.email AS user_email,
+         reviewers.name AS reviewed_by_name
+  FROM artist_claims
+  JOIN artists ON artists.id = artist_claims.artist_id
+  JOIN users claimants ON claimants.id = artist_claims.user_id
+  LEFT JOIN users reviewers ON reviewers.id = artist_claims.reviewed_by
+`;
+
+export function getArtistClaim(id: number): ArtistClaim | undefined {
+  return db.prepare(`${ARTIST_CLAIM_SELECT} WHERE artist_claims.id = ?`).get(id) as ArtistClaim | undefined;
+}
+
+export function getPendingArtistClaims(): ArtistClaim[] {
+  return db
+    .prepare(`${ARTIST_CLAIM_SELECT} WHERE artist_claims.status = 'pending' ORDER BY artist_claims.created_at ASC`)
+    .all() as ArtistClaim[];
+}
+
+export function getPendingArtistClaimCount(): number {
+  const row = db.prepare("SELECT COUNT(*) AS c FROM artist_claims WHERE status = 'pending'").get() as { c: number };
+  return row.c;
+}
+
+export function getArtistClaimsForUser(userId: number): ArtistClaim[] {
+  return db
+    .prepare(`${ARTIST_CLAIM_SELECT} WHERE artist_claims.user_id = ? ORDER BY artist_claims.created_at DESC`)
+    .all(userId) as ArtistClaim[];
+}
+
+export function getPendingClaimForUserAndArtist(userId: number, artistId: number): ArtistClaim | undefined {
+  return db
+    .prepare(`${ARTIST_CLAIM_SELECT} WHERE artist_claims.user_id = ? AND artist_claims.artist_id = ? AND artist_claims.status = 'pending'`)
+    .get(userId, artistId) as ArtistClaim | undefined;
+}
+
+// The only artists a claim's own user_id is allowed to see the Artist
+// Dashboard for — see requireArtistOwner in lib/auth.ts.
+export function getArtistsClaimedByUser(userId: number): Artist[] {
+  return db.prepare(`${ARTIST_SELECT} WHERE artists.claimed_by_user_id = ? ORDER BY artists.name ASC`).all(userId) as Artist[];
+}
+
+// Rejects with a reason string rather than throwing — these are all
+// expected, user-facing outcomes (already claimed, duplicate pending
+// request), not exceptional failures, so the API route can turn `reason`
+// straight into the response instead of every caller needing a try/catch.
+export function createArtistClaim(
+  artistId: number,
+  userId: number,
+  message: string | undefined
+): { ok: true; claim: ArtistClaim } | { ok: false; reason: string } {
+  const artist = getArtist(artistId);
+  if (!artist) return { ok: false, reason: 'Artist not found.' };
+  if (artist.claimed_by_user_id != null) {
+    return {
+      ok: false,
+      reason: artist.claimed_by_user_id === userId ? 'You already claimed this profile.' : 'This profile has already been claimed.',
+    };
+  }
+
+  try {
+    const info = db
+      .prepare('INSERT INTO artist_claims (artist_id, user_id, message, status, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(artistId, userId, message ?? null, 'pending', new Date().toISOString());
+    return { ok: true, claim: getArtistClaim(info.lastInsertRowid as number)! };
+  } catch (err: any) {
+    if (/UNIQUE/i.test(err?.message ?? '')) return { ok: false, reason: 'You already have a pending claim on this artist.' };
+    throw err;
+  }
+}
+
+export function reviewArtistClaim(id: number, decision: 'approved' | 'rejected', actor: Actor): ArtistClaim | undefined {
+  const existing = getArtistClaim(id);
+  if (!existing || existing.status !== 'pending') return undefined;
+
+  const now = new Date().toISOString();
+  db.prepare('UPDATE artist_claims SET status = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?').run(decision, now, actor.id, id);
+
+  if (decision === 'approved') {
+    db.prepare('UPDATE artists SET claimed_by_user_id = ?, updated_at = ? WHERE id = ?').run(existing.user_id, now, existing.artist_id);
+    addLogEntry(existing.artist_id, { type: 'claim', message: `Profile claim approved for ${existing.user_name ?? `user #${existing.user_id}`}.` }, actor);
+  }
+
+  return getArtistClaim(id);
 }

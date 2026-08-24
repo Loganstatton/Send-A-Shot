@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import {
   getArtist, getArtistTradeVolumeCents, getBackerCountsByArtist, getFoundingBelieverCountForArtist,
-  getFoundingBelieverRecord, getHolding, getNextArtist, getRecentBackerCount, getRecentTradesForArtist,
-  getScoreHistory, getWatchCountsByArtist, isWatchlisted, logEvent,
+  getFoundingBelieverRecord, getHolding, getNextArtist, getPendingClaimForUserAndArtist, getRecentBackerCount,
+  getRecentTradesForArtist, getScoreHistory, getWatchCountsByArtist, isWatchlisted, logEvent,
 } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
@@ -20,6 +20,7 @@ import InfoTip from '@/components/next/InfoTip';
 import MissingStat from '@/components/next/MissingStat';
 import ScoreContributorBar from '@/components/next/ScoreContributorBar';
 import RecentActivity from '@/components/next/RecentActivity';
+import ClaimArtistPanel from '@/components/next/ClaimArtistPanel';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const artist = getArtist(Number(params.id));
@@ -52,6 +53,12 @@ export default async function NextArtistPage({ params }: { params: { id: string 
   const volumeCents24h = getArtistTradeVolumeCents(id, 24);
   const recentBackerCount24h = getRecentBackerCount(id, 24);
   const recentTrades = getRecentTradesForArtist(id);
+  const claimState =
+    artist.claimed_by_user_id == null
+      ? (getPendingClaimForUserAndArtist(user.id, id) ? 'pending' as const : 'unclaimed' as const)
+      : artist.claimed_by_user_id === user.id
+      ? 'owned_by_me' as const
+      : 'claimed_by_other' as const;
 
   // "Today" — the same 24h-window idea DiscoverGrid's "Trending today" sort
   // uses, just computed here for a single artist's price display instead
@@ -140,6 +147,8 @@ export default async function NextArtistPage({ params }: { params: { id: string 
       {artist.bio && <p className="text-[14.5px] leading-relaxed max-w-[68ch] m-0" style={{ color: 'var(--text-muted)' }}>{artist.bio}</p>}
 
       <SpotifyPreview trackUrl={artist.top_song_url} artistUrl={artist.spotify_url} />
+
+      <ClaimArtistPanel artistId={id} artistName={artist.name} initialState={claimState} />
 
       {signalCopy && (
         <div

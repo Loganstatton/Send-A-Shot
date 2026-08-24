@@ -10,7 +10,15 @@ import LogoutButton from '@/components/LogoutButton';
 // user should never see Admin/Screener/Candidates/Add Artist here; those
 // stay entirely on Scout's side. See components/Header.tsx, which now
 // renders nothing on /next/* routes so the two never double up.
-export default function NextHeader({ user, unreadNotifications = 0 }: { user: User; unreadNotifications?: number }) {
+export default function NextHeader({
+  user,
+  unreadNotifications = 0,
+  hasClaimedArtist = false,
+}: {
+  user: User;
+  unreadNotifications?: number;
+  hasClaimedArtist?: boolean;
+}) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
@@ -23,6 +31,8 @@ export default function NextHeader({ user, unreadNotifications = 0 }: { user: Us
     { href: '/next/portfolio', label: 'Portfolio', active: is('/next/portfolio') },
     { href: '/next/leaderboard', label: 'Leaderboard', active: is('/next/leaderboard') },
     { href: '/next/watchlist', label: 'Watchlist', active: is('/next/watchlist') },
+    { href: '/next/submit-artist', label: 'Submit artist', active: is('/next/submit-artist') },
+    ...(hasClaimedArtist ? [{ href: '/next/my-artist', label: 'My Artist', active: is('/next/my-artist') }] : []),
   ];
 
   return (

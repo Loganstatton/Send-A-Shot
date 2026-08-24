@@ -10,9 +10,11 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
 const {
   addLogEntry, addToWatchlist, approveDiscoveryCandidate, bulkSetArtistStage, completeDiscoveryRun,
-  completeNextOnboarding, completeSyncRun, createArtist, createDiscoveryRun, createSyncRun, createUser, db,
+  completeNextOnboarding, completeSyncRun, createArtist, createArtistClaim, createDiscoveryRun, createSyncRun,
+  createUser, db,
   deleteUser, executeTrade, findArtistsByName,
-  getArtist, getArtistFieldHistory, getArtistLastActivityMap, getArtistLog, getArtistsMissingTopSong,
+  getArtist, getArtistClaim, getArtistFieldHistory, getArtistLastActivityMap, getArtistLog, getArtistsClaimedByUser,
+  getArtistsMissingTopSong,
   getArtistsInVideoBackoff, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
   getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidateCountsByGenre,
   getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getEarliestScoreSnapshots,
@@ -20,7 +22,8 @@ const {
   getFavoriteGenres, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
   getLatestScoreSnapshots,
   getLatestSyncRun, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
-  getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue,
+  getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist,
+  getPendingArtistClaimCount, getPendingArtistClaims, getPendingClaimForUserAndArtist, getPortfolioValue,
   getPortfolioValueHistory, getRankMovements,
   getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentDiscoveryReviewDecisions,
   getRecentDiscoveryRunsWithCandidateCounts, getRecentEventsForUser,
@@ -29,7 +32,8 @@ const {
   getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
   getYoutubeQuotaUsedToday, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, logArtistCardViews,
   logEvent, logSyncFailure, markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin,
-  recordPreviewListen, recordYoutubeQuotaUsage, setDiscoveryCandidateStatus, setFeaturedVideoMatchType,
+  recordPreviewListen, recordYoutubeQuotaUsage, reviewArtistClaim, setDiscoveryCandidateStatus,
+  setFeaturedVideoMatchType,
   setNotificationsEmailedThrough, setWatchlistAlerts, stampSourceSyncedAt, stampYoutubeNoMatch, updateArtist,
   updateUserProfile, YOUTUBE_NO_MATCH_RECHECK_DAYS,
 } = await import('./db');
@@ -1659,5 +1663,153 @@ describe('Artist evaluation (Phase 5) — high_rating_note, earliest/latest scor
     expect(earliestMulti.music_talent).toBe(3);
     expect(latestMulti.music_talent).toBe(9);
     expect(earliestMulti.id).not.toBe(latestMulti.id);
+  });
+});
+
+describe('Artist participation (Phase 6) — public submission, claim review, dashboard access', () => {
+  it('a public submission lands in the Candidate Queue with source public_submission and the submitter attributed by name', () => {
+    const fan = makeUser('submitting-fan@example.com');
+    insertDiscoveryCandidate({
+      source: 'public_submission',
+      name: 'Fan-Found Artist',
+      submission_url: 'https://tiktok.com/@fanfound',
+      flagged_reason: 'Their video has been stuck in my head for a week.',
+      submitted_by_user_id: fan.id,
+    });
+
+    const candidate = getDiscoveryCandidates('new').find((c) => c.name === 'Fan-Found Artist')!;
+    expect(candidate).toBeDefined();
+    expect(candidate.source).toBe('public_submission');
+    expect(candidate.submission_url).toBe('https://tiktok.com/@fanfound');
+    expect(candidate.submitted_by_name).toBe('Test Trader');
+    expect(candidate.flagged_reason).toBe('Their video has been stuck in my head for a week.');
+  });
+
+  it('approving a public-submission candidate creates a real artist the same way any other source does', () => {
+    const fan = makeUser('approved-fan@example.com');
+    const scout = makeUser('claim-review-scout@example.com');
+    insertDiscoveryCandidate({
+      source: 'public_submission',
+      name: 'Approved Fan Find',
+      flagged_reason: 'Great original songwriting.',
+      submitted_by_user_id: fan.id,
+    });
+    const candidate = getDiscoveryCandidates('new').find((c) => c.name === 'Approved Fan Find')!;
+    const artist = approveDiscoveryCandidate(candidate.id, { id: scout.id, name: scout.name });
+    expect(artist).toBeDefined();
+    expect(artist!.name).toBe('Approved Fan Find');
+    expect(artist!.why_trending).toBe('Great original songwriting.');
+    expect(getArtist(artist!.id)!.claimed_by_user_id).toBeNull();
+  });
+
+  it('createArtistClaim rejects claiming an already-claimed artist, and rejects a duplicate pending claim from the same user', () => {
+    const artist = createArtist({ name: 'Claim Target Artist', music_talent: 6 });
+    const fan1 = makeUser('claimant-one@example.com');
+    const fan2 = makeUser('claimant-two@example.com');
+
+    const first = createArtistClaim(artist.id, fan1.id, 'I run this account.');
+    expect(first.ok).toBe(true);
+
+    // A second pending claim from the SAME user on the SAME artist is
+    // blocked (the partial unique index) — this is a duplicate ask, not a
+    // second legitimate claimant.
+    const duplicate = createArtistClaim(artist.id, fan1.id, 'Trying again.');
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) expect(duplicate.reason).toMatch(/already have a pending claim/i);
+
+    // A different user's claim is allowed to exist as its own pending row
+    // (the artist isn't claimed yet, only requested) — only an APPROVED
+    // claim blocks further requests, checked next.
+    const second = createArtistClaim(artist.id, fan2.id, 'No, I run this account.');
+    expect(second.ok).toBe(true);
+  });
+
+  it('createArtistClaim rejects any new claim once the artist is already claimed by someone', () => {
+    const artist = createArtist({ name: 'Already Claimed Artist', music_talent: 6 });
+    const owner = makeUser('artist-owner@example.com');
+    const scout = makeUser('approve-scout@example.com');
+    const outsider = makeUser('outsider-claimant@example.com');
+
+    const request = createArtistClaim(artist.id, owner.id, 'It me.');
+    expect(request.ok).toBe(true);
+    if (!request.ok) throw new Error('unreachable');
+    reviewArtistClaim(request.claim.id, 'approved', { id: scout.id, name: scout.name });
+
+    const blocked = createArtistClaim(artist.id, outsider.id, 'Actually it is me.');
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.reason).toMatch(/already been claimed/i);
+  });
+
+  it('reviewArtistClaim(approved) sets claimed_by_user_id, logs a claim activity entry, and grants dashboard access via getArtistsClaimedByUser', () => {
+    const artist = createArtist({ name: 'Dashboard-Bound Artist', music_talent: 6 });
+    const claimant = makeUser('dashboard-claimant@example.com');
+    const scout = makeUser('dashboard-scout@example.com');
+
+    expect(getArtistsClaimedByUser(claimant.id)).toHaveLength(0);
+
+    const request = createArtistClaim(artist.id, claimant.id, 'Proof link here.');
+    expect(request.ok).toBe(true);
+    if (!request.ok) throw new Error('unreachable');
+
+    const reviewed = reviewArtistClaim(request.claim.id, 'approved', { id: scout.id, name: scout.name });
+    expect(reviewed!.status).toBe('approved');
+    expect(getArtist(artist.id)!.claimed_by_user_id).toBe(claimant.id);
+
+    const claimed = getArtistsClaimedByUser(claimant.id);
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0].id).toBe(artist.id);
+
+    const log = getArtistLog(artist.id);
+    const claimEntry = log.find((e) => e.type === 'claim');
+    expect(claimEntry).toBeDefined();
+    expect(claimEntry!.message).toContain('Test Trader');
+  });
+
+  it('reviewArtistClaim(rejected) leaves the artist unclaimed and does not grant dashboard access', () => {
+    const artist = createArtist({ name: 'Rejected Claim Artist', music_talent: 6 });
+    const claimant = makeUser('rejected-claimant@example.com');
+    const scout = makeUser('reject-scout@example.com');
+
+    const request = createArtistClaim(artist.id, claimant.id, undefined);
+    expect(request.ok).toBe(true);
+    if (!request.ok) throw new Error('unreachable');
+
+    const reviewed = reviewArtistClaim(request.claim.id, 'rejected', { id: scout.id, name: scout.name });
+    expect(reviewed!.status).toBe('rejected');
+    expect(getArtist(artist.id)!.claimed_by_user_id).toBeNull();
+    expect(getArtistsClaimedByUser(claimant.id)).toHaveLength(0);
+  });
+
+  it('reviewArtistClaim returns undefined for an already-reviewed claim (no double-approval)', () => {
+    const artist = createArtist({ name: 'Double Review Artist', music_talent: 6 });
+    const claimant = makeUser('double-review-claimant@example.com');
+    const scout = makeUser('double-review-scout@example.com');
+
+    const request = createArtistClaim(artist.id, claimant.id, undefined);
+    if (!request.ok) throw new Error('unreachable');
+    reviewArtistClaim(request.claim.id, 'approved', { id: scout.id, name: scout.name });
+
+    const secondReview = reviewArtistClaim(request.claim.id, 'rejected', { id: scout.id, name: scout.name });
+    expect(secondReview).toBeUndefined();
+    // Still approved from the first review — a second call is a no-op, not a downgrade.
+    expect(getArtist(artist.id)!.claimed_by_user_id).toBe(claimant.id);
+  });
+
+  it('getPendingArtistClaims / getPendingArtistClaimCount / getPendingClaimForUserAndArtist reflect only pending claims', () => {
+    const artist = createArtist({ name: 'Pending Queue Artist', music_talent: 6 });
+    const claimant = makeUser('pending-queue-claimant@example.com');
+
+    expect(getPendingClaimForUserAndArtist(claimant.id, artist.id)).toBeUndefined();
+    const before = getPendingArtistClaimCount();
+
+    const request = createArtistClaim(artist.id, claimant.id, 'Verify me please.');
+    if (!request.ok) throw new Error('unreachable');
+
+    expect(getPendingArtistClaimCount()).toBe(before + 1);
+    expect(getPendingClaimForUserAndArtist(claimant.id, artist.id)!.id).toBe(request.claim.id);
+    const pending = getPendingArtistClaims();
+    expect(pending.some((c) => c.id === request.claim.id)).toBe(true);
+    expect(getArtistClaim(request.claim.id)!.artist_name).toBe('Pending Queue Artist');
+    expect(getArtistClaim(request.claim.id)!.user_name).toBe('Test Trader');
   });
 });
