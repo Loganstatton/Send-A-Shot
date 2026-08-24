@@ -184,12 +184,21 @@ a large batch fired back-to-back is exactly what can trip Soundcharts' rate
 limit in the first place. A genuine "no Soundcharts listing" result backs
 off for 14 days before being re-checked, same as the video backfill below.
 
-### Deezer top-song sync
+### Deezer top-song + photo sync
 
 Independent of Soundcharts — doesn't need it configured, doesn't need an
 artist linked to it. This exists because `top_song_url` never had *any*
 API source before (Soundcharts' own metadata endpoint doesn't return
-platform identifiers on this plan — see above).
+platform identifiers on this plan — see above), and now also covers
+`photo_url` as a **free, uncapped alternative** to Soundcharts for
+artists that ran into its monthly call quota (Soundcharts' legacy/free
+tier caps out at 1,000 calls/month — easy to hit in one large Bulk Add
+batch). The same Deezer artist-search call already made for the top song
+also returns a real photo, so this fills whichever of the two fields is
+still missing, in one request. Deezer photos are never as good a match as
+Soundcharts (lower resolution, and Deezer's own catalog occasionally
+mismatches a same-named artist) — treat this as a solid fallback, not a
+reason to drop Soundcharts entirely.
 
 No setup, no environment variables, nothing to sign up for — Deezer's
 public catalog endpoints (artist search, an artist's top track) are plain
@@ -210,10 +219,10 @@ This lookup happens two ways:
   creation itself — any failure just leaves the field empty for the batch
   sync to retry later.
 - **In a batch, for anyone still missing one** — `POST /api/deezer/sync`
-  looks up every artist still missing a `top_song_url` (by searching
-  Deezer for their name) and fills in a link to their top track plus a
-  30-second preview clip. Triggered the same two ways as the other sync
-  jobs:
+  looks up every artist still missing a `top_song_url` **or** a
+  `photo_url` (by searching Deezer for their name) and fills in whichever
+  is missing — a link to their top track plus a 30-second preview clip,
+  and/or a photo. Triggered the same two ways as the other sync jobs:
   - **Manually** — the "Sync Deezer top songs" button on the Scout
     dashboard (`/`).
   - **On a schedule** — point the same external scheduler at:

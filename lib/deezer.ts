@@ -9,6 +9,13 @@
 // returns a direct 30-second preview mp3 for almost every track, which
 // Spotify had stopped doing for a growing share of its catalog anyway.
 //
+// The same artist-search response also carries a real photo
+// (picture_medium/picture_big) — a second free, uncapped photo source
+// alongside Soundcharts (which has a paid-tier-gated monthly call quota).
+// Never treated as authoritative over a Scout-entered or Soundcharts photo;
+// only ever used to fill photo_url when it's empty, same rule as
+// top_song_url below.
+//
 // One quirk to know: Deezer signals errors inside a 200 OK response body
 // (`{"error": {...}}`), not via HTTP status codes — deezerFetch below
 // checks for that explicitly rather than trusting res.ok alone.
@@ -37,7 +44,7 @@ async function deezerFetch(path: string): Promise<DeezerResult<any>> {
   return { ok: true, data: json };
 }
 
-export type DeezerArtistHit = { id: number; name: string };
+export type DeezerArtistHit = { id: number; name: string; photoUrl?: string };
 
 export async function searchArtist(name: string): Promise<DeezerResult<DeezerArtistHit | null>> {
   const trimmed = name.trim();
@@ -54,7 +61,12 @@ export async function searchArtist(name: string): Promise<DeezerResult<DeezerArt
   const normalized = trimmed.toLowerCase();
   const exact = items.find((item: any) => typeof item?.name === 'string' && item.name.toLowerCase() === normalized);
   const best = exact ?? items[0];
-  return best?.id ? { ok: true, data: { id: best.id, name: best.name } } : { ok: true, data: null };
+  if (!best?.id) return { ok: true, data: null };
+  // picture_medium (250x250) is a sensible default size for a hero/card
+  // image; picture_big and the bare (small) picture are fallbacks in case
+  // Deezer ever omits the medium size for a given artist.
+  const photoUrl: string | undefined = best.picture_medium || best.picture_big || best.picture || undefined;
+  return { ok: true, data: { id: best.id, name: best.name, photoUrl } };
 }
 
 export type DeezerTopTrack = { url: string; previewUrl?: string; name: string };
@@ -72,7 +84,7 @@ export async function getTopTrack(artistId: number): Promise<DeezerResult<Deezer
   return { ok: true, data: { url: top.link, previewUrl: top.preview || undefined, name: top.title } };
 }
 
-export type DeezerTopSong = { top_song_url: string; song_preview_url?: string };
+export type DeezerTopSong = { top_song_url?: string; song_preview_url?: string; photo_url?: string };
 
 // Same missing-vs-error distinction the earlier Spotify version established:
 // 'no_artist_match'/'no_top_track' mean the calls succeeded but genuinely
@@ -89,14 +101,27 @@ export type DeezerLookupResult =
 // No existing-link shortcut like the Spotify version had — artists don't
 // have a stored Deezer id to skip the search from, and Deezer's rate limit
 // (50 req/5s) is generous enough that always searching by name is fine.
+//
+// The artist search step also carries a photo (see searchArtist) — that's
+// surfaced here even when the top-track half fails or comes up empty, so a
+// "no top track" artist still gets their photo filled instead of the whole
+// lookup being thrown away as a failure.
 export async function getTopSongForArtist(name: string): Promise<DeezerLookupResult> {
   const searchResult = await searchArtist(name);
   if (!searchResult.ok) return { ok: false, reason: 'search_failed', error: searchResult.error };
   if (!searchResult.data) return { ok: false, reason: 'no_artist_match' };
 
-  const trackResult = await getTopTrack(searchResult.data.id);
-  if (!trackResult.ok) return { ok: false, reason: 'top_track_lookup_failed', error: trackResult.error };
-  if (!trackResult.data) return { ok: false, reason: 'no_top_track' };
+  const photoFields: Pick<DeezerTopSong, 'photo_url'> = searchResult.data.photoUrl ? { photo_url: searchResult.data.photoUrl } : {};
 
-  return { ok: true, data: { top_song_url: trackResult.data.url, song_preview_url: trackResult.data.previewUrl } };
+  const trackResult = await getTopTrack(searchResult.data.id);
+  if (!trackResult.ok) {
+    if (searchResult.data.photoUrl) return { ok: true, data: photoFields };
+    return { ok: false, reason: 'top_track_lookup_failed', error: trackResult.error };
+  }
+  if (!trackResult.data) {
+    if (searchResult.data.photoUrl) return { ok: true, data: photoFields };
+    return { ok: false, reason: 'no_top_track' };
+  }
+
+  return { ok: true, data: { top_song_url: trackResult.data.url, song_preview_url: trackResult.data.previewUrl, ...photoFields } };
 }

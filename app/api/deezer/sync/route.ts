@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getInternalUser } from '@/lib/auth';
-import { completeSyncRun, createSyncRun, getArtistsMissingTopSong, logSyncFailure, stampSourceSyncedAt, updateArtist } from '@/lib/db';
+import { completeSyncRun, createSyncRun, getArtistsMissingDeezerData, logSyncFailure, stampSourceSyncedAt, updateArtist } from '@/lib/db';
 import { notifyAdminsOfRunFailure } from '@/lib/ops-alerts';
 import { getTopSongForArtist } from '@/lib/deezer';
 import { withRetry } from '@/lib/retry';
@@ -23,9 +23,9 @@ export async function POST(req: Request) {
 
   const run = createSyncRun('deezer');
   // Covers the whole roster (Deezer lookup is by artist name) but only
-  // artists still missing a top song — see getArtistsMissingTopSong for
-  // why it never overwrites.
-  const artists = getArtistsMissingTopSong();
+  // artists still missing a top song or a photo — see
+  // getArtistsMissingDeezerData for why it never overwrites either field.
+  const artists = getArtistsMissingDeezerData();
   let updatedCount = 0;
   let noMatchCount = 0;
   let errorCount = 0;

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requireAdmin } from '@/lib/auth';
 import {
-  getAllArtists, getArtistsInVideoBackoff, getArtistsMissingTopSong, getArtistsMissingVideo,
+  getAllArtists, getArtistsInVideoBackoff, getArtistsMissingDeezerData, getArtistsMissingVideo,
   getArtistsWithSoundchartsLink, getLatestSyncRun, getMissingPlatformLinksImpact, getRecentSyncFailures,
   getUnverifiedVideoMatchCount,
 } from '@/lib/db';
@@ -49,7 +49,7 @@ export default async function AdminSyncPage() {
 
   const totalArtists = getAllArtists().length;
   const soundchartsLinked = getArtistsWithSoundchartsLink().length;
-  const missingPreview = getArtistsMissingTopSong().length;
+  const missingPreview = getArtistsMissingDeezerData().length;
   const missingVideo = getArtistsMissingVideo().length;
   const videoBackoff = getArtistsInVideoBackoff();
   const unverifiedVideo = getUnverifiedVideoMatchCount();
@@ -121,7 +121,7 @@ export default async function AdminSyncPage() {
           </div>
           <div>
             <p className="num text-xl font-semibold">{missingPreview}</p>
-            <p style={{ color: 'var(--text-faint)' }}>missing a Deezer preview</p>
+            <p style={{ color: 'var(--text-faint)' }}>missing a Deezer song or photo</p>
           </div>
           <div>
             <p className="num text-xl font-semibold">{missingVideo}</p>

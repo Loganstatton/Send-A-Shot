@@ -26,7 +26,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // Same best-effort, one-time Deezer top-song lookup as the manual Add
     // Artist flow — a candidate becoming a real artist is another "an
     // artist enters the roster" moment, so it gets the same treatment.
-    if (!artist.top_song_url) {
+    if (!artist.top_song_url || !artist.photo_url) {
       const result = await getTopSongForArtist(artist.name).catch((err) => {
         console.error('[deezer-lookup] on-approve lookup threw for', artist!.name, err?.message);
         return null;

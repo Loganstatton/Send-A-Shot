@@ -2645,16 +2645,21 @@ export function getYoutubeQuotaUsedToday(quotaDay: string): number {
   return (db.prepare('SELECT COALESCE(SUM(units), 0) AS total FROM youtube_quota_usage WHERE quota_day = ?').get(quotaDay) as { total: number }).total;
 }
 
-// Artists still missing a top song link, for Deezer top-track sync —
-// unlike Soundcharts sync (which only touches artists explicitly linked
-// by uuid, but always re-fetches), this touches every artist regardless
-// of a Soundcharts link, but only ones that don't already have one. Once
-// filled — by this sync or typed in by hand — it's a Scout's curatorial
-// choice of which song best represents the artist, so it's never
-// silently overwritten; clear the field to have sync fill it again.
-export function getArtistsMissingTopSong(): { id: number; name: string }[] {
+// Artists still missing a top song link OR a photo, for Deezer sync — one
+// artist-search call (see lib/deezer.ts's getTopSongForArtist) can fill
+// either or both, so one query covers everyone that call is worth making
+// for. Unlike Soundcharts sync (which only touches artists explicitly
+// linked by uuid, but always re-fetches), this touches every artist
+// regardless of a Soundcharts link, but only ones missing at least one of
+// the two fields. Once filled — by this sync or typed in by hand — each
+// field is a Scout's own curatorial choice, so neither is ever silently
+// overwritten; clear a field to have sync fill it again.
+export function getArtistsMissingDeezerData(): { id: number; name: string }[] {
   return db
-    .prepare("SELECT id, name FROM artists WHERE top_song_url IS NULL OR top_song_url = ''")
+    .prepare(`
+      SELECT id, name FROM artists
+      WHERE (top_song_url IS NULL OR top_song_url = '') OR (photo_url IS NULL OR photo_url = '')
+    `)
     .all() as { id: number; name: string }[];
 }
 

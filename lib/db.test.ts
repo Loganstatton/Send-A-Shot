@@ -15,7 +15,7 @@ const {
   deleteUser, executeTrade, findArtistsByName,
   getApprovedDiscoveriesCount, getArtist, getArtistClaim, getArtistFieldHistory, getArtistLastActivityMap,
   getArtistLog, getArtistsClaimedByUser,
-  getArtistsMissingTopSong, getErrorReportCount, getRecentErrorReports, insertErrorReport,
+  getArtistsMissingDeezerData, getErrorReportCount, getRecentErrorReports, insertErrorReport,
   getArtistsInPhotoBackoff, getArtistsInVideoBackoff, getArtistsMissingPhoto, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
   getArtistTradeVolumeCents, getBackerCountsByArtist, getBreakoutDiscoveriesCount, getDiscoveriesForUser,
   getDiscoveryCandidateCountsByGenre,
@@ -357,23 +357,32 @@ describe('Automated Soundcharts sync', () => {
   });
 });
 
-describe('Deezer top-song sync', () => {
-  it('getArtistsMissingTopSong only returns artists with no top_song_url set', () => {
-    const missing = createArtist({ name: 'No Top Song Yet' });
-    const has = createArtist({ name: 'Already Has One', top_song_url: 'https://www.deezer.com/track/123' });
+describe('Deezer top-song and photo sync', () => {
+  it('getArtistsMissingDeezerData returns an artist missing either field, but not one with both filled', () => {
+    const missingBoth = createArtist({ name: 'No Top Song Or Photo Yet' });
+    const missingPhotoOnly = createArtist({ name: 'Has Song No Photo', top_song_url: 'https://www.deezer.com/track/123' });
+    const missingSongOnly = createArtist({ name: 'Has Photo No Song', photo_url: 'https://example.com/photo.jpg' });
+    const hasBoth = createArtist({
+      name: 'Already Has Both', top_song_url: 'https://www.deezer.com/track/999', photo_url: 'https://example.com/both.jpg',
+    });
 
-    const rows = getArtistsMissingTopSong();
-    const ids = rows.map((r) => r.id);
-    expect(ids).toContain(missing.id);
-    expect(ids).not.toContain(has.id);
+    const ids = getArtistsMissingDeezerData().map((r) => r.id);
+    expect(ids).toContain(missingBoth.id);
+    expect(ids).toContain(missingPhotoOnly.id);
+    expect(ids).toContain(missingSongOnly.id);
+    expect(ids).not.toContain(hasBoth.id);
   });
 
-  it('filling in top_song_url removes an artist from the missing set — sync will not touch it again', () => {
+  it('filling in one missing field leaves an artist in the set until the other is filled too', () => {
     const artist = createArtist({ name: 'Freshly Filled' });
-    expect(getArtistsMissingTopSong().map((r) => r.id)).toContain(artist.id);
+    expect(getArtistsMissingDeezerData().map((r) => r.id)).toContain(artist.id);
 
-    updateArtist(artist.id, { name: artist.name, top_song_url: 'https://www.deezer.com/track/456' });
-    expect(getArtistsMissingTopSong().map((r) => r.id)).not.toContain(artist.id);
+    updateArtist(artist.id, { name: artist.name, top_song_url: 'https://www.deezer.com/track/456' } as any);
+    // Still missing a photo — sync should visit it again.
+    expect(getArtistsMissingDeezerData().map((r) => r.id)).toContain(artist.id);
+
+    updateArtist(artist.id, { name: artist.name, photo_url: 'https://example.com/now-has-one.jpg' } as any);
+    expect(getArtistsMissingDeezerData().map((r) => r.id)).not.toContain(artist.id);
   });
 
   it("Soundcharts and Deezer sync runs keep independent 'latest' history via the source column", () => {
