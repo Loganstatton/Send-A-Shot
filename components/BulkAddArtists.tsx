@@ -27,6 +27,26 @@ const STATUS_COLOR: Record<RowStatus, string> = {
   skipped: 'var(--text-faint)', error: 'var(--down)',
 };
 
+// Soundcharts' rate limit is easily tripped by firing dozens of lookups
+// back-to-back (exactly what "Load famous artists preset" does) — a burst
+// that size previously left everything after the first successful call
+// silently blank (see git history: production ran this preset and only 1
+// of 9 visible artists got a real photo, the rest all landing on the same
+// generic "no Soundcharts match" label that a genuine miss also uses,
+// making it impossible to tell rate-limiting from an actual no-match).
+// One retry plus a short pause between artists keeps this from recurring;
+// distinguishing the two outcomes below keeps a future failure debuggable
+// instead of looking identical to a real miss.
+async function fetchWithRetry(url: string, attempts = 2): Promise<Response> {
+  let res = await fetch(url);
+  for (let i = 1; i < attempts && !res.ok; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    res = await fetch(url);
+  }
+  return res;
+}
+const PACING_DELAY_MS = 300;
+
 export default function BulkAddArtists() {
   const router = useRouter();
   const [text, setText] = useState('');
@@ -57,24 +77,31 @@ export default function BulkAddArtists() {
       // Best-effort Soundcharts search-and-fill, same as the "Soundcharts"
       // box on the single Add Artist form — a search miss or a down API
       // just means this one artist gets created with a blank photo/stats
-      // instead of blocking the rest of the batch.
+      // instead of blocking the rest of the batch. fetchWithRetry absorbs a
+      // transient/rate-limit failure; soundchartsNote records what actually
+      // happened so it doesn't get lumped in with a genuine no-match below.
       let soundchartsFields: Record<string, unknown> = {};
+      let soundchartsNote = 'no Soundcharts match';
       try {
-        const searchRes = await fetch(`/api/soundcharts/search?q=${encodeURIComponent(name)}`);
+        const searchRes = await fetchWithRetry(`/api/soundcharts/search?q=${encodeURIComponent(name)}`);
         if (searchRes.ok) {
           const hits: { uuid: string; name: string }[] = await searchRes.json();
           const normalized = name.trim().toLowerCase();
           const best = hits.find((h) => h.name.trim().toLowerCase() === normalized) ?? hits[0];
           if (best) {
-            const dataRes = await fetch(`/api/soundcharts/artist/${encodeURIComponent(best.uuid)}`);
+            const dataRes = await fetchWithRetry(`/api/soundcharts/artist/${encodeURIComponent(best.uuid)}`);
             if (dataRes.ok) {
               const data = await dataRes.json();
               soundchartsFields = Object.fromEntries(Object.entries(data).filter(([, v]) => v != null && v !== ''));
+            } else {
+              soundchartsNote = `Soundcharts error (${dataRes.status}) — retry later from the artist's edit page`;
             }
           }
+        } else {
+          soundchartsNote = `Soundcharts error (${searchRes.status}) — retry later from the artist's edit page`;
         }
       } catch {
-        // Soundcharts unreachable — fall through with no fields; POST below still creates the artist.
+        soundchartsNote = 'Soundcharts unreachable — retry later from the artist\'s edit page';
       }
 
       try {
@@ -101,11 +128,16 @@ export default function BulkAddArtists() {
         });
         if (!res.ok) throw new Error('create failed');
         setRows((rs) => rs.map((r, idx) => (idx === i ? {
-          ...r, status: 'created', detail: soundchartsFields.photo_url ? 'Soundcharts matched' : 'no Soundcharts match',
+          ...r, status: 'created', detail: soundchartsFields.photo_url ? 'Soundcharts matched' : soundchartsNote,
         } : r)));
       } catch {
         setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, status: 'error', detail: 'failed to create' } : r)));
       }
+
+      // Paced rather than fired back-to-back, so a big batch (like the
+      // famous-artists preset) doesn't itself trigger the rate-limit
+      // failures this retry logic exists to recover from.
+      if (i < names.length - 1) await new Promise((r) => setTimeout(r, PACING_DELAY_MS));
     }
 
     setRunning(false);
