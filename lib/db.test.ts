@@ -9,9 +9,11 @@ import { describe, expect, it } from 'vitest';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
 const {
-  addToWatchlist, approveDiscoveryCandidate, completeDiscoveryRun, completeNextOnboarding, completeSyncRun,
-  createArtist, createDiscoveryRun, createSyncRun, createUser, db, deleteUser, executeTrade, findArtistsByName,
-  getArtist, getArtistsMissingTopSong, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
+  addLogEntry, addToWatchlist, approveDiscoveryCandidate, bulkSetArtistStage, completeDiscoveryRun,
+  completeNextOnboarding, completeSyncRun, createArtist, createDiscoveryRun, createSyncRun, createUser, db,
+  deleteUser, executeTrade, findArtistsByName,
+  getArtist, getArtistFieldHistory, getArtistLastActivityMap, getArtistLog, getArtistsMissingTopSong,
+  getArtistsMissingVideo, getArtistsWithSoundchartsLink,
   getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidateCountsByGenre,
   getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getEventCountsByType,
   getFavoriteGenres, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
@@ -1502,5 +1504,97 @@ describe('Discovery Engine (Phase 5) — candidate history, run attribution, and
     const runs = getRecentDiscoveryRunsWithCandidateCounts('youtube', 50);
     expect(runs.find((r) => r.id === runA.id)!.candidateCount).toBe(2);
     expect(runs.find((r) => r.id === runB.id)!.candidateCount).toBe(0);
+  });
+});
+
+describe('Scout workflow (Phase 5) — field-level audit trail, activity sort, bulk stage change', () => {
+  it('updateArtist logs a field-history row only for a real human edit, only for fields that actually changed, and never for stage', () => {
+    const scout = makeUser('field-history-scout@example.com');
+    const artist = makeArtist('Field History Artist');
+
+    // A sync-style update (no actor) must NOT be logged.
+    updateArtist(artist.id, { name: artist.name, genre: 'Synced Genre No Actor' });
+    expect(getArtistFieldHistory(artist.id)).toHaveLength(0);
+
+    // A human edit changing genre and location (but re-submitting the same
+    // name) logs genre and location, but not name (unchanged) or stage
+    // (not touched by this call at all).
+    updateArtist(artist.id, { name: artist.name, genre: 'Pop', location: 'Austin, TX' }, { id: scout.id, name: scout.name });
+    const history = getArtistFieldHistory(artist.id);
+    expect(history).toHaveLength(2);
+    expect(history.map((h) => h.field).sort()).toEqual(['genre', 'location']);
+    const genreChange = history.find((h) => h.field === 'genre')!;
+    expect(genreChange.old_value).toBe('Synced Genre No Actor');
+    expect(genreChange.new_value).toBe('Pop');
+    expect(genreChange.actor_name).toBe(scout.name);
+
+    // A stage change (via the same actor-provided call) must not ALSO
+    // appear in artist_field_history — it's already covered by the
+    // existing contact_log status_change entry.
+    updateArtist(artist.id, { name: artist.name, stage: 'contacted' }, { id: scout.id, name: scout.name });
+    expect(getArtistFieldHistory(artist.id).some((h) => h.field === 'stage')).toBe(false);
+  });
+
+  it('a full-form save (every field present, most as empty strings — ArtistForm\'s real submission shape) logs only the field that actually changed, not every blank one', () => {
+    const scout = makeUser('full-form-scout@example.com');
+    const artist = makeArtist('Full Form Save Artist'); // every optional field starts unset (null in the DB)
+
+    // Mirrors ArtistForm.handleSubmit's real payload shape: every writable
+    // field present, untouched ones as '' (never omitted) — this is
+    // exactly what caught the normalization bug in QA.
+    updateArtist(artist.id, {
+      name: artist.name, genre: 'QA Edited Genre', location: '', scout_name: '',
+      tiktok_url: '', instagram_url: '', youtube_url: '', spotify_url: '', soundcloud_url: '',
+      notes: '', photo_url: '', bio: '', top_song_url: '', song_preview_url: '', why_trending: '',
+    }, { id: scout.id, name: scout.name });
+
+    const history = getArtistFieldHistory(artist.id);
+    expect(history).toHaveLength(1);
+    expect(history[0].field).toBe('genre');
+    expect(history[0].old_value).toBeNull();
+    expect(history[0].new_value).toBe('QA Edited Genre');
+  });
+
+  it('re-submitting the exact same value for a field logs nothing', () => {
+    const scout = makeUser('no-op-edit-scout@example.com');
+    const artist = createArtist({ name: 'No-Op Edit Artist', genre: 'Rock' });
+    const before = getArtistFieldHistory(artist.id).length;
+    updateArtist(artist.id, { name: artist.name, genre: 'Rock' }, { id: scout.id, name: scout.name });
+    expect(getArtistFieldHistory(artist.id)).toHaveLength(before);
+  });
+
+  it('getArtistLastActivityMap reflects the later of updated_at and the most recent contact_log entry', () => {
+    const scout = makeUser('activity-map-scout@example.com');
+    const artist = makeArtist('Activity Map Artist');
+
+    const initialMap = getArtistLastActivityMap();
+    const initialActivity = initialMap.get(artist.id)!;
+    expect(initialActivity).toBe(artist.updated_at);
+
+    // A note logged well after the artist's last field edit, with NO field
+    // actually changing (updated_at stays put) — this is exactly the case
+    // updated_at alone would miss.
+    const later = new Date(Date.now() + 60_000).toISOString();
+    const entry = addLogEntry(artist.id, { type: 'note', message: 'Checked in, no changes.' }, { id: scout.id, name: scout.name });
+    db.prepare('UPDATE contact_log SET created_at = ? WHERE id = ?').run(later, entry.id);
+
+    const afterMap = getArtistLastActivityMap();
+    expect(afterMap.get(artist.id)).toBe(later);
+    expect(afterMap.get(artist.id)! > initialActivity).toBe(true);
+  });
+
+  it('bulkSetArtistStage updates every listed artist, skips a nonexistent id without throwing, and returns the real count', () => {
+    const scout = makeUser('bulk-stage-scout@example.com');
+    const a = makeArtist('Bulk Stage Artist A');
+    const b = makeArtist('Bulk Stage Artist B');
+
+    const updated = bulkSetArtistStage([a.id, b.id, 999_999], 'contacted', { id: scout.id, name: scout.name });
+
+    expect(updated).toBe(2);
+    expect(getArtist(a.id)!.stage).toBe('contacted');
+    expect(getArtist(b.id)!.stage).toBe('contacted');
+    // Reuses the same per-artist path as a normal edit, so the existing
+    // stage-change contact_log entry still gets written for each.
+    expect(getArtistLog(a.id).some((l) => l.type === 'status_change')).toBe(true);
   });
 });
