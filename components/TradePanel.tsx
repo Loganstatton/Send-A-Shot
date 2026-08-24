@@ -33,6 +33,13 @@ export default function TradePanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // Generated once per distinct trade attempt (when the confirm screen
+  // opens), not per click of "Confirm" — so a retried/duplicated request
+  // for the SAME attempt (double-click, a flaky network requiring
+  // resubmission) rides the same key and the server returns the original
+  // result instead of trading twice. A new key is only drawn the next time
+  // startConfirm() runs — i.e. the next genuinely new trade.
+  const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
 
   const marketValueCents = Math.round(ownedShares * priceCents);
   const unrealizedPnlCents = marketValueCents - costBasisCents;
@@ -64,6 +71,7 @@ export default function TradePanel({
     if (!canSubmit) return;
     setSuccess(null);
     setConfirming(true);
+    setIdempotencyKey(crypto.randomUUID());
     if (mode === 'buy') track('buy_started', { artistId, amountCents });
   }
 
@@ -74,7 +82,7 @@ export default function TradePanel({
       const res = await fetch(`/api/next/artists/${artistId}/trade`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: mode, credits_amount_cents: amountCents }),
+        body: JSON.stringify({ type: mode, credits_amount_cents: amountCents, idempotencyKey }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Trade failed');
@@ -250,6 +258,9 @@ export default function TradePanel({
             <div className={row}><span style={rowLabel}>Execution price</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(executionCents)}</span></div>
             <div className={row}><span style={rowLabel}>Remaining cash after</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(Math.max(0, creditsAfterCents))}</span></div>
           </div>
+          <p className="text-[11px] m-0" style={{ color: 'var(--text-faint)' }}>
+            This is paper trading — NEXT Credits are virtual, and no real money changes hands.
+          </p>
           {error && <p className="text-sm" style={{ color: 'var(--down)' }}>{error}</p>}
           <div className="flex gap-2">
             <button

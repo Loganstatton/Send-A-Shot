@@ -31,15 +31,18 @@ const {
   getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentDiscoveryReviewDecisions,
   getRecentDiscoveryRunsWithCandidateCounts, getRecentEventsForUser,
   getRecentMarketTrades, getRecentSubmissionCount, getRecentSyncFailures, getRecentTradesForArtist,
-  getRecentWatchCountsByArtist,
-  getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
+  getRecentTradeCount, getRecentWatchCountsByArtist,
+  getScoreChanges, getScoutLeaderboard, getScoutProfile, getStoredTradeResponse, getSuspiciousTradingFlags,
+  getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
   getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
-  getYoutubeQuotaUsedToday, hasListenedToArtist, findDuplicateArtistSubmission, insertDiscoveryCandidate, isWatchlisted,
+  getYoutubeQuotaUsedToday, hasListenedToArtist, findDuplicateArtistSubmission, findUserByNormalizedEmail,
+  normalizeEmailForDuplicateCheck, insertDiscoveryCandidate, isWatchlisted,
   logArtistCardViews,
   logEvent, logSyncFailure, markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin,
   recordPreviewListen, recordYoutubeQuotaUsage, reviewArtistClaim, setDiscoveryCandidateStatus,
   setFeaturedVideoMatchType,
-  setNotificationsEmailedThrough, setWatchlistAlerts, stampSourceSyncedAt, stampYoutubeNoMatch, updateArtist,
+  setNotificationsEmailedThrough, setWatchlistAlerts, stampSourceSyncedAt, stampYoutubeNoMatch, storeTradeResponse,
+  TRADE_RATE_LIMIT_PER_MINUTE, updateArtist,
   updateUserProfile, YOUTUBE_NO_MATCH_RECHECK_DAYS,
 } = await import('./db');
 
@@ -1989,5 +1992,114 @@ describe('Crowdsourced scouting (Phase 7) — discovery credit, genre expertise,
 
     const entry = getScoutLeaderboard().find((e) => e.user.id === finder.id)!;
     expect(entry.approvedDiscoveriesCount).toBe(1);
+  });
+});
+
+describe('Anti-abuse and market integrity (Phase 8)', () => {
+  it('executeTrade rejects a buy of exactly balance+1 cent but allows exactly the full balance', () => {
+    const user = makeUser('boundary-buyer@example.com');
+    const artist = makeArtist('Boundary Buyer Artist');
+    const balance = getUserById(user.id)!.next_credits_cents;
+
+    const tooMuch = executeTrade(user.id, artist.id, 'buy', balance + 1);
+    expect(tooMuch.ok).toBe(false);
+    if (!tooMuch.ok) expect(tooMuch.error).toMatch(/not enough NEXT Credits/i);
+
+    const exact = executeTrade(user.id, artist.id, 'buy', balance);
+    expect(exact.ok).toBe(true);
+    expect(getUserById(user.id)!.next_credits_cents).toBe(0);
+
+    // Now genuinely broke — even a $0.01 buy must be rejected, never allowed
+    // to push the balance negative.
+    const whenBroke = executeTrade(user.id, artist.id, 'buy', 1);
+    expect(whenBroke.ok).toBe(false);
+    expect(getUserById(user.id)!.next_credits_cents).toBe(0); // unchanged, never negative
+  });
+
+  it('getRecentTradeCount only counts this user\'s trades within the given window', () => {
+    const user = makeUser('rate-limit-trader@example.com');
+    const otherUser = makeUser('other-rate-limit-trader@example.com');
+    const artist = makeArtist('Rate Limit Trade Artist');
+
+    expect(getRecentTradeCount(user.id, 1)).toBe(0);
+    executeTrade(user.id, artist.id, 'buy', 10_000);
+    executeTrade(user.id, artist.id, 'buy', 10_000);
+    executeTrade(otherUser.id, artist.id, 'buy', 10_000); // a different user's trade never counts against this one
+    expect(getRecentTradeCount(user.id, 1)).toBe(2);
+    expect(getRecentTradeCount(otherUser.id, 1)).toBe(1);
+
+    // Backdate one trade outside the window — same id-capture-then-UPDATE
+    // pattern used elsewhere in this file to avoid same-millisecond ties.
+    const row = db.prepare('SELECT id FROM next_transactions WHERE user_id = ? ORDER BY id ASC LIMIT 1').get(user.id) as { id: number };
+    db.prepare('UPDATE next_transactions SET created_at = ? WHERE id = ?').run(new Date(Date.now() - 2 * 60 * 1000).toISOString(), row.id);
+    expect(getRecentTradeCount(user.id, 1)).toBe(1);
+  });
+
+  it('a real-world trading session stays well under TRADE_RATE_LIMIT_PER_MINUTE, confirming the cap is generous rather than intrusive', () => {
+    const user = makeUser('normal-trader@example.com');
+    const artist = makeArtist('Normal Trading Artist');
+    for (let i = 0; i < 5; i++) executeTrade(user.id, artist.id, 'buy', 10_000);
+    expect(getRecentTradeCount(user.id, 1)).toBeLessThan(TRADE_RATE_LIMIT_PER_MINUTE);
+  });
+
+  it('trade idempotency: storeTradeResponse then getStoredTradeResponse round-trips the exact status and body, scoped per user+key', () => {
+    const user = makeUser('idempotency-user@example.com');
+    const otherUser = makeUser('idempotency-other-user@example.com');
+
+    expect(getStoredTradeResponse(user.id, 'key-1')).toBeUndefined();
+    storeTradeResponse(user.id, 'key-1', 200, { ok: true, shares: 1.2345 });
+
+    const stored = getStoredTradeResponse(user.id, 'key-1');
+    expect(stored).toEqual({ status: 200, body: { ok: true, shares: 1.2345 } });
+
+    // The same key string for a DIFFERENT user is a different row entirely
+    // — no cross-user collision.
+    expect(getStoredTradeResponse(otherUser.id, 'key-1')).toBeUndefined();
+
+    // Storing again under the same (user, key) is a silent no-op (the
+    // UNIQUE-violation path), not an error — and the ORIGINAL response
+    // stays intact, which is the whole point: a retried request replays
+    // what actually happened, not a second, possibly different outcome.
+    storeTradeResponse(user.id, 'key-1', 400, { error: 'a different, later error' });
+    expect(getStoredTradeResponse(user.id, 'key-1')).toEqual({ status: 200, body: { ok: true, shares: 1.2345 } });
+  });
+
+  it('normalizeEmailForDuplicateCheck strips Gmail dots and +tags, and +tags on other domains, without touching genuinely different addresses', () => {
+    expect(normalizeEmailForDuplicateCheck('User.Name+promo@gmail.com')).toBe('username@gmail.com');
+    expect(normalizeEmailForDuplicateCheck('username@googlemail.com')).toBe('username@googlemail.com'); // dots stripped, alias domain unchanged
+    expect(normalizeEmailForDuplicateCheck('u.ser.name@googlemail.com')).toBe('username@googlemail.com');
+    expect(normalizeEmailForDuplicateCheck('someone+work@outlook.com')).toBe('someone@outlook.com');
+    // Dots are NOT stripped on a non-Gmail domain — dot-insensitivity is a
+    // Gmail-specific mail-server behavior, not a universal email convention.
+    expect(normalizeEmailForDuplicateCheck('first.last@outlook.com')).toBe('first.last@outlook.com');
+    expect(normalizeEmailForDuplicateCheck('completely-different@example.com')).not.toBe(normalizeEmailForDuplicateCheck('user@gmail.com'));
+  });
+
+  it('findUserByNormalizedEmail finds an existing account by its Gmail-dot/plus-tag alias, and returns undefined for a genuinely new email', () => {
+    createUser({ name: 'Alias Test User', email: 'alias.test.user@gmail.com', password_hash: 'hash' });
+
+    const found = findUserByNormalizedEmail('AliasTestUser+signup2@gmail.com');
+    expect(found).toBeDefined();
+    expect(found!.email).toBe('alias.test.user@gmail.com');
+
+    expect(findUserByNormalizedEmail('nobody-with-this-alias@gmail.com')).toBeUndefined();
+  });
+
+  it('getSuspiciousTradingFlags surfaces a real rapid-trading pattern with names resolved, and stays empty for ordinary trading', () => {
+    const quietUser = makeUser('quiet-trader@example.com');
+    const quietArtist = makeArtist('Quiet Trading Artist');
+    executeTrade(quietUser.id, quietArtist.id, 'buy', 10_000); // one ordinary trade — should never flag anything
+    expect(getSuspiciousTradingFlags().some((f) => f.userIds.includes(quietUser.id))).toBe(false);
+
+    const rapidUser = createUser({ name: 'Rapid Trader', email: 'rapid-trader-flag@example.com', password_hash: 'hash' });
+    const rapidArtist = makeArtist('Rapid Trading Flag Artist');
+    // 10 trades, all effectively "now" — comfortably within the rapid-trading window.
+    for (let i = 0; i < 10; i++) executeTrade(rapidUser.id, rapidArtist.id, 'buy', 5_000);
+
+    const flags = getSuspiciousTradingFlags();
+    const rapidFlag = flags.find((f) => f.kind === 'rapid_trading' && f.userIds.includes(rapidUser.id) && f.artistId === rapidArtist.id);
+    expect(rapidFlag).toBeDefined();
+    expect(rapidFlag!.userNames).toEqual(['Rapid Trader']);
+    expect(rapidFlag!.artistName).toBe('Rapid Trading Flag Artist');
   });
 });
