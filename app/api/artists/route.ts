@@ -44,13 +44,13 @@ export async function POST(req: Request) {
     throw err;
   }
 
-  // Best-effort, one-time Deezer top-song lookup right at creation — a
-  // Scout adding a real artist expects this to just be there, not to
-  // require a separate trip to the dashboard's batch sync button. Never
-  // blocks or fails artist creation: any lookup failure (no match, a real
-  // API error) just leaves top_song_url empty for the batch sync to try
-  // again later.
-  if (!artist.top_song_url) {
+  // Best-effort, one-time Deezer lookup right at creation — a Scout adding
+  // a real artist expects the top song (and, if still empty, a photo — see
+  // lib/deezer.ts) to just be there, not to require a separate trip to the
+  // dashboard's batch sync button. Never blocks or fails artist creation:
+  // any lookup failure (no match, a real API error) just leaves the
+  // field(s) empty for the batch sync to try again later.
+  if (!artist.top_song_url || !artist.photo_url) {
     const result = await getTopSongForArtist(artist.name).catch((err) => {
       console.error('[deezer-lookup] on-create lookup threw for', artist.name, err?.message);
       return null;
