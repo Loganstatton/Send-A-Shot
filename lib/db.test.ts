@@ -13,7 +13,7 @@ const {
   completeNextOnboarding, completeSyncRun, createArtist, createDiscoveryRun, createSyncRun, createUser, db,
   deleteUser, executeTrade, findArtistsByName,
   getArtist, getArtistFieldHistory, getArtistLastActivityMap, getArtistLog, getArtistsMissingTopSong,
-  getArtistsMissingVideo, getArtistsWithSoundchartsLink,
+  getArtistsInVideoBackoff, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
   getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidateCountsByGenre,
   getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getEventCountsByType,
   getFavoriteGenres, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
@@ -1371,6 +1371,29 @@ describe('YouTube quota protection (Phase 4) — daily usage ledger and re-searc
     updateArtist(artist.id, { featured_video_id: '' } as any);
     // Missing again, but the no-match stamp is still recent — still excluded.
     expect(getArtistsMissingVideo().map((a) => a.id)).not.toContain(artist.id);
+  });
+
+  it('getArtistsInVideoBackoff counts exactly the artists getArtistsMissingVideo excludes, and reports the earliest recheck date', () => {
+    const before = getArtistsInVideoBackoff().count;
+
+    const recent = makeArtist('Backoff Visibility Recent');
+    const longAgo = makeArtist('Backoff Visibility Long Ago');
+    const withVideo = makeArtist('Backoff Visibility Has Video');
+
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    stampYoutubeNoMatch(recent.id, fiveDaysAgo);
+    const beforeWindow = new Date(Date.now() - (YOUTUBE_NO_MATCH_RECHECK_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
+    stampYoutubeNoMatch(longAgo.id, beforeWindow); // outside the window — not in backoff
+    stampYoutubeNoMatch(withVideo.id, fiveDaysAgo);
+    updateArtist(withVideo.id, { featured_video_id: 'has-a-video' } as any); // has a video now — not "missing" at all
+
+    const after = getArtistsInVideoBackoff();
+    // Exactly one new artist (`recent`) entered the backoff set.
+    expect(after.count - before).toBe(1);
+    expect(getArtistsMissingVideo().map((a) => a.id)).not.toContain(recent.id);
+
+    const expectedRecheck = new Date(new Date(fiveDaysAgo).getTime() + YOUTUBE_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    expect(after.earliestRecheckAt).toBe(expectedRecheck);
   });
 });
 

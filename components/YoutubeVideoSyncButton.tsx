@@ -17,6 +17,17 @@ export default function YoutubeVideoSyncButton() {
       let text = `Checked ${data.checked}, updated ${data.updated}.`;
       if (data.noMatch > 0) text += ` ${data.noMatch} no video match.`;
       if (data.errors > 0) text += ` ${data.errors} lookup error${data.errors === 1 ? '' : 's'}${data.lastError ? ` (${data.lastError})` : ''}.`;
+      // "Checked 0" alone looks broken — it isn't, but it's ambiguous
+      // between three very different real reasons, so spell out which one.
+      if (data.checked === 0 && data.updated === 0) {
+        if (data.queuedForQuotaReset > 0) {
+          text += ` YouTube's daily quota is exhausted — ${data.queuedForQuotaReset} artist(s) will be tried again once it resets.`;
+        } else if (data.inBackoff > 0) {
+          text += ` ${data.inBackoff} artist(s) were already checked recently with no match and are excluded until their recheck window opens — nothing new to check right now.`;
+        } else {
+          text += ` Every artist already has a video (or has been checked) — nothing to do right now.`;
+        }
+      }
       setResult(text);
       router.refresh();
     } catch (err: any) {

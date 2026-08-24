@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { requireAdmin } from '@/lib/auth';
 import {
-  getAllArtists, getArtistsMissingTopSong, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
-  getLatestSyncRun, getMissingPlatformLinksImpact, getRecentSyncFailures, getUnverifiedVideoMatchCount,
+  getAllArtists, getArtistsInVideoBackoff, getArtistsMissingTopSong, getArtistsMissingVideo,
+  getArtistsWithSoundchartsLink, getLatestSyncRun, getMissingPlatformLinksImpact, getRecentSyncFailures,
+  getUnverifiedVideoMatchCount,
 } from '@/lib/db';
 import AdminTabs from '@/components/AdminTabs';
 import { SyncRun } from '@/lib/types';
@@ -50,6 +51,7 @@ export default async function AdminSyncPage() {
   const soundchartsLinked = getArtistsWithSoundchartsLink().length;
   const missingPreview = getArtistsMissingTopSong().length;
   const missingVideo = getArtistsMissingVideo().length;
+  const videoBackoff = getArtistsInVideoBackoff();
   const unverifiedVideo = getUnverifiedVideoMatchCount();
   const quota = youtubeConfigured() ? getYoutubeQuotaStatus() : null;
   const quotaPct = quota ? Math.min(100, Math.round((quota.usedToday / quota.budget) * 100)) : 0;
@@ -130,6 +132,14 @@ export default async function AdminSyncPage() {
           <p className="text-sm" style={{ color: 'var(--down)' }}>
             ⚠ {unverifiedVideo} artist{unverifiedVideo === 1 ? '' : 's'} have a featured video matched via
             unverified search — worth a manual check, since it may be the wrong artist.
+          </p>
+        )}
+        {videoBackoff.count > 0 && (
+          <p className="text-sm" style={{ color: 'var(--text-faint)' }}>
+            {videoBackoff.count} of the artists missing a video were checked recently and found no match —
+            excluded from the next backfill run until {videoBackoff.earliestRecheckAt ? new Date(videoBackoff.earliestRecheckAt).toLocaleDateString() : 'their recheck window opens'} at
+            the earliest, to avoid re-spending quota on a daily basis. This is why a backfill run can
+            legitimately show &quot;checked 0&quot; even with missing videos still on the roster.
           </p>
         )}
       </div>

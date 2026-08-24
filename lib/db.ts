@@ -2224,6 +2224,29 @@ export function stampYoutubeNoMatch(artistId: number, at: string = new Date().to
   db.prepare('UPDATE artists SET youtube_no_match_at = ? WHERE id = ?').run(at, artistId);
 }
 
+export type VideoBackoffStatus = { count: number; earliestRecheckAt?: string };
+
+// The exact inverse of getArtistsMissingVideo's exclusion — artists still
+// missing a video that WON'T show up on the next backfill run because
+// they were checked too recently. Without this, "checked 0, updated 0" on
+// a backfill run looks identical whether the roster genuinely has no
+// artists left to check or every candidate is just sitting in this
+// backoff window — this makes the difference visible on Admin sync health.
+export function getArtistsInVideoBackoff(): VideoBackoffStatus {
+  const cutoff = new Date(Date.now() - YOUTUBE_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const rows = db
+    .prepare(`
+      SELECT youtube_no_match_at FROM artists
+      WHERE (featured_video_id IS NULL OR featured_video_id = '')
+        AND youtube_no_match_at IS NOT NULL AND youtube_no_match_at >= ?
+      ORDER BY youtube_no_match_at ASC
+    `)
+    .all(cutoff) as { youtube_no_match_at: string }[];
+  if (rows.length === 0) return { count: 0 };
+  const earliestRecheckAt = new Date(new Date(rows[0].youtube_no_match_at).getTime() + YOUTUBE_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  return { count: rows.length, earliestRecheckAt };
+}
+
 // A featured video matched via an unverified top-relevance search hit
 // (see lib/youtube.ts's 'search_unverified' match type) — genuinely likely
 // to be the wrong video, not just an artist with no video at all. Powers
