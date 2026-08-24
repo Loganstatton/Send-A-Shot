@@ -361,6 +361,12 @@ addColumnIfMissing('artists', 'featured_video_match_type TEXT');
 // artist with no YouTube presence every single day; still checked again
 // after RECHECK_NO_MATCH_DAYS in case a video shows up later.
 addColumnIfMissing('artists', 'youtube_no_match_at TEXT');
+// A Scout's own explanation for an unusually high (9-10) human-rated
+// category — see the "≥9" nudge in ArtistForm.tsx. Free text, never
+// required to save (encouraged, not enforced), and never auto-cleared —
+// if every rating later drops back down, the note still explains why they
+// were once rated that high.
+addColumnIfMissing('artists', 'high_rating_note TEXT');
 addColumnIfMissing('next_transactions', 'listened_before_buy INTEGER');
 // discovery_runs originally only ever meant a Soundcharts scan; `source`
 // distinguishes it from a YouTube scan run, `quota_used` is a rough count
@@ -587,7 +593,7 @@ const WRITABLE_FIELDS = [
   'music_talent', 'original_song_response',
   'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
   'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending', 'soundcharts_uuid',
-  'featured_video_id',
+  'featured_video_id', 'high_rating_note',
 ] as const;
 
 // growth_velocity and engagement_quality are deliberately NOT writable
@@ -769,6 +775,31 @@ export function getScoreHistory(artistId: number): ScoreSnapshot[] {
   return db
     .prepare('SELECT * FROM score_history WHERE artist_id = ? ORDER BY recorded_at ASC')
     .all(artistId) as ScoreSnapshot[];
+}
+
+// The earliest/latest score_history row per artist — the "was Scout right"
+// report's two endpoints (a Scout's first-ever rating vs. the most
+// recently observed real growth). A self-join on MIN/MAX(recorded_at)
+// rather than a window function, so this doesn't depend on a specific
+// SQLite build's window-function support.
+export function getEarliestScoreSnapshots(): ScoreSnapshot[] {
+  return db
+    .prepare(`
+      SELECT score_history.* FROM score_history
+      INNER JOIN (SELECT artist_id, MIN(recorded_at) AS at FROM score_history GROUP BY artist_id) first
+        ON score_history.artist_id = first.artist_id AND score_history.recorded_at = first.at
+    `)
+    .all() as ScoreSnapshot[];
+}
+
+export function getLatestScoreSnapshots(): ScoreSnapshot[] {
+  return db
+    .prepare(`
+      SELECT score_history.* FROM score_history
+      INNER JOIN (SELECT artist_id, MAX(recorded_at) AS at FROM score_history GROUP BY artist_id) latest
+        ON score_history.artist_id = latest.artist_id AND score_history.recorded_at = latest.at
+    `)
+    .all() as ScoreSnapshot[];
 }
 
 export function getArtistLog(artistId: number): LogEntry[] {

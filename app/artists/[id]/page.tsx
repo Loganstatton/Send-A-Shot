@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { getArtist, getArtistFieldHistory } from '@/lib/db';
+import { getArtist, getArtistFieldHistory, getScoreHistory } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import ArtistForm from '@/components/ArtistForm';
 import { breakoutScore } from '@/lib/scoring';
@@ -10,6 +10,7 @@ import ScoreHistory from '@/components/ScoreHistory';
 import DealsAndRevenue from '@/components/DealsAndRevenue';
 import InvestmentLedger from '@/components/InvestmentLedger';
 import ArtistFieldHistory from '@/components/ArtistFieldHistory';
+import ScoreBreakdown from '@/components/ScoreBreakdown';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const artist = getArtist(Number(params.id));
@@ -27,6 +28,7 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
 
   const score = breakoutScore(artist);
   const fieldHistory = getArtistFieldHistory(artist.id);
+  const scoreHistory = getScoreHistory(artist.id);
 
   return (
     <div className="space-y-6">
@@ -42,8 +44,10 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
         <ScoreBadge score={score} size="lg" />
       </div>
 
+      <ScoreBreakdown artist={artist} />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ScoreHistory artistId={artist.id} />
+        <ScoreHistory initial={scoreHistory} />
         <ActivityLog artistId={artist.id} />
       </div>
 

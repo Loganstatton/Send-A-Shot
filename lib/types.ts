@@ -105,6 +105,9 @@ export type Artist = ScoreInputs & {
   // Undefined on any artist whose video predates this column, or wasn't
   // found via the automated lookup at all (e.g. a Scout pasted a link).
   featured_video_match_type?: 'channel' | 'search_matched_name' | 'search_unverified';
+  // A Scout's own explanation for an unusually high (9-10) rated category —
+  // see the nudge in ArtistForm.tsx. Encouraged, never required to save.
+  high_rating_note?: string;
 };
 
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {

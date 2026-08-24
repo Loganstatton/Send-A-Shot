@@ -15,8 +15,10 @@ const {
   getArtist, getArtistFieldHistory, getArtistLastActivityMap, getArtistLog, getArtistsMissingTopSong,
   getArtistsInVideoBackoff, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
   getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidateCountsByGenre,
-  getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getEventCountsByType,
+  getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getEarliestScoreSnapshots,
+  getEventCountsByType,
   getFavoriteGenres, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
+  getLatestScoreSnapshots,
   getLatestSyncRun, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
   getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist, getPortfolioValue,
   getPortfolioValueHistory, getRankMovements,
@@ -1619,5 +1621,43 @@ describe('Scout workflow (Phase 5) — field-level audit trail, activity sort, b
     // Reuses the same per-artist path as a normal edit, so the existing
     // stage-change contact_log entry still gets written for each.
     expect(getArtistLog(a.id).some((l) => l.type === 'status_change')).toBe(true);
+  });
+});
+
+describe('Artist evaluation (Phase 5) — high_rating_note, earliest/latest score snapshots', () => {
+  it('high_rating_note round-trips through create and update like any other writable field', () => {
+    const artist = createArtist({ name: 'High Rating Note Artist', music_talent: 9, high_rating_note: 'Viral TikTok sound, verified organic.' });
+    expect(getArtist(artist.id)!.high_rating_note).toBe('Viral TikTok sound, verified organic.');
+
+    const scout = makeUser('high-rating-scout@example.com');
+    const updated = updateArtist(artist.id, { name: artist.name, high_rating_note: 'Updated reasoning.' }, { id: scout.id, name: scout.name });
+    expect(updated!.high_rating_note).toBe('Updated reasoning.');
+  });
+
+  it('getEarliestScoreSnapshots and getLatestScoreSnapshots return the same single row for an artist with only one snapshot, and the correct two for an artist with several', () => {
+    const single = createArtist({ name: 'Single Snapshot Artist', music_talent: 7 });
+    const earliestSingle = getEarliestScoreSnapshots().find((s) => s.artist_id === single.id)!;
+    const latestSingle = getLatestScoreSnapshots().find((s) => s.artist_id === single.id)!;
+    expect(earliestSingle.id).toBe(latestSingle.id);
+    expect(earliestSingle.music_talent).toBe(7);
+
+    // Three snapshots taken this close together in a fast test run can land
+    // in the same millisecond — force distinct, strictly increasing
+    // recorded_at values (JS-computed ISO strings, never SQLite's
+    // datetime()) so MIN/MAX(recorded_at) isn't ambiguous between ties.
+    function stampLatestSnapshot(artistId: number, at: string) {
+      const row = db.prepare('SELECT id FROM score_history WHERE artist_id = ? ORDER BY id DESC LIMIT 1').get(artistId) as { id: number };
+      db.prepare('UPDATE score_history SET recorded_at = ? WHERE id = ?').run(at, row.id);
+    }
+    const multi = createArtist({ name: 'Multi Snapshot Artist', music_talent: 3 });
+    stampLatestSnapshot(multi.id, new Date(Date.now() - 2000).toISOString());
+    updateArtist(multi.id, { name: multi.name, music_talent: 6 });
+    stampLatestSnapshot(multi.id, new Date(Date.now() - 1000).toISOString());
+    updateArtist(multi.id, { name: multi.name, music_talent: 9 });
+    const earliestMulti = getEarliestScoreSnapshots().find((s) => s.artist_id === multi.id)!;
+    const latestMulti = getLatestScoreSnapshots().find((s) => s.artist_id === multi.id)!;
+    expect(earliestMulti.music_talent).toBe(3);
+    expect(latestMulti.music_talent).toBe(9);
+    expect(earliestMulti.id).not.toBe(latestMulti.id);
   });
 });
