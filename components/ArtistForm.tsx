@@ -15,6 +15,11 @@ const RATED_SCORE_FIELDS = (Object.keys(SCORE_WEIGHTS) as (keyof ScoreInputs)[])
   (f) => f !== 'growth_velocity' && f !== 'engagement_quality'
 );
 
+// 9-10 is the top 20% of the 0-10 scale — rare enough that a Scout should
+// have a specific reason, not just "seems great." Encouraged with a
+// visible prompt, never enforced (see high_rating_note in lib/types.ts).
+const HIGH_RATING_THRESHOLD = 9;
+
 type Props = {
   artist?: Artist;
 };
@@ -58,7 +63,12 @@ export default function ArtistForm({ artist }: Props) {
     why_trending: artist?.why_trending ?? '',
     soundcharts_uuid: artist?.soundcharts_uuid ?? undefined,
     featured_video_id: artist?.featured_video_id ?? '',
+    high_rating_note: artist?.high_rating_note ?? '',
   }));
+
+  // A 9-10 rating is a real outlier — worth a moment's "why," not a hard
+  // gate on saving. See HIGH_RATING_THRESHOLD's own reasoning below.
+  const hasHighRating = RATED_SCORE_FIELDS.some((field) => ((form[field] as number) ?? 0) >= HIGH_RATING_THRESHOLD);
 
   const liveGrowthScore = growthVelocityScore(form.growth_velocity_pct);
   const liveEngagementScore = engagementQualityScore(form.engagement_rate_pct);
@@ -328,6 +338,19 @@ export default function ArtistForm({ artist }: Props) {
             </div>
           ))}
         </div>
+        {hasHighRating && (
+          <div className="space-y-2 rounded-lg px-4 py-3" style={{ border: '1px solid var(--fire-line)', background: 'var(--fire-dim)' }}>
+            <label className="label mb-0" style={{ color: 'var(--fire)' }}>
+              ⚠ At least one category is rated {HIGH_RATING_THRESHOLD}+ — why?
+            </label>
+            <textarea
+              className="input min-h-[60px]"
+              value={form.high_rating_note ?? ''}
+              onChange={(e) => set('high_rating_note', e.target.value)}
+              placeholder="What specifically justifies a top-tier rating here? (optional, but a 9-10 is rare — worth a sentence)"
+            />
+          </div>
+        )}
       </div>
 
       <div className="card space-y-2">

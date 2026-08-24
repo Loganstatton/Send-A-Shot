@@ -1,25 +1,40 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { ScoreSnapshot } from '@/lib/types';
+import { SCORE_LABELS, ScoreInputs, ScoreSnapshot } from '@/lib/types';
 import Sparkline from './Sparkline';
 
-export default function ScoreHistory({ artistId }: { artistId: number }) {
-  const [history, setHistory] = useState<ScoreSnapshot[] | null>(null);
+const COMPONENT_FIELDS = Object.keys(SCORE_LABELS) as (keyof ScoreInputs)[];
 
-  useEffect(() => {
-    fetch(`/api/artists/${artistId}/history`)
-      .then((r) => r.json())
-      .then(setHistory);
-  }, [artistId]);
+// Every category that actually changed between the two most recent
+// snapshots — score_history already stores all 8 component values per
+// snapshot (not just the total), so this is a pure client-side diff, no
+// API change needed.
+function ComponentChanges({ previous, latest }: { previous: ScoreSnapshot; latest: ScoreSnapshot }) {
+  const changes = COMPONENT_FIELDS
+    .map((field) => ({ field, from: previous[field], to: latest[field] }))
+    .filter((c) => c.from !== c.to);
 
-  if (history === null) {
-    return (
-      <div className="card">
-        <h2 className="font-bold text-lg">Score history</h2>
-        <p className="text-sm mt-2" style={{ color: 'var(--text-faint)' }}>Loading…</p>
-      </div>
-    );
-  }
+  if (changes.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5 pt-2" style={{ borderTop: '1px solid var(--border-soft)' }}>
+      <h3 className="text-sm font-semibold">What changed since the last snapshot</h3>
+      {changes.map((c) => {
+        const delta = Math.round((c.to - c.from) * 10) / 10;
+        return (
+          <div key={c.field} className="flex items-center justify-between text-sm">
+            <span style={{ color: 'var(--text-muted)' }}>{SCORE_LABELS[c.field]}</span>
+            <span className="num">
+              {c.from.toFixed(1)} → {c.to.toFixed(1)}{' '}
+              <span style={{ color: delta > 0 ? 'var(--up)' : 'var(--down)' }}>({delta > 0 ? '+' : ''}{delta})</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function ScoreHistory({ initial }: { initial: ScoreSnapshot[] }) {
+  const history = initial;
 
   if (history.length === 0) {
     return (
@@ -66,6 +81,7 @@ export default function ScoreHistory({ artistId }: { artistId: number }) {
           </tbody>
         </table>
       </div>
+      {history.length > 1 && <ComponentChanges previous={history[history.length - 2]} latest={history[history.length - 1]} />}
     </div>
   );
 }

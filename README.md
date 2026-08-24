@@ -429,7 +429,6 @@ app/                 # Next.js app router
   login/, signup/    # auth pages
   api/artists/       # Scout REST API (internal/admin only)
     [id]/log/        # activity log entries (outreach, notes, stage changes)
-    [id]/history/    # score/metric snapshots over time
     [id]/agreements/ # deal terms (type, status, commission %, investment)
     [id]/revenue/    # revenue entries, optionally linked to an agreement
     [id]/investments/# categorized spend ledger (marketing/studio/video/etc)
