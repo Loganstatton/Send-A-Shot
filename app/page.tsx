@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getAllArtists, getArtistLastActivityMap, getDueFollowUps, getLatestSyncRun, getNewDiscoveryCandidateCount } from '@/lib/db';
+import { getAllArtists, getArtistLastActivityMap, getArtistsInVideoBackoff, getDueFollowUps, getLatestSyncRun, getNewDiscoveryCandidateCount } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import { breakoutScore } from '@/lib/scoring';
 import RosterList from '@/components/RosterList';
@@ -23,6 +23,7 @@ export default async function DashboardPage() {
   const lastSync = getLatestSyncRun('soundcharts');
   const lastDeezerSync = getLatestSyncRun('deezer');
   const lastVideoSync = getLatestSyncRun('youtube_video');
+  const videoBackoff = getArtistsInVideoBackoff();
 
   const active = artists.filter((a) => a.stage !== 'passed');
   const fire = active.filter((a) => a.score >= 85).length;
@@ -91,6 +92,12 @@ export default async function DashboardPage() {
                         {' '}{lastVideoSync.error_count} lookup error{lastVideoSync.error_count === 1 ? '' : 's'}
                         {lastVideoSync.last_error ? ` (${lastVideoSync.last_error})` : ''}.
                       </span>
+                    )}
+                    {/* "checked 0" alone reads as broken even though it usually
+                        just means everything's already covered or in the
+                        recheck backoff — say which, right where this is seen. */}
+                    {lastVideoSync.checked_count === 0 && lastVideoSync.updated_count === 0 && videoBackoff.count > 0 && (
+                      ` ${videoBackoff.count} artist(s) were checked recently with no match and are excluded until their recheck window opens.`
                     )}
                   </>}
             </p>

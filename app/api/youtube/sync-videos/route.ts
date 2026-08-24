@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getInternalUser } from '@/lib/auth';
 import {
-  completeSyncRun, createSyncRun, getArtistsMissingVideo, logSyncFailure, setFeaturedVideoMatchType,
-  stampSourceSyncedAt, stampYoutubeNoMatch, updateArtist,
+  completeSyncRun, createSyncRun, getArtistsInVideoBackoff, getArtistsMissingVideo, logSyncFailure,
+  setFeaturedVideoMatchType, stampSourceSyncedAt, stampYoutubeNoMatch, updateArtist,
 } from '@/lib/db';
 import { getFeaturedVideoForArtist, youtubeConfigured } from '@/lib/youtube';
 import { ArtistInput } from '@/lib/types';
@@ -79,9 +79,14 @@ export async function POST(req: Request) {
 
     const failedCount = noMatchCount + errorCount;
     completeSyncRun(run.id, { status: 'completed', checkedCount: attemptedCount, updatedCount, failedCount, noMatchCount, errorCount, lastError });
+    // So a caller can explain a "checked 0" result instead of leaving it
+    // looking broken — was there really nothing to check, or is everything
+    // sitting in the recheck backoff? (queuedForQuotaReset already covers
+    // the third case, quota exhaustion mid-run.)
+    const inBackoff = getArtistsInVideoBackoff().count;
     return NextResponse.json({
       runId: run.id, checked: attemptedCount, updated: updatedCount, noMatch: noMatchCount, errors: errorCount, lastError,
-      queuedForQuotaReset,
+      queuedForQuotaReset, inBackoff,
     });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during YouTube video sync.';
