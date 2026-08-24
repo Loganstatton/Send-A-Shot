@@ -154,7 +154,35 @@ can be triggered two ways:
 An artist's `name` is deliberately never touched by the automated sync (only
 by the manual button, which a human reviews before saving) — a background
 job silently renaming someone is the wrong default. Unlinked artists (no
-Soundcharts UUID) are untouched either way; their stats stay manual-entry.
+Soundcharts UUID) are untouched either way; their stats stay manual-entry —
+that's what the photo backfill below is for.
+
+### Photo backfill (for artists the sync above can never reach)
+
+`/api/soundcharts/sync` above only re-syncs artists **already linked** to a
+Soundcharts UUID. An artist that never got linked in the first place — a
+rate limit or transient error during Add Artist / Bulk Add's on-create
+lookup, or one added before Soundcharts was configured — sits with no
+photo forever, since the regular sync has no way to discover them. This is
+the search-and-link step that's missing: it searches Soundcharts by name
+for every artist still missing both a photo and a UUID, links the best
+match, and fills in whatever Soundcharts returns — same as the manual
+per-artist Soundcharts search box, just for the whole roster at once.
+
+- **Manually** — the "Backfill missing photos" button on the Scout
+  dashboard (`/`).
+- **On a schedule** — point the same external scheduler at:
+  ```
+  POST https://<your-app>/api/soundcharts/backfill
+  Header: x-cron-secret: <the CRON_SECRET value>
+  ```
+  (reuses the same `CRON_SECRET` and Soundcharts credentials as the sync
+  above)
+
+Requests are paced ~300ms apart with one automatic retry per artist, since
+a large batch fired back-to-back is exactly what can trip Soundcharts' rate
+limit in the first place. A genuine "no Soundcharts listing" result backs
+off for 14 days before being re-checked, same as the video backfill below.
 
 ### Deezer top-song sync
 
@@ -270,8 +298,8 @@ echo "CRON_SECRET=$(openssl rand -hex 32)" >> .env.local
 ```
 
 **A scheduler is already set up for you** — `.github/workflows/discovery-scan.yml`
-runs the YouTube scan, Deezer sync, video backfill, and Soundcharts sync
-once a day via GitHub Actions, free, nothing to sign up for. It just needs the same
+runs the YouTube scan, Deezer sync, video backfill, photo backfill, and
+Soundcharts sync once a day via GitHub Actions, free, nothing to sign up for. It just needs the same
 `CRON_SECRET` value in two places:
 1. Set `CRON_SECRET` in Render's Environment tab (the value above).
 2. Add a repository secret with the *same* value: repo Settings → Secrets
@@ -468,7 +496,8 @@ direct disk access rather than going through the web route).
 ## Project Structure
 ```
 .github/workflows/   # discovery-scan.yml — daily GitHub Actions cron for
-                     # scan-youtube + deezer/sync + soundcharts/sync + db backup
+                     # scan-youtube + deezer/sync + youtube/sync-videos +
+                     # soundcharts/backfill + soundcharts/sync + db backup
 app/                 # Next.js app router
   page.tsx           # Scout dashboard (internal)
   screener/          # Scout portfolio/ROI screener (internal)

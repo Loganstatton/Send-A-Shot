@@ -16,7 +16,7 @@ const {
   getApprovedDiscoveriesCount, getArtist, getArtistClaim, getArtistFieldHistory, getArtistLastActivityMap,
   getArtistLog, getArtistsClaimedByUser,
   getArtistsMissingTopSong, getErrorReportCount, getRecentErrorReports, insertErrorReport,
-  getArtistsInVideoBackoff, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
+  getArtistsInPhotoBackoff, getArtistsInVideoBackoff, getArtistsMissingPhoto, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
   getArtistTradeVolumeCents, getBackerCountsByArtist, getBreakoutDiscoveriesCount, getDiscoveriesForUser,
   getDiscoveryCandidateCountsByGenre,
   getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getDiscoveryGenres,
@@ -41,7 +41,8 @@ const {
   logEvent, logSyncFailure, markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin,
   recordPreviewListen, recordYoutubeQuotaUsage, reviewArtistClaim, setDiscoveryCandidateStatus,
   setFeaturedVideoMatchType,
-  setNotificationsEmailedThrough, setWatchlistAlerts, stampSourceSyncedAt, stampYoutubeNoMatch, storeTradeResponse,
+  setNotificationsEmailedThrough, setWatchlistAlerts, SOUNDCHARTS_NO_MATCH_RECHECK_DAYS, stampSoundchartsNoMatch,
+  stampSourceSyncedAt, stampYoutubeNoMatch, storeTradeResponse,
   TRADE_RATE_LIMIT_PER_MINUTE, updateArtist,
   updateUserProfile, YOUTUBE_NO_MATCH_RECHECK_DAYS,
 } = await import('./db');
@@ -1407,6 +1408,67 @@ describe('YouTube quota protection (Phase 4) — daily usage ledger and re-searc
     expect(getArtistsMissingVideo().map((a) => a.id)).not.toContain(recent.id);
 
     const expectedRecheck = new Date(new Date(fiveDaysAgo).getTime() + YOUTUBE_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    expect(after.earliestRecheckAt).toBe(expectedRecheck);
+  });
+});
+
+describe('Soundcharts photo backfill — search-and-link for artists the regular sync can never reach', () => {
+  it('getArtistsMissingPhoto excludes an artist that already has a Soundcharts link, even with no photo', () => {
+    // The regular /api/soundcharts/sync already owns re-checking linked
+    // artists — the backfill's job is only to find and link the ones sync
+    // can't see at all, never to duplicate that work.
+    const linkedNoPhoto = createArtist({ name: 'Linked No Photo Artist', soundcharts_uuid: 'backfill-linked-uuid-1' });
+    expect(getArtistsMissingPhoto().map((a) => a.id)).not.toContain(linkedNoPhoto.id);
+  });
+
+  it('getArtistsMissingPhoto excludes an artist recently confirmed to have no match, but includes one checked long ago', () => {
+    const recentlyChecked = makeArtist('Recently No-Match Photo Artist');
+    const longAgoChecked = makeArtist('Long-Ago No-Match Photo Artist');
+    const neverChecked = makeArtist('Never Checked Photo Artist');
+
+    stampSoundchartsNoMatch(recentlyChecked.id); // "now" — well within the backoff window
+    const beforeWindow = new Date(Date.now() - (SOUNDCHARTS_NO_MATCH_RECHECK_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
+    stampSoundchartsNoMatch(longAgoChecked.id, beforeWindow);
+
+    const missing = getArtistsMissingPhoto().map((a) => a.id);
+    expect(missing).not.toContain(recentlyChecked.id);
+    expect(missing).toContain(longAgoChecked.id);
+    expect(missing).toContain(neverChecked.id);
+  });
+
+  it('getArtistsMissingPhoto re-includes an artist once photo_url is cleared, even if it was previously no-matched', () => {
+    const artist = makeArtist('Cleared Photo Artist');
+    stampSoundchartsNoMatch(artist.id);
+    expect(getArtistsMissingPhoto().map((a) => a.id)).not.toContain(artist.id);
+
+    updateArtist(artist.id, { photo_url: 'https://example.com/manually-pasted.jpg' } as any);
+    expect(getArtistsMissingPhoto().map((a) => a.id)).not.toContain(artist.id); // has a photo now, not missing
+
+    updateArtist(artist.id, { photo_url: '' } as any);
+    // Missing again, but the no-match stamp is still recent — still excluded.
+    expect(getArtistsMissingPhoto().map((a) => a.id)).not.toContain(artist.id);
+  });
+
+  it('getArtistsInPhotoBackoff counts exactly the artists getArtistsMissingPhoto excludes, and reports the earliest recheck date', () => {
+    const before = getArtistsInPhotoBackoff().count;
+
+    const recent = makeArtist('Photo Backoff Visibility Recent');
+    const longAgo = makeArtist('Photo Backoff Visibility Long Ago');
+    const withPhoto = makeArtist('Photo Backoff Visibility Has Photo');
+
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+    stampSoundchartsNoMatch(recent.id, fiveDaysAgo);
+    const beforeWindow = new Date(Date.now() - (SOUNDCHARTS_NO_MATCH_RECHECK_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
+    stampSoundchartsNoMatch(longAgo.id, beforeWindow); // outside the window — not in backoff
+    stampSoundchartsNoMatch(withPhoto.id, fiveDaysAgo);
+    updateArtist(withPhoto.id, { photo_url: 'https://example.com/has-a-photo.jpg' } as any); // has a photo now — not "missing" at all
+
+    const after = getArtistsInPhotoBackoff();
+    // Exactly one new artist (`recent`) entered the backoff set.
+    expect(after.count - before).toBe(1);
+    expect(getArtistsMissingPhoto().map((a) => a.id)).not.toContain(recent.id);
+
+    const expectedRecheck = new Date(new Date(fiveDaysAgo).getTime() + SOUNDCHARTS_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
     expect(after.earliestRecheckAt).toBe(expectedRecheck);
   });
 });
