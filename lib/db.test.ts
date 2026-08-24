@@ -13,11 +13,14 @@ const {
   completeNextOnboarding, completeSyncRun, createArtist, createArtistClaim, createDiscoveryRun, createSyncRun,
   createUser, db,
   deleteUser, executeTrade, findArtistsByName,
-  getArtist, getArtistClaim, getArtistFieldHistory, getArtistLastActivityMap, getArtistLog, getArtistsClaimedByUser,
+  getApprovedDiscoveriesCount, getArtist, getArtistClaim, getArtistFieldHistory, getArtistLastActivityMap,
+  getArtistLog, getArtistsClaimedByUser,
   getArtistsMissingTopSong,
   getArtistsInVideoBackoff, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
-  getArtistTradeVolumeCents, getBackerCountsByArtist, getDiscoveryCandidateCountsByGenre,
-  getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getEarliestScoreSnapshots,
+  getArtistTradeVolumeCents, getBackerCountsByArtist, getBreakoutDiscoveriesCount, getDiscoveriesForUser,
+  getDiscoveryCandidateCountsByGenre,
+  getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getDiscoveryGenres,
+  getDiscoveryLeaderboard, getEarliestScoreSnapshots,
   getEventCountsByType,
   getFavoriteGenres, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
   getLatestScoreSnapshots,
@@ -27,10 +30,12 @@ const {
   getPortfolioValueHistory, getRankMovements,
   getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentDiscoveryReviewDecisions,
   getRecentDiscoveryRunsWithCandidateCounts, getRecentEventsForUser,
-  getRecentMarketTrades, getRecentSyncFailures, getRecentTradesForArtist, getRecentWatchCountsByArtist,
+  getRecentMarketTrades, getRecentSubmissionCount, getRecentSyncFailures, getRecentTradesForArtist,
+  getRecentWatchCountsByArtist,
   getScoreChanges, getScoutLeaderboard, getScoutProfile, getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
   getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
-  getYoutubeQuotaUsedToday, hasListenedToArtist, insertDiscoveryCandidate, isWatchlisted, logArtistCardViews,
+  getYoutubeQuotaUsedToday, hasListenedToArtist, findDuplicateArtistSubmission, insertDiscoveryCandidate, isWatchlisted,
+  logArtistCardViews,
   logEvent, logSyncFailure, markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin,
   recordPreviewListen, recordYoutubeQuotaUsage, reviewArtistClaim, setDiscoveryCandidateStatus,
   setFeaturedVideoMatchType,
@@ -1811,5 +1816,178 @@ describe('Artist participation (Phase 6) — public submission, claim review, da
     expect(pending.some((c) => c.id === request.claim.id)).toBe(true);
     expect(getArtistClaim(request.claim.id)!.artist_name).toBe('Pending Queue Artist');
     expect(getArtistClaim(request.claim.id)!.user_name).toBe('Test Trader');
+  });
+});
+
+describe('Crowdsourced scouting (Phase 7) — discovery credit, genre expertise, badges, duplicate/rate-limit guards', () => {
+  function submitPublicArtist(name: string, userId: number) {
+    insertDiscoveryCandidate({ source: 'public_submission', name, flagged_reason: 'Great find.', submitted_by_user_id: userId });
+    return getDiscoveryCandidates('new').find((c) => c.name === name)!;
+  }
+
+  it('getApprovedDiscoveriesCount only counts this user\'s APPROVED submissions, and getBreakoutDiscoveriesCount only counts the ones whose artist reached flagship', () => {
+    const finder = createUser({ name: 'Discovery Finder', email: 'discovery-finder@example.com', password_hash: 'hash' });
+    const scout = createUser({ name: 'Review Scout', email: 'review-scout-p7@example.com', password_hash: 'hash' });
+
+    submitPublicArtist('Still Pending Find', finder.id);
+    const approvedCandidate = submitPublicArtist('Approved Find', finder.id);
+    const breakoutCandidate = submitPublicArtist('Breakout Find', finder.id);
+
+    expect(getApprovedDiscoveriesCount(finder.id)).toBe(0);
+    expect(getBreakoutDiscoveriesCount(finder.id)).toBe(0);
+
+    const approvedArtist = approveDiscoveryCandidate(approvedCandidate.id, { id: scout.id, name: scout.name })!;
+    const breakoutArtist = approveDiscoveryCandidate(breakoutCandidate.id, { id: scout.id, name: scout.name })!;
+    expect(getApprovedDiscoveriesCount(finder.id)).toBe(2); // still-pending one doesn't count
+    expect(getBreakoutDiscoveriesCount(finder.id)).toBe(0); // neither has reached flagship yet
+
+    updateArtist(breakoutArtist.id, { name: breakoutArtist.name, stage: 'flagship' });
+    expect(getBreakoutDiscoveriesCount(finder.id)).toBe(1);
+    expect(getApprovedDiscoveriesCount(finder.id)).toBe(2); // unchanged — flagship doesn't add a second "approved" credit
+
+    // Reaching flagship on an artist someone ELSE found doesn't credit this user.
+    updateArtist(approvedArtist.id, { name: approvedArtist.name, stage: 'flagship' });
+    expect(getBreakoutDiscoveriesCount(finder.id)).toBe(2);
+  });
+
+  it('getDiscoveriesForUser lists every submission regardless of status, newest first, with the resolved artist name and breakout flag once approved', () => {
+    const finder = createUser({ name: 'List Finder', email: 'list-finder@example.com', password_hash: 'hash' });
+    const scout = createUser({ name: 'List Scout', email: 'list-scout-p7@example.com', password_hash: 'hash' });
+
+    const pendingCandidate = submitPublicArtist('List Pending', finder.id);
+    // Backdate — two inserts this close together can land in the same
+    // millisecond, making ORDER BY discovered_at DESC ambiguous between
+    // them (the same flake class documented elsewhere in this file).
+    db.prepare('UPDATE discovery_candidates SET discovered_at = ? WHERE id = ?').run(new Date(Date.now() - 1000).toISOString(), pendingCandidate.id);
+    const approvedCandidate = submitPublicArtist('List Approved', finder.id);
+    const artist = approveDiscoveryCandidate(approvedCandidate.id, { id: scout.id, name: scout.name })!;
+    updateArtist(artist.id, { name: artist.name, stage: 'flagship' });
+
+    const discoveries = getDiscoveriesForUser(finder.id);
+    expect(discoveries).toHaveLength(2);
+    // Newest first — "List Approved" was submitted after "List Pending".
+    expect(discoveries[0].candidateId).toBe(approvedCandidate.id);
+    expect(discoveries[0].status).toBe('approved');
+    expect(discoveries[0].artistName).toBe('List Approved');
+    expect(discoveries[0].artistId).toBe(artist.id);
+    expect(discoveries[0].breakout).toBe(true);
+
+    expect(discoveries[1].candidateId).toBe(pendingCandidate.id);
+    expect(discoveries[1].status).toBe('new');
+    expect(discoveries[1].artistName).toBe('List Pending'); // falls back to the submitted name — never approved, nothing to join
+    expect(discoveries[1].artistId).toBeUndefined();
+    expect(discoveries[1].breakout).toBe(false);
+  });
+
+  it('getDiscoveryGenres ranks genres by approved-discovery count, ignoring still-pending submissions', () => {
+    const finder = createUser({ name: 'Genre Finder', email: 'genre-finder@example.com', password_hash: 'hash' });
+    const scout = createUser({ name: 'Genre Review Scout', email: 'genre-review-scout@example.com', password_hash: 'hash' });
+
+    for (const name of ['Genre Find Pop One', 'Genre Find Pop Two']) {
+      const candidate = submitPublicArtist(name, finder.id);
+      const artist = approveDiscoveryCandidate(candidate.id, { id: scout.id, name: scout.name })!;
+      updateArtist(artist.id, { name: artist.name, genre: 'Pop' });
+    }
+    const jazzCandidate = submitPublicArtist('Genre Find Jazz One', finder.id);
+    const jazzArtist = approveDiscoveryCandidate(jazzCandidate.id, { id: scout.id, name: scout.name })!;
+    updateArtist(jazzArtist.id, { name: jazzArtist.name, genre: 'Jazz' });
+
+    // Not yet approved — shouldn't count toward genre expertise at all.
+    submitPublicArtist('Genre Find Still Pending', finder.id);
+
+    const genres = getDiscoveryGenres(finder.id);
+    expect(genres[0]).toEqual({ genre: 'Pop', count: 2 });
+    expect(genres[1]).toEqual({ genre: 'Jazz', count: 1 });
+  });
+
+  it('getDiscoveryLeaderboard ranks by approved-discovery count, breaking ties by breakout count', () => {
+    const topFinder = createUser({ name: 'Top Discoverer', email: 'top-discoverer@example.com', password_hash: 'hash' });
+    const tiedWithBreakout = createUser({ name: 'Tied Breakout Discoverer', email: 'tied-breakout-discoverer@example.com', password_hash: 'hash' });
+    const tiedNoBreakout = createUser({ name: 'Tied Plain Discoverer', email: 'tied-plain-discoverer@example.com', password_hash: 'hash' });
+    const scout = createUser({ name: 'Leaderboard Review Scout', email: 'leaderboard-review-scout@example.com', password_hash: 'hash' });
+
+    // topFinder: 2 approved, 0 breakout.
+    for (const name of ['LB Top Find One', 'LB Top Find Two']) {
+      const c = submitPublicArtist(name, topFinder.id);
+      approveDiscoveryCandidate(c.id, { id: scout.id, name: scout.name });
+    }
+    // tiedWithBreakout: 1 approved, 1 breakout.
+    const breakoutCandidate = submitPublicArtist('LB Breakout Find', tiedWithBreakout.id);
+    const breakoutArtist = approveDiscoveryCandidate(breakoutCandidate.id, { id: scout.id, name: scout.name })!;
+    updateArtist(breakoutArtist.id, { name: breakoutArtist.name, stage: 'flagship' });
+    // tiedNoBreakout: 1 approved, 0 breakout.
+    const plainCandidate = submitPublicArtist('LB Plain Find', tiedNoBreakout.id);
+    approveDiscoveryCandidate(plainCandidate.id, { id: scout.id, name: scout.name });
+
+    const board = getDiscoveryLeaderboard().filter((e) => [topFinder.id, tiedWithBreakout.id, tiedNoBreakout.id].includes(e.user.id));
+    const byId = new Map(board.map((e) => [e.user.id, e]));
+    expect(byId.get(topFinder.id)!.rank).toBeLessThan(byId.get(tiedWithBreakout.id)!.rank); // 2 approved beats 1 approved
+    expect(byId.get(tiedWithBreakout.id)!.rank).toBeLessThan(byId.get(tiedNoBreakout.id)!.rank); // same approved count, breakout wins the tiebreak
+  });
+
+  it('findDuplicateArtistSubmission blocks a name matching an existing roster artist or an active (non-passed) candidate, case-insensitively, but allows resubmitting a passed one', () => {
+    const existingArtist = createArtist({ name: 'Existing Roster Artist', music_talent: 5 });
+    expect(findDuplicateArtistSubmission('existing roster artist')).toEqual({ kind: 'artist', name: 'Existing Roster Artist' });
+
+    const finder = createUser({ name: 'Dup Finder', email: 'dup-finder@example.com', password_hash: 'hash' });
+    submitPublicArtist('Pending Duplicate Target', finder.id);
+    expect(findDuplicateArtistSubmission('PENDING DUPLICATE TARGET')).toEqual({ kind: 'candidate', name: 'Pending Duplicate Target' });
+
+    const scout = createUser({ name: 'Dup Scout', email: 'dup-scout@example.com', password_hash: 'hash' });
+    const passedCandidate = submitPublicArtist('Passed Duplicate Target', finder.id);
+    setDiscoveryCandidateStatus(passedCandidate.id, 'passed', { id: scout.id, name: scout.name });
+    expect(findDuplicateArtistSubmission('Passed Duplicate Target')).toBeUndefined();
+
+    expect(findDuplicateArtistSubmission('Nobody Has Submitted This')).toBeUndefined();
+  });
+
+  it('getRecentSubmissionCount only counts this user\'s public_submission candidates within the given window', () => {
+    const finder = createUser({ name: 'Rate Limit Finder', email: 'rate-limit-finder@example.com', password_hash: 'hash' });
+    const otherFinder = createUser({ name: 'Other Finder', email: 'other-finder@example.com', password_hash: 'hash' });
+
+    expect(getRecentSubmissionCount(finder.id, 24)).toBe(0);
+    submitPublicArtist('Rate Limit Find One', finder.id);
+    submitPublicArtist('Rate Limit Find Two', finder.id);
+    submitPublicArtist('Other Finders Find', otherFinder.id); // a different user's submission never counts against this one
+    expect(getRecentSubmissionCount(finder.id, 24)).toBe(2);
+    expect(getRecentSubmissionCount(otherFinder.id, 24)).toBe(1);
+
+    // Backdate one submission outside the window — same id-capture-then-UPDATE
+    // pattern used elsewhere in this file to avoid same-millisecond ties.
+    const row = db.prepare("SELECT id FROM discovery_candidates WHERE name = 'Rate Limit Find One'").get() as { id: number };
+    db.prepare('UPDATE discovery_candidates SET discovered_at = ? WHERE id = ?').run(new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(), row.id);
+    expect(getRecentSubmissionCount(finder.id, 24)).toBe(1);
+  });
+
+  it('getScoutProfile surfaces discovery credit end to end: counts, discoveries list, discovery genres, badges, and a Scout Score bonus', () => {
+    const finder = createUser({ name: 'Profile Finder', email: 'profile-finder@example.com', password_hash: 'hash' });
+    const scout = createUser({ name: 'Profile Review Scout', email: 'profile-review-scout@example.com', password_hash: 'hash' });
+
+    const noDiscoveryScore = getScoutProfile(finder.id)!.scoutScoreValue;
+    expect(getScoutProfile(finder.id)!.badges.some((b) => b.key === 'first_find')).toBe(false);
+
+    const candidate = submitPublicArtist('Profile Find', finder.id);
+    const artist = approveDiscoveryCandidate(candidate.id, { id: scout.id, name: scout.name })!;
+    updateArtist(artist.id, { name: artist.name, genre: 'Country', stage: 'flagship' });
+
+    const profile = getScoutProfile(finder.id)!;
+    expect(profile.approvedDiscoveriesCount).toBe(1);
+    expect(profile.breakoutDiscoveriesCount).toBe(1);
+    expect(profile.discoveries).toHaveLength(1);
+    expect(profile.discoveries[0].artistName).toBe('Profile Find');
+    expect(profile.discoveryGenres).toEqual([{ genre: 'Country', count: 1 }]);
+    expect(profile.badges.map((b) => b.key)).toEqual(expect.arrayContaining(['first_find', 'breakout_spotter']));
+    // 1 approved (3pts) + 1 breakout (5pts) = +8, same discovery bonus scoutScore() itself applies.
+    expect(profile.scoutScoreValue).toBe(noDiscoveryScore + 8);
+  });
+
+  it('getScoutLeaderboard entries carry approvedDiscoveriesCount alongside the existing trading stats', () => {
+    const finder = createUser({ name: 'Leaderboard Field Finder', email: 'leaderboard-field-finder@example.com', password_hash: 'hash' });
+    const scout = createUser({ name: 'Leaderboard Field Scout', email: 'leaderboard-field-scout@example.com', password_hash: 'hash' });
+    const candidate = submitPublicArtist('Leaderboard Field Find', finder.id);
+    approveDiscoveryCandidate(candidate.id, { id: scout.id, name: scout.name });
+
+    const entry = getScoutLeaderboard().find((e) => e.user.id === finder.id)!;
+    expect(entry.approvedDiscoveriesCount).toBe(1);
   });
 });

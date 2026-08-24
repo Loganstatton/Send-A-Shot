@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { insertDiscoveryCandidate } from '@/lib/db';
+import { findDuplicateArtistSubmission, getRecentSubmissionCount, insertDiscoveryCandidate, SUBMISSION_RATE_LIMIT_PER_DAY } from '@/lib/db';
 import { getSessionUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +19,30 @@ export async function POST(req: Request) {
 
   if (!name) return NextResponse.json({ error: 'Artist name is required.' }, { status: 400 });
   if (!pitch) return NextResponse.json({ error: 'Tell us why — a sentence is enough.' }, { status: 400 });
+
+  // Anti-spam: a generous daily cap, not a serious abuse defense.
+  if (getRecentSubmissionCount(user.id, 24) >= SUBMISSION_RATE_LIMIT_PER_DAY) {
+    return NextResponse.json(
+      { error: `You've hit today's limit of ${SUBMISSION_RATE_LIMIT_PER_DAY} submissions — try again tomorrow.` },
+      { status: 429 }
+    );
+  }
+
+  // Prevents duplicate-credit disputes at the source: whichever submission
+  // (or an existing roster artist) already exists keeps the credit, so two
+  // people never end up arguing over who found the same artist first.
+  const duplicate = findDuplicateArtistSubmission(name);
+  if (duplicate) {
+    return NextResponse.json(
+      {
+        error:
+          duplicate.kind === 'artist'
+            ? `${duplicate.name} is already on the roster.`
+            : `Someone already submitted ${duplicate.name} — it's in the queue for review.`,
+      },
+      { status: 409 }
+    );
+  }
 
   insertDiscoveryCandidate({
     source: 'public_submission',

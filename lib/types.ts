@@ -510,6 +510,28 @@ export type PublicPosition = {
 
 export type FavoriteGenre = { genre: string; count: number };
 
+// An earned reputation badge — see getScoutBadges in lib/scout-badges.ts.
+// Computed fresh from a Scout's own stats every time, never persisted.
+export type ScoutBadge = {
+  key: string;
+  label: string;
+  description: string;
+};
+
+// One submission a Scout has ever reviewed (or is still reviewing) for this
+// user — the "trophy case" list on their profile. artistName falls back to
+// the name the user typed if it was never approved (no artists row to join
+// against); breakout mirrors getBreakoutDiscoveriesCount's own definition
+// (the linked artist reached 'flagship').
+export type ScoutDiscoveryEntry = {
+  candidateId: number;
+  artistId?: number;
+  artistName: string;
+  status: DiscoveryCandidateStatus;
+  discoveredAt: string;
+  breakout: boolean;
+};
+
 export type ScoutProfile = {
   user: PublicScout;
   portfolio: PortfolioValue;
@@ -523,6 +545,14 @@ export type ScoutProfile = {
   // Null when the Scout hasn't opted in — not an empty list, so the page
   // can tell "chose to hide this" apart from "opted in but holds nothing."
   positions: PublicPosition[] | null;
+  // Phase 7 — crowdsourced-discovery reputation, entirely separate from
+  // trading performance above. See ScoutDiscoveryEntry and
+  // getApprovedDiscoveriesCount/getBreakoutDiscoveriesCount in lib/db.ts.
+  approvedDiscoveriesCount: number;
+  breakoutDiscoveriesCount: number;
+  discoveryGenres: FavoriteGenre[];
+  discoveries: ScoutDiscoveryEntry[];
+  badges: ScoutBadge[];
 };
 
 export type LeaderboardWindow = 'week' | 'month' | 'all';
@@ -534,6 +564,10 @@ export type LeaderboardEntry = {
   portfolioValueCents: number;
   artistsBackedCount: number;
   earlyDiscoveriesCount: number;
+  // Discovery-submission credit, shown alongside trading stats but never
+  // factored into this board's own ranking (see getDiscoveryLeaderboard for
+  // the board that ranks by this instead).
+  approvedDiscoveriesCount: number;
   // Rank movement is always the last-7-days change in ALL-TIME rank,
   // regardless of which time window the board is currently sorted by — a
   // consistent "how has your standing moved lately" signal rather than a
@@ -541,6 +575,16 @@ export type LeaderboardEntry = {
   // (a lower rank number now). Null when there's nothing to compare against
   // yet (the account didn't exist 7 days ago).
   rankChange: number | null;
+};
+
+// The "Top Discoverers" board — ranked by crowdsourced-discovery credit
+// instead of trading performance. Same PublicScout/rank shape as
+// LeaderboardEntry so the page can reuse the identical card layout.
+export type DiscoveryLeaderboardEntry = {
+  user: PublicScout;
+  rank: number;
+  approvedDiscoveriesCount: number;
+  breakoutDiscoveriesCount: number;
 };
 
 // A genre board ranks by realized+unrealized $ P&L earned specifically from

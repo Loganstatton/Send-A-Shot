@@ -5,14 +5,17 @@ import { breakoutScore, engagementQualityScore, growthVelocityScore } from './sc
 import { DATA_DIR } from './data-dir';
 import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents } from './next-market';
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
+import { getScoutBadges } from './scout-badges';
 import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
   AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistClaim, ArtistFieldChange, ArtistInput,
-  DiscoveryCandidate, DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryRun, DiscoverySourceKey,
+  DiscoveryCandidate, DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryLeaderboardEntry, DiscoveryRun,
+  DiscoverySourceKey,
   DueFollowUp, FavoriteGenre, FoundingBelieverRecord,
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
-  RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutProfile,
+  RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutDiscoveryEntry,
+  ScoutProfile,
   Stage, SyncFailure, SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
 
@@ -1858,6 +1861,138 @@ export function getEarlyDiscoveriesCount(userId: number): number {
   return row.c;
 }
 
+// Phase 7 — crowdsourced-discovery credit, entirely separate from
+// getEarlyDiscoveriesCount above (that's about early BUYING; this is about
+// FINDING an artist before it was ever on the roster at all, via
+// app/next/submit-artist). "Approved" is the Scout's own judgment call
+// that the find was real — the same bar a Scout's own YouTube/Soundcharts
+// candidates clear before becoming a roster artist.
+export function getApprovedDiscoveriesCount(userId: number): number {
+  const row = db
+    .prepare("SELECT COUNT(*) AS c FROM discovery_candidates WHERE submitted_by_user_id = ? AND status = 'approved'")
+    .get(userId) as { c: number };
+  return row.c;
+}
+
+// A discovery that went on to become a genuine hit — 'flagship' is this
+// app's most deliberate, durable "this artist made it" signal (a Scout's
+// considered promotion, not a number that drifts with every rating tweak
+// the way NEXT Score does), so it's the bar used here rather than a score
+// threshold.
+export function getBreakoutDiscoveriesCount(userId: number): number {
+  const row = db
+    .prepare(`
+      SELECT COUNT(*) AS c FROM discovery_candidates
+      JOIN artists ON artists.id = discovery_candidates.artist_id
+      WHERE discovery_candidates.submitted_by_user_id = ? AND discovery_candidates.status = 'approved' AND artists.stage = 'flagship'
+    `)
+    .get(userId) as { c: number };
+  return row.c;
+}
+
+// The Discoveries "trophy case" list for a Scout profile — every submission
+// this user has ever made, whatever its current status. artistName falls
+// back to the name they originally typed for a candidate that was never
+// approved (nothing to join against in artists).
+export function getDiscoveriesForUser(userId: number): ScoutDiscoveryEntry[] {
+  const rows = db
+    .prepare(`
+      SELECT discovery_candidates.id AS candidateId, discovery_candidates.artist_id AS artistId,
+             discovery_candidates.name AS submittedName, artists.name AS resolvedArtistName,
+             artists.stage AS artistStage, discovery_candidates.status AS status,
+             discovery_candidates.discovered_at AS discoveredAt
+      FROM discovery_candidates
+      LEFT JOIN artists ON artists.id = discovery_candidates.artist_id
+      WHERE discovery_candidates.submitted_by_user_id = ?
+      ORDER BY discovery_candidates.discovered_at DESC
+    `)
+    .all(userId) as {
+      candidateId: number; artistId: number | null; submittedName: string; resolvedArtistName: string | null;
+      artistStage: Stage | null; status: DiscoveryCandidateStatus; discoveredAt: string;
+    }[];
+
+  return rows.map((r) => ({
+    candidateId: r.candidateId,
+    artistId: r.artistId ?? undefined,
+    artistName: r.resolvedArtistName ?? r.submittedName,
+    status: r.status,
+    discoveredAt: r.discoveredAt,
+    breakout: r.artistStage === 'flagship',
+  }));
+}
+
+// Same "which genres is this Scout actually good in" idea as
+// getFavoriteGenres, but earned through successful discoveries instead of
+// backing — an approved find in a genre is real, demonstrated expertise,
+// not just a preference.
+export function getDiscoveryGenres(userId: number, limit = 3): FavoriteGenre[] {
+  return db
+    .prepare(`
+      SELECT artists.genre AS genre, COUNT(*) AS count
+      FROM discovery_candidates
+      JOIN artists ON artists.id = discovery_candidates.artist_id
+      WHERE discovery_candidates.submitted_by_user_id = ? AND discovery_candidates.status = 'approved'
+        AND artists.genre IS NOT NULL AND artists.genre != ''
+      GROUP BY artists.genre
+      ORDER BY count DESC, artists.genre ASC
+      LIMIT ?
+    `)
+    .all(userId, limit) as FavoriteGenre[];
+}
+
+// The "Top Discoverers" board — ranked by crowdsourced-discovery credit,
+// completely independent of getScoutLeaderboard's trading-performance
+// ranking. Zero-discovery accounts are left in (unlike getScoutLeaderboard,
+// which filters those out at the PAGE level) — app/next/leaderboard.tsx
+// applies the same filter here for consistency with how it treats Top
+// Scouts, keeping the filtering decision in one place.
+export function getDiscoveryLeaderboard(): DiscoveryLeaderboardEntry[] {
+  const entries = getAllUsers().map((user) => ({
+    user: { id: user.id, name: user.name, avatar_url: user.avatar_url },
+    rank: 0,
+    approvedDiscoveriesCount: getApprovedDiscoveriesCount(user.id),
+    breakoutDiscoveriesCount: getBreakoutDiscoveriesCount(user.id),
+  }));
+  entries.sort((a, b) => b.approvedDiscoveriesCount - a.approvedDiscoveriesCount || b.breakoutDiscoveriesCount - a.breakoutDiscoveriesCount);
+  entries.forEach((e, i) => { e.rank = i + 1; });
+  return entries;
+}
+
+// "Define which submission gets discovery credit" / "prevent
+// duplicate-credit disputes" — the simplest resolution that avoids the
+// dispute ever happening: block a second submission of the same artist
+// outright rather than creating a rival candidate a Scout would have to
+// adjudicate later. A 'passed' candidate does NOT block resubmission —
+// Scout already closed that one out; a new submission is a fresh case, not
+// a credit dispute over an old one.
+export function findDuplicateArtistSubmission(name: string): { kind: 'artist' | 'candidate'; name: string } | undefined {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return undefined;
+
+  const artist = db.prepare('SELECT name FROM artists WHERE LOWER(name) = ?').get(normalized) as { name: string } | undefined;
+  if (artist) return { kind: 'artist', name: artist.name };
+
+  const candidate = db
+    .prepare("SELECT name FROM discovery_candidates WHERE LOWER(name) = ? AND status != 'passed' ORDER BY discovered_at ASC LIMIT 1")
+    .get(normalized) as { name: string } | undefined;
+  if (candidate) return { kind: 'candidate', name: candidate.name };
+
+  return undefined;
+}
+
+// Anti-spam — a generous cap, not a serious abuse defense (coordinated/
+// adversarial abuse is Phase 8 scope, once real prizes/rewards exist to
+// abuse). This just stops one person from flooding the Candidate Queue.
+export const SUBMISSION_RATE_LIMIT_PER_DAY = 5;
+
+export function getRecentSubmissionCount(userId: number, hours: number): number {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const row = db
+    .prepare("SELECT COUNT(*) AS c FROM discovery_candidates WHERE submitted_by_user_id = ? AND source = 'public_submission' AND discovered_at >= ?")
+    .get(userId, cutoff) as { c: number };
+  return row.c;
+}
+
 // Total portfolio value as of `cutoffIso`, reconstructed the same way
 // getPortfolioValueHistory does — the last history point at or before the
 // cutoff, or NEXT_STARTING_CREDITS_CENTS if the account existed by then but
@@ -1896,6 +2031,7 @@ export function getScoutLeaderboard(window: LeaderboardWindow = 'all'): Leaderbo
       portfolioValueCents,
       artistsBackedCount: getArtistsBackedCount(user.id),
       earlyDiscoveriesCount: getEarlyDiscoveriesCount(user.id),
+      approvedDiscoveriesCount: getApprovedDiscoveriesCount(user.id),
       rankChange: null as number | null,
     };
   });
@@ -1951,6 +2087,7 @@ function getScoutLeaderboardUnranked(): Omit<LeaderboardEntry, 'rankChange'>[] {
       portfolioValueCents: portfolio.totalValueCents,
       artistsBackedCount: getArtistsBackedCount(user.id),
       earlyDiscoveriesCount: getEarlyDiscoveriesCount(user.id),
+      approvedDiscoveriesCount: getApprovedDiscoveriesCount(user.id),
     };
   });
   entries.sort((a, b) => b.totalReturnPct - a.totalReturnPct || b.artistsBackedCount - a.artistsBackedCount);
@@ -1982,6 +2119,8 @@ export function getScoutProfile(userId: number): ScoutProfile | undefined {
   const entry = leaderboard.find((e) => e.user.id === userId)!;
   const portfolio = getPortfolioValue(userId);
   const earlyDiscoveriesCount = getEarlyDiscoveriesCount(userId);
+  const approvedDiscoveriesCount = getApprovedDiscoveriesCount(userId);
+  const breakoutDiscoveriesCount = getBreakoutDiscoveriesCount(userId);
 
   const positions = user.show_positions_publicly
     ? getUserHoldings(userId).map((h) => {
@@ -2003,7 +2142,7 @@ export function getScoutProfile(userId: number): ScoutProfile | undefined {
   return {
     user: { id: user.id, name: user.name, avatar_url: user.avatar_url },
     portfolio,
-    scoutScoreValue: scoutScore({ totalReturnPct: portfolio.totalReturnPct, earlyDiscoveriesCount }),
+    scoutScoreValue: scoutScore({ totalReturnPct: portfolio.totalReturnPct, earlyDiscoveriesCount, approvedDiscoveriesCount, breakoutDiscoveriesCount }),
     rank: entry.rank,
     totalScouts: leaderboard.length,
     artistsBackedCount: entry.artistsBackedCount,
@@ -2011,6 +2150,11 @@ export function getScoutProfile(userId: number): ScoutProfile | undefined {
     favoriteGenres: getFavoriteGenres(userId),
     showPositionsPublicly: user.show_positions_publicly,
     positions,
+    approvedDiscoveriesCount,
+    breakoutDiscoveriesCount,
+    discoveryGenres: getDiscoveryGenres(userId),
+    discoveries: getDiscoveriesForUser(userId),
+    badges: getScoutBadges({ approvedDiscoveriesCount, breakoutDiscoveriesCount, earlyDiscoveriesCount }),
   };
 }
 

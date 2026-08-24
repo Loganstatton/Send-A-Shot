@@ -5,8 +5,16 @@ import { getFoundingBelieverRecordsForUser, getScoutProfile } from '@/lib/db';
 import { getSessionUser, requireUser } from '@/lib/auth';
 import { EARLY_DISCOVERY_RANK_THRESHOLD } from '@/lib/scout-score';
 import { formatCents } from '@/lib/format';
+import { DiscoveryCandidateStatus } from '@/lib/types';
 import ArtistAvatar from '@/components/ArtistAvatar';
 import NextStatTile from '@/components/next/NextStatTile';
+
+const DISCOVERY_STATUS_LABELS: Record<DiscoveryCandidateStatus, string> = {
+  new: 'Awaiting review',
+  watching: 'Being watched',
+  approved: 'On the roster',
+  passed: "Didn't make the roster",
+};
 
 export async function generateMetadata({ params }: { params: { userId: string } }): Promise<Metadata> {
   const profile = getScoutProfile(Number(params.userId));
@@ -47,11 +55,40 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
               ))}
             </div>
           )}
+          {profile.discoveryGenres.length > 0 && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>Finds in:</span>
+              {profile.discoveryGenres.map((g) => (
+                <span
+                  key={g.genre}
+                  className="text-[11px] rounded-full"
+                  style={{ padding: '3px 10px', border: '1px solid var(--ember-line)', background: 'var(--ember-dim)', color: 'var(--ember)' }}
+                >
+                  {g.genre}
+                </span>
+              ))}
+            </div>
+          )}
+          {profile.badges.length > 0 && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              {profile.badges.map((b) => (
+                <span
+                  key={b.key}
+                  title={b.description}
+                  className="text-[11px] font-semibold rounded-full flex items-center gap-1"
+                  style={{ padding: '3px 10px', border: '1px solid var(--gold-line)', background: 'var(--gold-dim)', color: 'var(--gold)' }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth={2.5}><path d="m12 2 2.9 6.3 6.9.8-5 4.9 1.3 6.9L12 17.7l-6.1 3.2 1.3-6.9-5-4.9 6.9-.8Z" /></svg>
+                  {b.label}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
       <div
-        className="grid grid-cols-2 sm:grid-cols-4 gap-px rounded-2xl overflow-hidden border"
+        className="grid grid-cols-2 sm:grid-cols-5 gap-px rounded-2xl overflow-hidden border"
         style={{ background: 'var(--border-soft)', borderColor: 'var(--border-soft)' }}
       >
         <NextStatTile label="Scout Score" value={profile.scoutScoreValue.toFixed(0)} />
@@ -62,12 +99,14 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
         />
         <NextStatTile label="Artists backed" value={String(profile.artistsBackedCount)} />
         <NextStatTile label="Early discoveries" value={String(profile.earlyDiscoveriesCount)} />
+        <NextStatTile label="Artists found" value={String(profile.approvedDiscoveriesCount)} />
       </div>
 
       <div className="next-card p-4 text-xs leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-        Scout Score starts at 50 and moves with all-time portfolio return (capped) plus a bonus for being
-        among the first {EARLY_DISCOVERY_RANK_THRESHOLD} backers of an artist — being early counts on its
-        own, whether or not the position is still held.
+        Scout Score starts at 50 and moves with all-time portfolio return (capped), a bonus for being among
+        the first {EARLY_DISCOVERY_RANK_THRESHOLD} backers of an artist, and a bonus for artists you found
+        yourself via Submit an Artist before they were ever on the roster — three separate skills, all
+        counted.
       </div>
 
       {profile.positions != null ? (
@@ -145,6 +184,42 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
               </span>
             )}
           </Link>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h2 className="font-display font-bold text-lg m-0 flex items-center gap-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ember)" strokeWidth={2}><path d="M11 2a9 9 0 1 0 9 9" /><path d="M11 2v9h9" /></svg>
+          Discoveries
+        </h2>
+        {profile.discoveries.length === 0 && (
+          <div className="next-card text-center py-10">
+            <p className="m-0" style={{ color: 'var(--text-muted)' }}>
+              {isOwnProfile ? "You haven't submitted an artist yet." : `${profile.user.name} hasn't submitted an artist yet.`}
+            </p>
+            {isOwnProfile && <Link href="/next/submit-artist" className="next-btn-primary mt-4 inline-flex px-5 py-2.5 rounded-[10px] text-sm">Submit an artist</Link>}
+          </div>
+        )}
+        {profile.discoveries.map((d) => (
+          <div key={d.candidateId} className="next-card flex items-center gap-4 px-5 py-4">
+            <ArtistAvatar name={d.artistName} />
+            <div className="min-w-0 flex-1">
+              <div className="font-display font-semibold truncate">{d.artistName}</div>
+              <div className="text-sm" style={{ color: 'var(--text-faint)' }}>
+                Submitted {new Date(d.discoveredAt).toLocaleDateString()}
+                {' · '}
+                {DISCOVERY_STATUS_LABELS[d.status]}
+              </div>
+            </div>
+            {d.breakout && (
+              <span
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold shrink-0"
+                style={{ background: 'var(--ember-dim)', borderColor: 'var(--ember-line)', color: 'var(--ember)' }}
+              >
+                🚀 Breakout
+              </span>
+            )}
+          </div>
         ))}
       </div>
     </div>
