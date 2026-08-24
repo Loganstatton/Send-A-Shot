@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { getArtist, getArtistFieldHistory, getScoreHistory } from '@/lib/db';
+import { getArtist, getArtistFieldHistory, getScoreHistory, getUserById } from '@/lib/db';
 import { requireInternal } from '@/lib/auth';
 import ArtistForm from '@/components/ArtistForm';
 import { breakoutScore } from '@/lib/scoring';
@@ -29,6 +29,7 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
   const score = breakoutScore(artist);
   const fieldHistory = getArtistFieldHistory(artist.id);
   const scoreHistory = getScoreHistory(artist.id);
+  const claimedBy = artist.claimed_by_user_id != null ? getUserById(artist.claimed_by_user_id) : undefined;
 
   return (
     <div className="space-y-6">
@@ -39,6 +40,12 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
             Added {new Date(artist.created_at).toLocaleDateString()}
             {artist.created_by_name ? ` by ${artist.created_by_name}` : ''}
             {' · '}Last updated {new Date(artist.updated_at).toLocaleDateString()}
+            {claimedBy && (
+              <>
+                {' · '}
+                <span style={{ color: 'var(--up)' }}>Claimed by {claimedBy.name}</span>
+              </>
+            )}
           </p>
         </div>
         <ScoreBadge score={score} size="lg" />

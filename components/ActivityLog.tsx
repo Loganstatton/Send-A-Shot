@@ -8,6 +8,7 @@ const TYPE_STYLE: Record<LogType, React.CSSProperties> = {
   response: { background: 'var(--up-dim)', borderColor: 'var(--up)', color: 'var(--up)' },
   meeting: { background: 'oklch(70% 0.15 300 / 0.14)', borderColor: 'oklch(70% 0.15 300 / 0.4)', color: 'oklch(78% 0.12 300)' },
   status_change: { background: 'var(--fire-dim)', borderColor: 'var(--fire-line)', color: 'var(--fire)' },
+  claim: { background: 'oklch(75% 0.15 85 / 0.14)', borderColor: 'oklch(75% 0.15 85 / 0.4)', color: 'oklch(80% 0.13 85)' },
 };
 
 function todayISO() {

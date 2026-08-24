@@ -108,6 +108,11 @@ export type Artist = ScoreInputs & {
   // A Scout's own explanation for an unusually high (9-10) rated category —
   // see the nudge in ArtistForm.tsx. Encouraged, never required to save.
   high_rating_note?: string;
+  // The verified user account behind this artist, once an artist_claims
+  // request has been approved (see reviewArtistClaim in lib/db.ts) — never
+  // Scout-editable via ArtistForm/PATCH, only set through that review flow.
+  // Drives access to the Artist Dashboard (app/next/my-artist).
+  claimed_by_user_id?: number;
 };
 
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {
@@ -153,9 +158,9 @@ export type User = {
   last_login_at?: string;
 };
 
-export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change';
+export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change' | 'claim';
 
-export const LOG_TYPES: LogType[] = ['note', 'outreach', 'response', 'meeting', 'status_change'];
+export const LOG_TYPES: LogType[] = ['note', 'outreach', 'response', 'meeting', 'status_change', 'claim'];
 
 export const LOG_TYPE_LABELS: Record<LogType, string> = {
   note: 'Note',
@@ -163,6 +168,7 @@ export const LOG_TYPE_LABELS: Record<LogType, string> = {
   response: 'Response received',
   meeting: 'Meeting / call',
   status_change: 'Stage change',
+  claim: 'Profile claimed',
 };
 
 export type LogEntry = {
@@ -559,7 +565,12 @@ export type GenreLeaderboardEntry = {
 // deliberate extension point for any future source (a Scout's own
 // submission, an artist self-submission, etc.) — they all end up as the
 // same NewDiscoveryCandidate shape feeding the one Candidate Queue below.
-export type DiscoverySourceKey = 'soundcharts' | 'youtube';
+// 'public_submission' is the third: any logged-in NEXT user nominating an
+// artist via app/next/submit-artist — the fan's own pitch rides in the
+// existing flagged_reason column (same "why this showed up" shape the
+// other two sources already use it for), just written by a person instead
+// of an algorithm.
+export type DiscoverySourceKey = 'soundcharts' | 'youtube' | 'public_submission';
 
 export type DiscoveryCandidateStatus = 'new' | 'watching' | 'approved' | 'passed';
 
@@ -618,6 +629,14 @@ export type DiscoveryCandidate = {
   // this column, or if it was somehow inserted outside a run. See
   // getRecentDiscoveryRunsWithCandidateCounts in lib/db.ts.
   discovery_run_id?: number;
+  // source='public_submission' only: who submitted it (joined — see
+  // DISCOVERY_CANDIDATE_SELECT) and whatever link they pasted (any
+  // platform — TikTok, Spotify, a YouTube video, etc.), left for the
+  // reviewing Scout to open directly rather than guessing which URL field
+  // it belongs in.
+  submitted_by_user_id?: number;
+  submitted_by_name?: string;
+  submission_url?: string;
 };
 
 // One row per status transition — see discovery_candidate_history in
@@ -634,6 +653,31 @@ export type DiscoveryCandidateHistoryEntry = {
   actor_id?: number;
   actor_name?: string;
   created_at: string;
+};
+
+// An artist self-identifying as the real person behind a roster row — see
+// createArtistClaim in lib/db.ts. Deliberately NOT auto-approved: anyone
+// could otherwise declare themselves any artist on the roster, so every
+// claim sits 'pending' until a Scout reviews it (app/artist-claims), same
+// review-queue shape as a Discovery candidate. Approval sets
+// artists.claimed_by_user_id, which is what actually grants Artist
+// Dashboard access — this row is the request/audit trail, not the grant
+// itself.
+export type ArtistClaimStatus = 'pending' | 'approved' | 'rejected';
+
+export type ArtistClaim = {
+  id: number;
+  artist_id: number;
+  artist_name?: string; // joined — see ARTIST_CLAIM_SELECT in lib/db.ts
+  user_id: number;
+  user_name?: string;
+  user_email?: string;
+  message?: string;
+  status: ArtistClaimStatus;
+  created_at: string;
+  reviewed_at?: string;
+  reviewed_by?: number;
+  reviewed_by_name?: string;
 };
 
 export type DiscoveryRunStatus = 'running' | 'completed' | 'failed';

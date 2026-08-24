@@ -4,9 +4,9 @@ import path from 'path';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
-import { getUserById, setUserRole } from './db';
+import { getArtist, getUserById, setUserRole } from './db';
 import { DATA_DIR } from './data-dir';
-import { User } from './types';
+import { Artist, User } from './types';
 
 export const SESSION_COOKIE = 'scout_session';
 const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60; // 30 days
@@ -136,6 +136,18 @@ export async function requireAdmin(): Promise<User> {
   const user = await requireUser();
   if (user.role !== 'admin') redirect(user.role === 'internal' ? '/' : '/next');
   return user;
+}
+
+// Artist Dashboard pages (app/next/my-artist) — only the user whose
+// artist_claims request was approved for THIS artist (artists.claimed_by_user_id,
+// set by reviewArtistClaim) may see it. Bounced to /next rather than an
+// error page, same reasoning as requireInternal: that's genuinely where a
+// non-owner belongs, not a dead end.
+export async function requireArtistOwner(artistId: number): Promise<{ user: User; artist: Artist }> {
+  const user = await requireUser();
+  const artist = getArtist(artistId);
+  if (!artist || artist.claimed_by_user_id !== user.id) redirect('/next');
+  return { user, artist };
 }
 
 // API-route-friendly variants: return null instead of redirecting (redirect()

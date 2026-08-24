@@ -2,7 +2,7 @@ import { Inter, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import Header from '@/components/Header';
 import { getSessionUser } from '@/lib/auth';
-import { getNewDiscoveryCandidateCount } from '@/lib/db';
+import { getNewDiscoveryCandidateCount, getPendingArtistClaimCount } from '@/lib/db';
 import type { Metadata } from 'next';
 
 // Scout's own typography — a plain, dense grotesk plus a mono for every
@@ -24,10 +24,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const user = await getSessionUser();
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
   const newCandidateCount = isInternal ? getNewDiscoveryCandidateCount() : 0;
+  const pendingArtistClaimCount = isInternal ? getPendingArtistClaimCount() : 0;
   return (
     <html lang="en">
       <body className={`${sans.variable} ${mono.variable}`}>
-        <Header user={user} newCandidateCount={newCandidateCount} />
+        <Header user={user} newCandidateCount={newCandidateCount} pendingArtistClaimCount={pendingArtistClaimCount} />
         <main className="container py-6">{children}</main>
       </body>
     </html>
