@@ -23,6 +23,26 @@ import { useEffect, useRef } from 'react';
 // set from JS for that same property, so the idle sway would silently
 // override every pointermove write. Splitting them onto parent/child
 // avoids that fight entirely; their transforms just compose normally.
+// A shadow that shifts opposite the tilt and grows slightly with it — the
+// "lifting off the page, catching overhead light" cue that sells the 3D
+// illusion as much as the rotation itself. Deliberately only ever applied
+// to .holo-card-tilt (see update()/reset() below), never to the idle sway
+// layer — CSS @keyframes and JS both writing box-shadow to the same
+// element would double up the shadow the same way it would have doubled
+// the transform (see this file's top-of-file comment), so the idle sway
+// simply keeps whatever shadow was last set (the neutral resting value)
+// rather than animating its own.
+//
+// Must resolve to exactly the CSS resting value (`0px 28px 70px -18px`,
+// see .holo-card-tilt in next-theme.css) at rotateX=rotateY=0, since
+// that's also what reset() snaps back to on release.
+function shadowFor(rotateX: number, rotateY: number): string {
+  const x = Math.round(-rotateY * 1.8);
+  const y = Math.round(28 + rotateX * 1.2);
+  const blur = Math.round(70 + (Math.abs(rotateX) + Math.abs(rotateY)) * 1.5);
+  return `${x}px ${y}px ${blur}px -18px oklch(0% 0 0 / 0.6)`;
+}
+
 export default function HoloCard({ children, className }: { children: React.ReactNode; className?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const idleRef = useRef<HTMLDivElement>(null);
@@ -36,17 +56,18 @@ export default function HoloCard({ children, className }: { children: React.Reac
     reducedMotionRef.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }, []);
 
-  function setTransition(on: boolean) {
+  function setTransition(dragging: boolean) {
     const tilt = tiltRef.current;
     const shine = shineRef.current;
     const glare = glareRef.current;
     // Snappy (near-instant) while actively tracking the pointer so the tilt
     // never feels laggy; a soft spring-back only on release. All three
-    // layers move in lockstep so the foil never lags behind the tilt.
-    const t = on ? 'transform 450ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 450ms ease' : 'transform 60ms linear';
+    // layers move in lockstep so the foil (and the shadow — see update())
+    // never lags behind the tilt.
+    const t = dragging ? 'transform 60ms linear, box-shadow 60ms linear' : 'transform 450ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 450ms ease';
     if (tilt) tilt.style.transition = t;
-    if (shine) shine.style.transition = on ? 'opacity 450ms ease, background-position 450ms ease' : 'opacity 120ms ease';
-    if (glare) glare.style.transition = on ? 'opacity 450ms ease' : 'opacity 120ms ease';
+    if (shine) shine.style.transition = dragging ? 'opacity 120ms ease' : 'opacity 450ms ease, background-position 450ms ease';
+    if (glare) glare.style.transition = dragging ? 'opacity 120ms ease' : 'opacity 450ms ease';
   }
 
   function update(clientX: number, clientY: number) {
@@ -67,6 +88,7 @@ export default function HoloCard({ children, className }: { children: React.Reac
     const rotateX = (0.5 - y) * 2 * maxTilt;
     const scale = activeRef.current ? 1.025 : 1;
     tilt.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(${scale}, ${scale}, ${scale})`;
+    tilt.style.boxShadow = shadowFor(rotateX, rotateY);
 
     if (shine) {
       shine.style.backgroundPosition = `${x * 100}% ${y * 100}%`;
@@ -85,7 +107,10 @@ export default function HoloCard({ children, className }: { children: React.Reac
     const tilt = tiltRef.current;
     const shine = shineRef.current;
     const glare = glareRef.current;
-    if (tilt) tilt.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
+    if (tilt) {
+      tilt.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
+      tilt.style.boxShadow = shadowFor(0, 0);
+    }
     if (shine) shine.style.opacity = '0';
     if (glare) glare.style.opacity = '0';
   }

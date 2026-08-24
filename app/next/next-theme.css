@@ -183,7 +183,10 @@
   overflow: hidden;
   transform: perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1);
   will-change: transform;
-  box-shadow: 0 24px 60px -20px oklch(0% 0 0 / 0.55);
+  /* Neutral/resting value — must match shadowFor(0, 0) in HoloCard.tsx,
+     since that's what reset() snaps back to on release. A card "floating"
+     off the page needs a shadow with real presence, not a faint hint. */
+  box-shadow: 0px 28px 70px -18px oklch(0% 0 0 / 0.6);
 }
 /* The rainbow foil layer — a diagonal repeating spectrum, oversized so
    sliding its background-position (driven by pointer x/y in JS) reveals a
