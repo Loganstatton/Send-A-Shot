@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 // DATA_DIR must be set before lib/data-dir.ts (and therefore lib/db.ts) is
 // ever imported, so this test runs against an isolated, throwaway SQLite
@@ -10,7 +10,7 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
 const {
   addLogEntry, addToWatchlist, approveDiscoveryCandidate, bulkSetArtistStage, completeDiscoveryRun,
-  completeNextOnboarding, completeSyncRun, createArtist, createArtistClaim, createDiscoveryRun, createSyncRun,
+  completeNextOnboarding, completeSyncRun, createArtist, createArtistClaim, createDiscoveryRun, createFeedEvent, createSyncRun,
   createUser, db,
   deleteUser, executeTrade, findArtistsByName,
   getApprovedDiscoveriesCount, getArtist, getArtistClaim, getArtistFieldHistory, getArtistLastActivityMap,
@@ -22,7 +22,7 @@ const {
   getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getDiscoveryGenres,
   getDiscoveryLeaderboard, getEarliestScoreSnapshots,
   getEventCountsByType,
-  getFavoriteGenres, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
+  getFavoriteGenres, getFeedEvent, getFeedEventCount, getFeedEvents, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
   getLatestScoreSnapshots,
   getLatestSyncRun, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
   getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist,
@@ -35,13 +35,13 @@ const {
   getScoreChanges, getScoutLeaderboard, getScoutProfile, getStoredTradeResponse, getSuspiciousTradingFlags,
   getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
   getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
-  getYoutubeQuotaUsedToday, hasListenedToArtist, findDuplicateArtistSubmission, findUserByNormalizedEmail,
+  getYoutubeQuotaUsedToday, hasFeedEventSince, hasListenedToArtist, findDuplicateArtistSubmission, findUserByNormalizedEmail,
   normalizeEmailForDuplicateCheck, insertDiscoveryCandidate, isWatchlisted,
   logArtistCardViews,
   logEvent, logSyncFailure, markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin,
   recordPreviewListen, recordYoutubeQuotaUsage, reviewArtistClaim, setDiscoveryCandidateStatus,
   setFeaturedVideoMatchType,
-  setNotificationsEmailedThrough, setWatchlistAlerts, SOUNDCHARTS_NO_MATCH_RECHECK_DAYS, stampSoundchartsNoMatch,
+  setNotificationsEmailedThrough, setWatchlistAlerts, shareFoundingBelieverToFeed, SOUNDCHARTS_NO_MATCH_RECHECK_DAYS, stampSoundchartsNoMatch,
   stampSourceSyncedAt, stampYoutubeNoMatch, storeTradeResponse,
   TRADE_RATE_LIMIT_PER_MINUTE, updateArtist,
   updateUserProfile, YOUTUBE_NO_MATCH_RECHECK_DAYS,
@@ -2217,5 +2217,164 @@ describe('Performance and reliability (Phase 10) — error reports', () => {
     const countIn24h = getErrorReportCount(24);
     const countIn72h = getErrorReportCount(72);
     expect(countIn72h).toBeGreaterThan(countIn24h); // the backdated row only shows up in the wider window
+  });
+});
+
+describe('NEXT Feed — feed_events core', () => {
+  it('createFeedEvent persists a row retrievable by getFeedEvent, with metadata round-tripped as JSON', () => {
+    const artist = makeArtist('Feed Event Artist');
+    const event = createFeedEvent({
+      eventType: 'new_artist',
+      artistId: artist.id,
+      refType: 'discovery_candidate',
+      refId: 999,
+      metadata: { genre: 'pop', score: 80 },
+    });
+
+    expect(event).toBeTruthy();
+    const fetched = getFeedEvent(event!.id);
+    expect(fetched).toBeDefined();
+    expect(fetched!.event_type).toBe('new_artist');
+    expect(fetched!.artist_id).toBe(artist.id);
+    expect(fetched!.ref_type).toBe('discovery_candidate');
+    expect(fetched!.ref_id).toBe(999);
+    expect(fetched!.visibility).toBe('public');
+    expect(JSON.parse(fetched!.metadata!)).toEqual({ genre: 'pop', score: 80 });
+  });
+
+  it('a dedupe_key collision is silently ignored — no second row, no throw', () => {
+    const artist = makeArtist('Dedupe Artist');
+    const before = getFeedEventCount();
+
+    const first = createFeedEvent({ eventType: 'signal_undervalued', artistId: artist.id, dedupeKey: `dedupe-test:${artist.id}` });
+    const second = createFeedEvent({ eventType: 'signal_undervalued', artistId: artist.id, dedupeKey: `dedupe-test:${artist.id}` });
+
+    expect(first).toBeTruthy();
+    expect(second).toBeNull();
+    expect(getFeedEventCount()).toBe(before + 1);
+  });
+
+  it('hasFeedEventSince only sees events at or after the cutoff, for that exact event type and artist', () => {
+    const artist = makeArtist('Cooldown Artist');
+    const otherArtist = makeArtist('Cooldown Other Artist');
+    const cutoff = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+
+    expect(hasFeedEventSince('signal_overheated', artist.id, cutoff)).toBe(false);
+
+    const event = createFeedEvent({ eventType: 'signal_overheated', artistId: artist.id })!;
+    expect(hasFeedEventSince('signal_overheated', artist.id, cutoff)).toBe(true);
+    // Different event type or different artist — cooldown doesn't apply.
+    expect(hasFeedEventSince('signal_undervalued', artist.id, cutoff)).toBe(false);
+    expect(hasFeedEventSince('signal_overheated', otherArtist.id, cutoff)).toBe(false);
+
+    // Backdate past the cutoff — the "state has been true for over 10 days,
+    // it's safe to post about it again" case the spec calls out.
+    db.prepare('UPDATE feed_events SET created_at = ? WHERE id = ?')
+      .run(new Date(Date.now() - 11 * 24 * 60 * 60 * 1000).toISOString(), event.id);
+    expect(hasFeedEventSince('signal_overheated', artist.id, cutoff)).toBe(false);
+  });
+
+  it('getFeedEvents returns newest-first and beforeId pages backward without repeats', () => {
+    const artist = makeArtist('Pagination Artist');
+    const ids: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      ids.push(createFeedEvent({ eventType: 'artist_update', artistId: artist.id, refType: 'contact_log', refId: i })!.id);
+    }
+
+    const firstPage = getFeedEvents(2);
+    expect(firstPage.map((e) => e.id)).toEqual([ids[4], ids[3]]);
+
+    const secondPage = getFeedEvents(2, firstPage[firstPage.length - 1].id);
+    expect(secondPage.map((e) => e.id)).toEqual([ids[2], ids[1]]);
+  });
+});
+
+describe('NEXT Feed — real events wired into existing actions', () => {
+  it('approving a candidate posts a new_artist feed event, deduped to one per candidate', () => {
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-feed-new-1', name: 'Feed New Artist', followers_count: 9000, flagged_reason: 'test' });
+    const admin = makeUser('feed-approver@example.com');
+    const candidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-feed-new-1')!;
+
+    const artist = approveDiscoveryCandidate(candidate.id, { id: admin.id, name: admin.name })!;
+
+    const events = getFeedEvents(50).filter((e) => e.artist_id === artist.id && e.event_type === 'new_artist');
+    expect(events).toHaveLength(1);
+    expect(events[0].ref_type).toBe('discovery_candidate');
+    expect(events[0].ref_id).toBe(candidate.id);
+  });
+
+  it('approving a candidate with a real submitter also posts early_discovery, attributed to that user', () => {
+    const submitter = makeUser('feed-submitter@example.com');
+    insertDiscoveryCandidate({
+      source: 'public_submission', name: 'Feed Early Discovery Artist', followers_count: 4000,
+      flagged_reason: 'test', submitted_by_user_id: submitter.id,
+    });
+    const admin = makeUser('feed-approver-2@example.com');
+    const candidate = getDiscoveryCandidates('new').find((c) => c.name === 'Feed Early Discovery Artist')!;
+
+    const artist = approveDiscoveryCandidate(candidate.id, { id: admin.id, name: admin.name })!;
+
+    const events = getFeedEvents(50).filter((e) => e.artist_id === artist.id && e.event_type === 'early_discovery');
+    expect(events).toHaveLength(1);
+    expect(events[0].actor_user_id).toBe(submitter.id);
+  });
+
+  it('approving a candidate with no submitter posts no early_discovery event', () => {
+    insertDiscoveryCandidate({ source: 'soundcharts', soundcharts_uuid: 'uuid-feed-no-submitter', name: 'No Submitter Artist', followers_count: 3000, flagged_reason: 'test' });
+    const admin = makeUser('feed-approver-3@example.com');
+    const candidate = getDiscoveryCandidates('new').find((c) => c.soundcharts_uuid === 'uuid-feed-no-submitter')!;
+
+    const artist = approveDiscoveryCandidate(candidate.id, { id: admin.id, name: admin.name })!;
+
+    expect(getFeedEvents(50).some((e) => e.artist_id === artist.id && e.event_type === 'early_discovery')).toBe(false);
+  });
+
+  it('createFeedEvent wired the same way the Artist Update note route wires it produces a matching artist_update event', () => {
+    // The note route (app/api/next/my-artist/[id]/note/route.ts) is the
+    // actual artist_update source — it calls addLogEntry then
+    // createFeedEvent as a pair, verified end-to-end via Playwright QA.
+    // This exercises that same pairing at the db layer: the log entry
+    // stays the single source of truth, the feed event is just a pointer.
+    const claimant = makeUser('feed-claimant@example.com');
+    const artist = makeArtist('Feed Update Artist');
+    const entry = addLogEntry(artist.id, { type: 'note', message: 'Artist self-update: hello.' }, claimant);
+    createFeedEvent({
+      eventType: 'artist_update', actorUserId: claimant.id, artistId: artist.id,
+      refType: 'contact_log', refId: entry.id, dedupeKey: `artist_update:${entry.id}`,
+    });
+
+    const events = getFeedEvents(50).filter((e) => e.artist_id === artist.id && e.event_type === 'artist_update');
+    expect(events.some((e) => e.ref_type === 'contact_log' && e.ref_id === entry.id && e.actor_user_id === claimant.id)).toBe(true);
+  });
+
+  it('shareFoundingBelieverToFeed returns null when the user never actually backed the artist', () => {
+    const user = makeUser('feed-share-nobody@example.com');
+    const artist = makeArtist('Feed Share Nobody Artist');
+    expect(shareFoundingBelieverToFeed(user.id, artist.id)).toBeNull();
+  });
+
+  it('shareFoundingBelieverToFeed posts once per collectible per day, and again on a later day', () => {
+    const user = makeUser('feed-sharer@example.com');
+    const artist = makeArtist('Feed Share Artist');
+    const buy = executeTrade(user.id, artist.id, 'buy', 50_000);
+    if (!buy.ok) throw new Error(buy.error);
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));
+      const first = shareFoundingBelieverToFeed(user.id, artist.id);
+      expect(first).toBeTruthy();
+      expect(first!.event_type).toBe('founding_believer_share');
+      expect(first!.actor_user_id).toBe(user.id);
+
+      const sameDay = shareFoundingBelieverToFeed(user.id, artist.id);
+      expect(sameDay).toBeNull();
+
+      vi.setSystemTime(new Date('2026-01-02T12:00:00Z'));
+      const nextDay = shareFoundingBelieverToFeed(user.id, artist.id);
+      expect(nextDay).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
