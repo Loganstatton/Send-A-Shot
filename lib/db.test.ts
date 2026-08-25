@@ -17,15 +17,16 @@ const {
   getArtistLog, getArtistsClaimedByUser,
   getArtistsMissingDeezerData, getErrorReportCount, getRecentErrorReports, insertErrorReport,
   getArtistsInPhotoBackoff, getArtistsInVideoBackoff, getArtistsMissingPhoto, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
-  getArtistTradeVolumeCents, getBackerCountsByArtist, getBreakoutDiscoveriesCount, getDiscoveriesForUser,
+  getArtistTradeVolumeCents, getBackedArtistIds, getBackerCountsByArtist, getBreakoutDiscoveriesCount, getDiscoveriesForUser,
   getDiscoveryCandidateCountsByGenre,
   getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getDiscoveryGenres,
   getDiscoveryLeaderboard, getEarliestScoreSnapshots,
   getEventCountsByType,
-  getFavoriteGenres, getFeedEvent, getFeedEventCount, getFeedEvents, getKnownDiscoveryUuids, getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
+  getFavoriteGenres, getFeedEvent, getFeedEventCount, getFeedEvents, getFoundingBelieverRecord, getFoundingBelieverRecordById, getKnownDiscoveryUuids,
+  getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
   getLatestScoreSnapshots,
-  getLatestSyncRun, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
-  getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist,
+  getLatestSyncRun, getLogEntryById, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
+  getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist, getNextArtistsByIds,
   getPendingArtistClaimCount, getPendingArtistClaims, getPendingClaimForUserAndArtist, getPortfolioValue,
   getPortfolioValueHistory, getRankMovements,
   getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentDiscoveryReviewDecisions,
@@ -34,10 +35,10 @@ const {
   getRecentTradeCount, getRecentWatchCountsByArtist,
   getScoreChanges, getScoutLeaderboard, getScoutProfile, getStoredTradeResponse, getSuspiciousTradingFlags,
   getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
-  getUserById, getUserPasswordHash, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
+  getUserById, getUserPasswordHash, getUsersByIds, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
   getYoutubeQuotaUsedToday, hasFeedEventSince, hasListenedToArtist, findDuplicateArtistSubmission, findUserByNormalizedEmail,
   normalizeEmailForDuplicateCheck, insertDiscoveryCandidate, isWatchlisted,
-  logArtistCardViews,
+  logArtistCardViews, logFeedItemImpressions,
   logEvent, logSyncFailure, markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin,
   recordPreviewListen, recordYoutubeQuotaUsage, reviewArtistClaim, setDiscoveryCandidateStatus,
   setFeaturedVideoMatchType,
@@ -2376,5 +2377,82 @@ describe('NEXT Feed — real events wired into existing actions', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('NEXT Feed — batch lookups for feed item assembly', () => {
+  it('getUsersByIds resolves multiple users in one call, skipping ids with no match', () => {
+    const a = makeUser('feed-batch-user-a@example.com');
+    const b = makeUser('feed-batch-user-b@example.com');
+    const map = getUsersByIds([a.id, b.id, 999_999]);
+    expect(map.size).toBe(2);
+    expect(map.get(a.id)?.email).toBe('feed-batch-user-a@example.com');
+    expect(map.get(b.id)?.email).toBe('feed-batch-user-b@example.com');
+    expect(map.has(999_999)).toBe(false);
+  });
+
+  it('getUsersByIds returns an empty map for an empty input, without querying', () => {
+    expect(getUsersByIds([]).size).toBe(0);
+  });
+
+  it('getBackedArtistIds lists only artists the user currently holds shares in', () => {
+    const user = makeUser('feed-backed-ids@example.com');
+    const backed = makeArtist('Feed Backed Artist');
+    const soldOut = makeArtist('Feed Sold Out Artist');
+    const neverBought = makeArtist('Feed Never Bought Artist');
+    executeTrade(user.id, backed.id, 'buy', 50_000);
+    executeTrade(user.id, soldOut.id, 'buy', 50_000);
+    executeTrade(user.id, soldOut.id, 'sell', 999_999_999);
+
+    const ids = getBackedArtistIds(user.id);
+    expect(ids).toContain(backed.id);
+    expect(ids).not.toContain(soldOut.id);
+    expect(ids).not.toContain(neverBought.id);
+  });
+
+  it('getNextArtistsByIds returns live market rows keyed by id, matching getNextArtist for the same artist', () => {
+    const artist = makeArtist('Feed Batch Market Artist');
+    const single = getNextArtist(artist.id)!;
+    const batch = getNextArtistsByIds([artist.id, 999_999]);
+    expect(batch.size).toBe(1);
+    expect(batch.get(artist.id)?.score).toBe(single.score);
+    expect(batch.get(artist.id)?.priceCents).toBe(single.priceCents);
+    expect(batch.has(999_999)).toBe(false);
+  });
+
+  it('getNextArtistsByIds returns an empty map for an empty input', () => {
+    expect(getNextArtistsByIds([]).size).toBe(0);
+  });
+
+  it('getLogEntryById finds a specific contact_log row by id', () => {
+    const artist = makeArtist('Feed Log Lookup Artist');
+    const entry = addLogEntry(artist.id, { type: 'note', message: 'Feed lookup test note.' });
+    const found = getLogEntryById(entry.id);
+    expect(found?.message).toBe('Feed lookup test note.');
+    expect(getLogEntryById(999_999)).toBeUndefined();
+  });
+
+  it('getFoundingBelieverRecordById finds a specific record by id, independent of getFoundingBelieverRecord\'s user+artist lookup', () => {
+    const user = makeUser('feed-founding-lookup@example.com');
+    const artist = makeArtist('Feed Founding Lookup Artist');
+    const buy = executeTrade(user.id, artist.id, 'buy', 50_000);
+    if (!buy.ok) throw new Error(buy.error);
+    const byUserArtist = getFoundingBelieverRecord(user.id, artist.id)!;
+    const byId = getFoundingBelieverRecordById(byUserArtist.id);
+    expect(byId?.id).toBe(byUserArtist.id);
+    expect(byId?.discovery_rank).toBe(byUserArtist.discovery_rank);
+    expect(getFoundingBelieverRecordById(999_999)).toBeUndefined();
+  });
+
+  it('logFeedItemImpressions records one analytics event per feed_events id, and no-ops on an empty list', () => {
+    const user = makeUser('feed-impressions@example.com');
+    const before = db.prepare("SELECT COUNT(*) AS c FROM analytics_events WHERE event_type = 'feed_item_impression'").get() as { c: number };
+    logFeedItemImpressions(user.id, [1, 2, 3]);
+    const after = db.prepare("SELECT COUNT(*) AS c FROM analytics_events WHERE event_type = 'feed_item_impression'").get() as { c: number };
+    expect(after.c - before.c).toBe(3);
+
+    logFeedItemImpressions(user.id, []);
+    const afterEmpty = db.prepare("SELECT COUNT(*) AS c FROM analytics_events WHERE event_type = 'feed_item_impression'").get() as { c: number };
+    expect(afterEmpty.c).toBe(after.c);
   });
 });

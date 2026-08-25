@@ -26,6 +26,7 @@ export default function NextHeader({
   const isInternal = user.role === 'internal' || user.role === 'admin';
 
   const links = [
+    { href: '/next/feed', label: 'Feed', active: is('/next/feed') },
     { href: '/next', label: 'Discover', active: pathname === '/next' || pathname?.startsWith('/next/artists') },
     { href: '/next/activity', label: 'Activity', active: is('/next/activity') },
     { href: '/next/portfolio', label: 'Portfolio', active: is('/next/portfolio') },
