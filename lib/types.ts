@@ -407,7 +407,24 @@ export type AnalyticsEventType =
   | 'sell_completed'
   | 'search_used'
   | 'filter_used'
-  | 'session_returned';
+  | 'session_returned'
+  // NEXT Feed — see app/next/feed/page.tsx and components/next/FeedCard.tsx.
+  // Namespaced with feed_ so an interaction that already has its own event
+  // elsewhere (opening an artist, playing audio, watching, starting a buy)
+  // is still distinguishable as having come from the Feed specifically —
+  // per the spec's "trade initiated/completed from feed referral" ask.
+  // feed_trade_completed is intentionally not tracked yet: attributing a
+  // completed trade back to a feed referral needs a referral token carried
+  // through the trade flow, which doesn't exist and is out of scope here.
+  | 'feed_opened'
+  | 'feed_tab_changed'
+  | 'feed_item_impression'
+  | 'feed_artist_opened'
+  | 'feed_audio_played'
+  | 'feed_watch_added'
+  | 'feed_trade_initiated'
+  | 'feed_collectible_shared'
+  | 'feed_scroll_depth';
 
 export type AnalyticsEvent = {
   id: number;

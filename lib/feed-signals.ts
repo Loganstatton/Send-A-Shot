@@ -32,9 +32,12 @@ export const SIGNAL_COOLDOWN_DAYS = 10;
 // but explicit and easy to tune, same spirit as ALERT_SCORE_THRESHOLD.
 // Deliberately NOT "any trade" (the spec explicitly warns against
 // flooding the feed with one-line trade events).
-const MIN_BACKERS_FOR_MOMENTUM = 3;
-const MIN_WATCHERS_FOR_MOMENTUM = 5;
-const MOMENTUM_WINDOW_HOURS = 24;
+// Exported so lib/feed-items.ts can score "how unusual is this
+// market_momentum_* event" against the same numbers that decided whether
+// to post it in the first place, instead of a second set of magic numbers.
+export const MIN_BACKERS_FOR_MOMENTUM = 3;
+export const MIN_WATCHERS_FOR_MOMENTUM = 5;
+export const MOMENTUM_WINDOW_HOURS = 24;
 
 export type FeedSignalResult = { checked: number; created: number };
 

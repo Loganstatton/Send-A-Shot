@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getFoundingBelieverRecord, shareFoundingBelieverToFeed } from '@/lib/db';
+import { getFoundingBelieverRecord, logEvent, shareFoundingBelieverToFeed } from '@/lib/db';
 import { getSessionUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
@@ -23,5 +23,6 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
   const event = shareFoundingBelieverToFeed(user.id, artistId);
   if (event === null) return NextResponse.json({ shared: false, reason: 'already shared today' }, { status: 200 });
+  logEvent(user.id, 'feed_collectible_shared', { artistId, feedEventId: event.id });
   return NextResponse.json({ shared: true, event }, { status: 201 });
 }

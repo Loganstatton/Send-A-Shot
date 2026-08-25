@@ -925,6 +925,13 @@ export function getArtistLog(artistId: number): LogEntry[] {
     .all(artistId) as LogEntry[];
 }
 
+// Single-row lookup by contact_log id — NEXT Feed's artist_update events
+// point at one via ref_id and need to render its message, not the whole
+// artist's log.
+export function getLogEntryById(id: number): LogEntry | undefined {
+  return db.prepare('SELECT * FROM contact_log WHERE id = ?').get(id) as LogEntry | undefined;
+}
+
 export function addLogEntry(artistId: number, input: LogEntryInput, actor?: Actor | { name: string } | null): LogEntry {
   const now = new Date().toISOString();
   const actorId = actor && 'id' in actor ? actor.id : null;
@@ -1122,6 +1129,18 @@ export function findUserByNormalizedEmail(email: string): User | undefined {
 export function getUserById(id: number): User | undefined {
   const row = db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ?`).get(id) as User | undefined;
   return row && normalizeUser(row);
+}
+
+// Batch actor-name lookup for NEXT Feed — a page of feed_events can name a
+// handful of distinct actors (early_discovery submitters, founding-believer
+// sharers), and this resolves all of them in one query instead of one
+// getUserById call per event.
+export function getUsersByIds(ids: number[]): Map<number, User> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const placeholders = unique.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id IN (${placeholders})`).all(...unique) as User[];
+  return new Map(rows.map((r) => [r.id, normalizeUser(r)]));
 }
 
 // Server-only, used solely by the change-password route to verify the
@@ -1438,6 +1457,23 @@ export function getNextMarket(): NextMarketRow[] {
     }));
 }
 
+// Batch sibling of getNextArtist — NEXT Feed needs live score/price context
+// for a page of feed_events, which typically names far fewer distinct
+// artists than the full roster getNextMarket() would load. One IN query
+// for the artists themselves rather than N calls to getArtist.
+export function getNextArtistsByIds(ids: number[]): Map<number, NextMarketRow> {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const placeholders = unique.map(() => '?').join(',');
+  const rows = db.prepare(`${ARTIST_SELECT} WHERE artists.id IN (${placeholders})`).all(...unique) as Artist[];
+  return new Map(
+    rows.map((artist) => [
+      artist.id,
+      { artist, score: breakoutScore(artist), priceCents: ensureNextPrice(artist), priceHistory: getNextPriceHistory(artist.id) },
+    ])
+  );
+}
+
 // The "listen" half of NEXT's music experience — see the preview_listens
 // table comment. 'started' logs every time playback begins (a replay
 // counts again — "every listen event," not "every unique listener").
@@ -1569,6 +1605,14 @@ export function getWatchlistArtistIds(userId: number): number[] {
   return rows.map((r) => r.artist_id);
 }
 
+// The "backed" counterpart to getWatchlistArtistIds above — id-only, for
+// NEXT Feed's Following tab (watched OR backed both count as "following").
+// Currently holding shares, same definition getBackerCountsByArtist uses.
+export function getBackedArtistIds(userId: number): number[] {
+  const rows = db.prepare('SELECT artist_id FROM next_holdings WHERE user_id = ? AND shares > 0').all(userId) as { artist_id: number }[];
+  return rows.map((r) => r.artist_id);
+}
+
 // Score movement since the previous snapshot, for every artist that has
 // one — one query for the whole roster (see getWatchCountsByArtist /
 // getBackerCountsByArtist above for the same pattern) rather than N+1.
@@ -1610,6 +1654,12 @@ export function getFoundingBelieverRecord(userId: number, artistId: number): Fou
   return db
     .prepare('SELECT * FROM next_founding_believers WHERE user_id = ? AND artist_id = ?')
     .get(userId, artistId) as FoundingBelieverRecord | undefined;
+}
+
+// Single-row lookup by id — NEXT Feed's founding_believer_share events
+// point at one via ref_id and need its tier/rank to render the card.
+export function getFoundingBelieverRecordById(id: number): FoundingBelieverRecord | undefined {
+  return db.prepare('SELECT * FROM next_founding_believers WHERE id = ?').get(id) as FoundingBelieverRecord | undefined;
 }
 
 // A user deliberately choosing to post their own collectible into the Feed
@@ -2462,6 +2512,19 @@ export function logArtistCardViews(userId: number, artistIds: number[]): void {
   const now = new Date().toISOString();
   db.transaction(() => {
     for (const artistId of artistIds) insert.run(userId, 'artist_card_viewed', JSON.stringify({ artistId }), now);
+  })();
+}
+
+// Same batched-impression pattern as logArtistCardViews above, for NEXT
+// Feed items — "impression" means "was in the ranked results this
+// page/page-of-more returned," logged once per feed_events id, not a
+// per-card scroll observer or network round trip.
+export function logFeedItemImpressions(userId: number, feedEventIds: number[]): void {
+  if (feedEventIds.length === 0) return;
+  const insert = db.prepare('INSERT INTO analytics_events (user_id, event_type, metadata, created_at) VALUES (?, ?, ?, ?)');
+  const now = new Date().toISOString();
+  db.transaction(() => {
+    for (const feedEventId of feedEventIds) insert.run(userId, 'feed_item_impression', JSON.stringify({ feedEventId }), now);
   })();
 }
 

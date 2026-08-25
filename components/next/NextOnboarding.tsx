@@ -31,7 +31,9 @@ export default function NextOnboarding({ startingCreditsCents }: { startingCredi
 
   function goDiscoverFirstArtist() {
     finish();
-    router.push('/next');
+    // Feed is the default logged-in home screen after onboarding — Discover
+    // (still one tap away in the nav) stays deliberate marketplace browsing.
+    router.push('/next/feed');
   }
 
   if (dismissed) return null;
