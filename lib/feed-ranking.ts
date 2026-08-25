@@ -33,23 +33,26 @@ const MARKET_EVENT_TYPES = new Set<FeedEventType>([
 // One weight object per tab, all in the same units so they're comparable
 // at a glance. Nothing here is load-bearing beyond "bigger number matters
 // more" — change these to retune the feed without touching any other file.
-// engagement (reaction/reply counts) is deliberately absent: reactions
-// don't exist yet (a later PR), so there's nothing real to weight on yet.
-type Weights = { relevance: number; genreAffinity: number; freshness: number; signalStrength: number; unusualActivity: number; momentum: number };
+type Weights = {
+  relevance: number; genreAffinity: number; freshness: number; signalStrength: number; unusualActivity: number; momentum: number;
+  engagement: number;
+};
 
 export const FEED_RANKING_WEIGHTS: Record<FeedTab, Weights> = {
   // For You: personalized — artists you watch/back and genres you're
   // already into get pulled to the top, freshness still matters a good
   // deal so it doesn't calcify into the same handful of names forever.
-  for_you: { relevance: 40, genreAffinity: 15, freshness: 20, signalStrength: 15, unusualActivity: 10, momentum: 0 },
+  // A little engagement weight lets a post other people are reacting to
+  // rise, without letting it dominate the way relevance/freshness do.
+  for_you: { relevance: 40, genreAffinity: 15, freshness: 20, signalStrength: 15, unusualActivity: 10, momentum: 0, engagement: 10 },
   // Following: the item set is already filtered to watched/backed artists
   // (see itemMatchesTab below), so relevance/genre add nothing more here —
   // this tab reads as close to "what changed, newest first" as the shared
   // scoring function can express without a second code path.
-  following: { relevance: 0, genreAffinity: 0, freshness: 70, signalStrength: 15, unusualActivity: 15, momentum: 0 },
+  following: { relevance: 0, genreAffinity: 0, freshness: 70, signalStrength: 15, unusualActivity: 15, momentum: 0, engagement: 0 },
   // Market: no personalization at all — surfaces the strongest/most
   // unusual/most currently-moving signals regardless of who's watching.
-  market: { relevance: 0, genreAffinity: 0, freshness: 20, signalStrength: 25, unusualActivity: 30, momentum: 25 },
+  market: { relevance: 0, genreAffinity: 0, freshness: 20, signalStrength: 25, unusualActivity: 30, momentum: 25, engagement: 0 },
 };
 
 // Half-life decay rather than a hard cutoff — a post from yesterday still
@@ -79,7 +82,8 @@ export function scoreForTab(item: FeedItemDTO, tab: FeedTab, now: number = Date.
     w.freshness * freshnessScore(item.createdAt, now) +
     w.signalStrength * item.factors.baseStrength +
     w.unusualActivity * item.factors.unusualness +
-    w.momentum * item.factors.momentum
+    w.momentum * item.factors.momentum +
+    w.engagement * item.factors.engagement
   );
 }
 

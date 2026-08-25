@@ -5,6 +5,7 @@ import { formatCents, timeAgo } from '@/lib/format';
 import { track } from '@/lib/track';
 import AudioPreview from '@/components/AudioPreview';
 import WatchButton from '@/components/next/WatchButton';
+import ReactionBar from '@/components/next/ReactionBar';
 import { heroGradient } from '@/components/next/heroGradient';
 
 // One card shell, six narrative flavors switched on eventType — every
@@ -166,6 +167,8 @@ export default function FeedCard({ item, watching, viewerUserId }: { item: FeedI
             )}
           </div>
         )}
+
+        <ReactionBar feedEventId={item.id} initialCounts={item.reactionCounts} initialViewerReaction={item.viewerReaction} />
       </div>
     </div>
   );

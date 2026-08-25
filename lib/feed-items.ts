@@ -7,13 +7,15 @@
 // *type*, not its code.
 
 import {
-  getBackedArtistIds, getFoundingBelieverRecordById, getLogEntryById, getNextArtistsByIds, getScoreChanges,
-  getUsersByIds, getWatchlistArtistIds,
+  getBackedArtistIds, getFeedReactionCountsForEvents, getFoundingBelieverRecordById, getLogEntryById, getNextArtistsByIds,
+  getScoreChanges, getUserFeedReactionsForEvents, getUsersByIds, getWatchlistArtistIds,
 } from './db';
 import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, changePctForWindow, changePctSinceListing } from './next-market';
 import { getFoundingBelieverTier, foundingBelieverSerial } from './founding-believer';
 import { MIN_BACKERS_FOR_MOMENTUM, MIN_WATCHERS_FOR_MOMENTUM } from './feed-signals';
-import { FeedEvent, FeedEventType, NextMarketRow, ScoreChange, User } from './types';
+import { FeedEvent, FeedEventType, NextMarketRow, ReactionType, ScoreChange, User } from './types';
+
+const EMPTY_REACTION_COUNTS: Record<ReactionType, number> = { fire: 0, eyes: 0, early: 0 };
 
 export type FeedItemDTO = {
   id: number;
@@ -37,12 +39,15 @@ export type FeedItemDTO = {
     logMessage?: string;
     founding?: { tierKey: string; tierLabel: string; serial: string; discoveryRank: number };
   };
+  reactionCounts: Record<ReactionType, number>;
+  viewerReaction: ReactionType | null;
   factors: {
     isFollowed: boolean;
     genreMatch: boolean;
     baseStrength: number;
     unusualness: number;
     momentum: number;
+    engagement: number;
   };
 };
 
@@ -52,6 +57,8 @@ export type FeedAssemblyContext = {
   marketByArtistId: Map<number, NextMarketRow>;
   scoreChanges: Record<number, ScoreChange>;
   usersById: Map<number, User>;
+  reactionCountsByEventId: Map<number, Record<ReactionType, number>>;
+  viewerReactionByEventId: Map<number, ReactionType>;
 };
 
 function clamp01(n: number): number {
@@ -174,6 +181,9 @@ function buildFeedItem(event: FeedEvent, ctx: FeedAssemblyContext): FeedItemDTO 
     extra = { founding: { ...extra.founding, serial: foundingBelieverSerial(artist.name, extra.founding.discoveryRank) } };
   }
 
+  const reactionCounts = ctx.reactionCountsByEventId.get(event.id) ?? EMPTY_REACTION_COUNTS;
+  const totalReactions = reactionCounts.fire + reactionCounts.eyes + reactionCounts.early;
+
   return {
     id: event.id,
     eventType: event.event_type,
@@ -182,12 +192,19 @@ function buildFeedItem(event: FeedEvent, ctx: FeedAssemblyContext): FeedItemDTO 
     artist,
     metadata,
     extra,
+    reactionCounts,
+    viewerReaction: ctx.viewerReactionByEventId.get(event.id) ?? null,
     factors: {
       isFollowed: artist != null && ctx.followedArtistIds.has(artist.id),
       genreMatch: artist?.genre != null && ctx.favoriteGenres.has(artist.genre),
       baseStrength: EVENT_TYPE_BASE_STRENGTH[event.event_type],
       unusualness: unusualness(event.event_type, metadata),
       momentum: artistMomentum(event.artist_id, ctx),
+      // How much real reaction activity this specific item has drawn —
+      // scaled against a modest "10 reactions is already a lot at this
+      // scale" ceiling rather than the roster-wide thresholds above, since
+      // reaction counts are a different kind of number (small, per-item).
+      engagement: clamp01(totalReactions / 10),
     },
   };
 }
@@ -217,5 +234,14 @@ export function buildFeedAssemblyContext(userId: number, events: FeedEvent[]): F
   }
 
   const actorIds = events.map((e) => e.actor_user_id).filter((id): id is number => id != null);
-  return { followedArtistIds, favoriteGenres, marketByArtistId, scoreChanges: getScoreChanges(), usersById: getUsersByIds(actorIds) };
+  const eventIds = events.map((e) => e.id);
+  return {
+    followedArtistIds,
+    favoriteGenres,
+    marketByArtistId,
+    scoreChanges: getScoreChanges(),
+    usersById: getUsersByIds(actorIds),
+    reactionCountsByEventId: getFeedReactionCountsForEvents(eventIds),
+    viewerReactionByEventId: getUserFeedReactionsForEvents(userId, eventIds),
+  };
 }

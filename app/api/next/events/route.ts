@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic';
 const CLIENT_EVENT_TYPES: AnalyticsEventType[] = [
   'video_played', 'buy_started', 'search_used', 'filter_used',
   'feed_tab_changed', 'feed_artist_opened', 'feed_audio_played', 'feed_watch_added', 'feed_trade_initiated', 'feed_scroll_depth',
+  'feed_reaction_added',
 ];
 
 export async function POST(req: Request) {
