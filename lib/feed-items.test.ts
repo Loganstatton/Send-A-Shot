@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'feed-items-test-'));
 
 const {
-  addLogEntry, addToWatchlist, createArtist, createFeedEvent, createUser, db, executeTrade, getFoundingBelieverRecord,
+  addLogEntry, addToWatchlist, createArtist, createFeedEvent, createUser, db, executeTrade, getFoundingBelieverRecord, setFeedReaction,
 } = await import('./db');
 const { buildFeedAssemblyContext, buildFeedItems } = await import('./feed-items');
 
@@ -116,7 +116,10 @@ describe('buildFeedItems', () => {
     const event = createFeedEvent({ eventType: 'new_artist', artistId: artist.id })!;
 
     // A context that never resolved this artist (simulating a stale/missing row).
-    const emptyCtx = { followedArtistIds: new Set<number>(), favoriteGenres: new Set<string>(), marketByArtistId: new Map(), scoreChanges: {}, usersById: new Map() };
+    const emptyCtx = {
+      followedArtistIds: new Set<number>(), favoriteGenres: new Set<string>(), marketByArtistId: new Map(), scoreChanges: {},
+      usersById: new Map(), reactionCountsByEventId: new Map(), viewerReactionByEventId: new Map(),
+    };
     expect(buildFeedItems([event], emptyCtx)).toHaveLength(0);
   });
 
@@ -138,5 +141,28 @@ describe('buildFeedItems', () => {
     const quietItem = items.find((i) => i.id === quietEvent.id)!;
     expect(moverItem.factors.unusualness).toBeGreaterThan(0);
     expect(moverItem.factors.momentum).toBeGreaterThan(quietItem.factors.momentum);
+  });
+
+  it('carries real reaction counts and the viewer\'s own reaction onto the DTO, feeding the engagement factor', () => {
+    const viewer = createUser({ name: 'Feed Items Reaction Viewer', email: 'feed-items-reaction-viewer@example.com', password_hash: 'hash' });
+    const other = createUser({ name: 'Feed Items Reaction Other', email: 'feed-items-reaction-other@example.com', password_hash: 'hash' });
+    const artist = makeArtist('Feed Items Reaction Artist');
+    const reacted = createFeedEvent({ eventType: 'new_artist', artistId: artist.id })!;
+    const quiet = createFeedEvent({ eventType: 'new_artist', artistId: artist.id })!;
+
+    setFeedReaction(reacted.id, viewer.id, 'fire');
+    setFeedReaction(reacted.id, other.id, 'fire');
+
+    const ctx = buildFeedAssemblyContext(viewer.id, [reacted, quiet]);
+    const items = buildFeedItems([reacted, quiet], ctx);
+    const reactedItem = items.find((i) => i.id === reacted.id)!;
+    const quietItem = items.find((i) => i.id === quiet.id)!;
+
+    expect(reactedItem.reactionCounts.fire).toBe(2);
+    expect(reactedItem.viewerReaction).toBe('fire');
+    expect(reactedItem.factors.engagement).toBeGreaterThan(0);
+    expect(quietItem.reactionCounts).toEqual({ fire: 0, eyes: 0, early: 0 });
+    expect(quietItem.viewerReaction).toBeNull();
+    expect(quietItem.factors.engagement).toBe(0);
   });
 });

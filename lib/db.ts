@@ -12,10 +12,10 @@ import {
   AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistClaim, ArtistFieldChange, ArtistInput,
   DiscoveryCandidate, DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryLeaderboardEntry, DiscoveryRun,
   DiscoverySourceKey, ErrorReport,
-  DueFollowUp, FavoriteGenre, FeedEvent, FeedEventType, FoundingBelieverRecord,
+  DueFollowUp, FavoriteGenre, FeedEvent, FeedEventType, FeedReaction, FoundingBelieverRecord,
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
-  RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutDiscoveryEntry,
+  ReactionType, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutDiscoveryEntry,
   ScoutProfile, SuspiciousTradingFlag,
   Stage, SyncFailure, SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
@@ -679,6 +679,36 @@ CREATE INDEX IF NOT EXISTS idx_feed_events_created ON feed_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_feed_events_artist ON feed_events(artist_id);
 CREATE INDEX IF NOT EXISTS idx_feed_events_type ON feed_events(event_type);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_events_dedupe ON feed_events(dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+-- NEXT Feed reactions — deliberately lightweight (see the spec's explicit
+-- "not yet" list: no comments, no DMs, no quote posts). One row per
+-- (feed_event, user): the UNIQUE constraint is what makes "one reaction
+-- per user per post" and "tap again to change/remove" atomic — a repeat
+-- POST either updates reaction_type in place or the row is deleted by the
+-- toggle logic in setFeedReaction, never duplicated.
+CREATE TABLE IF NOT EXISTS feed_reactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  feed_event_id INTEGER NOT NULL REFERENCES feed_events(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reaction_type TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(feed_event_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_feed_reactions_event ON feed_reactions(feed_event_id);
+CREATE INDEX IF NOT EXISTS idx_feed_reactions_user ON feed_reactions(user_id);
+
+-- A tap-rate log, separate from feed_reactions itself — feed_reactions is
+-- mutable (a toggle-off DELETEs its row, a change UPDATEs it in place), so
+-- counting current rows can't answer "how many times has this user hit the
+-- endpoint recently" the way next_transactions naturally can for trade rate
+-- limiting (that table is append-only). This one is: one row per POST,
+-- whatever it did, never deleted.
+CREATE TABLE IF NOT EXISTS feed_reaction_taps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feed_reaction_taps_user ON feed_reaction_taps(user_id);
 `);
 
 const ARTIST_SELECT = `
@@ -3196,6 +3226,85 @@ export function getFeedEvents(limit = 50, beforeId?: number): FeedEvent[] {
 
 export function getFeedEventCount(): number {
   return (db.prepare('SELECT COUNT(*) AS c FROM feed_events').get() as { c: number }).c;
+}
+
+// Same anti-spam-not-fraud-detection posture as TRADE_RATE_LIMIT_PER_MINUTE
+// above — a reaction is low-stakes, so this is generous, just enough to
+// stop one account hammering the endpoint faster than any real person taps.
+export const REACTION_RATE_LIMIT_PER_MINUTE = 30;
+
+// Reads feed_reaction_taps (see its own comment in the DDL above), not
+// feed_reactions — the latter is mutable and would undercount a user
+// rapidly toggling the same reaction on and off, since each "off" deletes
+// its own row.
+export function getRecentReactionCount(userId: number, minutes: number): number {
+  const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+  const row = db.prepare('SELECT COUNT(*) AS c FROM feed_reaction_taps WHERE user_id = ? AND created_at >= ?').get(userId, cutoff) as { c: number };
+  return row.c;
+}
+
+// One reaction per user per post — tapping the same reaction again removes
+// it (returns null), tapping a different one changes it in place. The
+// UNIQUE(feed_event_id, user_id) index is what makes this atomic instead of
+// a check-then-write race. Every call — add, change, or remove — logs one
+// row to feed_reaction_taps for rate limiting, regardless of outcome.
+export function setFeedReaction(feedEventId: number, userId: number, reactionType: ReactionType): FeedReaction | null {
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO feed_reaction_taps (user_id, created_at) VALUES (?, ?)').run(userId, now);
+
+  const existing = db
+    .prepare('SELECT * FROM feed_reactions WHERE feed_event_id = ? AND user_id = ?')
+    .get(feedEventId, userId) as FeedReaction | undefined;
+
+  if (existing && existing.reaction_type === reactionType) {
+    db.prepare('DELETE FROM feed_reactions WHERE id = ?').run(existing.id);
+    return null;
+  }
+  if (existing) {
+    db.prepare('UPDATE feed_reactions SET reaction_type = ?, created_at = ? WHERE id = ?').run(reactionType, now, existing.id);
+    return { ...existing, reaction_type: reactionType };
+  }
+  const info = db
+    .prepare('INSERT INTO feed_reactions (feed_event_id, user_id, reaction_type, created_at) VALUES (?, ?, ?, ?)')
+    .run(feedEventId, userId, reactionType, now);
+  return { id: info.lastInsertRowid as number, feed_event_id: feedEventId, user_id: userId, reaction_type: reactionType, created_at: now };
+}
+
+export function getFeedReactionCounts(feedEventId: number): Record<ReactionType, number> {
+  const rows = db
+    .prepare('SELECT reaction_type, COUNT(*) AS c FROM feed_reactions WHERE feed_event_id = ? GROUP BY reaction_type')
+    .all(feedEventId) as { reaction_type: ReactionType; c: number }[];
+  const counts: Record<ReactionType, number> = { fire: 0, eyes: 0, early: 0 };
+  for (const row of rows) counts[row.reaction_type] = row.c;
+  return counts;
+}
+
+// Batch versions of the two lookups above, for rendering a whole page of
+// feed items in a fixed number of queries instead of two per card.
+export function getFeedReactionCountsForEvents(feedEventIds: number[]): Map<number, Record<ReactionType, number>> {
+  const result = new Map<number, Record<ReactionType, number>>();
+  if (feedEventIds.length === 0) return result;
+  const placeholders = feedEventIds.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT feed_event_id, reaction_type, COUNT(*) AS c FROM feed_reactions WHERE feed_event_id IN (${placeholders}) GROUP BY feed_event_id, reaction_type`)
+    .all(...feedEventIds) as { feed_event_id: number; reaction_type: ReactionType; c: number }[];
+  for (const row of rows) {
+    const counts = result.get(row.feed_event_id) ?? { fire: 0, eyes: 0, early: 0 };
+    counts[row.reaction_type] = row.c;
+    result.set(row.feed_event_id, counts);
+  }
+  return result;
+}
+
+export function getUserFeedReactionsForEvents(userId: number, feedEventIds: number[]): Map<number, ReactionType> {
+  const result = new Map<number, ReactionType>();
+  if (feedEventIds.length === 0) return result;
+  const placeholders = feedEventIds.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT feed_event_id, reaction_type FROM feed_reactions WHERE user_id = ? AND feed_event_id IN (${placeholders})`)
+    .all(userId, ...feedEventIds) as { feed_event_id: number; reaction_type: ReactionType }[];
+  for (const row of rows) result.set(row.feed_event_id, row.reaction_type);
+  return result;
 }
 
 export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | undefined {

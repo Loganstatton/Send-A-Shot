@@ -7,6 +7,10 @@ import { FeedItemDTO } from './feed-items';
 // hardcode a threshold value alongside a comment pointing at its source.
 const DIVERSITY_WINDOW = 3;
 
+function makeFactors(overrides: Partial<FeedItemDTO['factors']> = {}): FeedItemDTO['factors'] {
+  return { isFollowed: false, genreMatch: false, baseStrength: 0.5, unusualness: 0, momentum: 0, engagement: 0, ...overrides };
+}
+
 let nextId = 1;
 function makeItem(overrides: Partial<FeedItemDTO> = {}): FeedItemDTO {
   const id = nextId++;
@@ -16,20 +20,22 @@ function makeItem(overrides: Partial<FeedItemDTO> = {}): FeedItemDTO {
     createdAt: new Date().toISOString(),
     artist: { id: 100 + id, name: `Artist ${id}`, score: 70, priceCents: 1000, changePct: 0 },
     metadata: {},
-    factors: { isFollowed: false, genreMatch: false, baseStrength: 0.5, unusualness: 0, momentum: 0 },
+    reactionCounts: { fire: 0, eyes: 0, early: 0 },
+    viewerReaction: null,
+    factors: makeFactors(),
     ...overrides,
   };
 }
 
 describe('itemMatchesTab', () => {
   it('for_you matches every item regardless of factors', () => {
-    expect(itemMatchesTab(makeItem({ factors: { isFollowed: false, genreMatch: false, baseStrength: 0.5, unusualness: 0, momentum: 0 } }), 'for_you')).toBe(true);
+    expect(itemMatchesTab(makeItem({ factors: makeFactors() }), 'for_you')).toBe(true);
     expect(itemMatchesTab(makeItem({ eventType: 'signal_undervalued' }), 'for_you')).toBe(true);
   });
 
   it('following only matches items whose artist the viewer follows', () => {
-    const followed = makeItem({ factors: { isFollowed: true, genreMatch: false, baseStrength: 0.5, unusualness: 0, momentum: 0 } });
-    const notFollowed = makeItem({ factors: { isFollowed: false, genreMatch: false, baseStrength: 0.5, unusualness: 0, momentum: 0 } });
+    const followed = makeItem({ factors: makeFactors({ isFollowed: true }) });
+    const notFollowed = makeItem({ factors: makeFactors({ isFollowed: false }) });
     expect(itemMatchesTab(followed, 'following')).toBe(true);
     expect(itemMatchesTab(notFollowed, 'following')).toBe(false);
   });
@@ -53,15 +59,28 @@ describe('scoreForTab', () => {
 
   it('for_you rewards a followed artist over an identical unfollowed one', () => {
     const now = Date.now();
-    const followed = makeItem({ createdAt: new Date(now).toISOString(), factors: { isFollowed: true, genreMatch: false, baseStrength: 0.5, unusualness: 0, momentum: 0 } });
-    const notFollowed = makeItem({ createdAt: new Date(now).toISOString(), factors: { isFollowed: false, genreMatch: false, baseStrength: 0.5, unusualness: 0, momentum: 0 } });
+    const followed = makeItem({ createdAt: new Date(now).toISOString(), factors: makeFactors({ isFollowed: true }) });
+    const notFollowed = makeItem({ createdAt: new Date(now).toISOString(), factors: makeFactors({ isFollowed: false }) });
     expect(scoreForTab(followed, 'for_you', now)).toBeGreaterThan(scoreForTab(notFollowed, 'for_you', now));
   });
 
-  it("market ignores relevance — a followed and unfollowed item score identically", () => {
+  it('for_you rewards a more-reacted-to item over an identical one with no reactions', () => {
     const now = Date.now();
-    const followed = makeItem({ eventType: 'signal_undervalued', createdAt: new Date(now).toISOString(), factors: { isFollowed: true, genreMatch: true, baseStrength: 0.5, unusualness: 0.4, momentum: 0.3 } });
-    const notFollowed = makeItem({ eventType: 'signal_undervalued', createdAt: new Date(now).toISOString(), factors: { isFollowed: false, genreMatch: false, baseStrength: 0.5, unusualness: 0.4, momentum: 0.3 } });
+    const reacted = makeItem({ createdAt: new Date(now).toISOString(), factors: makeFactors({ engagement: 0.8 }) });
+    const quiet = makeItem({ createdAt: new Date(now).toISOString(), factors: makeFactors({ engagement: 0 }) });
+    expect(scoreForTab(reacted, 'for_you', now)).toBeGreaterThan(scoreForTab(quiet, 'for_you', now));
+  });
+
+  it("market ignores relevance and engagement — a followed/reacted item and a plain one score identically", () => {
+    const now = Date.now();
+    const followed = makeItem({
+      eventType: 'signal_undervalued', createdAt: new Date(now).toISOString(),
+      factors: makeFactors({ isFollowed: true, genreMatch: true, unusualness: 0.4, momentum: 0.3, engagement: 0.9 }),
+    });
+    const notFollowed = makeItem({
+      eventType: 'signal_undervalued', createdAt: new Date(now).toISOString(),
+      factors: makeFactors({ isFollowed: false, genreMatch: false, unusualness: 0.4, momentum: 0.3, engagement: 0 }),
+    });
     expect(scoreForTab(followed, 'market', now)).toBe(scoreForTab(notFollowed, 'market', now));
   });
 });
@@ -75,8 +94,8 @@ describe('rankFeedItems', () => {
   });
 
   it('following drops items for artists the viewer does not follow', () => {
-    const followed = makeItem({ factors: { isFollowed: true, genreMatch: false, baseStrength: 0.5, unusualness: 0, momentum: 0 } });
-    const notFollowed = makeItem({ factors: { isFollowed: false, genreMatch: false, baseStrength: 0.5, unusualness: 0, momentum: 0 } });
+    const followed = makeItem({ factors: makeFactors({ isFollowed: true }) });
+    const notFollowed = makeItem({ factors: makeFactors({ isFollowed: false }) });
     const ranked = rankFeedItems([followed, notFollowed], 'following');
     expect(ranked.map((i) => i.id)).toEqual([followed.id]);
   });

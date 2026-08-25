@@ -22,7 +22,8 @@ const {
   getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getDiscoveryGenres,
   getDiscoveryLeaderboard, getEarliestScoreSnapshots,
   getEventCountsByType,
-  getFavoriteGenres, getFeedEvent, getFeedEventCount, getFeedEvents, getFoundingBelieverRecord, getFoundingBelieverRecordById, getKnownDiscoveryUuids,
+  getFavoriteGenres, getFeedEvent, getFeedEventCount, getFeedEvents, getFeedReactionCounts, getFeedReactionCountsForEvents,
+  getFoundingBelieverRecord, getFoundingBelieverRecordById, getKnownDiscoveryUuids,
   getKnownDiscoveryYoutubeChannelIds, getLatestDiscoveryRun,
   getLatestScoreSnapshots,
   getLatestSyncRun, getLogEntryById, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
@@ -35,14 +36,16 @@ const {
   getRecentTradeCount, getRecentWatchCountsByArtist,
   getScoreChanges, getScoutLeaderboard, getScoutProfile, getStoredTradeResponse, getSuspiciousTradingFlags,
   getTrackedSoundchartsUuids, getUnverifiedVideoMatchCount,
-  getUserById, getUserPasswordHash, getUsersByIds, getUserTransactions, getUserWatchlist, getWatchCountsByArtist,
+  getRecentReactionCount, getUserById, getUserFeedReactionsForEvents, getUserPasswordHash, getUsersByIds, getUserTransactions,
+  getUserWatchlist, getWatchCountsByArtist,
   getYoutubeQuotaUsedToday, hasFeedEventSince, hasListenedToArtist, findDuplicateArtistSubmission, findUserByNormalizedEmail,
   normalizeEmailForDuplicateCheck, insertDiscoveryCandidate, isWatchlisted,
   logArtistCardViews, logFeedItemImpressions,
   logEvent, logSyncFailure, markEmailVerified, markNotificationRead, markNotificationsRead, recordLogin,
   recordPreviewListen, recordYoutubeQuotaUsage, reviewArtistClaim, setDiscoveryCandidateStatus,
   setFeaturedVideoMatchType,
-  setNotificationsEmailedThrough, setWatchlistAlerts, shareFoundingBelieverToFeed, SOUNDCHARTS_NO_MATCH_RECHECK_DAYS, stampSoundchartsNoMatch,
+  setFeedReaction, setNotificationsEmailedThrough, setWatchlistAlerts, shareFoundingBelieverToFeed, SOUNDCHARTS_NO_MATCH_RECHECK_DAYS,
+  stampSoundchartsNoMatch,
   stampSourceSyncedAt, stampYoutubeNoMatch, storeTradeResponse,
   TRADE_RATE_LIMIT_PER_MINUTE, updateArtist,
   updateUserProfile, YOUTUBE_NO_MATCH_RECHECK_DAYS,
@@ -2454,5 +2457,101 @@ describe('NEXT Feed — batch lookups for feed item assembly', () => {
     logFeedItemImpressions(user.id, []);
     const afterEmpty = db.prepare("SELECT COUNT(*) AS c FROM analytics_events WHERE event_type = 'feed_item_impression'").get() as { c: number };
     expect(afterEmpty.c).toBe(after.c);
+  });
+});
+
+describe('NEXT Feed — reactions', () => {
+  it('setFeedReaction creates a reaction, tapping the SAME one again removes it', () => {
+    const user = makeUser('feed-reaction-toggle@example.com');
+    const artist = makeArtist('Feed Reaction Toggle Artist');
+    const event = createFeedEvent({ eventType: 'new_artist', artistId: artist.id })!;
+
+    const created = setFeedReaction(event.id, user.id, 'fire');
+    expect(created?.reaction_type).toBe('fire');
+    expect(getFeedReactionCounts(event.id).fire).toBe(1);
+
+    const removed = setFeedReaction(event.id, user.id, 'fire');
+    expect(removed).toBeNull();
+    expect(getFeedReactionCounts(event.id).fire).toBe(0);
+  });
+
+  it('setFeedReaction with a DIFFERENT type changes the reaction in place, never doubling the row', () => {
+    const user = makeUser('feed-reaction-change@example.com');
+    const artist = makeArtist('Feed Reaction Change Artist');
+    const event = createFeedEvent({ eventType: 'new_artist', artistId: artist.id })!;
+
+    setFeedReaction(event.id, user.id, 'fire');
+    const changed = setFeedReaction(event.id, user.id, 'eyes');
+    expect(changed?.reaction_type).toBe('eyes');
+
+    const counts = getFeedReactionCounts(event.id);
+    expect(counts.fire).toBe(0);
+    expect(counts.eyes).toBe(1);
+    const rowCount = (db.prepare('SELECT COUNT(*) AS c FROM feed_reactions WHERE feed_event_id = ? AND user_id = ?').get(event.id, user.id) as { c: number }).c;
+    expect(rowCount).toBe(1); // one row per (event, user), always — UPDATE in place, never a second INSERT
+  });
+
+  it('two different users reacting to the same post both count, independently', () => {
+    const alice = makeUser('feed-reaction-alice@example.com');
+    const bob = makeUser('feed-reaction-bob@example.com');
+    const artist = makeArtist('Feed Reaction Multi User Artist');
+    const event = createFeedEvent({ eventType: 'new_artist', artistId: artist.id })!;
+
+    setFeedReaction(event.id, alice.id, 'early');
+    setFeedReaction(event.id, bob.id, 'early');
+    expect(getFeedReactionCounts(event.id).early).toBe(2);
+  });
+
+  it('getFeedReactionCountsForEvents and getUserFeedReactionsForEvents batch across multiple events correctly', () => {
+    const user = makeUser('feed-reaction-batch@example.com');
+    const other = makeUser('feed-reaction-batch-other@example.com');
+    const artist = makeArtist('Feed Reaction Batch Artist');
+    const e1 = createFeedEvent({ eventType: 'new_artist', artistId: artist.id })!;
+    const e2 = createFeedEvent({ eventType: 'artist_update', artistId: artist.id, refType: 'contact_log', refId: 1 })!;
+
+    setFeedReaction(e1.id, user.id, 'fire');
+    setFeedReaction(e1.id, other.id, 'fire');
+    setFeedReaction(e2.id, user.id, 'eyes');
+
+    const counts = getFeedReactionCountsForEvents([e1.id, e2.id]);
+    expect(counts.get(e1.id)?.fire).toBe(2);
+    expect(counts.get(e2.id)?.eyes).toBe(1);
+
+    const viewerReactions = getUserFeedReactionsForEvents(user.id, [e1.id, e2.id]);
+    expect(viewerReactions.get(e1.id)).toBe('fire');
+    expect(viewerReactions.get(e2.id)).toBe('eyes');
+  });
+
+  it('getFeedReactionCountsForEvents and getUserFeedReactionsForEvents return empty maps for an empty input', () => {
+    expect(getFeedReactionCountsForEvents([]).size).toBe(0);
+    expect(getUserFeedReactionsForEvents(1, []).size).toBe(0);
+  });
+
+  it('getRecentReactionCount only counts a user\'s own taps within the window', () => {
+    const user = makeUser('feed-reaction-rate@example.com');
+    const other = makeUser('feed-reaction-rate-other@example.com');
+    const artist = makeArtist('Feed Reaction Rate Artist');
+    const event = createFeedEvent({ eventType: 'new_artist', artistId: artist.id })!;
+
+    setFeedReaction(event.id, user.id, 'fire');
+    setFeedReaction(event.id, other.id, 'fire'); // a different user's tap doesn't count toward user's own rate
+    expect(getRecentReactionCount(user.id, 1)).toBe(1);
+
+    db.prepare('UPDATE feed_reaction_taps SET created_at = ? WHERE user_id = ?').run(new Date(Date.now() - 5 * 60 * 1000).toISOString(), user.id);
+    expect(getRecentReactionCount(user.id, 1)).toBe(0); // outside the 1-minute window now
+  });
+
+  it('getRecentReactionCount keeps counting taps even as toggling add/remove deletes the underlying feed_reactions row', () => {
+    const user = makeUser('feed-reaction-rate-toggle@example.com');
+    const artist = makeArtist('Feed Reaction Rate Toggle Artist');
+    const event = createFeedEvent({ eventType: 'new_artist', artistId: artist.id })!;
+
+    setFeedReaction(event.id, user.id, 'fire'); // add
+    setFeedReaction(event.id, user.id, 'fire'); // remove — feed_reactions row is now gone
+    setFeedReaction(event.id, user.id, 'eyes'); // add again
+    // Every one of those three taps still counts toward the rate limit,
+    // even though only one feed_reactions row exists at the end.
+    expect(getRecentReactionCount(user.id, 1)).toBe(3);
+    expect((db.prepare('SELECT COUNT(*) AS c FROM feed_reactions WHERE feed_event_id = ? AND user_id = ?').get(event.id, user.id) as { c: number }).c).toBe(1);
   });
 });

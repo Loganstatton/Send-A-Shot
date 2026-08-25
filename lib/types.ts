@@ -424,7 +424,8 @@ export type AnalyticsEventType =
   | 'feed_watch_added'
   | 'feed_trade_initiated'
   | 'feed_collectible_shared'
-  | 'feed_scroll_depth';
+  | 'feed_scroll_depth'
+  | 'feed_reaction_added';
 
 export type AnalyticsEvent = {
   id: number;
@@ -886,6 +887,19 @@ export type FeedEvent = {
   // deliberately left out and fetched fresh at render time instead.
   metadata?: string;
   dedupe_key?: string;
+  created_at: string;
+};
+
+// Lightweight, deliberately (see the Feed spec's explicit "not yet" list:
+// no comments, no DMs). 🔥 = fire, 👀 = eyes/watching this closely,
+// 'early' = the "EARLY" text badge — "I called this."
+export type ReactionType = 'fire' | 'eyes' | 'early';
+
+export type FeedReaction = {
+  id: number;
+  feed_event_id: number;
+  user_id: number;
+  reaction_type: ReactionType;
   created_at: string;
 };
 
