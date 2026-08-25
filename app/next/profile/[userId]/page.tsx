@@ -162,6 +162,7 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
         {founded.map((f) => (
           <Link
             key={f.id}
+            id={`founding-${f.artist_id}`}
             href={isOwnProfile ? `/next/artists/${f.artist_id}/founding-believer` : `/next/artists/${f.artist_id}`}
             className="next-card next-card-hover flex items-center gap-4 px-5 py-4"
           >

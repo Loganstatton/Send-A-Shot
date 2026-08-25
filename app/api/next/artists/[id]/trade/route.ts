@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
-  executeTrade, getRecentTradeCount, getStoredTradeResponse, logEvent, storeTradeResponse, TRADE_RATE_LIMIT_PER_MINUTE,
+  executeTrade, getFeedEvent, getRecentTradeCount, getStoredTradeResponse, logEvent, storeTradeResponse, TRADE_RATE_LIMIT_PER_MINUTE,
 } from '@/lib/db';
 import { getSessionUser } from '@/lib/auth';
 import { NextTransactionType } from '@/lib/types';
@@ -19,7 +19,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const artistId = Number(params.id);
   if (!Number.isInteger(artistId)) return respond(400, { error: 'invalid id' });
 
-  const body = (await req.json()) as { type?: NextTransactionType; credits_amount_cents?: number; idempotencyKey?: string };
+  const body = (await req.json()) as {
+    type?: NextTransactionType; credits_amount_cents?: number; idempotencyKey?: string;
+    referralSource?: string; referralFeedEventId?: number;
+  };
   if (body.type !== 'buy' && body.type !== 'sell') {
     return respond(400, { error: "type must be 'buy' or 'sell'" });
   }
@@ -51,5 +54,18 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   if (!result.ok) return respond(status, responseBody);
   logEvent(user.id, body.type === 'buy' ? 'buy_completed' : 'sell_completed', { artistId, creditsAmountCents: body.credits_amount_cents });
+
+  // Feed referral attribution — additive only, never affects the trade
+  // above (already fully executed and validated by this point). Only
+  // logged for a genuinely executed trade, not an idempotent replay (this
+  // whole block is unreachable on a replay — see the early return above).
+  // Re-checks the feed_events row actually exists so a tampered/garbage id
+  // can't poison analytics with a fake reference.
+  if (body.referralSource === 'feed' && Number.isInteger(body.referralFeedEventId) && getFeedEvent(body.referralFeedEventId!)) {
+    logEvent(user.id, 'feed_trade_completed', {
+      artistId, feedEventId: body.referralFeedEventId, tradeType: body.type, creditsAmountCents: body.credits_amount_cents,
+    });
+  }
+
   return respond(status, responseBody);
 }

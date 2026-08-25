@@ -44,7 +44,16 @@ export default function NextHeader({
             <span>NEXT</span>
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--ember)] self-center ml-1 shadow-[0_0_12px_var(--ember)]" />
           </Link>
-          <nav className="hidden sm:flex items-center gap-7 text-sm">
+          {/* xl:, not sm: — with 7-8 links (Feed added a slot) plus the
+              credits pill, bell, avatar, Settings, and Log out all
+              competing for room on the right, this row genuinely doesn't
+              fit until roughly 1280px wide (confirmed: it visibly
+              overflowed/wrapped at tablet-portrait 768px, phone-landscape
+              844px, and even a narrow ~1030px desktop window). The
+              hamburger menu below already renders the same links cleanly
+              at any width, so this just hands off to it until there's
+              genuinely enough room instead of overflowing. */}
+          <nav className="hidden xl:flex items-center gap-6 text-sm">
             {links.map((l) => (
               <Link
                 key={l.href}
@@ -60,7 +69,7 @@ export default function NextHeader({
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           {isInternal && (
-            <Link href="/" className="hidden sm:inline text-xs" style={{ color: 'var(--text-faint)' }}>
+            <Link href="/" className="hidden xl:inline text-xs" style={{ color: 'var(--text-faint)' }}>
               Switch to Scout →
             </Link>
           )}
@@ -71,7 +80,7 @@ export default function NextHeader({
           <Link
             href="/next/notifications"
             aria-label={unreadNotifications > 0 ? `${unreadNotifications} unread notifications` : 'Notifications'}
-            className="next-icon-btn relative hidden sm:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center"
+            className="next-icon-btn relative hidden xl:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center"
             style={{ borderColor: is('/next/notifications') ? 'var(--ember-line)' : 'var(--border-soft)', color: 'var(--text-muted)' }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -89,7 +98,7 @@ export default function NextHeader({
           </Link>
           <Link
             href="/next/profile"
-            className="next-icon-btn hidden sm:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center font-display font-bold text-sm overflow-hidden"
+            className="next-icon-btn hidden xl:flex w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--border-soft)] items-center justify-center font-display font-bold text-sm overflow-hidden"
             style={{ color: 'var(--text-muted)' }}
           >
             {user.avatar_url && !avatarFailed ? (
@@ -99,14 +108,14 @@ export default function NextHeader({
               user.name.trim().charAt(0).toUpperCase() || '?'
             )}
           </Link>
-          <Link href="/settings" className="next-btn-ghost text-xs px-3 py-2 hidden sm:inline-flex rounded-lg">Settings</Link>
-          <LogoutButton className="next-btn-ghost text-xs px-3 py-2 hidden sm:inline-flex" />
+          <Link href="/settings" className="next-btn-ghost text-xs px-3 py-2 hidden xl:inline-flex rounded-lg">Settings</Link>
+          <LogoutButton className="next-btn-ghost text-xs px-3 py-2 hidden xl:inline-flex" />
           <button
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
-            className="next-icon-btn sm:hidden w-9 h-9 rounded-full flex items-center justify-center border active:scale-90"
+            className="next-icon-btn xl:hidden w-9 h-9 rounded-full flex items-center justify-center border active:scale-90"
             style={{ borderColor: 'var(--border-soft)', color: 'var(--text)' }}
           >
             {menuOpen ? (
@@ -120,7 +129,7 @@ export default function NextHeader({
 
       {menuOpen && (
         <nav
-          className="next-menu-panel sm:hidden absolute left-0 right-0 top-full z-30 flex flex-col px-4 py-3 gap-1"
+          className="next-menu-panel xl:hidden absolute left-0 right-0 top-full z-30 flex flex-col px-4 py-3 gap-1"
           style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border-soft)' }}
         >
           {links.map((l) => (

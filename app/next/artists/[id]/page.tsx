@@ -33,10 +33,16 @@ export const dynamic = 'force-dynamic';
 // Public-safe view only: name, genre, location, public socials, public
 // growth metrics, NEXT Score, NEXT Price. Deliberately excludes stage,
 // scout_name, notes, created_by — that's Scout's internal view, not NEXT's.
-export default async function NextArtistPage({ params }: { params: { id: string } }) {
+export default async function NextArtistPage({ params, searchParams }: { params: { id: string }; searchParams: { ref?: string; feedEventId?: string } }) {
   const user = await requireUser();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
+  // A trade completed on this page can be attributed back to the Feed card
+  // that linked here (see FeedCard.tsx and TradePanel.tsx) — purely
+  // additive analytics, never touches trade validation/idempotency/market
+  // integrity, all of which lives in executeTrade untouched.
+  const feedEventIdParam = Number(searchParams.feedEventId);
+  const feedReferralEventId = searchParams.ref === 'feed' && Number.isInteger(feedEventIdParam) ? feedEventIdParam : undefined;
   const row = getNextArtist(id);
   if (!row) notFound();
   logEvent(user.id, 'artist_detail_opened', { artistId: id });
@@ -310,6 +316,7 @@ export default async function NextArtistPage({ params }: { params: { id: string 
           creditsCents={user.next_credits_cents}
           volumeCents24h={volumeCents24h}
           recentBackerCount24h={recentBackerCount24h}
+          feedReferralEventId={feedReferralEventId}
         />
       </div>
 
