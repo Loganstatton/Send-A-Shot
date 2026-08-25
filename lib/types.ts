@@ -790,7 +790,7 @@ export type SyncRunStatus = 'running' | 'completed' | 'failed';
 // source key for this before Spotify's Client Credentials flow started
 // 403ing on every call for new apps — old rows keep that value, nothing
 // new writes it.)
-export type SyncSourceKey = 'soundcharts' | 'deezer' | 'spotify' | 'youtube_video' | 'soundcharts_photo';
+export type SyncSourceKey = 'soundcharts' | 'deezer' | 'spotify' | 'youtube_video' | 'soundcharts_photo' | 'feed_signals';
 
 // One row per sync run — same "last run: X ago" visibility as DiscoveryRun
 // above, so an automated daily sync that silently starts failing (bad
@@ -820,6 +820,58 @@ export type SyncRun = {
 // would need Render's log viewer to ever see. Only real errors are logged
 // here, never a clean "no match found" (that's already captured by
 // SyncRun.no_match_count and isn't a failure worth surfacing this way).
+// The NEXT Feed's event model — deliberately a persisted table, unlike
+// lib/notifications.ts's "compute everything fresh, persist only what's
+// been read" approach. That works for notifications because each one is
+// personal and re-derivable from current state (is X still true right
+// now?). A feed needs something notifications don't: a STABLE identity
+// per item — a fixed timestamp for chronological ordering that doesn't
+// shift as the underlying data keeps changing, and a real row for
+// feed_reactions (a future table) to attach to. "Artist X is currently
+// undervalued" can't hold a reaction; "artist X crossed undervalued at
+// 3:14pm on the 25th" can. See lib/feed-signals.ts for how automated
+// events avoid re-posting the same still-true state every scan.
+export type FeedEventType =
+  | 'new_artist'
+  | 'artist_update'
+  | 'early_discovery'
+  | 'founding_believer_share'
+  | 'signal_score_up'
+  | 'signal_score_down'
+  | 'signal_undervalued'
+  | 'signal_overheated'
+  | 'market_momentum_mover'
+  | 'market_momentum_backers'
+  | 'market_momentum_most_watched';
+
+// Room to grow (e.g. a future 'followers_only' visibility for a Following-
+// only post) — a single real value today rather than a boolean, so adding
+// one later is a value addition, not a type change at every call site.
+export type FeedEventVisibility = 'public';
+
+export type FeedEvent = {
+  id: number;
+  event_type: FeedEventType;
+  actor_user_id?: number;
+  artist_id?: number;
+  // Points at whatever existing row this event is really about — a
+  // contact_log entry for an artist_update, a next_founding_believers row
+  // for a share — so the event never duplicates data that row already
+  // owns. Absent for events with nothing more specific to reference (a
+  // market-momentum roll-up isn't "about" one row).
+  ref_type?: string;
+  ref_id?: number;
+  visibility: FeedEventVisibility;
+  // JSON-encoded — only ever holds values that must freeze at the moment
+  // this event fired (a score jump's before/after, a sentiment gap's
+  // size). Anything that should stay live (an artist's CURRENT score/
+  // price, shown alongside the frozen "what triggered this" numbers) is
+  // deliberately left out and fetched fresh at render time instead.
+  metadata?: string;
+  dedupe_key?: string;
+  created_at: string;
+};
+
 export type SyncFailure = {
   id: number;
   run_id: number;

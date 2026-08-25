@@ -12,7 +12,7 @@ import {
   AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistClaim, ArtistFieldChange, ArtistInput,
   DiscoveryCandidate, DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryLeaderboardEntry, DiscoveryRun,
   DiscoverySourceKey, ErrorReport,
-  DueFollowUp, FavoriteGenre, FoundingBelieverRecord,
+  DueFollowUp, FavoriteGenre, FeedEvent, FeedEventType, FoundingBelieverRecord,
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
   RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutDiscoveryEntry,
@@ -650,6 +650,35 @@ CREATE INDEX IF NOT EXISTS idx_artist_claims_artist ON artist_claims(artist_id);
 CREATE INDEX IF NOT EXISTS idx_artist_claims_user ON artist_claims(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_artist_claims_pending_unique
   ON artist_claims(artist_id, user_id) WHERE status = 'pending';
+`);
+
+// NEXT Feed's event log — see the FeedEvent type's own comment for why
+// this is persisted rather than computed live the way notifications are.
+// dedupe_key is nullable and only unique when present (a partial index,
+// same technique as artists.soundcharts_uuid above) — most event types
+// use it as a hard "never post this exact thing twice" guard (tied to the
+// specific row that caused it: a discovery_candidates id, a contact_log
+// id), while the automated signal types (see lib/feed-signals.ts) rely on
+// a time-window cooldown check instead, since "still undervalued" is a
+// state that can stay true for weeks and a fixed key can't express "not
+// within the last N days."
+db.exec(`
+CREATE TABLE IF NOT EXISTS feed_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,
+  actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  artist_id INTEGER REFERENCES artists(id) ON DELETE CASCADE,
+  ref_type TEXT,
+  ref_id INTEGER,
+  visibility TEXT NOT NULL DEFAULT 'public',
+  metadata TEXT,
+  dedupe_key TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feed_events_created ON feed_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_feed_events_artist ON feed_events(artist_id);
+CREATE INDEX IF NOT EXISTS idx_feed_events_type ON feed_events(event_type);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_events_dedupe ON feed_events(dedupe_key) WHERE dedupe_key IS NOT NULL;
 `);
 
 const ARTIST_SELECT = `
@@ -1581,6 +1610,30 @@ export function getFoundingBelieverRecord(userId: number, artistId: number): Fou
   return db
     .prepare('SELECT * FROM next_founding_believers WHERE user_id = ? AND artist_id = ?')
     .get(userId, artistId) as FoundingBelieverRecord | undefined;
+}
+
+// A user deliberately choosing to post their own collectible into the Feed
+// — never automatic (see the FeedEvent type's comment: the spec is
+// explicit that a card is never auto-posted just for existing). No
+// metadata snapshot needed here at all: the referenced
+// next_founding_believers row already permanently holds the "at time of
+// backing" numbers (follower count, score, price, rank) a render would
+// need — this event is purely a pointer plus a timestamp. dedupe_key
+// allows one share per collectible per calendar day, so a doubled network
+// request or an accidental double-tap can't post it twice, while a
+// genuine re-share later (a real use case — "still proud of this one") stays possible.
+export function shareFoundingBelieverToFeed(userId: number, artistId: number): FeedEvent | null {
+  const record = getFoundingBelieverRecord(userId, artistId);
+  if (!record) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  return createFeedEvent({
+    eventType: 'founding_believer_share',
+    actorUserId: userId,
+    artistId,
+    refType: 'founding_believer',
+    refId: record.id,
+    dedupeKey: `founding_believer_share:${record.id}:${today}`,
+  });
 }
 
 export function getUserTransactions(userId: number, limit = 50): (NextTransaction & { artist_name: string })[] {
@@ -3017,6 +3070,71 @@ export const YOUTUBE_GENRE_LABELS: Record<string, string> = {
   electronic: 'Electronic',
 };
 
+// --- NEXT Feed ---
+// See the FeedEvent type's own comment (lib/types.ts) for why this is a
+// real persisted table rather than the compute-live pattern
+// lib/notifications.ts uses. This file only owns writing/reading rows;
+// lib/feed-signals.ts owns deciding WHEN an automated (non-user-triggered)
+// event is worth creating.
+
+export function getFeedEvent(id: number): FeedEvent | undefined {
+  return db.prepare('SELECT * FROM feed_events WHERE id = ?').get(id) as FeedEvent | undefined;
+}
+
+// Returns the created row, or null if a dedupe_key collision meant this
+// exact event already existed (INSERT OR IGNORE — a no-op, not an error,
+// since "someone already posted this" is the expected/desired outcome of
+// a duplicate call, not a failure). Rows with no dedupe_key always insert.
+export function createFeedEvent(input: {
+  eventType: FeedEventType;
+  actorUserId?: number;
+  artistId?: number;
+  refType?: string;
+  refId?: number;
+  metadata?: Record<string, unknown>;
+  dedupeKey?: string;
+}): FeedEvent | null {
+  const info = db
+    .prepare(`
+      INSERT OR IGNORE INTO feed_events (event_type, actor_user_id, artist_id, ref_type, ref_id, visibility, metadata, dedupe_key, created_at)
+      VALUES (?, ?, ?, ?, ?, 'public', ?, ?, ?)
+    `)
+    .run(
+      input.eventType, input.actorUserId ?? null, input.artistId ?? null, input.refType ?? null, input.refId ?? null,
+      input.metadata ? JSON.stringify(input.metadata) : null, input.dedupeKey ?? null, new Date().toISOString()
+    );
+  if (info.changes === 0) return null; // dedupe_key already existed
+  return getFeedEvent(info.lastInsertRowid as number) ?? null;
+}
+
+// The cooldown check for automated signal events (see lib/feed-signals.ts)
+// — "has this exact signal already fired for this artist recently?" A
+// sliding time window can't be expressed as a unique-index dedupe_key
+// (that only ever means "never/always", not "not within N days"), so this
+// is a plain lookup the generator calls before deciding to post.
+export function hasFeedEventSince(eventType: FeedEventType, artistId: number, sinceISO: string): boolean {
+  const row = db
+    .prepare('SELECT 1 FROM feed_events WHERE event_type = ? AND artist_id = ? AND created_at >= ? LIMIT 1')
+    .get(eventType, artistId, sinceISO);
+  return Boolean(row);
+}
+
+// Newest-first, optionally paged with `beforeId` (strictly less than, so
+// paging never re-shows or skips a row even if new events are inserted
+// between pages). No feed-ranking/personalization here yet — that's the
+// UI-facing PR; this is the plain chronological read the schema needs to
+// be genuinely useful and testable on its own.
+export function getFeedEvents(limit = 50, beforeId?: number): FeedEvent[] {
+  if (beforeId != null) {
+    return db.prepare('SELECT * FROM feed_events WHERE id < ? ORDER BY id DESC LIMIT ?').all(beforeId, limit) as FeedEvent[];
+  }
+  return db.prepare('SELECT * FROM feed_events ORDER BY id DESC LIMIT ?').all(limit) as FeedEvent[];
+}
+
+export function getFeedEventCount(): number {
+  return (db.prepare('SELECT COUNT(*) AS c FROM feed_events').get() as { c: number }).c;
+}
+
 export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | undefined {
   const candidate = getDiscoveryCandidate(id);
   if (!candidate || candidate.status === 'approved') return undefined;
@@ -3057,6 +3175,34 @@ export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | un
   db.prepare('UPDATE discovery_candidates SET status = ?, reviewed_at = ?, reviewed_by = ?, artist_id = ? WHERE id = ?')
     .run('approved', new Date().toISOString(), actor.id, artist.id, id);
   logDiscoveryCandidateHistory(id, candidate.status, 'approved', actor.id);
+
+  // dedupe_key ties to this specific candidate row, so re-approving (can't
+  // happen — the guard at the top returns early on an already-approved
+  // candidate) or any future retry can never double-post either event.
+  createFeedEvent({
+    eventType: 'new_artist',
+    artistId: artist.id,
+    refType: 'discovery_candidate',
+    refId: id,
+    metadata: { genre: artist.genre, score: breakoutScore(artist) },
+    dedupeKey: `new_artist:${id}`,
+  });
+  // A public submission (someone pasted a link on /next/submit-artist)
+  // carries real discoverer attribution — see discovery_candidates.
+  // submitted_by_user_id. A YouTube-scan or Soundcharts-sourced candidate
+  // has no submitter, so it's a New Artist event only, never a "someone
+  // found this" one.
+  if (candidate.submitted_by_user_id) {
+    createFeedEvent({
+      eventType: 'early_discovery',
+      actorUserId: candidate.submitted_by_user_id,
+      artistId: artist.id,
+      refType: 'discovery_candidate',
+      refId: id,
+      metadata: { followersAtDiscovery: candidate.followers_count, genre: artist.genre },
+      dedupeKey: `early_discovery:${id}`,
+    });
+  }
 
   return artist;
 }

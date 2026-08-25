@@ -7,6 +7,7 @@ import { formatCents } from '@/lib/format';
 import { foundingBelieverSerial, getFoundingBelieverTier } from '@/lib/founding-believer';
 import { heroGradient } from '@/components/next/heroGradient';
 import ShareReceiptButton from '@/components/next/ShareReceiptButton';
+import ShareToFeedButton from '@/components/next/ShareToFeedButton';
 import HoloCard from '@/components/next/HoloCard';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
@@ -144,7 +145,10 @@ export default async function FoundingBelieverReceiptPage({ params }: { params: 
               <span>Issued {lockedDate}</span>
             </div>
 
-            <ShareReceiptButton artistId={id} artistName={artist.name} />
+            <div className="flex items-center gap-3 flex-wrap">
+              <ShareReceiptButton artistId={id} artistName={artist.name} />
+              <ShareToFeedButton artistId={id} />
+            </div>
           </div>
         </div>
       </HoloCard>
