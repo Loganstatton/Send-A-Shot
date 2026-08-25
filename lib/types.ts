@@ -413,9 +413,11 @@ export type AnalyticsEventType =
   // elsewhere (opening an artist, playing audio, watching, starting a buy)
   // is still distinguishable as having come from the Feed specifically —
   // per the spec's "trade initiated/completed from feed referral" ask.
-  // feed_trade_completed is intentionally not tracked yet: attributing a
-  // completed trade back to a feed referral needs a referral token carried
-  // through the trade flow, which doesn't exist and is out of scope here.
+  // feed_trade_completed is attributed via a ?ref=feed&feedEventId= query
+  // param FeedCard.tsx puts on its artist links, carried through
+  // TradePanel.tsx into the trade route as referralSource/
+  // referralFeedEventId and logged only after a real, non-idempotent-replay
+  // trade succeeds — see app/api/next/artists/[id]/trade/route.ts.
   | 'feed_opened'
   | 'feed_tab_changed'
   | 'feed_item_impression'
@@ -423,6 +425,7 @@ export type AnalyticsEventType =
   | 'feed_audio_played'
   | 'feed_watch_added'
   | 'feed_trade_initiated'
+  | 'feed_trade_completed'
   | 'feed_collectible_shared'
   | 'feed_scroll_depth'
   | 'feed_reaction_added';

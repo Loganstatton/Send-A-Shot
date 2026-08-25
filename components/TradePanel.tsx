@@ -16,6 +16,7 @@ export default function TradePanel({
   creditsCents,
   volumeCents24h,
   recentBackerCount24h,
+  feedReferralEventId,
 }: {
   artistId: number;
   artistName: string;
@@ -25,6 +26,11 @@ export default function TradePanel({
   creditsCents: number;
   volumeCents24h: number;
   recentBackerCount24h: number;
+  // Set when this page was opened from a NEXT Feed card (see the ?ref=feed
+  // query param FeedCard.tsx adds) — passed straight through to the trade
+  // route so a completed trade can be attributed back to it, purely for
+  // analytics (feed_trade_completed). Never affects trade execution.
+  feedReferralEventId?: number;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<'buy' | 'sell'>('buy');
@@ -82,7 +88,10 @@ export default function TradePanel({
       const res = await fetch(`/api/next/artists/${artistId}/trade`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: mode, credits_amount_cents: amountCents, idempotencyKey }),
+        body: JSON.stringify({
+          type: mode, credits_amount_cents: amountCents, idempotencyKey,
+          ...(feedReferralEventId != null ? { referralSource: 'feed', referralFeedEventId: feedReferralEventId } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Trade failed');

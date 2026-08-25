@@ -88,6 +88,12 @@ export default function FeedCard({ item, watching, viewerUserId }: { item: FeedI
   const heroImageUrl = artist ? (artist.photoUrl || (artist.featuredVideoId ? `https://img.youtube.com/vi/${artist.featuredVideoId}/hqdefault.jpg` : undefined)) : undefined;
   const isBackFlavor = BACK_STYLE_TYPES.has(item.eventType);
   const isOwnFoundingShare = item.eventType === 'founding_believer_share' && item.actor?.id === viewerUserId;
+  // Carried through Artist Detail into the trade flow (see TradePanel.tsx
+  // and the trade route) so a trade completed after arriving from Feed can
+  // be attributed back to this specific card — feed_trade_initiated (below)
+  // fires the moment the link is clicked; feed_trade_completed fires later,
+  // server-side, only if a real trade actually goes through.
+  const artistHref = artist ? `/next/artists/${artist.id}?ref=feed&feedEventId=${item.id}` : undefined;
 
   function trackArtistOpen() {
     track('feed_artist_opened', { feedEventId: item.id, artistId: artist?.id, eventType: item.eventType });
@@ -97,7 +103,7 @@ export default function FeedCard({ item, watching, viewerUserId }: { item: FeedI
   return (
     <div className="next-card p-4 sm:p-5 flex gap-4">
       {artist && (
-        <Link href={`/next/artists/${artist.id}`} onClick={trackArtistOpen} className="shrink-0">
+        <Link href={artistHref!} onClick={trackArtistOpen} className="shrink-0">
           <div
             className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden relative flex items-center justify-center"
             style={{ background: heroImageUrl ? undefined : heroGradient(artist.id) }}
@@ -149,7 +155,7 @@ export default function FeedCard({ item, watching, viewerUserId }: { item: FeedI
               <AudioPreview artistId={artist.id} artistName={artist.name} src={artist.songPreviewUrl} variant="icon" />
             </span>
             <Link
-              href={`/next/artists/${artist.id}`}
+              href={artistHref!}
               onClick={trackArtistOpen}
               className={`text-center px-4 py-2 rounded-[10px] text-[12.5px] font-bold ${isBackFlavor ? 'next-btn-primary' : 'next-btn-ghost'}`}
             >
@@ -160,9 +166,16 @@ export default function FeedCard({ item, watching, viewerUserId }: { item: FeedI
                 View profile
               </Link>
             )}
-            {isOwnFoundingShare && (
-              <Link href={`/next/artists/${artist.id}/founding-believer`} className="next-btn-ghost text-center px-4 py-2 rounded-[10px] text-[12.5px] font-bold">
-                View my collectible
+            {item.eventType === 'founding_believer_share' && item.actor && (
+              // Own share -> the full private receipt page. Someone else's
+              // share -> their public Scout Profile, which shows this exact
+              // collectible (rank, backed date, followers-then — all
+              // already public-safe there) without needing a new route.
+              <Link
+                href={isOwnFoundingShare ? `/next/artists/${artist.id}/founding-believer` : `/next/profile/${item.actor.id}#founding-${artist.id}`}
+                className="next-btn-ghost text-center px-4 py-2 rounded-[10px] text-[12.5px] font-bold"
+              >
+                {isOwnFoundingShare ? 'View my collectible' : 'View collectible'}
               </Link>
             )}
           </div>
