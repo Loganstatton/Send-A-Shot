@@ -8,15 +8,20 @@ import { describe, expect, it, vi } from 'vitest';
 // file instead of the real dev/prod database.
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
+const { quoteSell, SELL_ALL_SENTINEL_CENTS } = await import('./next-market');
+
 const {
   addLogEntry, addToWatchlist, approveDiscoveryCandidate, bulkSetArtistStage, completeDiscoveryRun,
   completeNextOnboarding, completeSyncRun, createArtist, createArtistClaim, createDiscoveryRun, createFeedEvent, createSyncRun,
-  createUser, db,
+  createUser, db, getHolding,
   deleteUser, executeTrade, findArtistsByName,
   getApprovedDiscoveriesCount, getArtist, getArtistClaim, getArtistFieldHistory, getArtistLastActivityMap,
   getArtistLog, getArtistsClaimedByUser,
   getArtistsMissingDeezerData, getErrorReportCount, getRecentErrorReports, insertErrorReport,
   getArtistsInPhotoBackoff, getArtistsInVideoBackoff, getArtistsMissingPhoto, getArtistsMissingVideo, getArtistsWithSoundchartsLink,
+  createUserTakePost, deleteUserTakePost, getRecentUserTakePostCount, getReportedUserTakePosts, getUserTakePostById,
+  getUserTakePostsByIds, getUserTakePostsForUser, hideUserTakePost, reportUserTakePost, searchNextArtists, unhideUserTakePost,
+  USER_TAKE_BODY_MAX_LENGTH,
   getArtistTradeVolumeCents, getBackedArtistIds, getBackerCountsByArtist, getBreakoutDiscoveriesCount, getDiscoveriesForUser,
   getDiscoveryCandidateCountsByGenre,
   getDiscoveryCandidateCountsByStatus, getDiscoveryCandidateHistory, getDiscoveryCandidates, getDiscoveryGenres,
@@ -29,7 +34,7 @@ const {
   getLatestSyncRun, getLogEntryById, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
   getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist, getNextArtistsByIds,
   getPendingArtistClaimCount, getPendingArtistClaims, getPendingClaimForUserAndArtist, getPortfolioValue,
-  getPortfolioValueHistory, getRankMovements,
+  getPortfolioValueHistory, getRankMovements, getUserHoldings,
   getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentDiscoveryReviewDecisions,
   getRecentDiscoveryRunsWithCandidateCounts, getRecentEventsForUser,
   getRecentMarketTrades, getRecentSubmissionCount, getRecentSyncFailures, getRecentTradesForArtist,
@@ -113,6 +118,83 @@ describe('NEXT trading engine — self-trade exploit prevention', () => {
     expect(finalBalance).toBeLessThanOrEqual(STARTING_BALANCE_CENTS);
     // Sanity: it shouldn't vanish either — this is slippage, not a penalty.
     expect(finalBalance).toBeGreaterThan(STARTING_BALANCE_CENTS - 100_000);
+  });
+
+  it("a fresh buy's displayed unrealized P&L is NOT a phantom gain — it closely predicts what selling right now actually realizes", () => {
+    // Regression test for a real reported bug: right after a buy, the raw
+    // quoted price already includes that buy's own upward impact, so
+    // marking the position to shares * quotedPrice showed a large instant
+    // "gain" that vanished the moment the user tried to sell. getUserHoldings
+    // must mark to the REALISTIC exit value (via quoteSell) instead.
+    const user = makeUser('phantom-gain-check@example.com');
+    const artist = makeArtist('Phantom Gain Artist');
+
+    const buy = executeTrade(user.id, artist.id, 'buy', 500_000); // $5,000, big enough for real impact
+    if (!buy.ok) throw new Error(buy.error);
+
+    const holding = getUserHoldings(user.id).find((h) => h.artist_id === artist.id)!;
+    const naivePhantomValueCents = Math.round(holding.shares * holding.price_cents);
+    const displayedUnrealizedPnlCents = holding.exitValueCents - holding.cost_basis_cents;
+
+    // The bug: marking to the raw quote overstates the position — proves
+    // exitValueCents is genuinely doing something different, not a no-op.
+    expect(holding.exitValueCents).toBeLessThan(naivePhantomValueCents);
+
+    // The fix: what's actually shown as "unrealized" should be small —
+    // nowhere near a few-hundred-dollar phantom gain on a $5,000 buy with
+    // zero outside market activity.
+    expect(Math.abs(displayedUnrealizedPnlCents)).toBeLessThan(5_000); // < $50, pure rounding/spread noise
+
+    // getPortfolioValue must be wired to the same fixed math, not its own
+    // separate shares * price_cents calculation.
+    const balanceCents = getUserById(user.id)!.next_credits_cents;
+    const portfolio = getPortfolioValue(user.id);
+    expect(portfolio.holdingsValueCents).toBe(holding.exitValueCents);
+    expect(portfolio.totalValueCents).toBe(balanceCents + holding.exitValueCents);
+
+    // The real proof: selling the whole position right now must realize
+    // very close to what was just displayed as "unrealized."
+    const sell = executeTrade(user.id, artist.id, 'sell', naivePhantomValueCents);
+    if (!sell.ok) throw new Error(sell.error);
+    expect(Math.abs(sell.realizedPnlCents! - displayedUnrealizedPnlCents)).toBeLessThan(200); // within $2, rounding only
+  });
+
+  it("selling the exact estimated exit value can leave shares behind — proving why 'Sell all' must use SELL_ALL_SENTINEL_CENTS, not an estimate", () => {
+    // Regression test for a bug the phantom-gain fix above introduced: the
+    // UI's "Sell all" button used to send shares * currentQuote as
+    // credits_amount_cents, which — being an OVERESTIMATE of true exit
+    // value — happened to always exceed ownedShares * livePrice and so
+    // reliably tripped executeTrade's Math.min(requestedShares, ownedShares)
+    // full-liquidation cap. Once "Sell all" switched to the realistic (lower)
+    // exitValueCents estimate, that safety margin disappeared: requesting
+    // exactly the estimated value converts back to a SMALLER share count
+    // than is actually owned (because the estimate already priced in the
+    // sell's own downward impact, on top of prePriceCents also being lower
+    // than the buy's post-impact quote), leaving a real residue unsold.
+    const user = makeUser('sell-all-undershoot@example.com');
+    const artist = makeArtist('Sell All Undershoot Artist');
+
+    const buy = executeTrade(user.id, artist.id, 'buy', 500_000); // $5,000, big enough for real impact
+    if (!buy.ok) throw new Error(buy.error);
+
+    const holdingBefore = getHolding(user.id, artist.id)!;
+    const currentQuoteCents = getArtist(artist.id)!.next_current_price_cents!;
+    const estimatedExitValueCents = quoteSell(currentQuoteCents, holdingBefore.shares).proceedsCents;
+
+    // The undershoot: selling exactly the honest estimate does NOT clear
+    // the position out.
+    const partialSell = executeTrade(user.id, artist.id, 'sell', estimatedExitValueCents);
+    if (!partialSell.ok) throw new Error(partialSell.error);
+    const holdingAfterEstimateSell = getHolding(user.id, artist.id);
+    expect(holdingAfterEstimateSell).toBeDefined();
+    expect(holdingAfterEstimateSell!.shares).toBeGreaterThan(0.001); // real shares left behind, not rounding dust
+
+    // The fix: SELL_ALL_SENTINEL_CENTS always clears it completely,
+    // regardless of any price-estimation drift.
+    const fullSell = executeTrade(user.id, artist.id, 'sell', SELL_ALL_SENTINEL_CENTS);
+    if (!fullSell.ok) throw new Error(fullSell.error);
+    expect(getHolding(user.id, artist.id)).toBeUndefined();
+    expect(fullSell.shares).toBeCloseTo(holdingAfterEstimateSell!.shares, 6);
   });
 
   it('repeated self-trading round trips cannot manufacture credits', () => {
@@ -2553,5 +2635,168 @@ describe('NEXT Feed — reactions', () => {
     // even though only one feed_reactions row exists at the end.
     expect(getRecentReactionCount(user.id, 1)).toBe(3);
     expect((db.prepare('SELECT COUNT(*) AS c FROM feed_reactions WHERE feed_event_id = ? AND user_id = ?').get(event.id, user.id) as { c: number }).c).toBe(1);
+  });
+});
+
+describe('NEXT Feed — User Take posts', () => {
+  it('createUserTakePost creates both a real post row and a real feed_event, linked', () => {
+    const user = makeUser('user-take-create@example.com');
+    const artist = makeArtist('User Take Create Artist');
+
+    const result = createUserTakePost(user.id, artist.id, 'I think this artist is massively undervalued.');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.post.user_id).toBe(user.id);
+    expect(result.post.artist_id).toBe(artist.id);
+    expect(result.post.body).toBe('I think this artist is massively undervalued.');
+    expect(result.event.event_type).toBe('user_take');
+    expect(result.event.actor_user_id).toBe(user.id);
+    expect(result.event.artist_id).toBe(artist.id);
+    expect(result.event.ref_type).toBe('user_post');
+    expect(result.event.ref_id).toBe(result.post.id);
+  });
+
+  it('rejects an empty or whitespace-only take', () => {
+    const user = makeUser('user-take-empty@example.com');
+    const artist = makeArtist('User Take Empty Artist');
+    const result = createUserTakePost(user.id, artist.id, '   ');
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects a take over the max length', () => {
+    const user = makeUser('user-take-toolong@example.com');
+    const artist = makeArtist('User Take Too Long Artist');
+    const result = createUserTakePost(user.id, artist.id, 'x'.repeat(USER_TAKE_BODY_MAX_LENGTH + 1));
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects a take about an artist that does not exist or is passed', () => {
+    const user = makeUser('user-take-badartist@example.com');
+    expect(createUserTakePost(user.id, 999_999, 'A take.').ok).toBe(false);
+
+    const passedArtist = makeArtist('User Take Passed Artist');
+    bulkSetArtistStage([passedArtist.id], 'passed', { id: user.id, name: user.name });
+    expect(createUserTakePost(user.id, passedArtist.id, 'A take.').ok).toBe(false);
+  });
+
+  it('rejects an exact duplicate resubmitted within a minute, but allows a genuinely different take', () => {
+    const user = makeUser('user-take-dup@example.com');
+    const artist = makeArtist('User Take Dup Artist');
+
+    const first = createUserTakePost(user.id, artist.id, 'Same take.');
+    expect(first.ok).toBe(true);
+    const dup = createUserTakePost(user.id, artist.id, 'Same take.');
+    expect(dup.ok).toBe(false);
+    const different = createUserTakePost(user.id, artist.id, 'A completely different take.');
+    expect(different.ok).toBe(true);
+  });
+
+  it('getUserTakePostById / getUserTakePostsByIds resolve real rows and skip missing ids', () => {
+    const user = makeUser('user-take-lookup@example.com');
+    const artist = makeArtist('User Take Lookup Artist');
+    const result = createUserTakePost(user.id, artist.id, 'Lookup take.');
+    if (!result.ok) throw new Error('expected ok');
+
+    expect(getUserTakePostById(result.post.id)?.body).toBe('Lookup take.');
+    expect(getUserTakePostById(999_999)).toBeUndefined();
+
+    const batch = getUserTakePostsByIds([result.post.id, 999_999]);
+    expect(batch.size).toBe(1);
+    expect(batch.get(result.post.id)?.body).toBe('Lookup take.');
+  });
+
+  it('deleteUserTakePost only deletes when called by the real owner, and is soft (no hard row removal)', () => {
+    const owner = makeUser('user-take-owner@example.com');
+    const other = makeUser('user-take-other@example.com');
+    const artist = makeArtist('User Take Delete Artist');
+    const result = createUserTakePost(owner.id, artist.id, 'Deletable take.');
+    if (!result.ok) throw new Error('expected ok');
+
+    expect(deleteUserTakePost(other.id, result.post.id)).toBe(false); // not the owner
+    expect(deleteUserTakePost(owner.id, result.post.id)).toBe(true);
+    expect(deleteUserTakePost(owner.id, result.post.id)).toBe(false); // already deleted
+
+    const stillThere = db.prepare('SELECT deleted_at FROM feed_user_posts WHERE id = ?').get(result.post.id) as { deleted_at: string };
+    expect(stillThere.deleted_at).toBeTruthy(); // row still exists, just marked
+  });
+
+  it('getUserTakePostsForUser lists only that user\'s non-deleted posts, newest first', () => {
+    const user = makeUser('user-take-mine@example.com');
+    const artist = makeArtist('User Take Mine Artist');
+    const other = makeUser('user-take-notmine@example.com');
+
+    const p1 = createUserTakePost(user.id, artist.id, 'First take.');
+    const p2 = createUserTakePost(user.id, artist.id, 'Second take.');
+    createUserTakePost(other.id, artist.id, 'Not mine.');
+    if (!p1.ok || !p2.ok) throw new Error('expected ok');
+    deleteUserTakePost(user.id, p1.post.id);
+
+    const mine = getUserTakePostsForUser(user.id);
+    expect(mine.map((p) => p.id)).toEqual([p2.post.id]); // p1 deleted, other user's excluded
+    expect(mine[0].artist_name).toBe('User Take Mine Artist');
+  });
+
+  it('reportUserTakePost is idempotent per (post, reporter) and getReportedUserTakePosts surfaces real reporter-facing data', () => {
+    const author = makeUser('user-take-report-author@example.com');
+    const reporter = makeUser('user-take-report-reporter@example.com');
+    const artist = makeArtist('User Take Report Artist');
+    const result = createUserTakePost(author.id, artist.id, 'A reported take.');
+    if (!result.ok) throw new Error('expected ok');
+
+    reportUserTakePost(reporter.id, result.post.id);
+    reportUserTakePost(reporter.id, result.post.id); // same reporter again — no-op
+
+    const reported = getReportedUserTakePosts();
+    const mine = reported.find((r) => r.post.id === result.post.id)!;
+    expect(mine).toBeDefined();
+    expect(mine.reportCount).toBe(1);
+    expect(mine.authorName).toBe(author.name);
+    expect(mine.authorEmail).toBe(author.email);
+    expect(mine.artistName).toBe('User Take Report Artist');
+  });
+
+  it('hideUserTakePost / unhideUserTakePost toggle visibility without deleting the row', () => {
+    const author = makeUser('user-take-hide-author@example.com');
+    const admin = makeUser('user-take-hide-admin@example.com');
+    const artist = makeArtist('User Take Hide Artist');
+    const result = createUserTakePost(author.id, artist.id, 'A take to hide.');
+    if (!result.ok) throw new Error('expected ok');
+
+    expect(hideUserTakePost(admin.id, result.post.id)).toBe(true);
+    expect(hideUserTakePost(admin.id, result.post.id)).toBe(false); // already hidden
+    const hidden = getUserTakePostById(result.post.id)!;
+    expect(hidden.hidden_at).toBeTruthy();
+    expect(hidden.hidden_by).toBe(admin.id);
+
+    expect(unhideUserTakePost(result.post.id)).toBe(true);
+    expect(getUserTakePostById(result.post.id)!.hidden_at).toBeFalsy();
+  });
+
+  it('getRecentUserTakePostCount only counts a user\'s own posts within the window', () => {
+    const user = makeUser('user-take-rate@example.com');
+    const artist = makeArtist('User Take Rate Artist');
+    createUserTakePost(user.id, artist.id, 'Take one.');
+    expect(getRecentUserTakePostCount(user.id, 10)).toBe(1);
+
+    db.prepare('UPDATE feed_user_posts SET created_at = ? WHERE user_id = ?').run(new Date(Date.now() - 60 * 60 * 1000).toISOString(), user.id);
+    expect(getRecentUserTakePostCount(user.id, 10)).toBe(0);
+  });
+
+  it('searchNextArtists matches by substring, excludes passed artists, and ranks a prefix match first', () => {
+    const prefixMatch = makeArtist('Zeta Prefix Artist');
+    const substringMatch = makeArtist('The Zeta Band');
+    const passedArtist = makeArtist('Zeta Passed Artist');
+    bulkSetArtistStage([passedArtist.id], 'passed', { id: 1, name: 'admin' });
+
+    const results = searchNextArtists('Zeta');
+    const names = results.map((r) => r.name);
+    expect(names).toContain(prefixMatch.name);
+    expect(names).toContain(substringMatch.name);
+    expect(names).not.toContain(passedArtist.name);
+    expect(names[0]).toBe(prefixMatch.name); // prefix match ranked ahead of mid-string match
+  });
+
+  it('searchNextArtists returns nothing for an empty query', () => {
+    expect(searchNextArtists('')).toEqual([]);
   });
 });

@@ -1,9 +1,11 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { FeedItemDTO } from '@/lib/feed-items';
 import { FEED_TABS, FeedTab, rankFeedItems } from '@/lib/feed-ranking';
 import { track } from '@/lib/track';
 import FeedCard from '@/components/next/FeedCard';
+import FeedComposer from '@/components/next/FeedComposer';
 
 // Every tab reads from the same pool of loaded items — "load more" pages in
 // more raw feed_events (chronological, unfiltered) via /api/next/feed, and
@@ -28,6 +30,7 @@ export default function FeedView({
   const [nextBeforeId, setNextBeforeId] = useState(initialNextBeforeId);
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [composerOpenSignal, setComposerOpenSignal] = useState(0);
   const watchedSet = useMemo(() => new Set(watchedArtistIds), [watchedArtistIds]);
 
   const ranked = useMemo(() => rankFeedItems(items, tab), [items, tab]);
@@ -36,6 +39,26 @@ export default function FeedView({
     if (next === tab) return;
     setTab(next);
     track('feed_tab_changed', { tab: next });
+  }
+
+  function removePost(feedEventId: number) {
+    setItems((prev) => prev.filter((i) => i.id !== feedEventId));
+  }
+
+  // Re-fetches the newest page and merges it into the head of the loaded
+  // pool (by id) — used right after posting a User Take, so it shows up
+  // immediately without a full page reload or losing scroll position/older
+  // already-loaded items.
+  async function refreshFromTop() {
+    try {
+      const res = await fetch('/api/next/feed');
+      if (!res.ok) return;
+      const data = await res.json();
+      const freshIds = new Set(data.items.map((i: FeedItemDTO) => i.id));
+      setItems((prev: FeedItemDTO[]) => [...data.items, ...prev.filter((i) => !freshIds.has(i.id))]);
+    } catch {
+      // Best-effort — the post still succeeded server-side; it'll show up on next natural refresh/load-more.
+    }
   }
 
   async function loadMore() {
@@ -90,6 +113,8 @@ export default function FeedView({
 
   return (
     <div className="flex flex-col gap-5">
+      <FeedComposer onPosted={refreshFromTop} openSignal={composerOpenSignal} />
+
       <div className="flex items-center gap-2">
         {FEED_TABS.map((t) => (
           <button
@@ -103,18 +128,52 @@ export default function FeedView({
         ))}
       </div>
 
-      {ranked.length === 0 ? (
+      {items.length === 0 ? (
+        <FeedGettingStartedState onShareTake={() => setComposerOpenSignal((n) => n + 1)} />
+      ) : ranked.length === 0 ? (
         <EmptyState tab={tab} />
       ) : (
         <div className="flex flex-col gap-3">
           {ranked.map((item) => (
-            <FeedCard key={item.id} item={item} watching={item.artist ? watchedSet.has(item.artist.id) : false} viewerUserId={viewerUserId} />
+            <FeedCard
+              key={item.id}
+              item={item}
+              watching={item.artist ? watchedSet.has(item.artist.id) : false}
+              viewerUserId={viewerUserId}
+              onPostDeleted={removePost}
+            />
           ))}
         </div>
       )}
 
       {hasMore && <div ref={sentinelRef} className="h-4" aria-hidden="true" />}
       {loadingMore && <p className="text-center text-xs m-0" style={{ color: 'var(--text-faint)' }}>Loading more…</p>}
+    </div>
+  );
+}
+
+// The genuinely-nothing-yet state (no items loaded at all, any tab) — per
+// the spec, distinct from the per-tab "nothing matches this filter" states
+// below. Real system-generated activity plus the one-time historical
+// bootstrap should normally mean this never renders on a live app; it's
+// the honest fallback for the very first moment, not a broken blank page.
+function FeedGettingStartedState({ onShareTake }: { onShareTake: () => void }) {
+  return (
+    <div className="next-card text-center py-16 flex flex-col items-center gap-4">
+      <div>
+        <p className="m-0 font-semibold">Your Feed is just getting started.</p>
+        <p className="mt-1.5 mb-0 text-sm" style={{ color: 'var(--text-faint)' }}>
+          Discover artists, back musicians, or share your first take.
+        </p>
+      </div>
+      <div className="flex items-center gap-2.5 flex-wrap justify-center">
+        <Link href="/next" className="next-btn-primary text-sm px-5 py-2.5 rounded-[10px] font-bold">
+          Discover Artists
+        </Link>
+        <button type="button" onClick={onShareTake} className="next-btn-ghost text-sm px-5 py-2.5 rounded-[10px] font-bold">
+          Share a Take
+        </button>
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { formatCents } from '@/lib/format';
-import { applyTradeImpact, executionPriceCents } from '@/lib/next-market';
+import { applyTradeImpact, executionPriceCents, quoteSell, SELL_ALL_SENTINEL_CENTS } from '@/lib/next-market';
 import { track } from '@/lib/track';
 
 const PRESETS_BUY = [25, 50, 100, 500];
@@ -46,8 +46,19 @@ export default function TradePanel({
   // result instead of trading twice. A new key is only drawn the next time
   // startConfirm() runs — i.e. the next genuinely new trade.
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
+  // Set only by "Sell all" / sell-mode MAX — see SELL_ALL_SENTINEL_CENTS'
+  // own comment for why full liquidation is submitted as an oversized
+  // amount rather than the (approximate, display-only) dollars figure.
+  // Cleared the moment the user types a different amount or picks a
+  // preset, so it never silently outlives the action that set it.
+  const [sellAllIntent, setSellAllIntent] = useState(false);
 
-  const marketValueCents = Math.round(ownedShares * priceCents);
+  // What selling the whole position right now would actually net, not the
+  // raw quote — priceCents can still be inflated by this same trader's own
+  // last buy, and a same-size sell mostly reverses that (see quoteSell's
+  // own comment). Using the raw quote here is exactly the bug where a buy
+  // instantly shows a paper gain that evaporates the moment you sell.
+  const marketValueCents = ownedShares > 0 ? quoteSell(priceCents, ownedShares).proceedsCents : 0;
   const unrealizedPnlCents = marketValueCents - costBasisCents;
 
   const amountCents = Math.round((Number(dollars) || 0) * 100);
@@ -56,6 +67,10 @@ export default function TradePanel({
   const executionCents = hasAmount ? executionPriceCents(priceCents, postTradePriceCents) : priceCents;
   const estimatedShares = hasAmount ? amountCents / executionCents : 0;
   const creditsAfterCents = mode === 'buy' ? creditsCents - amountCents : creditsCents + Math.round(estimatedShares * executionCents);
+  // Sell-all bypasses the (approximate) amountCents/executionCents estimate
+  // entirely — it's exact, not "approximately" like a partial sell.
+  const previewShares = mode === 'sell' && sellAllIntent ? ownedShares : estimatedShares;
+  const submittedCreditsAmountCents = mode === 'sell' && sellAllIntent ? SELL_ALL_SENTINEL_CENTS : amountCents;
 
   // A buy genuinely can't partial-fill past your balance — the server hard
   // -rejects it (see executeTrade) — so this needs to actually block
@@ -89,7 +104,7 @@ export default function TradePanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: mode, credits_amount_cents: amountCents, idempotencyKey,
+          type: mode, credits_amount_cents: submittedCreditsAmountCents, idempotencyKey,
           ...(feedReferralEventId != null ? { referralSource: 'feed', referralFeedEventId: feedReferralEventId } : {}),
         }),
       });
@@ -113,12 +128,18 @@ export default function TradePanel({
   function sellAll() {
     setMode('sell');
     setDollars((marketValueCents / 100).toFixed(2));
+    setSellAllIntent(true);
     resetAfterAction();
   }
 
   function setMax() {
-    if (mode === 'buy') setDollars((creditsCents / 100).toFixed(2));
-    else setDollars((marketValueCents / 100).toFixed(2));
+    if (mode === 'buy') {
+      setDollars((creditsCents / 100).toFixed(2));
+      setSellAllIntent(false);
+    } else {
+      setDollars((marketValueCents / 100).toFixed(2));
+      setSellAllIntent(true);
+    }
     resetAfterAction();
   }
 
@@ -171,7 +192,7 @@ export default function TradePanel({
           type="button"
           className="flex-1 text-center py-2.5 rounded-[10px] text-[13.5px] font-bold"
           style={mode === 'buy' ? { background: 'var(--ember)', color: 'var(--on-ember)' } : { border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
-          onClick={() => { setMode('buy'); resetAfterAction(); }}
+          onClick={() => { setMode('buy'); setSellAllIntent(false); resetAfterAction(); }}
         >
           Buy
         </button>
@@ -197,7 +218,7 @@ export default function TradePanel({
             className="num rounded-[10px] px-3.5 py-3 text-lg font-semibold outline-none"
             style={{ border: `1px solid ${overBalance ? 'var(--down)' : 'var(--ember-line)'}`, background: 'var(--bg)', color: 'var(--text)' }}
             value={dollars}
-            onChange={(e) => { setDollars(e.target.value); setSuccess(null); }}
+            onChange={(e) => { setDollars(e.target.value); setSellAllIntent(false); setSuccess(null); }}
           />
           <div className="flex gap-1.5 flex-wrap">
             {PRESETS_BUY.map((amt) => (
@@ -206,7 +227,7 @@ export default function TradePanel({
                 type="button"
                 className="px-3 py-[5px] rounded-full text-xs"
                 style={{ border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
-                onClick={() => { setDollars(String(amt)); setSuccess(null); }}
+                onClick={() => { setDollars(String(amt)); setSellAllIntent(false); setSuccess(null); }}
               >
                 ${amt}
               </button>
@@ -234,7 +255,12 @@ export default function TradePanel({
 
           {hasAmount && (
             <div className="text-[12.5px] rounded-xl p-3 flex flex-col gap-1.5 mt-1" style={{ background: 'var(--surface-2)' }}>
-              <div className={row}><span style={rowLabel}>You&apos;re {mode === 'buy' ? 'buying' : 'selling'} approximately</span><span className="num" style={{ color: 'var(--text)' }}>{estimatedShares.toFixed(4)} shares</span></div>
+              <div className={row}>
+                <span style={rowLabel}>
+                  {mode === 'sell' && sellAllIntent ? "You're selling" : `You're ${mode === 'buy' ? 'buying' : 'selling'} approximately`}
+                </span>
+                <span className="num" style={{ color: 'var(--text)' }}>{previewShares.toFixed(4)} shares</span>
+              </div>
               <div className={row}><span style={rowLabel}>Current execution price</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(executionCents)}</span></div>
               <div className={row}><span style={rowLabel}>Estimated price after trade</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(postTradePriceCents)}</span></div>
               <div className={row}><span style={rowLabel}>Remaining cash after trade</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(Math.max(0, creditsAfterCents))}</span></div>
@@ -262,7 +288,9 @@ export default function TradePanel({
         <div className="flex flex-col gap-3">
           <div className="text-[13px] rounded-xl border p-4 flex flex-col gap-2" style={{ borderColor: 'var(--border)' }}>
             <p className="m-0 font-semibold" style={{ color: 'var(--text)' }}>
-              Confirm: {mode === 'buy' ? 'Buy' : 'Sell'} ~{estimatedShares.toFixed(4)} shares of {artistName}
+              {mode === 'sell' && sellAllIntent
+                ? `Confirm: Sell all ${previewShares.toFixed(4)} shares of ${artistName}`
+                : `Confirm: ${mode === 'buy' ? 'Buy' : 'Sell'} ~${previewShares.toFixed(4)} shares of ${artistName}`}
             </p>
             <div className={row}><span style={rowLabel}>{mode === 'buy' ? 'Spending' : 'Selling'}</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(amountCents)}</span></div>
             <div className={row}><span style={rowLabel}>Execution price</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(executionCents)}</span></div>

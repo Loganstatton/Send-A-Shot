@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'feed-items-test-'));
 
 const {
-  addLogEntry, addToWatchlist, createArtist, createFeedEvent, createUser, db, executeTrade, getFoundingBelieverRecord, setFeedReaction,
+  addLogEntry, addToWatchlist, createArtist, createFeedEvent, createUser, createUserTakePost, db, deleteUserTakePost, executeTrade,
+  getFoundingBelieverRecord, hideUserTakePost, setFeedReaction,
 } = await import('./db');
 const { buildFeedAssemblyContext, buildFeedItems } = await import('./feed-items');
 
@@ -117,8 +118,8 @@ describe('buildFeedItems', () => {
 
     // A context that never resolved this artist (simulating a stale/missing row).
     const emptyCtx = {
-      followedArtistIds: new Set<number>(), favoriteGenres: new Set<string>(), marketByArtistId: new Map(), scoreChanges: {},
-      usersById: new Map(), reactionCountsByEventId: new Map(), viewerReactionByEventId: new Map(),
+      viewerUserId: user.id, followedArtistIds: new Set<number>(), favoriteGenres: new Set<string>(), marketByArtistId: new Map(), scoreChanges: {},
+      usersById: new Map(), reactionCountsByEventId: new Map(), viewerReactionByEventId: new Map(), userPostsByRefId: new Map(),
     };
     expect(buildFeedItems([event], emptyCtx)).toHaveLength(0);
   });
@@ -164,5 +165,47 @@ describe('buildFeedItems', () => {
     expect(quietItem.reactionCounts).toEqual({ fire: 0, eyes: 0, early: 0 });
     expect(quietItem.viewerReaction).toBeNull();
     expect(quietItem.factors.engagement).toBe(0);
+  });
+
+  it('resolves a user_take event into real post body + author, with isOwn set correctly for both the author and another viewer', () => {
+    const author = createUser({ name: 'Feed Items Take Author', email: 'feed-items-take-author@example.com', password_hash: 'hash' });
+    const otherViewer = createUser({ name: 'Feed Items Take Other Viewer', email: 'feed-items-take-other-viewer@example.com', password_hash: 'hash' });
+    const artist = makeArtist('Feed Items Take Artist');
+    const result = createUserTakePost(author.id, artist.id, 'I think this artist is massively undervalued.');
+    if (!result.ok) throw new Error('expected ok');
+
+    const authorCtx = buildFeedAssemblyContext(author.id, [result.event]);
+    const [asAuthor] = buildFeedItems([result.event], authorCtx);
+    expect(asAuthor.extra?.userPost?.body).toBe('I think this artist is massively undervalued.');
+    expect(asAuthor.extra?.userPost?.isOwn).toBe(true);
+    expect(asAuthor.actor?.id).toBe(author.id);
+
+    const otherCtx = buildFeedAssemblyContext(otherViewer.id, [result.event]);
+    const [asOther] = buildFeedItems([result.event], otherCtx);
+    expect(asOther.extra?.userPost?.isOwn).toBe(false);
+  });
+
+  it('drops a user_take item from the feed once its post is deleted or hidden, for every viewer', () => {
+    const author = createUser({ name: 'Feed Items Take Deleted Author', email: 'feed-items-take-deleted@example.com', password_hash: 'hash' });
+    const admin = createUser({ name: 'Feed Items Take Admin', email: 'feed-items-take-admin@example.com', password_hash: 'hash' });
+    const artist = makeArtist('Feed Items Take Deleted Artist');
+
+    const deletedResult = createUserTakePost(author.id, artist.id, 'Will be deleted.');
+    const hiddenResult = createUserTakePost(author.id, artist.id, 'Will be hidden.');
+    if (!deletedResult.ok || !hiddenResult.ok) throw new Error('expected ok');
+    deleteUserTakePost(author.id, deletedResult.post.id);
+    hideUserTakePost(admin.id, hiddenResult.post.id);
+
+    const ctx = buildFeedAssemblyContext(author.id, [deletedResult.event, hiddenResult.event]);
+    expect(buildFeedItems([deletedResult.event, hiddenResult.event], ctx)).toHaveLength(0);
+  });
+
+  it('a user_take with no ref_id or an unresolvable post is dropped rather than rendered blank', () => {
+    const user = createUser({ name: 'Feed Items Take Orphan User', email: 'feed-items-take-orphan@example.com', password_hash: 'hash' });
+    const artist = makeArtist('Feed Items Take Orphan Artist');
+    const orphanEvent = createFeedEvent({ eventType: 'user_take', actorUserId: user.id, artistId: artist.id, refType: 'user_post', refId: 999_999 })!;
+
+    const ctx = buildFeedAssemblyContext(user.id, [orphanEvent]);
+    expect(buildFeedItems([orphanEvent], ctx)).toHaveLength(0);
   });
 });
