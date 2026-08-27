@@ -8,10 +8,12 @@ import { describe, expect, it, vi } from 'vitest';
 // file instead of the real dev/prod database.
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-test-'));
 
+const { quoteSell, SELL_ALL_SENTINEL_CENTS } = await import('./next-market');
+
 const {
   addLogEntry, addToWatchlist, approveDiscoveryCandidate, bulkSetArtistStage, completeDiscoveryRun,
   completeNextOnboarding, completeSyncRun, createArtist, createArtistClaim, createDiscoveryRun, createFeedEvent, createSyncRun,
-  createUser, db,
+  createUser, db, getHolding,
   deleteUser, executeTrade, findArtistsByName,
   getApprovedDiscoveriesCount, getArtist, getArtistClaim, getArtistFieldHistory, getArtistLastActivityMap,
   getArtistLog, getArtistsClaimedByUser,
@@ -155,6 +157,44 @@ describe('NEXT trading engine — self-trade exploit prevention', () => {
     const sell = executeTrade(user.id, artist.id, 'sell', naivePhantomValueCents);
     if (!sell.ok) throw new Error(sell.error);
     expect(Math.abs(sell.realizedPnlCents! - displayedUnrealizedPnlCents)).toBeLessThan(200); // within $2, rounding only
+  });
+
+  it("selling the exact estimated exit value can leave shares behind — proving why 'Sell all' must use SELL_ALL_SENTINEL_CENTS, not an estimate", () => {
+    // Regression test for a bug the phantom-gain fix above introduced: the
+    // UI's "Sell all" button used to send shares * currentQuote as
+    // credits_amount_cents, which — being an OVERESTIMATE of true exit
+    // value — happened to always exceed ownedShares * livePrice and so
+    // reliably tripped executeTrade's Math.min(requestedShares, ownedShares)
+    // full-liquidation cap. Once "Sell all" switched to the realistic (lower)
+    // exitValueCents estimate, that safety margin disappeared: requesting
+    // exactly the estimated value converts back to a SMALLER share count
+    // than is actually owned (because the estimate already priced in the
+    // sell's own downward impact, on top of prePriceCents also being lower
+    // than the buy's post-impact quote), leaving a real residue unsold.
+    const user = makeUser('sell-all-undershoot@example.com');
+    const artist = makeArtist('Sell All Undershoot Artist');
+
+    const buy = executeTrade(user.id, artist.id, 'buy', 500_000); // $5,000, big enough for real impact
+    if (!buy.ok) throw new Error(buy.error);
+
+    const holdingBefore = getHolding(user.id, artist.id)!;
+    const currentQuoteCents = getArtist(artist.id)!.next_current_price_cents!;
+    const estimatedExitValueCents = quoteSell(currentQuoteCents, holdingBefore.shares).proceedsCents;
+
+    // The undershoot: selling exactly the honest estimate does NOT clear
+    // the position out.
+    const partialSell = executeTrade(user.id, artist.id, 'sell', estimatedExitValueCents);
+    if (!partialSell.ok) throw new Error(partialSell.error);
+    const holdingAfterEstimateSell = getHolding(user.id, artist.id);
+    expect(holdingAfterEstimateSell).toBeDefined();
+    expect(holdingAfterEstimateSell!.shares).toBeGreaterThan(0.001); // real shares left behind, not rounding dust
+
+    // The fix: SELL_ALL_SENTINEL_CENTS always clears it completely,
+    // regardless of any price-estimation drift.
+    const fullSell = executeTrade(user.id, artist.id, 'sell', SELL_ALL_SENTINEL_CENTS);
+    if (!fullSell.ok) throw new Error(fullSell.error);
+    expect(getHolding(user.id, artist.id)).toBeUndefined();
+    expect(fullSell.shares).toBeCloseTo(holdingAfterEstimateSell!.shares, 6);
   });
 
   it('repeated self-trading round trips cannot manufacture credits', () => {

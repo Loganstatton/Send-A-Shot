@@ -35,6 +35,19 @@ export const ALERT_PRICE_PCT_THRESHOLD = 10;
 export const NEXT_STARTING_CREDITS_CENTS = 1_000_000; // $10,000.00 in NEXT Credits
 export const NEXT_MIN_PRICE_CENTS = 100; // price floor: $1.00
 
+// "Sell everything" is deliberately requested as an oversized credits
+// amount, not an estimated dollar figure — executeTrade's sell branch
+// already caps sharesSold at ownedShares (Math.min(requestedShares,
+// ownedShares)), same idiom lib/db.test.ts uses throughout to sell out a
+// position. Any estimate of "what my shares are worth" derived from a
+// live quote can undershoot the true share count by the time the request
+// executes (the quote can move, or — as happened here — the estimate can
+// legitimately be LESS than shares * quote once it accounts for a sell's
+// own price impact), which would silently leave a residue unsold. A huge
+// sentinel sidesteps the estimation entirely: it always exceeds any real
+// holding, so the server-side cap is what actually decides the amount.
+export const SELL_ALL_SENTINEL_CENTS = 999_999_999;
+
 // Base price when an artist first enters the market: a $1-$50 range, curved
 // so a strong score commands a disproportionately higher starting price
 // (score 55 -> ~$17.70, score 94 -> ~$44.84, score 100 -> $50.00).
