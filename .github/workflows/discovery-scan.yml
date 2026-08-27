@@ -2,10 +2,11 @@ name: Daily discovery scan
 
 # Automates what used to require clicking buttons by hand: find new
 # YouTube candidates, fill in top songs, backfill missing featured videos,
-# backfill missing artist photos, refresh Soundcharts stats, generate NEXT
-# Feed signals from the day's fresh data. All these endpoints already
-# existed for exactly this (see README) — this is just the "point a
-# scheduler at them" step, since Render's web services have no built-in
+# backfill missing artist photos, refresh Soundcharts stats, turn existing
+# NEXT history into initial Feed events (once, then a no-op forever after),
+# generate NEXT Feed signals from the day's fresh data. All these endpoints
+# already existed for exactly this (see README) — this is just the "point
+# a scheduler at them" step, since Render's web services have no built-in
 # cron.
 #
 # New candidates still land in the New Candidates queue for a human to
@@ -81,6 +82,17 @@ jobs:
       - name: Sync Soundcharts stats
         run: |
           status=$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST "$APP_URL/api/soundcharts/sync" \
+            -H "x-cron-secret: $CRON_SECRET")
+          cat /tmp/response.json
+          echo
+          echo "HTTP $status"
+          [ "$status" -lt 400 ]
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      - name: Bootstrap NEXT Feed from history (one-time, idempotent)
+        run: |
+          status=$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST "$APP_URL/api/next/feed/bootstrap" \
             -H "x-cron-secret: $CRON_SECRET")
           cat /tmp/response.json
           echo

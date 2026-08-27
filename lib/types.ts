@@ -428,7 +428,19 @@ export type AnalyticsEventType =
   | 'feed_trade_completed'
   | 'feed_collectible_shared'
   | 'feed_scroll_depth'
-  | 'feed_reaction_added';
+  | 'feed_reaction_added'
+  // User Take-specific mirrors of the generic feed_* interaction events
+  // above, fired ADDITIONALLY (not instead) when the card in question is a
+  // user_take — so "did a user's opinion actually cause a listen/watch/
+  // trade" is answerable on its own, not blended into every other post
+  // type's numbers.
+  | 'feed_user_post_created'
+  | 'feed_user_post_deleted'
+  | 'feed_user_post_reported'
+  | 'feed_user_post_artist_opened'
+  | 'feed_user_post_audio_played'
+  | 'feed_user_post_watch'
+  | 'feed_user_post_trade_initiated';
 
 export type AnalyticsEvent = {
   id: number;
@@ -811,7 +823,7 @@ export type SyncRunStatus = 'running' | 'completed' | 'failed';
 // source key for this before Spotify's Client Credentials flow started
 // 403ing on every call for new apps — old rows keep that value, nothing
 // new writes it.)
-export type SyncSourceKey = 'soundcharts' | 'deezer' | 'spotify' | 'youtube_video' | 'soundcharts_photo' | 'feed_signals';
+export type SyncSourceKey = 'soundcharts' | 'deezer' | 'spotify' | 'youtube_video' | 'soundcharts_photo' | 'feed_signals' | 'feed_bootstrap';
 
 // One row per sync run — same "last run: X ago" visibility as DiscoveryRun
 // above, so an automated daily sync that silently starts failing (bad
@@ -863,7 +875,14 @@ export type FeedEventType =
   | 'signal_overheated'
   | 'market_momentum_mover'
   | 'market_momentum_backers'
-  | 'market_momentum_most_watched';
+  | 'market_momentum_most_watched'
+  // A normal user's own opinion about an artist on NEXT — the one event
+  // type with real user-generated content, not a pointer to something an
+  // existing system already owns. See feed_user_posts' own comment for why
+  // this needed a real content table instead of a pointer, unlike
+  // artist_update (points at contact_log) or founding_believer_share
+  // (points at next_founding_believers).
+  | 'user_take';
 
 // Room to grow (e.g. a future 'followers_only' visibility for a Following-
 // only post) — a single real value today rather than a boolean, so adding
@@ -891,6 +910,23 @@ export type FeedEvent = {
   metadata?: string;
   dedupe_key?: string;
   created_at: string;
+};
+
+// The actual content behind a user_take feed event — genuinely new
+// user-generated content, unlike every other event type, which only ever
+// points at a row an existing system (contact_log, next_founding_believers)
+// already owns. deleted_at/hidden_at are both soft — a row is never
+// hard-deleted, so a report or a moderation action always has something
+// real to point at afterward.
+export type FeedUserPost = {
+  id: number;
+  user_id: number;
+  artist_id: number;
+  body: string;
+  created_at: string;
+  deleted_at?: string;
+  hidden_at?: string;
+  hidden_by?: number;
 };
 
 // Lightweight, deliberately (see the Feed spec's explicit "not yet" list:

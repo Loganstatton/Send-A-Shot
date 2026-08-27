@@ -8,12 +8,12 @@
 
 import {
   getBackedArtistIds, getFeedReactionCountsForEvents, getFoundingBelieverRecordById, getLogEntryById, getNextArtistsByIds,
-  getScoreChanges, getUserFeedReactionsForEvents, getUsersByIds, getWatchlistArtistIds,
+  getScoreChanges, getUserFeedReactionsForEvents, getUsersByIds, getUserTakePostsByIds, getWatchlistArtistIds,
 } from './db';
 import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, changePctForWindow, changePctSinceListing } from './next-market';
 import { getFoundingBelieverTier, foundingBelieverSerial } from './founding-believer';
 import { MIN_BACKERS_FOR_MOMENTUM, MIN_WATCHERS_FOR_MOMENTUM } from './feed-signals';
-import { FeedEvent, FeedEventType, NextMarketRow, ReactionType, ScoreChange, User } from './types';
+import { FeedEvent, FeedEventType, FeedUserPost, NextMarketRow, ReactionType, ScoreChange, User } from './types';
 
 const EMPTY_REACTION_COUNTS: Record<ReactionType, number> = { fire: 0, eyes: 0, early: 0 };
 
@@ -38,6 +38,7 @@ export type FeedItemDTO = {
   extra?: {
     logMessage?: string;
     founding?: { tierKey: string; tierLabel: string; serial: string; discoveryRank: number };
+    userPost?: { id: number; body: string; isOwn: boolean };
   };
   reactionCounts: Record<ReactionType, number>;
   viewerReaction: ReactionType | null;
@@ -52,6 +53,7 @@ export type FeedItemDTO = {
 };
 
 export type FeedAssemblyContext = {
+  viewerUserId: number;
   followedArtistIds: Set<number>; // watched ∪ backed, for the viewer this feed is being built for
   favoriteGenres: Set<string>; // genres of the artists in followedArtistIds
   marketByArtistId: Map<number, NextMarketRow>;
@@ -59,6 +61,7 @@ export type FeedAssemblyContext = {
   usersById: Map<number, User>;
   reactionCountsByEventId: Map<number, Record<ReactionType, number>>;
   viewerReactionByEventId: Map<number, ReactionType>;
+  userPostsByRefId: Map<number, FeedUserPost>;
 };
 
 function clamp01(n: number): number {
@@ -80,6 +83,10 @@ const EVENT_TYPE_BASE_STRENGTH: Record<FeedEventType, number> = {
   market_momentum_mover: 0.8,
   market_momentum_backers: 0.65,
   market_momentum_most_watched: 0.6,
+  // A real opinion, but not inherently more exciting than a factual market
+  // event — reactions (the engagement factor) are what should actually
+  // carry a strong take upward, not this baseline.
+  user_take: 0.4,
 };
 
 // How far past the "worth posting at all" threshold an event's own numbers
@@ -146,7 +153,7 @@ function buildArtistDTO(row: NextMarketRow): FeedItemDTO['artist'] {
   };
 }
 
-function buildExtra(event: FeedEvent): FeedItemDTO['extra'] {
+function buildExtra(event: FeedEvent, ctx: FeedAssemblyContext): FeedItemDTO['extra'] {
   if (event.event_type === 'artist_update' && event.ref_type === 'contact_log' && event.ref_id != null) {
     const entry = getLogEntryById(event.ref_id);
     return entry ? { logMessage: entry.message } : undefined;
@@ -167,6 +174,11 @@ function buildExtra(event: FeedEvent): FeedItemDTO['extra'] {
       },
     };
   }
+  if (event.event_type === 'user_take' && event.ref_type === 'user_post' && event.ref_id != null) {
+    const post = ctx.userPostsByRefId.get(event.ref_id);
+    if (!post || post.deleted_at || post.hidden_at) return undefined;
+    return { userPost: { id: post.id, body: post.body, isOwn: post.user_id === ctx.viewerUserId } };
+  }
   return undefined;
 }
 
@@ -176,7 +188,7 @@ function buildFeedItem(event: FeedEvent, ctx: FeedAssemblyContext): FeedItemDTO 
   const artist = marketRow ? buildArtistDTO(marketRow) : undefined;
   const actorUser = event.actor_user_id != null ? ctx.usersById.get(event.actor_user_id) : undefined;
 
-  let extra = buildExtra(event);
+  let extra = buildExtra(event, ctx);
   if (extra?.founding && artist) {
     extra = { founding: { ...extra.founding, serial: foundingBelieverSerial(artist.name, extra.founding.discoveryRank) } };
   }
@@ -211,9 +223,19 @@ function buildFeedItem(event: FeedEvent, ctx: FeedAssemblyContext): FeedItemDTO 
 
 // Events referencing an artist that no longer resolves (deleted/never
 // matched) are dropped rather than rendered half-blank — real data only,
-// same rule the spec applies to the events themselves.
+// same rule the spec applies to the events themselves. A user_take whose
+// post was deleted by its author or hidden by a moderator is dropped the
+// same way — the feed_events row stays (so its id/timestamp never gets
+// reused), but nothing renders for it, for anyone.
 export function buildFeedItems(events: FeedEvent[], ctx: FeedAssemblyContext): FeedItemDTO[] {
-  return events.filter((e) => e.artist_id == null || ctx.marketByArtistId.has(e.artist_id)).map((e) => buildFeedItem(e, ctx));
+  return events
+    .filter((e) => e.artist_id == null || ctx.marketByArtistId.has(e.artist_id))
+    .filter((e) => {
+      if (e.event_type !== 'user_take') return true;
+      const post = e.ref_id != null ? ctx.userPostsByRefId.get(e.ref_id) : undefined;
+      return post != null && !post.deleted_at && !post.hidden_at;
+    })
+    .map((e) => buildFeedItem(e, ctx));
 }
 
 // Shared by the Feed page's initial server render and the pagination API
@@ -235,7 +257,9 @@ export function buildFeedAssemblyContext(userId: number, events: FeedEvent[]): F
 
   const actorIds = events.map((e) => e.actor_user_id).filter((id): id is number => id != null);
   const eventIds = events.map((e) => e.id);
+  const userPostRefIds = events.filter((e) => e.event_type === 'user_take' && e.ref_id != null).map((e) => e.ref_id as number);
   return {
+    viewerUserId: userId,
     followedArtistIds,
     favoriteGenres,
     marketByArtistId,
@@ -243,5 +267,6 @@ export function buildFeedAssemblyContext(userId: number, events: FeedEvent[]): F
     usersById: getUsersByIds(actorIds),
     reactionCountsByEventId: getFeedReactionCountsForEvents(eventIds),
     viewerReactionByEventId: getUserFeedReactionsForEvents(userId, eventIds),
+    userPostsByRefId: getUserTakePostsByIds(userPostRefIds),
   };
 }

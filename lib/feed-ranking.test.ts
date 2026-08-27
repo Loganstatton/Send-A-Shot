@@ -46,6 +46,15 @@ describe('itemMatchesTab', () => {
     expect(itemMatchesTab(makeItem({ eventType: 'new_artist' }), 'market')).toBe(false);
     expect(itemMatchesTab(makeItem({ eventType: 'artist_update' }), 'market')).toBe(false);
     expect(itemMatchesTab(makeItem({ eventType: 'founding_believer_share' }), 'market')).toBe(false);
+    expect(itemMatchesTab(makeItem({ eventType: 'user_take' }), 'market')).toBe(false);
+  });
+
+  it('user_take shows on for_you always, and on following only when its artist is followed', () => {
+    expect(itemMatchesTab(makeItem({ eventType: 'user_take' }), 'for_you')).toBe(true);
+    const followedTake = makeItem({ eventType: 'user_take', factors: makeFactors({ isFollowed: true }) });
+    const unfollowedTake = makeItem({ eventType: 'user_take', factors: makeFactors({ isFollowed: false }) });
+    expect(itemMatchesTab(followedTake, 'following')).toBe(true);
+    expect(itemMatchesTab(unfollowedTake, 'following')).toBe(false);
   });
 });
 

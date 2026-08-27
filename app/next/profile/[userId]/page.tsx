@@ -1,13 +1,14 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
-import { getFoundingBelieverRecordsForUser, getScoutProfile } from '@/lib/db';
+import { getFoundingBelieverRecordsForUser, getScoutProfile, getUserTakePostsForUser } from '@/lib/db';
 import { getSessionUser, requireUser } from '@/lib/auth';
 import { EARLY_DISCOVERY_RANK_THRESHOLD } from '@/lib/scout-score';
 import { formatCents } from '@/lib/format';
 import { DiscoveryCandidateStatus } from '@/lib/types';
 import ArtistAvatar from '@/components/ArtistAvatar';
 import NextStatTile from '@/components/next/NextStatTile';
+import MyTakesList from '@/components/next/MyTakesList';
 
 const DISCOVERY_STATUS_LABELS: Record<DiscoveryCandidateStatus, string> = {
   new: 'Awaiting review',
@@ -38,6 +39,10 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
   const viewer = await getSessionUser();
   const isOwnProfile = viewer?.id === userId;
   const founded = getFoundingBelieverRecordsForUser(userId);
+  // "View own posts" — a normal-user Feed control from the spec — lives
+  // here rather than a new page, same reasoning as the Founding Believer
+  // trophy case above: this profile already is the "my own stuff" view.
+  const myTakes = isOwnProfile ? getUserTakePostsForUser(userId) : [];
 
   return (
     <div className="flex flex-col gap-8">
@@ -223,6 +228,22 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
           </div>
         ))}
       </div>
+
+      {isOwnProfile && (
+        <div className="flex flex-col gap-3">
+          <h2 className="font-display font-bold text-lg m-0 flex items-center gap-2">💬 Your Takes</h2>
+          {myTakes.length === 0 ? (
+            <div className="next-card text-center py-10">
+              <p className="m-0" style={{ color: 'var(--text-muted)' }}>You haven&apos;t shared a take yet.</p>
+              <Link href="/next/feed" className="next-btn-primary mt-4 inline-flex px-5 py-2.5 rounded-[10px] text-sm">Go to Feed</Link>
+            </div>
+          ) : (
+            <MyTakesList
+              initial={myTakes.map((t) => ({ id: t.id, body: t.body, artistId: t.artist_id, artistName: t.artist_name, createdAt: t.created_at }))}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

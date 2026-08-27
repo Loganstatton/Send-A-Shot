@@ -12,7 +12,7 @@ import {
   AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistClaim, ArtistFieldChange, ArtistInput,
   DiscoveryCandidate, DiscoveryCandidateHistoryEntry, DiscoveryCandidateStatus, DiscoveryLeaderboardEntry, DiscoveryRun,
   DiscoverySourceKey, ErrorReport,
-  DueFollowUp, FavoriteGenre, FeedEvent, FeedEventType, FeedReaction, FoundingBelieverRecord,
+  DueFollowUp, FavoriteGenre, FeedEvent, FeedEventType, FeedReaction, FeedUserPost, FoundingBelieverRecord,
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
   ReactionType, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutDiscoveryEntry,
@@ -709,6 +709,36 @@ CREATE TABLE IF NOT EXISTS feed_reaction_taps (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_feed_reaction_taps_user ON feed_reaction_taps(user_id);
+
+-- User Take — the one Feed post type with real user-generated content (see
+-- FeedUserPost's own comment in lib/types.ts). Soft-deleted/soft-hidden,
+-- never removed outright, so a report always has something real to show an
+-- admin even after the author deletes it.
+CREATE TABLE IF NOT EXISTS feed_user_posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  deleted_at TEXT,
+  hidden_at TEXT,
+  hidden_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feed_user_posts_user ON feed_user_posts(user_id);
+CREATE INDEX IF NOT EXISTS idx_feed_user_posts_artist ON feed_user_posts(artist_id);
+
+-- One row per (post, reporter) — UNIQUE so the same person reporting twice
+-- doesn't inflate the count. report_count is never a separate maintained
+-- column; it's always COUNT(*) here at read time (see
+-- getReportedUserTakePosts), same "compute the aggregate fresh, don't
+-- persist a number that can drift" reasoning as the rest of this app.
+CREATE TABLE IF NOT EXISTS feed_post_reports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id INTEGER NOT NULL REFERENCES feed_user_posts(id) ON DELETE CASCADE,
+  reporter_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  UNIQUE(post_id, reporter_user_id)
+);
 `);
 
 const ARTIST_SELECT = `
@@ -3305,6 +3335,163 @@ export function getUserFeedReactionsForEvents(userId: number, feedEventIds: numb
     .all(userId, ...feedEventIds) as { feed_event_id: number; reaction_type: ReactionType }[];
   for (const row of rows) result.set(row.feed_event_id, row.reaction_type);
   return result;
+}
+
+// --- NEXT Feed: User Take posts ---
+
+export const USER_TAKE_BODY_MAX_LENGTH = 500;
+// A post is heavier content than a trade or a tap, so a tighter window
+// than TRADE_RATE_LIMIT_PER_MINUTE/REACTION_RATE_LIMIT_PER_MINUTE — still
+// generous for genuine use (a real person posting 5 takes in 10 minutes is
+// already an unusual pace), tight enough to bound spam.
+export const USER_TAKE_RATE_LIMIT_PER_10_MIN = 5;
+
+export function getRecentUserTakePostCount(userId: number, minutes: number): number {
+  const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+  const row = db.prepare('SELECT COUNT(*) AS c FROM feed_user_posts WHERE user_id = ? AND created_at >= ?').get(userId, cutoff) as { c: number };
+  return row.c;
+}
+
+// Business-logic validation lives here (matches executeTrade's own
+// ok/error result shape); auth and the rate-limit check above live in the
+// route, same split every other Feed-writing route already uses.
+export function createUserTakePost(
+  userId: number,
+  artistId: number,
+  rawBody: string
+): { ok: true; post: FeedUserPost; event: FeedEvent } | { ok: false; error: string } {
+  const body = rawBody.trim().replace(/\n{3,}/g, '\n\n');
+  if (!body) return { ok: false, error: 'Your take can\'t be empty.' };
+  if (body.length > USER_TAKE_BODY_MAX_LENGTH) return { ok: false, error: `Keep it under ${USER_TAKE_BODY_MAX_LENGTH} characters.` };
+
+  const artist = getArtist(artistId);
+  if (!artist || artist.stage === 'passed') return { ok: false, error: 'That artist is not on NEXT.' };
+
+  // Prevent a duplicated/rapid-retried submission (a flaky network, an
+  // accidental double-tap) from posting the same take twice, without full
+  // idempotency-key plumbing — a post isn't financial, so "same user, same
+  // artist, same exact text, within the last minute" is a cheap, sufficient
+  // guard rather than trade-style client-generated keys.
+  const dupCutoff = new Date(Date.now() - 60 * 1000).toISOString();
+  const dup = db
+    .prepare('SELECT 1 FROM feed_user_posts WHERE user_id = ? AND artist_id = ? AND body = ? AND created_at >= ? LIMIT 1')
+    .get(userId, artistId, body, dupCutoff);
+  if (dup) return { ok: false, error: 'You just posted that — give it a moment before posting again.' };
+
+  const now = new Date().toISOString();
+  const info = db
+    .prepare('INSERT INTO feed_user_posts (user_id, artist_id, body, created_at) VALUES (?, ?, ?, ?)')
+    .run(userId, artistId, body, now);
+  const post = getUserTakePostById(info.lastInsertRowid as number)!;
+
+  // No dedupe_key — every genuine post is meant to create its own event
+  // (unlike a signal, a take is never "the same thing happening again").
+  const event = createFeedEvent({ eventType: 'user_take', actorUserId: userId, artistId, refType: 'user_post', refId: post.id })!;
+  return { ok: true, post, event };
+}
+
+export function getUserTakePostById(id: number): FeedUserPost | undefined {
+  return db.prepare('SELECT * FROM feed_user_posts WHERE id = ?').get(id) as FeedUserPost | undefined;
+}
+
+export function getUserTakePostsByIds(ids: number[]): Map<number, FeedUserPost> {
+  const result = new Map<number, FeedUserPost>();
+  if (ids.length === 0) return result;
+  const unique = [...new Set(ids)];
+  const placeholders = unique.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT * FROM feed_user_posts WHERE id IN (${placeholders})`).all(...unique) as FeedUserPost[];
+  for (const row of rows) result.set(row.id, row);
+  return result;
+}
+
+// Soft delete only, and only the owner may do it. The feed_events row is
+// left in place — lib/feed-items.ts drops any user_take item whose post is
+// deleted/hidden at render time, the same "resolve, then filter" pattern
+// already used for an item whose artist no longer resolves.
+export function deleteUserTakePost(userId: number, postId: number): boolean {
+  const info = db.prepare('UPDATE feed_user_posts SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+    .run(new Date().toISOString(), postId, userId);
+  return info.changes > 0;
+}
+
+export function getUserTakePostsForUser(userId: number): (FeedUserPost & { artist_name: string })[] {
+  return db.prepare(`
+    SELECT feed_user_posts.*, artists.name AS artist_name
+    FROM feed_user_posts
+    JOIN artists ON artists.id = feed_user_posts.artist_id
+    WHERE feed_user_posts.user_id = ? AND feed_user_posts.deleted_at IS NULL
+    ORDER BY feed_user_posts.created_at DESC
+  `).all(userId) as (FeedUserPost & { artist_name: string })[];
+}
+
+// One report per (post, reporter) — a second report from the same person
+// is a silent no-op via the UNIQUE index, not an error.
+export function reportUserTakePost(reporterId: number, postId: number): void {
+  db.prepare('INSERT OR IGNORE INTO feed_post_reports (post_id, reporter_user_id, created_at) VALUES (?, ?, ?)')
+    .run(postId, reporterId, new Date().toISOString());
+}
+
+// Admin moderation view — every post with at least one report, newest
+// report first, with exactly what a moderator needs: the real account
+// behind it (name/email, not just a display name), the artist context, and
+// how many people flagged it. report_count is COUNT(*) at read time, never
+// a maintained column (see feed_post_reports' own DDL comment).
+export function getReportedUserTakePosts(): {
+  post: FeedUserPost; authorName: string; authorEmail: string; artistName: string; reportCount: number; lastReportedAt: string;
+}[] {
+  const rows = db.prepare(`
+    SELECT
+      feed_user_posts.*,
+      users.name AS author_name, users.email AS author_email,
+      artists.name AS artist_name,
+      COUNT(feed_post_reports.id) AS report_count,
+      MAX(feed_post_reports.created_at) AS last_reported_at
+    FROM feed_post_reports
+    JOIN feed_user_posts ON feed_user_posts.id = feed_post_reports.post_id
+    JOIN users ON users.id = feed_user_posts.user_id
+    JOIN artists ON artists.id = feed_user_posts.artist_id
+    GROUP BY feed_user_posts.id
+    ORDER BY last_reported_at DESC
+  `).all() as any[];
+  return rows.map((r) => ({
+    post: {
+      id: r.id, user_id: r.user_id, artist_id: r.artist_id, body: r.body, created_at: r.created_at,
+      deleted_at: r.deleted_at ?? undefined, hidden_at: r.hidden_at ?? undefined, hidden_by: r.hidden_by ?? undefined,
+    },
+    authorName: r.author_name,
+    authorEmail: r.author_email,
+    artistName: r.artist_name,
+    reportCount: r.report_count,
+    lastReportedAt: r.last_reported_at,
+  }));
+}
+
+export function hideUserTakePost(adminId: number, postId: number): boolean {
+  const info = db.prepare('UPDATE feed_user_posts SET hidden_at = ?, hidden_by = ? WHERE id = ? AND hidden_at IS NULL')
+    .run(new Date().toISOString(), adminId, postId);
+  return info.changes > 0;
+}
+
+export function unhideUserTakePost(postId: number): boolean {
+  const info = db.prepare('UPDATE feed_user_posts SET hidden_at = NULL, hidden_by = NULL WHERE id = ?').run(postId);
+  return info.changes > 0;
+}
+
+// Composer artist search — substring match over the live NEXT roster,
+// capped small since this backs an autocomplete dropdown, not a full
+// Discover-style browse. findArtistsByName (above) is exact-match only
+// (duplicate-submission checking), not what a search box needs.
+export function searchNextArtists(query: string, limit = 8): { id: number; name: string; photo_url?: string; genre?: string }[] {
+  const term = query.trim();
+  if (term.length < 1) return [];
+  return db
+    .prepare(`
+      SELECT id, name, photo_url, genre FROM artists
+      WHERE stage != 'passed' AND name LIKE ? ESCAPE '\\'
+      ORDER BY (CASE WHEN LOWER(name) LIKE LOWER(?) THEN 0 ELSE 1 END), name ASC
+      LIMIT ?
+    `)
+    .all(`%${term.replace(/[%_\\]/g, '\\$&')}%`, `${term}%`, limit) as { id: number; name: string; photo_url?: string; genre?: string }[];
 }
 
 export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | undefined {
