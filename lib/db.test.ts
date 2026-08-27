@@ -32,7 +32,7 @@ const {
   getLatestSyncRun, getLogEntryById, getMarketTradeCounts, getMarketVolumeCents, getMissingPlatformLinksImpact,
   getMostActiveArtists, getNewArtistsThisWeek, getNewDiscoveryCandidateCount, getNextArtist, getNextArtistsByIds,
   getPendingArtistClaimCount, getPendingArtistClaims, getPendingClaimForUserAndArtist, getPortfolioValue,
-  getPortfolioValueHistory, getRankMovements,
+  getPortfolioValueHistory, getRankMovements, getUserHoldings,
   getReadNotificationKeys, getRecentBackerCount, getRecentBackerCountsByArtist, getRecentDiscoveryReviewDecisions,
   getRecentDiscoveryRunsWithCandidateCounts, getRecentEventsForUser,
   getRecentMarketTrades, getRecentSubmissionCount, getRecentSyncFailures, getRecentTradesForArtist,
@@ -116,6 +116,45 @@ describe('NEXT trading engine — self-trade exploit prevention', () => {
     expect(finalBalance).toBeLessThanOrEqual(STARTING_BALANCE_CENTS);
     // Sanity: it shouldn't vanish either — this is slippage, not a penalty.
     expect(finalBalance).toBeGreaterThan(STARTING_BALANCE_CENTS - 100_000);
+  });
+
+  it("a fresh buy's displayed unrealized P&L is NOT a phantom gain — it closely predicts what selling right now actually realizes", () => {
+    // Regression test for a real reported bug: right after a buy, the raw
+    // quoted price already includes that buy's own upward impact, so
+    // marking the position to shares * quotedPrice showed a large instant
+    // "gain" that vanished the moment the user tried to sell. getUserHoldings
+    // must mark to the REALISTIC exit value (via quoteSell) instead.
+    const user = makeUser('phantom-gain-check@example.com');
+    const artist = makeArtist('Phantom Gain Artist');
+
+    const buy = executeTrade(user.id, artist.id, 'buy', 500_000); // $5,000, big enough for real impact
+    if (!buy.ok) throw new Error(buy.error);
+
+    const holding = getUserHoldings(user.id).find((h) => h.artist_id === artist.id)!;
+    const naivePhantomValueCents = Math.round(holding.shares * holding.price_cents);
+    const displayedUnrealizedPnlCents = holding.exitValueCents - holding.cost_basis_cents;
+
+    // The bug: marking to the raw quote overstates the position — proves
+    // exitValueCents is genuinely doing something different, not a no-op.
+    expect(holding.exitValueCents).toBeLessThan(naivePhantomValueCents);
+
+    // The fix: what's actually shown as "unrealized" should be small —
+    // nowhere near a few-hundred-dollar phantom gain on a $5,000 buy with
+    // zero outside market activity.
+    expect(Math.abs(displayedUnrealizedPnlCents)).toBeLessThan(5_000); // < $50, pure rounding/spread noise
+
+    // getPortfolioValue must be wired to the same fixed math, not its own
+    // separate shares * price_cents calculation.
+    const balanceCents = getUserById(user.id)!.next_credits_cents;
+    const portfolio = getPortfolioValue(user.id);
+    expect(portfolio.holdingsValueCents).toBe(holding.exitValueCents);
+    expect(portfolio.totalValueCents).toBe(balanceCents + holding.exitValueCents);
+
+    // The real proof: selling the whole position right now must realize
+    // very close to what was just displayed as "unrealized."
+    const sell = executeTrade(user.id, artist.id, 'sell', naivePhantomValueCents);
+    if (!sell.ok) throw new Error(sell.error);
+    expect(Math.abs(sell.realizedPnlCents! - displayedUnrealizedPnlCents)).toBeLessThan(200); // within $2, rounding only
   });
 
   it('repeated self-trading round trips cannot manufacture credits', () => {

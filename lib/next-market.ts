@@ -74,6 +74,26 @@ export function executionPriceCents(prePriceCents: number, postPriceCents: numbe
   return Math.max(NEXT_MIN_PRICE_CENTS, Math.round((prePriceCents + postPriceCents) / 2));
 }
 
+export type SellQuote = { postPriceCents: number; executionCents: number; proceedsCents: number };
+
+// What selling `shares` right now would actually net, using the exact same
+// average-execution math a real sell fills at (see executionPriceCents'
+// comment). This is the single source of truth for two different callers
+// that must never drift apart: executeTrade's real sell path, and anywhere
+// a held position needs to be marked to a REALISTIC exit value rather than
+// the raw quoted price. Marking to the raw quote overstates a position —
+// the quote right after a buy already includes that buy's own upward
+// impact, which a same-size sell mostly reverses, so "unrealized P&L"
+// computed against the raw quote is a paper gain that evaporates the
+// moment you actually try to sell.
+export function quoteSell(currentPriceCents: number, shares: number): SellQuote {
+  const notionalAtCurrentPriceCents = Math.round(shares * currentPriceCents);
+  const postPriceCents = applyTradeImpact(currentPriceCents, notionalAtCurrentPriceCents, 'sell');
+  const executionCents = executionPriceCents(currentPriceCents, postPriceCents);
+  const proceedsCents = Math.round(shares * executionCents);
+  return { postPriceCents, executionCents, proceedsCents };
+}
+
 // The inverse of nextBasePriceCents: "what score would justify the current
 // price, if price purely tracked the base formula?" Comparing this to the
 // artist's actual NEXT Score is how NEXT surfaces its own headline idea —

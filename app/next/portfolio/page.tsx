@@ -19,7 +19,7 @@ export default async function NextPortfolioPage() {
   const portfolio = getPortfolioValue(user.id);
 
   const holdingsWithValue = holdings.map((h) => {
-    const marketValueCents = Math.round(h.shares * h.price_cents);
+    const marketValueCents = h.exitValueCents; // what selling right now would actually net — see getUserHoldings' own comment
     const unrealizedPnlCents = marketValueCents - h.cost_basis_cents;
     const unrealizedPct = h.cost_basis_cents !== 0 ? (unrealizedPnlCents / h.cost_basis_cents) * 100 : 0;
     return { ...h, marketValueCents, unrealizedPnlCents, unrealizedPct };

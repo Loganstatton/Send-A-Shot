@@ -2,7 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { formatCents } from '@/lib/format';
-import { applyTradeImpact, executionPriceCents } from '@/lib/next-market';
+import { applyTradeImpact, executionPriceCents, quoteSell } from '@/lib/next-market';
 import { track } from '@/lib/track';
 
 const PRESETS_BUY = [25, 50, 100, 500];
@@ -47,7 +47,12 @@ export default function TradePanel({
   // startConfirm() runs — i.e. the next genuinely new trade.
   const [idempotencyKey, setIdempotencyKey] = useState<string | null>(null);
 
-  const marketValueCents = Math.round(ownedShares * priceCents);
+  // What selling the whole position right now would actually net, not the
+  // raw quote — priceCents can still be inflated by this same trader's own
+  // last buy, and a same-size sell mostly reverses that (see quoteSell's
+  // own comment). Using the raw quote here is exactly the bug where a buy
+  // instantly shows a paper gain that evaporates the moment you sell.
+  const marketValueCents = ownedShares > 0 ? quoteSell(priceCents, ownedShares).proceedsCents : 0;
   const unrealizedPnlCents = marketValueCents - costBasisCents;
 
   const amountCents = Math.round((Number(dollars) || 0) * 100);

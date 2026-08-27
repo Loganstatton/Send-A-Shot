@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { breakoutScore, engagementQualityScore, growthVelocityScore } from './scoring';
 import { DATA_DIR } from './data-dir';
-import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents } from './next-market';
+import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents, quoteSell } from './next-market';
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import { getScoutBadges } from './scout-badges';
 import { getCoordinatedPairFlags, getRapidTradingFlags, MarketTradeRow } from './market-integrity';
@@ -1585,7 +1585,9 @@ export function getHolding(userId: number, artistId: number): NextHolding | unde
     .get(userId, artistId) as NextHolding | undefined;
 }
 
-export function getUserHoldings(userId: number): (NextHolding & { artist_name: string; artist_photo_url?: string; price_cents: number })[] {
+export function getUserHoldings(
+  userId: number
+): (NextHolding & { artist_name: string; artist_photo_url?: string; price_cents: number; exitValueCents: number })[] {
   const rows = db.prepare(`
     SELECT next_holdings.*, artists.name AS artist_name, artists.photo_url AS artist_photo_url
     FROM next_holdings
@@ -1595,7 +1597,14 @@ export function getUserHoldings(userId: number): (NextHolding & { artist_name: s
   `).all(userId) as (NextHolding & { artist_name: string; artist_photo_url?: string })[];
   return rows.map((row) => {
     const artist = getArtist(row.artist_id)!;
-    return { ...row, price_cents: ensureNextPrice(artist) };
+    const priceCents = ensureNextPrice(artist);
+    // The position's realistic exit value — what selling the WHOLE holding
+    // right now would actually net (see quoteSell's own comment). This,
+    // not shares * priceCents, is what "unrealized P&L" should be measured
+    // against: priceCents already includes any impact this same trader's
+    // own last buy caused, which a sell of comparable size mostly reverses.
+    const exitValueCents = quoteSell(priceCents, row.shares).proceedsCents;
+    return { ...row, price_cents: priceCents, exitValueCents };
   });
 }
 
@@ -2000,14 +2009,12 @@ export function executeTrade(
   if (!holding || ownedShares <= 0) return { ok: false, error: "you don't own any shares of this artist" };
 
   const requestedShares = creditsAmountCents / prePriceCents;
+  // Size impact by what's actually being sold, not the originally requested
+  // amount — matters when the request gets capped by ownedShares. quoteSell
+  // is the same math used to mark a still-held position's realistic exit
+  // value (see its own comment) — one formula, so the two can never drift.
   const sharesSold = Math.min(requestedShares, ownedShares);
-  // Size impact by what's actually being sold (valued at the pre-trade
-  // price), not the originally requested amount — matters when the request
-  // gets capped by ownedShares.
-  const notionalAtPrePriceCents = Math.round(sharesSold * prePriceCents);
-  const postPriceCents = applyTradeImpact(prePriceCents, notionalAtPrePriceCents, 'sell');
-  const executionCents = executionPriceCents(prePriceCents, postPriceCents);
-  const proceedsCents = Math.round(sharesSold * executionCents);
+  const { postPriceCents, executionCents, proceedsCents } = quoteSell(prePriceCents, sharesSold);
   const avgCostPerShareCents = holding.cost_basis_cents / ownedShares;
   const costBasisSold = avgCostPerShareCents * sharesSold;
   const realizedPnlCents = Math.round(proceedsCents - costBasisSold);
@@ -2113,7 +2120,10 @@ export function getSuspiciousTradingFlags(): SuspiciousTradingFlag[] {
 export function getPortfolioValue(userId: number): PortfolioValue {
   const user = getUserById(userId)!;
   const holdings = getUserHoldings(userId);
-  const holdingsValueCents = holdings.reduce((sum, h) => sum + Math.round(h.shares * h.price_cents), 0);
+  // exitValueCents, not shares * price_cents — see its own comment on
+  // getUserHoldings. Portfolio value should reflect what's actually
+  // realizable, not a quote inflated by the holder's own last buy.
+  const holdingsValueCents = holdings.reduce((sum, h) => sum + h.exitValueCents, 0);
   const totalValueCents = user.next_credits_cents + holdingsValueCents;
   const totalReturnCents = totalValueCents - NEXT_STARTING_CREDITS_CENTS;
   const totalReturnPct = Math.round((totalReturnCents / NEXT_STARTING_CREDITS_CENTS) * 1000) / 10;
@@ -2450,7 +2460,7 @@ export function getScoutProfile(userId: number): ScoutProfile | undefined {
 
   const positions = user.show_positions_publicly
     ? getUserHoldings(userId).map((h) => {
-        const marketValueCents = Math.round(h.shares * h.price_cents);
+        const marketValueCents = h.exitValueCents; // see getUserHoldings' own comment
         const unrealizedPnlCents = marketValueCents - h.cost_basis_cents;
         const unrealizedPct = h.cost_basis_cents !== 0 ? (unrealizedPnlCents / h.cost_basis_cents) * 100 : 0;
         return {
@@ -2510,7 +2520,8 @@ export function getGenreLeaderboard(genre: string): GenreLeaderboardEntry[] {
     let pnlCents = 0;
     for (const h of holdings) {
       const artist = getArtist(h.artist_id)!;
-      pnlCents += Math.round(h.shares * ensureNextPrice(artist)) - h.cost_basis_cents;
+      // exitValueCents, not shares * price — see getUserHoldings' own comment.
+      pnlCents += quoteSell(ensureNextPrice(artist), h.shares).proceedsCents - h.cost_basis_cents;
       artistIds.add(h.artist_id);
     }
 
