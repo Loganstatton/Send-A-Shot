@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON Formatter &amp; Validator — Free Online Tool | QuickTools</title>
+<meta name="description" content="Free online JSON formatter and validator. Pretty-print, minify, and validate JSON instantly in your browser — nothing is uploaded.">
+<link rel="canonical" href="https://quicktools-hub-delta.vercel.app/tools/json-formatter/">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" style="text-decoration:none">Quick<span>Tools</span></a>
+  <nav class="site-nav"><a href="/about.html">About</a><a href="/privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <div class="breadcrumb"><a href="/">Home</a> / JSON Formatter</div>
+  <h1>JSON Formatter &amp; Validator</h1>
+  <p class="subtitle">Paste JSON below to pretty-print, minify, or validate it. Runs entirely in your browser — nothing is sent anywhere.</p>
+
+  <div class="card">
+    <label for="input">Your JSON</label>
+    <textarea id="input" rows="12" placeholder='{"hello": "world", "n": 1}'></textarea>
+    <div class="row">
+      <button onclick="formatJSON(2)">Format (2 spaces)</button>
+      <button onclick="formatJSON(4)">Format (4 spaces)</button>
+      <button onclick="minifyJSON()">Minify</button>
+      <button class="secondary" onclick="document.getElementById('input').value='';setResult('')">Clear</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="card">
+    <label for="output">Result</label>
+    <textarea id="output" rows="12" readonly></textarea>
+    <div class="row"><button class="secondary" onclick="copyText('output', this)">Copy result</button></div>
+  </div>
+
+  <div class="ad-slot">Ad space</div>
+
+  <h2>What this tool does</h2>
+  <p>It parses your JSON with the browser's built-in <code class="inline">JSON.parse</code>, so validation is exact — if it's invalid, you'll see the real parser error and roughly where it happened. Formatting re-serializes with your chosen indentation; minifying strips all whitespace.</p>
+</main>
+<footer><p>&copy; <span id="year"></span> QuickTools &middot; <a href="/about.html">About</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/terms.html">Terms</a></p></footer>
+<script src="../../assets/site.js"></script>
+<script>
+function setResult(text, isError){
+  document.getElementById('output').value = text;
+  var status = document.getElementById('status');
+  if (isError === undefined) { status.innerHTML = ''; return; }
+  status.innerHTML = isError
+    ? '<div class="error">' + text + '</div>'
+    : '<div class="ok">Valid JSON</div>';
+}
+function parseOrFail(){
+  var raw = document.getElementById('input').value;
+  try {
+    return { ok: true, value: JSON.parse(raw) };
+  } catch (e) {
+    setResult('Invalid JSON: ' + e.message, true);
+    document.getElementById('output').value = '';
+    return { ok: false };
+  }
+}
+function formatJSON(spaces){
+  var r = parseOrFail();
+  if (!r.ok) return;
+  document.getElementById('output').value = JSON.stringify(r.value, null, spaces);
+  setResult('', false);
+}
+function minifyJSON(){
+  var r = parseOrFail();
+  if (!r.ok) return;
+  document.getElementById('output').value = JSON.stringify(r.value);
+  setResult('', false);
+}
+</script>
+</body>
+</html>

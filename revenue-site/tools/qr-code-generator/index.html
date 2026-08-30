@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR Code Generator — Free Online Tool | QuickTools</title>
+<meta name="description" content="Generate a QR code from any text or URL and download it as a PNG. Free, no sign-up, runs in your browser.">
+<link rel="canonical" href="https://quicktools-hub-delta.vercel.app/tools/qr-code-generator/">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" style="text-decoration:none">Quick<span>Tools</span></a>
+  <nav class="site-nav"><a href="/about.html">About</a><a href="/privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <div class="breadcrumb"><a href="/">Home</a> / QR Code Generator</div>
+  <h1>QR Code Generator</h1>
+  <p class="subtitle">Enter any text or URL to generate a scannable QR code you can download as a PNG.</p>
+
+  <div class="card">
+    <label for="text">Text or URL</label>
+    <input type="text" id="text" placeholder="https://example.com" oninput="render()">
+    <label for="size">Size: <span id="sizeVal">240</span>px</label>
+    <input type="range" id="size" min="120" max="480" step="20" value="240" oninput="document.getElementById('sizeVal').textContent=this.value; render()">
+    <div class="row" style="justify-content:center; margin-top:20px">
+      <div id="qr" style="background:#fff; padding:12px; border-radius:8px; display:inline-block"></div>
+    </div>
+    <div class="row" style="justify-content:center">
+      <button onclick="download()">Download PNG</button>
+    </div>
+  </div>
+
+  <div class="ad-slot">Ad space</div>
+
+  <h2>Notes</h2>
+  <p>The QR code is generated entirely in your browser. Nothing you type is sent to a server.</p>
+</main>
+<footer><p>&copy; <span id="year"></span> QuickTools &middot; <a href="/about.html">About</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/terms.html">Terms</a></p></footer>
+<script src="../../assets/site.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+var qr = null;
+function render(){
+  var text = document.getElementById('text').value || 'https://example.com';
+  var size = parseInt(document.getElementById('size').value, 10);
+  var container = document.getElementById('qr');
+  container.innerHTML = '';
+  qr = new QRCode(container, { text: text, width: size, height: size, correctLevel: QRCode.CorrectLevel.M });
+}
+function download(){
+  var img = document.querySelector('#qr img') || document.querySelector('#qr canvas');
+  if (!img) return;
+  var link = document.createElement('a');
+  link.download = 'qrcode.png';
+  if (img.tagName === 'CANVAS') {
+    link.href = img.toDataURL('image/png');
+  } else {
+    link.href = img.src;
+  }
+  link.click();
+}
+render();
+</script>
+</body>
+</html>

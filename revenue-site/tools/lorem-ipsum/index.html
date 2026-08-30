@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lorem Ipsum Generator — Free Online Tool | QuickTools</title>
+<meta name="description" content="Generate Lorem Ipsum placeholder text by paragraphs, sentences, or words. Free, no sign-up.">
+<link rel="canonical" href="https://quicktools-hub-delta.vercel.app/tools/lorem-ipsum/">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" style="text-decoration:none">Quick<span>Tools</span></a>
+  <nav class="site-nav"><a href="/about.html">About</a><a href="/privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <div class="breadcrumb"><a href="/">Home</a> / Lorem Ipsum Generator</div>
+  <h1>Lorem Ipsum Generator</h1>
+  <p class="subtitle">Generate placeholder text for mockups and layouts.</p>
+
+  <div class="card">
+    <label for="unit">Generate by</label>
+    <select id="unit">
+      <option value="paragraphs">Paragraphs</option>
+      <option value="sentences">Sentences</option>
+      <option value="words">Words</option>
+    </select>
+    <label for="count">How many: <span id="countVal">3</span></label>
+    <input type="range" id="count" min="1" max="20" value="3" oninput="document.getElementById('countVal').textContent=this.value">
+    <label class="checkline" style="margin-top:14px"><input type="checkbox" id="classic" checked> Start with "Lorem ipsum dolor sit amet..."</label>
+    <div class="row"><button onclick="generate()">Generate</button></div>
+  </div>
+
+  <div class="card">
+    <label for="output">Result</label>
+    <textarea id="output" rows="12" readonly></textarea>
+    <div class="row"><button class="secondary" onclick="copyText('output', this)">Copy result</button></div>
+  </div>
+
+  <div class="ad-slot">Ad space</div>
+</main>
+<footer><p>&copy; <span id="year"></span> QuickTools &middot; <a href="/about.html">About</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/terms.html">Terms</a></p></footer>
+<script src="../../assets/site.js"></script>
+<script>
+var WORDS = ('lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor ' +
+  'incididunt ut labore et dolore magna aliqua enim ad minim veniam quis nostrud exercitation ' +
+  'ullamco laboris nisi aliquip ex ea commodo consequat duis aute irure in reprehenderit ' +
+  'voluptate velit esse cillum eu fugiat nulla pariatur excepteur sint occaecat cupidatat non ' +
+  'proident sunt culpa qui officia deserunt mollit anim id est laborum').split(' ');
+
+function randWord(){ return WORDS[Math.floor(Math.random() * WORDS.length)]; }
+function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+function makeSentence(minWords, maxWords){
+  var n = minWords + Math.floor(Math.random() * (maxWords - minWords));
+  var words = [];
+  for (var i = 0; i < n; i++) words.push(randWord());
+  return capitalize(words.join(' ')) + '.';
+}
+function makeParagraph(sentences){
+  var out = [];
+  for (var i = 0; i < sentences; i++) out.push(makeSentence(6, 16));
+  return out.join(' ');
+}
+
+function generate(){
+  var unit = document.getElementById('unit').value;
+  var count = parseInt(document.getElementById('count').value, 10);
+  var classic = document.getElementById('classic').checked;
+  var result = '';
+
+  if (unit === 'words') {
+    var words = [];
+    for (var i = 0; i < count; i++) words.push(randWord());
+    result = capitalize(words.join(' ')) + '.';
+  } else if (unit === 'sentences') {
+    var sentences = [];
+    for (var j = 0; j < count; j++) sentences.push(makeSentence(6, 16));
+    result = sentences.join(' ');
+  } else {
+    var paras = [];
+    for (var k = 0; k < count; k++) paras.push(makeParagraph(4 + Math.floor(Math.random() * 3)));
+    result = paras.join('\n\n');
+  }
+
+  if (classic) {
+    var lead = 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.';
+    result = result.replace(/^./, function(c){ return c; });
+    result = lead + ' ' + result;
+  }
+  document.getElementById('output').value = result;
+}
+generate();
+</script>
+</body>
+</html>

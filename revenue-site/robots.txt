@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://quicktools-hub-delta.vercel.app/sitemap.xml

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unit Converter — Length, Weight, Temperature | QuickTools</title>
+<meta name="description" content="Convert length, weight, and temperature units instantly. Free online unit converter, no sign-up.">
+<link rel="canonical" href="https://quicktools-hub-delta.vercel.app/tools/unit-converter/">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" style="text-decoration:none">Quick<span>Tools</span></a>
+  <nav class="site-nav"><a href="/about.html">About</a><a href="/privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <div class="breadcrumb"><a href="/">Home</a> / Unit Converter</div>
+  <h1>Unit Converter</h1>
+  <p class="subtitle">Length, weight, and temperature — pick a category and convert.</p>
+
+  <div class="card">
+    <label for="category">Category</label>
+    <select id="category" onchange="buildUnitOptions(); convert()">
+      <option value="length">Length</option>
+      <option value="weight">Weight</option>
+      <option value="temperature">Temperature</option>
+    </select>
+
+    <div class="row" style="align-items:flex-end">
+      <div style="flex:1; min-width:160px">
+        <label for="fromVal">Value</label>
+        <input type="number" id="fromVal" value="1" oninput="convert()">
+      </div>
+      <div style="flex:1; min-width:160px">
+        <label for="fromUnit">From</label>
+        <select id="fromUnit" onchange="convert()"></select>
+      </div>
+      <div style="flex:1; min-width:160px">
+        <label for="toUnit">To</label>
+        <select id="toUnit" onchange="convert()"></select>
+      </div>
+    </div>
+
+    <label for="result">Result</label>
+    <input type="text" id="result" readonly style="font-size:18px; font-weight:600">
+  </div>
+
+  <div class="ad-slot">Ad space</div>
+</main>
+<footer><p>&copy; <span id="year"></span> QuickTools &middot; <a href="/about.html">About</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/terms.html">Terms</a></p></footer>
+<script src="../../assets/site.js"></script>
+<script>
+var UNITS = {
+  length: {
+    meter: 1, kilometer: 1000, centimeter: 0.01, millimeter: 0.001,
+    mile: 1609.344, yard: 0.9144, foot: 0.3048, inch: 0.0254
+  },
+  weight: {
+    kilogram: 1, gram: 0.001, milligram: 0.000001,
+    pound: 0.45359237, ounce: 0.028349523125, stone: 6.35029318
+  }
+};
+
+function buildUnitOptions(){
+  var cat = document.getElementById('category').value;
+  var fromSel = document.getElementById('fromUnit');
+  var toSel = document.getElementById('toUnit');
+  fromSel.innerHTML = '';
+  toSel.innerHTML = '';
+  var keys = cat === 'temperature' ? ['celsius', 'fahrenheit', 'kelvin'] : Object.keys(UNITS[cat]);
+  keys.forEach(function(k){
+    var label = k.charAt(0).toUpperCase() + k.slice(1);
+    fromSel.innerHTML += '<option value="' + k + '">' + label + '</option>';
+    toSel.innerHTML += '<option value="' + k + '">' + label + '</option>';
+  });
+  toSel.selectedIndex = keys.length > 1 ? 1 : 0;
+}
+
+function toCelsius(v, unit){
+  if (unit === 'celsius') return v;
+  if (unit === 'fahrenheit') return (v - 32) * 5 / 9;
+  if (unit === 'kelvin') return v - 273.15;
+}
+function fromCelsius(c, unit){
+  if (unit === 'celsius') return c;
+  if (unit === 'fahrenheit') return c * 9 / 5 + 32;
+  if (unit === 'kelvin') return c + 273.15;
+}
+
+function convert(){
+  var cat = document.getElementById('category').value;
+  var val = parseFloat(document.getElementById('fromVal').value);
+  var from = document.getElementById('fromUnit').value;
+  var to = document.getElementById('toUnit').value;
+  var result;
+  if (isNaN(val)) { document.getElementById('result').value = ''; return; }
+  if (cat === 'temperature') {
+    result = fromCelsius(toCelsius(val, from), to);
+  } else {
+    var base = val * UNITS[cat][from];
+    result = base / UNITS[cat][to];
+  }
+  document.getElementById('result').value = (Math.round(result * 1e6) / 1e6) + ' ' + to;
+}
+
+buildUnitOptions();
+convert();
+</script>
+</body>
+</html>

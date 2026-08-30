@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text Case Converter — Free Online Tool | QuickTools</title>
+<meta name="description" content="Convert text between UPPERCASE, lowercase, Title Case, Sentence case, camelCase, snake_case, and kebab-case instantly in your browser.">
+<link rel="canonical" href="https://quicktools-hub-delta.vercel.app/tools/case-converter/">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" style="text-decoration:none">Quick<span>Tools</span></a>
+  <nav class="site-nav"><a href="/about.html">About</a><a href="/privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <div class="breadcrumb"><a href="/">Home</a> / Case Converter</div>
+  <h1>Text Case Converter</h1>
+  <p class="subtitle">Paste text, then pick a case. Runs entirely in your browser.</p>
+
+  <div class="card">
+    <label for="input">Your text</label>
+    <textarea id="input" rows="8" placeholder="Type or paste text here..."></textarea>
+    <div class="row">
+      <button onclick="convert('upper')">UPPERCASE</button>
+      <button onclick="convert('lower')">lowercase</button>
+      <button onclick="convert('title')">Title Case</button>
+      <button onclick="convert('sentence')">Sentence case</button>
+      <button onclick="convert('camel')">camelCase</button>
+      <button onclick="convert('pascal')">PascalCase</button>
+      <button onclick="convert('snake')">snake_case</button>
+      <button onclick="convert('kebab')">kebab-case</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="output">Result</label>
+    <textarea id="output" rows="8" readonly></textarea>
+    <div class="row"><button class="secondary" onclick="copyText('output', this)">Copy result</button></div>
+  </div>
+
+  <div class="ad-slot">Ad space</div>
+</main>
+<footer><p>&copy; <span id="year"></span> QuickTools &middot; <a href="/about.html">About</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/terms.html">Terms</a></p></footer>
+<script src="../../assets/site.js"></script>
+<script>
+function words(text){
+  return text.trim().split(/[\s_-]+/).filter(Boolean);
+}
+function convert(mode){
+  var text = document.getElementById('input').value;
+  var out = '';
+  switch(mode){
+    case 'upper': out = text.toUpperCase(); break;
+    case 'lower': out = text.toLowerCase(); break;
+    case 'title':
+      out = text.toLowerCase().replace(/\b\w/g, function(c){ return c.toUpperCase(); });
+      break;
+    case 'sentence':
+      out = text.toLowerCase().replace(/(^\s*\w|[.!?]\s*\w)/g, function(c){ return c.toUpperCase(); });
+      break;
+    case 'camel': {
+      var w = words(text).map(function(x){ return x.toLowerCase(); });
+      out = w.map(function(x, i){ return i === 0 ? x : x.charAt(0).toUpperCase() + x.slice(1); }).join('');
+      break;
+    }
+    case 'pascal': {
+      var w2 = words(text).map(function(x){ return x.toLowerCase(); });
+      out = w2.map(function(x){ return x.charAt(0).toUpperCase() + x.slice(1); }).join('');
+      break;
+    }
+    case 'snake':
+      out = words(text).map(function(x){ return x.toLowerCase(); }).join('_');
+      break;
+    case 'kebab':
+      out = words(text).map(function(x){ return x.toLowerCase(); }).join('-');
+      break;
+  }
+  document.getElementById('output').value = out;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Base64 Encoder / Decoder — Free Online Tool | QuickTools</title>
+<meta name="description" content="Encode text to Base64 or decode Base64 back to text, instantly in your browser. Free, no sign-up.">
+<link rel="canonical" href="https://quicktools-hub-delta.vercel.app/tools/base64-converter/">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" style="text-decoration:none">Quick<span>Tools</span></a>
+  <nav class="site-nav"><a href="/about.html">About</a><a href="/privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <div class="breadcrumb"><a href="/">Home</a> / Base64 Encoder / Decoder</div>
+  <h1>Base64 Encoder / Decoder</h1>
+  <p class="subtitle">Convert text to Base64 or decode Base64 back to plain text. UTF-8 safe.</p>
+
+  <div class="card">
+    <label for="input">Input</label>
+    <textarea id="input" rows="8" placeholder="Type text or Base64 here..."></textarea>
+    <div class="row">
+      <button onclick="doEncode()">Encode &rarr; Base64</button>
+      <button onclick="doDecode()">Decode &rarr; Text</button>
+      <button class="secondary" onclick="swap()">Swap input / output</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="card">
+    <label for="output">Output</label>
+    <textarea id="output" rows="8" readonly></textarea>
+    <div class="row"><button class="secondary" onclick="copyText('output', this)">Copy result</button></div>
+  </div>
+
+  <div class="ad-slot">Ad space</div>
+</main>
+<footer><p>&copy; <span id="year"></span> QuickTools &middot; <a href="/about.html">About</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/terms.html">Terms</a></p></footer>
+<script src="../../assets/site.js"></script>
+<script>
+function setStatus(msg, isError){
+  document.getElementById('status').innerHTML = msg ? ('<div class="' + (isError ? 'error' : 'ok') + '">' + msg + '</div>') : '';
+}
+function doEncode(){
+  var text = document.getElementById('input').value;
+  try {
+    var encoded = btoa(unescape(encodeURIComponent(text)));
+    document.getElementById('output').value = encoded;
+    setStatus('');
+  } catch (e) { setStatus('Could not encode: ' + e.message, true); }
+}
+function doDecode(){
+  var text = document.getElementById('input').value;
+  try {
+    var decoded = decodeURIComponent(escape(atob(text)));
+    document.getElementById('output').value = decoded;
+    setStatus('');
+  } catch (e) { setStatus('Invalid Base64 input', true); }
+}
+function swap(){
+  var input = document.getElementById('input');
+  var output = document.getElementById('output');
+  var tmp = input.value;
+  input.value = output.value;
+  output.value = tmp;
+}
+</script>
+</body>
+</html>

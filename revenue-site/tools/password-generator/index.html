@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Password Generator — Free Online Tool | QuickTools</title>
+<meta name="description" content="Generate strong, random passwords with customizable length and character sets. Includes a strength meter. Runs locally in your browser — passwords are never sent anywhere.">
+<link rel="canonical" href="https://quicktools-hub-delta.vercel.app/tools/password-generator/">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" style="text-decoration:none">Quick<span>Tools</span></a>
+  <nav class="site-nav"><a href="/about.html">About</a><a href="/privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <div class="breadcrumb"><a href="/">Home</a> / Password Generator</div>
+  <h1>Password Generator</h1>
+  <p class="subtitle">Generated locally using your browser's cryptographically secure random number generator. Nothing is transmitted or stored.</p>
+
+  <div class="card">
+    <label for="output">Generated password</label>
+    <input type="text" id="output" readonly style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:18px">
+    <div class="row">
+      <button onclick="generate()">Generate</button>
+      <button class="secondary" onclick="copyText('output', this)">Copy</button>
+    </div>
+    <div id="strength" class="ok" style="margin-top:10px"></div>
+
+    <label for="length">Length: <span id="lengthVal">16</span></label>
+    <input type="range" id="length" min="4" max="64" value="16" oninput="document.getElementById('lengthVal').textContent=this.value; generate()">
+
+    <div class="row" style="margin-top:16px">
+      <label class="checkline"><input type="checkbox" id="lower" checked onchange="generate()"> lowercase (a-z)</label>
+      <label class="checkline"><input type="checkbox" id="upper" checked onchange="generate()"> UPPERCASE (A-Z)</label>
+      <label class="checkline"><input type="checkbox" id="digits" checked onchange="generate()"> digits (0-9)</label>
+      <label class="checkline"><input type="checkbox" id="symbols" checked onchange="generate()"> symbols (!@#$...)</label>
+      <label class="checkline"><input type="checkbox" id="ambiguous" onchange="generate()"> exclude ambiguous (l1IO0)</label>
+    </div>
+  </div>
+
+  <div class="ad-slot">Ad space</div>
+
+  <h2>Why use a generated password</h2>
+  <p>A long, random password drawn from a large character set is far harder to guess or brute-force than a memorized phrase. Use a password manager to store it rather than reusing it anywhere else.</p>
+</main>
+<footer><p>&copy; <span id="year"></span> QuickTools &middot; <a href="/about.html">About</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/terms.html">Terms</a></p></footer>
+<script src="../../assets/site.js"></script>
+<script>
+var SETS = {
+  lower: 'abcdefghijklmnopqrstuvwxyz',
+  upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+  digits: '0123456789',
+  symbols: '!@#$%^&*()-_=+[]{};:,.<>?'
+};
+var AMBIGUOUS = 'l1IO0';
+
+function generate(){
+  var length = parseInt(document.getElementById('length').value, 10);
+  var pool = '';
+  ['lower','upper','digits','symbols'].forEach(function(key){
+    if (document.getElementById(key).checked) pool += SETS[key];
+  });
+  if (document.getElementById('ambiguous').checked){
+    pool = pool.split('').filter(function(c){ return AMBIGUOUS.indexOf(c) === -1; }).join('');
+  }
+  if (!pool){
+    document.getElementById('output').value = '';
+    document.getElementById('strength').textContent = 'Select at least one character set';
+    return;
+  }
+  var bytes = new Uint32Array(length);
+  crypto.getRandomValues(bytes);
+  var pw = '';
+  for (var i = 0; i < length; i++){
+    pw += pool[bytes[i] % pool.length];
+  }
+  document.getElementById('output').value = pw;
+  rateStrength(pw, pool.length);
+}
+
+function rateStrength(pw, poolSize){
+  var entropyBits = Math.log2(poolSize) * pw.length;
+  var label, cls;
+  if (entropyBits < 40) { label = 'Weak'; cls = 'error'; }
+  else if (entropyBits < 70) { label = 'Moderate'; cls = 'ok'; }
+  else if (entropyBits < 100) { label = 'Strong'; cls = 'ok'; }
+  else { label = 'Very strong'; cls = 'ok'; }
+  var el = document.getElementById('strength');
+  el.className = cls;
+  el.textContent = label + ' — ~' + Math.round(entropyBits) + ' bits of entropy';
+}
+
+generate();
+</script>
+</body>
+</html>

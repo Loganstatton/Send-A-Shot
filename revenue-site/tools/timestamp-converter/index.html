@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unix Timestamp Converter — Free Online Tool | QuickTools</title>
+<meta name="description" content="Convert Unix timestamps to human-readable dates and back. Shows current time live. Free, no sign-up.">
+<link rel="canonical" href="https://quicktools-hub-delta.vercel.app/tools/timestamp-converter/">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" style="text-decoration:none">Quick<span>Tools</span></a>
+  <nav class="site-nav"><a href="/about.html">About</a><a href="/privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <div class="breadcrumb"><a href="/">Home</a> / Unix Timestamp Converter</div>
+  <h1>Unix Timestamp Converter</h1>
+  <p class="subtitle">Convert between Unix time (seconds since Jan 1, 1970 UTC) and human-readable dates.</p>
+
+  <div class="card">
+    <div class="stat" style="display:inline-block">
+      <b id="now">0</b><span>Current Unix timestamp (updates live)</span>
+    </div>
+
+    <label for="ts">Unix timestamp (seconds or milliseconds)</label>
+    <div class="row">
+      <input type="text" id="ts" placeholder="1735689600" oninput="fromTs()">
+      <button class="secondary" onclick="document.getElementById('ts').value = Math.floor(Date.now()/1000); fromTs()">Use now</button>
+    </div>
+    <input type="text" id="tsResult" readonly style="margin-top:8px">
+
+    <label for="human">Human-readable date (local time, e.g. 2026-01-01T00:00)</label>
+    <input type="datetime-local" id="human" oninput="fromHuman()">
+    <input type="text" id="humanResult" readonly style="margin-top:8px">
+  </div>
+
+  <div class="ad-slot">Ad space</div>
+</main>
+<footer><p>&copy; <span id="year"></span> QuickTools &middot; <a href="/about.html">About</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/terms.html">Terms</a></p></footer>
+<script src="../../assets/site.js"></script>
+<script>
+function tick(){
+  document.getElementById('now').textContent = Math.floor(Date.now() / 1000);
+}
+setInterval(tick, 1000);
+tick();
+
+function fromTs(){
+  var raw = document.getElementById('ts').value.trim();
+  if (!raw) { document.getElementById('tsResult').value = ''; return; }
+  var n = Number(raw);
+  if (isNaN(n)) { document.getElementById('tsResult').value = 'Not a number'; return; }
+  var ms = raw.length > 10 ? n : n * 1000;
+  var d = new Date(ms);
+  if (isNaN(d.getTime())) { document.getElementById('tsResult').value = 'Invalid timestamp'; return; }
+  document.getElementById('tsResult').value = d.toString() + '  |  ISO: ' + d.toISOString();
+}
+
+function fromHuman(){
+  var val = document.getElementById('human').value;
+  if (!val) { document.getElementById('humanResult').value = ''; return; }
+  var d = new Date(val);
+  document.getElementById('humanResult').value = 'Unix: ' + Math.floor(d.getTime() / 1000) + ' seconds  |  ' + d.getTime() + ' ms';
+}
+</script>
+</body>
+</html>

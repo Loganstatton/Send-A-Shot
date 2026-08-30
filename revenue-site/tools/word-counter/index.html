@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Word &amp; Character Counter — Free Online Tool | QuickTools</title>
+<meta name="description" content="Free online word counter and character counter. Get word count, character count, sentence count, paragraph count, and estimated reading time instantly.">
+<link rel="canonical" href="https://quicktools-hub-delta.vercel.app/tools/word-counter/">
+<link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" style="text-decoration:none">Quick<span>Tools</span></a>
+  <nav class="site-nav"><a href="/about.html">About</a><a href="/privacy.html">Privacy</a></nav>
+</header>
+<main>
+  <div class="breadcrumb"><a href="/">Home</a> / Word Counter</div>
+  <h1>Word &amp; Character Counter</h1>
+  <p class="subtitle">Type or paste your text. Counts update live, entirely in your browser.</p>
+
+  <div class="card">
+    <textarea id="input" rows="14" placeholder="Start typing or paste your text here..." oninput="update()"></textarea>
+    <div class="stats">
+      <div class="stat"><b id="words">0</b><span>Words</span></div>
+      <div class="stat"><b id="chars">0</b><span>Characters</span></div>
+      <div class="stat"><b id="charsNoSpace">0</b><span>Characters (no spaces)</span></div>
+      <div class="stat"><b id="sentences">0</b><span>Sentences</span></div>
+      <div class="stat"><b id="paragraphs">0</b><span>Paragraphs</span></div>
+      <div class="stat"><b id="readTime">0 min</b><span>Reading time</span></div>
+    </div>
+  </div>
+
+  <div class="ad-slot">Ad space</div>
+
+  <h2>How reading time is calculated</h2>
+  <p>Reading time is estimated at 200 words per minute, a commonly used average for adult silent reading.</p>
+</main>
+<footer><p>&copy; <span id="year"></span> QuickTools &middot; <a href="/about.html">About</a> &middot; <a href="/privacy.html">Privacy</a> &middot; <a href="/terms.html">Terms</a></p></footer>
+<script src="../../assets/site.js"></script>
+<script>
+function update(){
+  var text = document.getElementById('input').value;
+  var words = text.trim().length ? text.trim().split(/\s+/) : [];
+  var sentences = text.split(/[.!?]+/).filter(function(s){ return s.trim().length; });
+  var paragraphs = text.split(/\n+/).filter(function(p){ return p.trim().length; });
+  document.getElementById('words').textContent = words.length;
+  document.getElementById('chars').textContent = text.length;
+  document.getElementById('charsNoSpace').textContent = text.replace(/\s/g, '').length;
+  document.getElementById('sentences').textContent = sentences.length;
+  document.getElementById('paragraphs').textContent = paragraphs.length;
+  document.getElementById('readTime').textContent = Math.max(1, Math.ceil(words.length / 200)) + ' min';
+}
+update();
+</script>
+</body>
+</html>
