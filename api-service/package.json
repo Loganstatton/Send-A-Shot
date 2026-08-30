@@ -1,0 +1,9 @@
+{
+  "name": "quicktools-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Developer utility API: QR codes, text stats, password generation, unit/color conversion, fake test data, timestamps.",
+  "dependencies": {
+    "qrcode": "1.5.3"
+  }
+}

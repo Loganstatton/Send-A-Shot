@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuickTools API — Developer Utility Endpoints</title>
+<meta name="description" content="A small JSON API: QR codes, text stats, password generation, unit/color conversion, fake test data, and timestamp conversion.">
+<style>
+  :root{ --bg:#f7f7f8; --fg:#1a1a1e; --muted:#5b5b66; --card:#ffffff; --border:#e3e3e8; --accent:#4f46e5; --code-bg:#f0f0f4; }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#101014; --fg:#f0f0f3; --muted:#a0a0ab; --card:#17171c; --border:#2a2a32; --accent:#818cf8; --code-bg:#1d1d24; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  main{max-width:860px; margin:0 auto; padding:40px 24px 80px}
+  h1{font-size:28px; margin:0 0 6px}
+  h2{font-size:18px; margin:36px 0 4px}
+  .subtitle{color:var(--muted); margin:0 0 32px}
+  .endpoint{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:18px 20px; margin-bottom:16px}
+  .method{display:inline-block; background:var(--accent); color:#fff; font-size:11px; font-weight:700; padding:2px 8px; border-radius:5px; margin-right:8px; vertical-align:middle}
+  code, pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px}
+  pre{background:var(--code-bg); padding:12px 14px; border-radius:8px; overflow-x:auto; margin:10px 0 0}
+  .desc{color:var(--muted); margin:8px 0 0}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+  <h1>QuickTools API</h1>
+  <p class="subtitle">Small, single-purpose JSON endpoints for common developer tasks. No SDK required — plain HTTP.</p>
+
+  <div class="endpoint">
+    <span class="method">GET</span><code>/api/qrcode?text=...&amp;size=300</code>
+    <p class="desc">Returns a PNG QR code. Add <code>&amp;format=base64</code> to get a JSON data URI instead of a raw image.</p>
+    <pre>curl "https://YOUR-DEPLOYMENT/api/qrcode?text=https://example.com" --output qr.png</pre>
+  </div>
+
+  <div class="endpoint">
+    <span class="method">GET/POST</span><code>/api/text-stats?text=...</code>
+    <p class="desc">Word/character/sentence/paragraph counts and estimated reading time.</p>
+    <pre>curl "https://YOUR-DEPLOYMENT/api/text-stats?text=Hello%20world"
+&#8594; {"words":2,"characters":11,"charactersNoSpaces":10,"sentences":1,"paragraphs":1,"readingTimeMinutes":1}</pre>
+  </div>
+
+  <div class="endpoint">
+    <span class="method">GET</span><code>/api/password?length=16&amp;count=1&amp;symbols=true</code>
+    <p class="desc">Cryptographically random password generation with an entropy/strength estimate. Params: <code>length</code>, <code>count</code>, <code>uppercase</code>, <code>lowercase</code>, <code>numbers</code>, <code>symbols</code>, <code>exclude_ambiguous</code> (all booleans default sensibly).</p>
+    <pre>curl "https://YOUR-DEPLOYMENT/api/password?length=20&amp;symbols=true"
+&#8594; {"passwords":["..."],"length":20,"entropyBits":124,"strength":"very strong"}</pre>
+  </div>
+
+  <div class="endpoint">
+    <span class="method">GET</span><code>/api/convert-units?category=length&amp;value=5&amp;from=mile&amp;to=kilometer</code>
+    <p class="desc">Length, weight, and temperature conversion. <code>category</code>: length | weight | temperature.</p>
+    <pre>curl "https://YOUR-DEPLOYMENT/api/convert-units?category=temperature&amp;value=100&amp;from=celsius&amp;to=fahrenheit"
+&#8594; {"category":"temperature","from":"celsius","to":"fahrenheit","input":100,"result":212}</pre>
+  </div>
+
+  <div class="endpoint">
+    <span class="method">GET</span><code>/api/convert-color?value=%234f46e5</code>
+    <p class="desc">Converts a HEX or RGB color to HEX + RGB + HSL.</p>
+    <pre>curl "https://YOUR-DEPLOYMENT/api/convert-color?value=%234f46e5"
+&#8594; {"hex":"#4f46e5","rgb":{...},"hsl":{...}}</pre>
+  </div>
+
+  <div class="endpoint">
+    <span class="method">GET</span><code>/api/timestamp?value=1735689600</code>
+    <p class="desc">Convert between Unix time (seconds or ms), ISO 8601, and any parseable date string. Omit <code>value</code> for the current time.</p>
+    <pre>curl "https://YOUR-DEPLOYMENT/api/timestamp?value=now"
+&#8594; {"unixSeconds":...,"unixMilliseconds":...,"iso":"..."}</pre>
+  </div>
+
+  <div class="endpoint">
+    <span class="method">GET</span><code>/api/fake-person?count=5</code>
+    <p class="desc">Synthetic test data for QA/mocking — random names, emails, phone numbers, and addresses. Not real people.</p>
+    <pre>curl "https://YOUR-DEPLOYMENT/api/fake-person?count=2"</pre>
+  </div>
+
+  <h2>Notes</h2>
+  <p class="desc">All endpoints support CORS and return JSON (except <code>/api/qrcode</code>'s default PNG response). Errors return a 4xx/5xx status with <code>{"error": "..."}</code>.</p>
+</main>
+</body>
+</html>
