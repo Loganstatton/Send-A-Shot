@@ -1,14 +1,22 @@
 import { Artist, SCORE_LABELS, SCORE_WEIGHTS, ScoreInputs } from '@/lib/types';
 
-// The full 8-category split, for the internal Scout tool only — NEXT's
+// The full 8-category breakdown, for the internal Scout tool only — NEXT's
 // public Artist Detail page deliberately stays at the coarser 2-bucket
 // view (see scoreContributors()'s own comment in lib/scoring.ts: publicly
 // showing "Professionalism: 4/10" about a real artist reads harsher than
 // the same number sitting in an internal tool). A Scout needs the
 // category-level detail to actually act on it.
-const AUTO_DERIVED: (keyof ScoreInputs)[] = ['growth_velocity', 'engagement_quality'];
-const HUMAN_RATED: (keyof ScoreInputs)[] = [
-  'music_talent', 'original_song_response', 'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
+//
+// Pre-beta migration: Growth Velocity/Engagement Quality used to be
+// auto-derived from a real growth %/engagement % (typically Soundcharts-
+// sourced) and were shown in their own "Real data (auto-derived)" group,
+// separate from the other six Scout-rated categories. Both are now
+// ordinary Scout-manual ratings, same as the rest (see the WRITABLE_FIELDS
+// comment in lib/db.ts) — one flat list, no more "auto-derived" framing
+// that would now be false.
+const ALL_CATEGORIES: (keyof ScoreInputs)[] = [
+  'music_talent', 'growth_velocity', 'engagement_quality', 'original_song_response',
+  'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
 ];
 
 function CategoryBar({ field, value }: { field: keyof ScoreInputs; value: number }) {
@@ -32,13 +40,11 @@ export default function ScoreBreakdown({ artist }: { artist: Artist }) {
   return (
     <div className="card space-y-4">
       <h2 className="font-bold text-lg">Score breakdown</h2>
+      <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
+        All eight categories are your own 0-10 rating — see the sliders below to change any of them.
+      </p>
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>Real data (auto-derived)</h3>
-        {AUTO_DERIVED.map((field) => <CategoryBar key={field} field={field} value={artist[field]} />)}
-      </div>
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>Scout evaluation (human-rated)</h3>
-        {HUMAN_RATED.map((field) => <CategoryBar key={field} field={field} value={artist[field]} />)}
+        {ALL_CATEGORIES.map((field) => <CategoryBar key={field} field={field} value={artist[field]} />)}
       </div>
     </div>
   );

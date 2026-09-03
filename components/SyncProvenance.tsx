@@ -34,7 +34,7 @@ export default function SyncProvenance({ artist }: { artist: Artist }) {
         Where each field on this artist last came from, and when it was last checked — every sync
         route stamps these; a Scout typing something in by hand doesn&apos;t.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm">
         <div>
           <span className="font-semibold">Soundcharts</span>
           <p style={{ color: 'var(--text-muted)' }}>
@@ -53,6 +53,16 @@ export default function SyncProvenance({ artist }: { artist: Artist }) {
             {artist.featured_video_id
               ? <>synced {relativeTime(artist.youtube_synced_at)}{videoNote && <><br /><span style={{ color: videoNote.tone }}>{videoNote.text}</span></>}</>
               : `no video yet${artist.youtube_synced_at ? ` (checked ${relativeTime(artist.youtube_synced_at)})` : ''}`}
+          </p>
+        </div>
+        <div>
+          <span className="font-semibold">Wikidata</span>
+          <p style={{ color: 'var(--text-muted)' }}>
+            {artist.wikidata_qid
+              ? `matched (${artist.wikidata_qid}) · ${relativeTime(artist.wikidata_fetched_at)}`
+              : artist.wikidata_no_match_at
+              ? `no match (checked ${relativeTime(artist.wikidata_no_match_at)})`
+              : 'not checked yet'}
           </p>
         </div>
       </div>
