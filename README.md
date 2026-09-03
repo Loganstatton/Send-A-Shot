@@ -407,6 +407,52 @@ should never look the same. Without `YOUTUBE_API_KEY` set, the scan button
 shows a clear "not configured" error; the rest of the app (including the
 Soundcharts source) works the same either way.
 
+### Optional: Wikidata + Wikimedia Commons enrichment (free, keyless)
+
+Two more zero-cost, no-key data sources, added pre-beta to reduce reliance
+on Soundcharts/Deezer for public-facing data. Nothing to configure — no
+env var, no signup, no rate-limit budget to track.
+
+- **Wikidata** (`lib/wikidata.ts`): a Scout clicks "Look up on Wikidata" on
+  an artist's edit page (`components/WikidataLookup.tsx`). Searches by
+  name, confirms the best hit is actually a musician/group (checks P31/
+  P106, not just a name match — a same-named politician or place is
+  rejected), and shows genre/country/official website/MusicBrainz ID for
+  the Scout to review. Nothing is written until the Scout clicks "Fill in"
+  and then Save — same non-destructive shape as the Soundcharts search
+  above. No match is the normal, expected outcome for most artists this
+  small, not an error.
+- **Wikimedia Commons** (`lib/wikimedia-commons.ts`): a Scout clicks
+  "Search Wikimedia Commons" (`components/WikimediaCommonsSearch.tsx`) to
+  see a grid of candidate photos — every result already passed a license
+  check (CC0/public domain/CC BY[-SA] only; anything unclear, non-
+  commercial, or no-derivatives is filtered out before it's ever shown).
+  Picking one fills the photo plus its required attribution, license, and
+  source URL together; the attribution stays attached to that artist going
+  forward and is the one piece of photo provenance Public NEXT is allowed
+  to show (Commons licenses require it to stay visible).
+
+Both results are cached lightly on the artist row (`wikidata_qid`,
+`wikidata_fetched_at`/`wikidata_no_match_at`) so a re-lookup doesn't repeat
+a full fuzzy search — visible in the "Data sources" panel on the artist
+edit page alongside Soundcharts/Deezer/YouTube.
+
+### Claimed-artist self-service
+
+An artist whose claim has been approved (`/artist-claims`, Scout-reviewed)
+can edit their own profile from their Artist Dashboard
+(`/next/my-artist/[id]`) — bio, genre, location, official website, their
+own platform links, and which YouTube video they feature. They can also
+submit their own profile photo, gated by a required rights-confirmation
+checkbox ("I own this content or have permission to provide it for use on
+NEXT") — the app has no binary file-upload storage (an artist's own
+avatar is a URL they host, same as everywhere else images work in this
+app), and the submission's uploader id, upload time, and rights-
+confirmation time are all stored (`setArtistPhotoByOwner` in `lib/db.ts`).
+An admin can remove a submitted photo from the artist's own edit page.
+Everything outside this whitelist (name, stage, Scout notes, the eight
+Breakout Score inputs, internal discovery info) stays Scout-only.
+
 ## Breakout Score weights
 
 | Category | Weight |
