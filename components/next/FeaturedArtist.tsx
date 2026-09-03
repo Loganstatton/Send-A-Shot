@@ -4,6 +4,7 @@ import { formatCents } from '@/lib/format';
 import { marketSentiment } from '@/lib/next-market';
 import { heroGradient } from '@/components/next/heroGradient';
 import ScoreGapBar from '@/components/next/ScoreGapBar';
+import { getArtistAvatarUrl } from '@/lib/artist-image';
 
 // The one module on Discover that leans fully on imagery — a large photo
 // (or the same gradient+initial fallback as the grid, just bigger) instead
@@ -18,6 +19,7 @@ export default function FeaturedArtist({ row }: { row: NextMarketRow }) {
   const undervalued = sentiment.tone === 'undervalued';
 
   const blurb = artist.why_trending || null;
+  const avatarUrl = getArtistAvatarUrl(artist);
 
   return (
     <Link href={`/next/artists/${artist.id}`} className="next-card next-card-hover block overflow-hidden relative">
@@ -29,11 +31,11 @@ export default function FeaturedArtist({ row }: { row: NextMarketRow }) {
       <div className="grid grid-cols-1 md:grid-cols-[1.3fr_1fr]">
         <div
           className="next-card-hero-zoom relative h-[220px] md:h-[320px] flex items-center justify-center"
-          style={{ background: artist.photo_url ? undefined : heroGradient(artist.id) }}
+          style={{ background: avatarUrl ? undefined : heroGradient(artist.id) }}
         >
-          {artist.photo_url ? (
+          {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- arbitrary Scout-entered URL, not a next/image candidate.
-            <img src={artist.photo_url} alt={artist.name} className="absolute inset-0 w-full h-full object-cover" />
+            <img src={avatarUrl} alt={artist.name} className="absolute inset-0 w-full h-full object-cover" />
           ) : (
             <span className="font-display font-extrabold text-[96px]" style={{ color: 'oklch(96% 0.01 90 / 0.28)' }}>
               {artist.name.trim().charAt(0).toUpperCase() || '?'}

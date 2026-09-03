@@ -8,6 +8,7 @@ import YouTubePreviewButton from '@/components/next/YouTubePreviewButton';
 import WatchButton from '@/components/next/WatchButton';
 import ReactionBar from '@/components/next/ReactionBar';
 import { heroGradient } from '@/components/next/heroGradient';
+import { getArtistAvatarUrl } from '@/lib/artist-image';
 
 // One card shell, six narrative flavors switched on eventType — every
 // headline/body string below is built purely from real fields already on
@@ -104,7 +105,9 @@ export default function FeedCard({
 }) {
   const content = cardContent(item, viewerUserId);
   const artist = item.artist;
-  const heroImageUrl = artist ? (artist.photoUrl || (artist.featuredVideoId ? `https://img.youtube.com/vi/${artist.featuredVideoId}/hqdefault.jpg` : undefined)) : undefined;
+  // Avatar only — never a YouTube video-thumbnail stand-in, see
+  // lib/artist-image.ts.
+  const heroImageUrl = artist ? getArtistAvatarUrl({ photo_url: artist.photoUrl }) : undefined;
   const isBackFlavor = BACK_STYLE_TYPES.has(item.eventType);
   const isOwnFoundingShare = item.eventType === 'founding_believer_share' && item.actor?.id === viewerUserId;
   const isUserTake = item.eventType === 'user_take';

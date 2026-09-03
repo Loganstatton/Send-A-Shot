@@ -53,7 +53,11 @@ export async function POST(req: Request) {
       // no human reviewing the change first is the wrong default; a Scout
       // can still pull the new name in via the manual button if it matters.
       const { name: _name, ...rest } = result.data;
-      const nonEmpty = Object.fromEntries(Object.entries(rest).filter(([, v]) => v != null && v !== ''));
+      const nonEmpty: Record<string, unknown> = Object.fromEntries(Object.entries(rest).filter(([, v]) => v != null && v !== ''));
+      // Pre-beta migration: tag a re-synced photo LEGACY_SOUNDCHARTS same as
+      // the backfill route (app/api/soundcharts/backfill/route.ts) — never
+      // surfaced by the public image resolver, see lib/artist-image.ts.
+      if (nonEmpty.photo_url) nonEmpty.photo_source_type = 'LEGACY_SOUNDCHARTS';
       if (Object.keys(nonEmpty).length > 0) {
         // updateArtist only writes fields present in the object (see
         // lib/db.ts) — ArtistInput's required `name` is a create-time

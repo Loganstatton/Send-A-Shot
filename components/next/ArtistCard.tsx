@@ -11,6 +11,7 @@ import WatchButton from '@/components/next/WatchButton';
 import AlertToggle from '@/components/next/AlertToggle';
 import { heroGradient } from '@/components/next/heroGradient';
 import InfoTip from '@/components/next/InfoTip';
+import { getArtistAvatarUrl } from '@/lib/artist-image';
 
 export type SinceWatched = {
   watchedAt: string;
@@ -47,10 +48,13 @@ export default function ArtistCard({
     (priceChangePctSinceWatch != null && Math.abs(priceChangePctSinceWatch) >= ALERT_PRICE_PCT_THRESHOLD);
   const showAlertFlag = Boolean(sinceWatched?.alertsEnabled) && hasMovedSinceWatch;
 
-  // A Scout-curated photo wins when there is one; otherwise fall back to
-  // the YouTube thumbnail for whatever video Discovery/Approve attached —
-  // still a real image of the artist, just less deliberately chosen.
-  const heroImageUrl = artist.photo_url || (artist.featured_video_id ? `https://img.youtube.com/vi/${artist.featured_video_id}/hqdefault.jpg` : undefined);
+  // The artist's actual avatar/profile artwork only — see
+  // lib/artist-image.ts for why this never falls back to a YouTube video
+  // thumbnail (that's not a claim about what the artist looks like). The
+  // YouTubePreviewButton below still lets a trader watch the featured
+  // video directly; this card just doesn't pretend a video frame is the
+  // artist's photo.
+  const heroImageUrl = getArtistAvatarUrl(artist);
 
   const [imgFailed, setImgFailed] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);

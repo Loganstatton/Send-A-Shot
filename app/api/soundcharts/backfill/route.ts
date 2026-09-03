@@ -89,7 +89,15 @@ export async function POST(req: Request) {
         // index on soundcharts_uuid — so future /api/soundcharts/sync runs
         // pick them up automatically from here on, same as anyone who got
         // linked at creation time.
-        updateArtist(artist.id, { ...nonEmpty, soundcharts_uuid: best.uuid } as ArtistInput);
+        //
+        // Pre-beta migration: tagged LEGACY_SOUNDCHARTS so the public image
+        // resolver (lib/artist-image.ts) never surfaces it — Soundcharts
+        // photos have no established public reuse rights, same reasoning as
+        // Deezer's (see app/api/deezer/sync/route.ts). Still written and
+        // still visible to a Scout in ArtistForm/the internal roster — this
+        // route's photo fill is now an internal-only convenience, not a
+        // public-facing one.
+        updateArtist(artist.id, { ...nonEmpty, soundcharts_uuid: best.uuid, photo_source_type: 'LEGACY_SOUNDCHARTS' } as ArtistInput);
         updatedCount++;
       } else {
         // Matched a Soundcharts profile, but it doesn't carry a photo on

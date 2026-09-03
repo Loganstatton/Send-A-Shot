@@ -59,7 +59,14 @@ export async function POST(req: Request) {
         continue;
       }
       stampSourceSyncedAt(artist.id, 'deezer');
-      updateArtist(artist.id, result.data as ArtistInput);
+      // Pre-beta migration: Deezer's photo is never used publicly (see
+      // lib/artist-image.ts's resolver and the SOURCE_TYPES comment in
+      // lib/types.ts) — there's no reliable rights/attribution info behind
+      // it, unlike a Commons image or an artist's own upload. Only
+      // top_song_url/song_preview_url (internal Scout research links, never
+      // rendered on Public NEXT) still come from this sync.
+      const { photo_url, ...publicSafeFields } = result.data;
+      updateArtist(artist.id, publicSafeFields as ArtistInput);
       updatedCount++;
     }
 

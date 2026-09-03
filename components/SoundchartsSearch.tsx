@@ -64,6 +64,12 @@ export default function SoundchartsSearch({
       const { soundcharts_uuid, ...fields } = data;
       // Only carry over fields Soundcharts actually returned a value for.
       const nonEmpty = Object.fromEntries(Object.entries(fields).filter(([, v]) => v != null && v !== ''));
+      // Pre-beta migration: a Soundcharts-sourced photo is tagged
+      // LEGACY_SOUNDCHARTS so it's never surfaced by the public image
+      // resolver (lib/artist-image.ts) — still visible to a Scout here,
+      // just never on Public NEXT. See app/api/soundcharts/sync/route.ts's
+      // matching comment.
+      if (nonEmpty.photo_url) nonEmpty.photo_source_type = 'LEGACY_SOUNDCHARTS';
       onFill({ ...nonEmpty, soundcharts_uuid });
       setStatus(`Filled from Soundcharts (${label}).`);
       setQuery('');

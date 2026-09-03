@@ -6,6 +6,7 @@ import { requireUser } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
 import { foundingBelieverSerial, getFoundingBelieverTier } from '@/lib/founding-believer';
 import { heroGradient } from '@/components/next/heroGradient';
+import { getArtistAvatarUrl } from '@/lib/artist-image';
 import ShareReceiptButton from '@/components/next/ShareReceiptButton';
 import ShareToFeedButton from '@/components/next/ShareToFeedButton';
 import HoloCard from '@/components/next/HoloCard';
@@ -69,7 +70,9 @@ export default async function FoundingBelieverReceiptPage({ params }: { params: 
   // distinction the page always drew, now driven by the tier bands.
   const isTopTen = tier.key === 'genesis' || tier.key === 'founding';
 
-  const heroImageUrl = artist.photo_url || (artist.featured_video_id ? `https://img.youtube.com/vi/${artist.featured_video_id}/hqdefault.jpg` : undefined);
+  // Avatar only — never a YouTube video-thumbnail stand-in, see
+  // lib/artist-image.ts.
+  const heroImageUrl = getArtistAvatarUrl(artist);
 
   return (
     <div className="flex flex-col gap-6 max-w-[640px] mx-auto">
