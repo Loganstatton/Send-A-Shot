@@ -4,6 +4,14 @@
 import type { Artist, PublicArtist } from './types';
 
 export function toPublicArtist(artist: Artist): PublicArtist {
+  // Legally-required Commons attribution is the one piece of photo
+  // provenance Public NEXT is allowed to see — see PublicArtist's own
+  // comment. Anything sourced any other way (including the raw
+  // photo_source_type label itself) never reaches this object.
+  const commonsAttribution =
+    artist.photo_source_type === 'WIKIMEDIA_COMMONS'
+      ? { photo_attribution: artist.photo_attribution, photo_license: artist.photo_license, photo_license_url: artist.photo_license_url }
+      : {};
   return {
     id: artist.id,
     created_at: artist.created_at,
@@ -20,6 +28,8 @@ export function toPublicArtist(artist: Artist): PublicArtist {
     youtube_url: artist.youtube_url,
     spotify_url: artist.spotify_url,
     soundcloud_url: artist.soundcloud_url,
+    website_url: artist.website_url,
+    ...commonsAttribution,
     isClaimed: artist.claimed_by_user_id != null,
   };
 }

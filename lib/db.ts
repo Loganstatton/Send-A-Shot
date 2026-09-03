@@ -418,6 +418,52 @@ addColumnIfMissing('artists', 'high_rating_note TEXT');
 // reviewArtistClaim on approval — see the Artist type's own comment. Never
 // part of WRITABLE_FIELDS, so a Scout's ordinary PATCH can't set or clear it.
 addColumnIfMissing('artists', 'claimed_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+// An artist's own official site — Scout-editable, and (pre-beta migration)
+// also claimed-artist-editable (see CLAIMED_ARTIST_EDITABLE_FIELDS below).
+// Safe to expose publicly as-is (see toPublicArtist) — it's the artist's
+// own link, not a vendor-sourced field.
+addColumnIfMissing('artists', 'website_url TEXT');
+// --- Photo provenance (pre-beta migration: Wikidata/Commons enrichment +
+// claimed-artist self-service, see lib/wikidata.ts / lib/wikimedia-commons.ts
+// / setArtistPhotoByOwner below) ---
+// One of SOURCE_TYPES (lib/types.ts) — never Scout/claimant-writable as a
+// raw string; only ever set by the code path that actually sourced the
+// photo (SoundchartsSearch/manual edit -> 'SCOUT_MANUAL', the Commons
+// picker -> 'WIKIMEDIA_COMMONS', setArtistPhotoByOwner -> 'ARTIST_PROVIDED').
+// Legacy artists whose photo_url came from the old Deezer/Soundcharts photo
+// fallback (removed pre-beta) have this NULL, not backfilled — a photo that
+// predates provenance tracking doesn't get a fabricated source.
+addColumnIfMissing('artists', 'photo_source_type TEXT');
+// Commons page URL for a WIKIMEDIA_COMMONS photo; the claimed artist's
+// original submitted link for an ARTIST_PROVIDED one. NULL otherwise.
+addColumnIfMissing('artists', 'photo_source_url TEXT');
+// Required attribution text for a WIKIMEDIA_COMMONS photo (creator name +
+// whatever the license requires) — legally required to keep showing
+// alongside the image, and the one piece of vendor/provenance detail
+// toPublicArtist is allowed to expose (see its own comment). NULL for any
+// other source.
+addColumnIfMissing('artists', 'photo_attribution TEXT');
+addColumnIfMissing('artists', 'photo_license TEXT');
+addColumnIfMissing('artists', 'photo_license_url TEXT');
+// ARTIST_PROVIDED only: who submitted it and when, plus when they checked
+// the rights-confirmation box ("I own this content or have permission to
+// provide it for use on NEXT") — see setArtistPhotoByOwner. Never backfilled
+// for a photo set any other way.
+addColumnIfMissing('artists', 'photo_uploaded_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+addColumnIfMissing('artists', 'photo_uploaded_at TEXT');
+addColumnIfMissing('artists', 'photo_rights_confirmed_at TEXT');
+// --- Wikidata match cache (lib/wikidata.ts) — the QID itself, once found,
+// so a re-lookup is a single fetch-by-id instead of a fresh fuzzy search.
+// Wikidata data is never auto-applied to genre/location/etc — a Scout
+// reviews the fetched suggestion and explicitly saves it (same "fill the
+// form, Scout still hits Save" flow as SoundchartsSearch). ---
+addColumnIfMissing('artists', 'wikidata_qid TEXT');
+addColumnIfMissing('artists', 'wikidata_fetched_at TEXT');
+// Same backoff idea as youtube_no_match_at/soundcharts_no_match_at above —
+// most artists on this roster are small enough that Wikidata genuinely has
+// no entry for them; that's an expected, valid outcome, not an error, and
+// this stops re-searching every single time a Scout opens the form.
+addColumnIfMissing('artists', 'wikidata_no_match_at TEXT');
 addColumnIfMissing('next_transactions', 'listened_before_buy INTEGER');
 // discovery_runs originally only ever meant a Soundcharts scan; `source`
 // distinguishes it from a YouTube scan run, `quota_used` is a rough count
@@ -769,12 +815,21 @@ export function findArtistsByName(name: string): { id: number; name: string; sta
 
 const WRITABLE_FIELDS = [
   'name', 'stage', 'genre', 'location', 'scout_name',
-  'tiktok_url', 'instagram_url', 'youtube_url', 'spotify_url', 'soundcloud_url',
+  'tiktok_url', 'instagram_url', 'youtube_url', 'spotify_url', 'soundcloud_url', 'website_url',
   'followers_count', 'monthly_listeners', 'growth_velocity_pct', 'engagement_rate_pct',
   'music_talent', 'growth_velocity', 'engagement_quality', 'original_song_response',
   'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
   'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending', 'soundcharts_uuid',
   'featured_video_id', 'high_rating_note',
+  // Photo provenance a Scout sets alongside photo_url (manual paste ->
+  // 'SCOUT_MANUAL'; the Commons picker fills all five at once with
+  // 'WIKIMEDIA_COMMONS' — see components/WikimediaCommonsSearch.tsx).
+  // Deliberately NOT here: photo_uploaded_by_user_id/photo_uploaded_at/
+  // photo_rights_confirmed_at (ARTIST_PROVIDED only, set exclusively by
+  // setArtistPhotoByOwner below — never client-settable, same reasoning as
+  // claimed_by_user_id above) and wikidata_qid/wikidata_fetched_at/
+  // wikidata_no_match_at (system-stamped only by the Wikidata lookup route).
+  'photo_source_type', 'photo_source_url', 'photo_attribution', 'photo_license', 'photo_license_url',
 ] as const;
 
 // Pre-beta migration: growth_velocity/engagement_quality used to be
@@ -874,6 +929,42 @@ export function getArtistFieldHistory(artistId: number, limit = 50): ArtistField
       LIMIT ?
     `)
     .all(artistId, limit) as ArtistFieldChange[];
+}
+
+// The exact profile fields an approved claimed artist can edit themselves
+// (pre-beta migration brief item 3) — bio, discovery-relevant descriptors,
+// their own official links, and which of their own videos NEXT features.
+// Deliberately excludes everything else WRITABLE_FIELDS allows a Scout to
+// touch: scout_name, notes, high_rating_note, the 8 rating categories,
+// stage, follower/growth numbers, soundcharts_uuid, photo provenance (photo
+// goes through the separate rights-confirmed setArtistPhotoByOwner instead
+// of this generic path) — i.e. no internal discovery info, no scoring, no
+// market-moving fields. name is also excluded: renaming a roster artist is
+// still a Scout call (their own market visibility/NEXT ticker depends on
+// it), not something an artist can silently redo on themselves.
+const CLAIMED_ARTIST_EDITABLE_FIELDS = [
+  'bio', 'genre', 'location', 'website_url',
+  'tiktok_url', 'instagram_url', 'youtube_url', 'spotify_url', 'soundcloud_url',
+  'featured_video_id',
+] as const satisfies readonly (typeof WRITABLE_FIELDS)[number][];
+
+// Applies a claimed artist's own edit to their own roster row — same
+// updateArtist()/field-history/audit-log machinery a Scout's PATCH uses,
+// just pre-filtered to CLAIMED_ARTIST_EDITABLE_FIELDS so nothing outside
+// that whitelist can be smuggled in even if the request body contains it.
+// Caller (app/api/next/my-artist/[id]/profile/route.ts) has already
+// confirmed artist.claimed_by_user_id === the acting user.
+export function updateArtistByOwner(artistId: number, input: ArtistInput, actor: Actor): Artist | undefined {
+  const filtered: Record<string, unknown> = {};
+  for (const field of CLAIMED_ARTIST_EDITABLE_FIELDS) {
+    if (field in input) filtered[field] = (input as any)[field];
+  }
+  // updateArtist only ever writes a WRITABLE_FIELDS key actually present on
+  // the input object (`field in input`) — `name` being structurally
+  // required by ArtistInput's type is a compile-time-only constraint, never
+  // checked at runtime, so omitting it here is safe: nothing renames the
+  // artist through this path.
+  return updateArtist(artistId, filtered as ArtistInput, actor);
 }
 
 // "Most recent activity" for roster sorting — the later of the artist's
@@ -2755,6 +2846,62 @@ export function getArtistsInPhotoBackoff(): PhotoBackoffStatus {
   if (rows.length === 0) return { count: 0 };
   const earliestRecheckAt = new Date(new Date(rows[0].soundcharts_no_match_at).getTime() + SOUNDCHARTS_NO_MATCH_RECHECK_DAYS * 24 * 60 * 60 * 1000).toISOString();
   return { count: rows.length, earliestRecheckAt };
+}
+
+// --- Wikidata match cache (see lib/wikidata.ts) ---
+
+export function saveWikidataMatch(artistId: number, qid: string): void {
+  db.prepare('UPDATE artists SET wikidata_qid = ?, wikidata_fetched_at = ?, wikidata_no_match_at = NULL WHERE id = ?')
+    .run(qid, new Date().toISOString(), artistId);
+}
+
+// A genuine no-match is cached same as soundcharts_no_match_at/
+// youtube_no_match_at — most artists on this roster are small enough that
+// Wikidata has no entry for them at all, which is an expected, valid
+// outcome (see lib/wikidata.ts's file header), not something to keep
+// re-searching for on every form load.
+export function saveWikidataNoMatch(artistId: number, at: string = new Date().toISOString()): void {
+  db.prepare('UPDATE artists SET wikidata_fetched_at = ?, wikidata_no_match_at = ? WHERE id = ?').run(at, at, artistId);
+}
+
+// --- Claimed-artist photo upload (pre-beta migration: item 3/33 of the
+// migration brief) — the ONE write path for artists.photo_source_type =
+// 'ARTIST_PROVIDED'. Deliberately not routed through the generic
+// updateArtist()/WRITABLE_FIELDS path (unlike photo_url itself, which a
+// Scout can set directly): rightsConfirmed must be an explicit, real
+// checkbox click, not a client-suppliable boolean, and uploadedByUserId
+// must be the actual acting user's id, not anything the request body could
+// spoof — see app/api/next/my-artist/[id]/photo/route.ts, the only caller. ---
+export function setArtistPhotoByOwner(artistId: number, photoUrl: string, uploadedByUserId: number): Artist | undefined {
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE artists SET
+      updated_at = ?, photo_url = ?, photo_source_type = 'ARTIST_PROVIDED', photo_source_url = ?,
+      photo_attribution = NULL, photo_license = NULL, photo_license_url = NULL,
+      photo_uploaded_by_user_id = ?, photo_uploaded_at = ?, photo_rights_confirmed_at = ?
+    WHERE id = ?
+  `).run(now, photoUrl, photoUrl, uploadedByUserId, now, now, artistId);
+  return getArtist(artistId);
+}
+
+// Lets an admin (never the claimed artist themself) remove an
+// ARTIST_PROVIDED photo — the migration brief's "admin must be able to
+// remove an uploaded asset" — falling back to no photo (the resolver's
+// gradient/initial fallback takes over) rather than silently reverting to
+// whatever photo_url happened to be there before, which could just as
+// easily have been another removed/disputed image.
+export function removeArtistProvidedPhoto(artistId: number): Artist | undefined {
+  const artist = getArtist(artistId);
+  if (!artist || artist.photo_source_type !== 'ARTIST_PROVIDED') return artist;
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE artists SET
+      updated_at = ?, photo_url = NULL, photo_source_type = NULL, photo_source_url = NULL,
+      photo_attribution = NULL, photo_license = NULL, photo_license_url = NULL,
+      photo_uploaded_by_user_id = NULL, photo_uploaded_at = NULL, photo_rights_confirmed_at = NULL
+    WHERE id = ?
+  `).run(now, artistId);
+  return getArtist(artistId);
 }
 
 export function createSyncRun(source: SyncSourceKey = 'soundcharts'): SyncRun {

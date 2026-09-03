@@ -54,6 +54,7 @@ const {
   stampSourceSyncedAt, stampYoutubeNoMatch, storeTradeResponse,
   TRADE_RATE_LIMIT_PER_MINUTE, updateArtist,
   updateUserProfile, YOUTUBE_NO_MATCH_RECHECK_DAYS,
+  saveWikidataMatch, saveWikidataNoMatch, setArtistPhotoByOwner, removeArtistProvidedPhoto, updateArtistByOwner,
 } = await import('./db');
 
 const STARTING_BALANCE_CENTS = 1_000_000; // $10,000
@@ -2788,5 +2789,122 @@ describe('NEXT Feed — User Take posts', () => {
 
   it('searchNextArtists returns nothing for an empty query', () => {
     expect(searchNextArtists('')).toEqual([]);
+  });
+});
+
+describe('Wikidata match cache', () => {
+  it('saveWikidataMatch stores the qid and a fetched timestamp, clearing any prior no-match', () => {
+    const artist = makeArtist('Wikidata Match Artist');
+    saveWikidataNoMatch(artist.id);
+    expect(getArtist(artist.id)!.wikidata_no_match_at).toBeTruthy();
+
+    saveWikidataMatch(artist.id, 'Q12345');
+    const updated = getArtist(artist.id)!;
+    expect(updated.wikidata_qid).toBe('Q12345');
+    expect(updated.wikidata_fetched_at).toBeTruthy();
+    expect(updated.wikidata_no_match_at ?? null).toBeNull();
+  });
+
+  it('saveWikidataNoMatch stamps fetched_at and no_match_at without touching qid', () => {
+    const artist = makeArtist('Wikidata No Match Artist');
+    saveWikidataNoMatch(artist.id);
+    const updated = getArtist(artist.id)!;
+    expect(updated.wikidata_qid ?? null).toBeNull();
+    expect(updated.wikidata_fetched_at).toBeTruthy();
+    expect(updated.wikidata_no_match_at).toBeTruthy();
+  });
+});
+
+describe('Claimed-artist photo (ARTIST_PROVIDED provenance)', () => {
+  it('setArtistPhotoByOwner sets photo_url plus full provenance, stamping the uploader and rights confirmation', () => {
+    const uploader = makeUser('photo-uploader@example.com');
+    const artist = makeArtist('Photo Upload Artist');
+
+    const updated = setArtistPhotoByOwner(artist.id, 'https://example.com/my-photo.jpg', uploader.id)!;
+    expect(updated.photo_url).toBe('https://example.com/my-photo.jpg');
+    expect(updated.photo_source_type).toBe('ARTIST_PROVIDED');
+    expect(updated.photo_source_url).toBe('https://example.com/my-photo.jpg');
+    expect(updated.photo_uploaded_by_user_id).toBe(uploader.id);
+    expect(updated.photo_uploaded_at).toBeTruthy();
+    expect(updated.photo_rights_confirmed_at).toBeTruthy();
+    // Never carries stale Commons-license fields over from a prior photo.
+    expect(updated.photo_attribution ?? null).toBeNull();
+  });
+
+  it('setArtistPhotoByOwner overwrites a prior Commons-sourced photo\'s attribution/license entirely, not just photo_url', () => {
+    const uploader = makeUser('photo-overwrite@example.com');
+    const artist = makeArtist('Photo Overwrite Artist');
+    updateArtist(artist.id, {
+      photo_url: 'https://commons.example/old.jpg', photo_source_type: 'WIKIMEDIA_COMMONS',
+      photo_source_url: 'https://commons.wikimedia.org/wiki/File:Old.jpg', photo_attribution: 'Old Photographer, CC BY-SA 4.0',
+      photo_license: 'CC BY-SA 4.0', photo_license_url: 'https://creativecommons.org/licenses/by-sa/4.0',
+    } as any, { id: 1, name: 'admin' });
+
+    const updated = setArtistPhotoByOwner(artist.id, 'https://example.com/new.jpg', uploader.id)!;
+    expect(updated.photo_source_type).toBe('ARTIST_PROVIDED');
+    expect(updated.photo_attribution ?? null).toBeNull();
+    expect(updated.photo_license ?? null).toBeNull();
+    expect(updated.photo_license_url ?? null).toBeNull();
+  });
+
+  it('removeArtistProvidedPhoto clears the photo and all its provenance on an ARTIST_PROVIDED photo', () => {
+    const uploader = makeUser('photo-remove@example.com');
+    const artist = makeArtist('Photo Remove Artist');
+    setArtistPhotoByOwner(artist.id, 'https://example.com/to-remove.jpg', uploader.id);
+
+    const removed = removeArtistProvidedPhoto(artist.id)!;
+    expect(removed.photo_url ?? null).toBeNull();
+    expect(removed.photo_source_type ?? null).toBeNull();
+    expect(removed.photo_uploaded_by_user_id ?? null).toBeNull();
+    expect(removed.photo_rights_confirmed_at ?? null).toBeNull();
+  });
+
+  it('removeArtistProvidedPhoto is a no-op on a photo sourced any other way — never removes a Scout- or Commons-set photo', () => {
+    const artist = makeArtist('Non-Owner Photo Artist');
+    updateArtist(artist.id, { photo_url: 'https://example.com/scout-set.jpg', photo_source_type: 'SCOUT_MANUAL' } as any, { id: 1, name: 'admin' });
+
+    const result = removeArtistProvidedPhoto(artist.id)!;
+    expect(result.photo_url).toBe('https://example.com/scout-set.jpg');
+    expect(result.photo_source_type).toBe('SCOUT_MANUAL');
+  });
+});
+
+describe('updateArtistByOwner — claimed-artist self-service field whitelist', () => {
+  it('applies an editable field (bio) through the same field-history-logged path as a Scout edit', () => {
+    const owner = makeUser('owner-edit@example.com');
+    const artist = makeArtist('Owner Edit Artist');
+
+    const updated = updateArtistByOwner(artist.id, { bio: 'My own bio, written by me.' } as any, { id: owner.id, name: owner.name })!;
+    expect(updated.bio).toBe('My own bio, written by me.');
+    const history = getArtistFieldHistory(artist.id);
+    expect(history.some((h) => h.field === 'bio' && h.actor_id === owner.id)).toBe(true);
+  });
+
+  it('silently ignores every field outside CLAIMED_ARTIST_EDITABLE_FIELDS — score, stage, notes, name never change', () => {
+    const owner = makeUser('owner-restricted@example.com');
+    const artist = makeArtist('Owner Restricted Artist');
+    const before = getArtist(artist.id)!;
+
+    const updated = updateArtistByOwner(artist.id, {
+      name: 'Renamed By Artist', notes: 'secret scout notes leaked', stage: 'flagship', music_talent: 10, scout_name: 'Fake Scout',
+    } as any, { id: owner.id, name: owner.name })!;
+
+    expect(updated.name).toBe(before.name);
+    expect(updated.notes ?? null).toBe(before.notes ?? null);
+    expect(updated.stage).toBe(before.stage);
+    expect(updated.music_talent).toBe(before.music_talent);
+    expect(updated.scout_name ?? null).toBe(before.scout_name ?? null);
+  });
+
+  it('applies website_url and social links together in one call', () => {
+    const owner = makeUser('owner-links@example.com');
+    const artist = makeArtist('Owner Links Artist');
+
+    const updated = updateArtistByOwner(artist.id, {
+      website_url: 'https://example-artist.com', instagram_url: 'https://instagram.com/example', genre: 'Indie Pop',
+    } as any, { id: owner.id, name: owner.name })!;
+    expect(updated.website_url).toBe('https://example-artist.com');
+    expect(updated.instagram_url).toBe('https://instagram.com/example');
+    expect(updated.genre).toBe('Indie Pop');
   });
 });

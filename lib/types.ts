@@ -58,6 +58,28 @@ export const SCORE_LABELS: Record<keyof ScoreInputs, string> = {
   professionalism: 'Professionalism / Work Ethic',
 };
 
+// Where a piece of artist data actually came from — pre-beta migration's
+// provenance taxonomy. ARTIST_PROVIDED: the claimed artist themself
+// (rights-confirmed, see setArtistPhotoByOwner in lib/db.ts). WIKIDATA /
+// WIKIMEDIA_COMMONS: the two new free enrichment sources (lib/wikidata.ts,
+// lib/wikimedia-commons.ts) — never auto-applied, always a Scout-reviewed
+// fill. YOUTUBE: the featured video / its thumbnail. NEXT: computed from
+// NEXT's own platform activity (backers, watchlists, trades — see
+// lib/next-signals.ts). SCOUT_MANUAL: a Scout typed or pasted it in
+// directly. LEGACY_DEEZER / LEGACY_SOUNDCHARTS: predates this taxonomy —
+// data that came from one of the two now-disabled-for-public integrations
+// before this migration; never assigned going forward, kept so existing
+// rows aren't misrepresented as sourced some other way.
+export type SourceType =
+  | 'ARTIST_PROVIDED'
+  | 'WIKIDATA'
+  | 'WIKIMEDIA_COMMONS'
+  | 'YOUTUBE'
+  | 'NEXT'
+  | 'SCOUT_MANUAL'
+  | 'LEGACY_DEEZER'
+  | 'LEGACY_SOUNDCHARTS';
+
 export type Artist = ScoreInputs & {
   id: number;
   created_at: string;
@@ -113,6 +135,23 @@ export type Artist = ScoreInputs & {
   // Scout-editable via ArtistForm/PATCH, only set through that review flow.
   // Drives access to the Artist Dashboard (app/next/my-artist).
   claimed_by_user_id?: number;
+  // The artist's own official site — Scout- and claimed-artist-editable.
+  website_url?: string;
+  // Photo provenance — see the SOURCE_TYPES comment and lib/db.ts's schema
+  // comment for the exact write path of each field.
+  photo_source_type?: SourceType;
+  photo_source_url?: string;
+  photo_attribution?: string;
+  photo_license?: string;
+  photo_license_url?: string;
+  photo_uploaded_by_user_id?: number;
+  photo_uploaded_at?: string;
+  photo_rights_confirmed_at?: string;
+  // Wikidata match cache — see lib/wikidata.ts and lib/db.ts's schema
+  // comment. Never Scout-editable directly; only set by the lookup route.
+  wikidata_qid?: string;
+  wikidata_fetched_at?: string;
+  wikidata_no_match_at?: string;
 };
 
 export type ArtistInput = Partial<Omit<Artist, 'id' | 'created_at' | 'updated_at' | 'created_by' | 'created_by_name'>> & {
@@ -527,6 +566,17 @@ export type PublicArtist = {
   youtube_url?: string;
   spotify_url?: string;
   soundcloud_url?: string;
+  website_url?: string;
+  // The ONE piece of photo provenance Public NEXT is allowed to see —
+  // required attribution text/license for a Wikimedia Commons photo, since
+  // Commons licenses (CC BY, CC BY-SA, etc.) legally require attribution to
+  // stay visible alongside the image. toPublicArtist() only populates these
+  // when photo_source_type === 'WIKIMEDIA_COMMONS'; the raw source_type
+  // label itself (an internal vendor/provenance detail) is never included
+  // here — see the Artist type's SOURCE_TYPES comment.
+  photo_attribution?: string;
+  photo_license?: string;
+  photo_license_url?: string;
   // Whether *someone* has a verified claim on this artist — never the raw
   // user id (a caller that needs "is it ME" does that comparison
   // server-side against the raw Artist, e.g. app/next/artists/[id]/page.tsx).
