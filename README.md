@@ -338,23 +338,27 @@ Get a key from the [Google Cloud Console](https://console.cloud.google.com/)
 `POST /api/discovery/scan-youtube` searches recent Music-category uploads
 across six genre buckets (hip-hop/rap, pop, R&B, country, rock/alternative,
 electronic), pulls real view/like/comment/subscriber counts for what it
-finds, reads each surviving candidate's top comments for genuine "how is
-this not viral" / "underrated" / "this deserves to blow up" sentiment
-(a curated keyword match, not NLP — see `HYPE_PHRASES` in
-`lib/youtube-momentum.ts`, freely tunable), and scores each one with a
-transparent **Momentum Score** — the same 0–100, weighted, tunable-ceiling
-shape as the Breakout Score itself, built to reward *disproportionate*
-momentum (a small channel's video earning far more views than its
-subscriber count would predict, or getting genuinely surprised reactions
-in the comments) rather than just raw view count. A candidate that clears
-the score threshold gets a best-effort Soundcharts name match attempted
-(search + `/artist/{uuid}`, confirmed-working endpoints only) to pull in
+finds, and qualifies a candidate with three simple, individually
+inspectable checks — an official-release title pattern, a minimum view
+count, and a channel-size band (see `passesCheapGates` in
+`lib/youtube-momentum.ts`). For anything that qualifies, it also reads the
+video's top comments for genuine "how is this not viral" / "underrated" /
+"this deserves to blow up" sentiment (a curated keyword match, not NLP —
+see `HYPE_PHRASES`, freely tunable). None of this — views, subscribers,
+views/day, like rate, comment rate, comment sentiment — is combined into a
+score; the raw numbers are shown to a Scout on `/discovery` as-is, and the
+Approve/Watch/Pass call is theirs, not a formula's. A candidate that
+qualifies gets a best-effort Soundcharts name match attempted (search +
+`/artist/{uuid}`, confirmed-working endpoints only) to pull in
 follower/growth data — improves the candidate, never required for it to
 exist. Every candidate's explanation is visible on `/discovery`, e.g.
 *"142K views in 6 days • 8.4K channel subscribers • 11.2% like rate • 💬
 'how is this not viral??' (412 likes)"* — up to two real example comments
 are captured when the sentiment is there, one inline in that explanation
-and a second shown just below it.
+and a second shown just below it. Ranking within a scan (which qualifying
+candidates fill the `YOUTUBE_MAX_CANDIDATES_PER_RUN` cap) is by upload
+recency, newest first — a simple tiebreak, not a ranking derived from
+views/subscribers/rates.
 
 Triggered two ways:
 - **Manually** — the "Run YouTube scan now" button on `/discovery`.
@@ -388,16 +392,14 @@ tune scan size, cost, or which genres run:
 | `YOUTUBE_MAX_RESULTS_PER_GENRE` | 50 (YouTube's own max per call) | Search results pulled per genre per scan — free to max out, since `search` is priced per call, not per result |
 | `YOUTUBE_PUBLISHED_WITHIN_DAYS` | 14 | How recent an upload has to be to be considered |
 | `YOUTUBE_MIN_SUBSCRIBERS` / `YOUTUBE_MAX_SUBSCRIBERS` | 200 / 100,000 | Channel size band — the upper bound is what keeps this "smaller channels," not already-famous artists |
-| `YOUTUBE_MOMENTUM_THRESHOLD` | 25 | Minimum Momentum Score (0–100) to become a candidate |
-| `YOUTUBE_COMMENTS_PER_CANDIDATE` | 20 | Top comments read (by relevance) per candidate for hype-sentiment detection |
+| `YOUTUBE_COMMENTS_PER_CANDIDATE` | 20 | Top comments read (by relevance) per candidate for hype-sentiment detection — context for the reviewing Scout, not a qualification gate |
 | `YOUTUBE_MAX_CANDIDATES_PER_RUN` | 25 | Caps both the Soundcharts-enrichment calls and how many new candidates one scan can add |
 | `YOUTUBE_DAILY_QUOTA_BUDGET` | 10,000 (YouTube's free-tier daily grant) | Self-imposed daily budget, tracked across discovery scans, the video backfill, and on-create lookups alike — a call that would exceed it is skipped locally (no request ever leaves the server) rather than left to fail with YouTube's own `quotaExceeded` error. See "Sync health" under `/admin` for live usage. Raise this only after Google approves a real increased-quota grant. |
 
-A channel that hides its subscriber count, or a video with likes/comments
-disabled, is never scored as if that number were 0 — the affected factor
-is left out of the Momentum Score and its weight rescaled across whatever
-data actually came back, and a channel with no subscriber count at all is
-skipped outright (there's no baseline to judge "disproportionate" against).
+A channel that hides its subscriber count is skipped outright — there's no
+baseline to judge a small channel's reach against without one — and a video
+with likes/comments disabled just leaves that raw number blank for the
+Scout rather than being treated as a real 0.
 If every genre search fails in one run (bad key, YouTube outage), the run
 is recorded as failed with the real error instead of silently reporting
 zero candidates found — a genuinely quiet day and a broken integration

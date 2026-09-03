@@ -23,7 +23,6 @@ export default function YoutubeScanButton() {
           r.belowMinViews > 0 && `${r.belowMinViews} too few views`,
           r.noSubscriberCount > 0 && `${r.noSubscriberCount} no subscriber count`,
           r.subscriberOutOfBand > 0 && `${r.subscriberOutOfBand} channel size outside band`,
-          r.belowMomentumThreshold > 0 && `${r.belowMomentumThreshold} below momentum threshold${r.bestRejectedMomentumScore != null ? ` (best: ${r.bestRejectedMomentumScore}/100)` : ''}`,
         ].filter(Boolean);
         if (parts.length > 0) text += ` Rejected: ${parts.join(', ')}.`;
       }

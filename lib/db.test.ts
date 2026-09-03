@@ -518,7 +518,6 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
       yt_genre: 'pop',
       yt_view_count: 150_000,
       yt_channel_subscriber_count: 8_000,
-      momentum_score: 87.3,
       flagged_reason: '150K views in 6 days • 8K channel subscribers',
     });
 
@@ -526,7 +525,6 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
     expect(found).toBeDefined();
     expect(found.source).toBe('youtube');
     expect(found.soundcharts_uuid).toBeFalsy();
-    expect(found.momentum_score).toBe(87.3);
   });
 
   it('a YouTube candidate CAN carry a Soundcharts match alongside its channel identity', () => {
@@ -538,7 +536,6 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
       growth_30d_pct: 12,
       yt_channel_id: 'chan-matched-1',
       yt_channel_title: 'Matched Channel',
-      momentum_score: 55,
       flagged_reason: 'test',
     });
 
@@ -571,7 +568,6 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
       source: 'youtube',
       name: 'Hype Channel',
       yt_channel_id: 'chan-hype-1',
-      momentum_score: 72,
       yt_hype_comment_rate: 0.15,
       yt_comments_analyzed: 20,
       yt_example_comment_1: 'how is this not viral??',
@@ -591,7 +587,7 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
   });
 
   it('a candidate with no hype comments found leaves those fields null, not zero-filled', () => {
-    insertDiscoveryCandidate({ source: 'youtube', name: 'No Hype', yt_channel_id: 'chan-no-hype-1', momentum_score: 55, flagged_reason: 'test' });
+    insertDiscoveryCandidate({ source: 'youtube', name: 'No Hype', yt_channel_id: 'chan-no-hype-1', flagged_reason: 'test' });
     const found = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-no-hype-1')!;
     expect(found.yt_hype_comment_rate ?? null).toBeNull();
     expect(found.yt_example_comment_1 ?? null).toBeNull();
@@ -604,7 +600,6 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
       name: 'Genre Carrier',
       yt_channel_id: 'chan-genre-1',
       yt_genre: 'rock-alternative',
-      momentum_score: 60,
       flagged_reason: 'test',
     });
     const candidate = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-genre-1')!;
@@ -622,7 +617,6 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
       name: 'Unknown Genre Carrier',
       yt_channel_id: 'chan-genre-2',
       yt_genre: 'some-future-bucket',
-      momentum_score: 60,
       flagged_reason: 'test',
     });
     const candidate = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-genre-2')!;
@@ -640,7 +634,6 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
       photo_url: 'https://example.com/photo.jpg',
       country: 'Toronto, CA',
       soundcharts_uuid: 'uuid-photo-1',
-      momentum_score: 60,
       flagged_reason: 'test',
     });
     const candidate = getDiscoveryCandidates('new').find((c) => c.yt_channel_id === 'chan-photo-1')!;
@@ -662,8 +655,6 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
         belowMinViews: 12,
         noSubscriberCount: 30,
         subscriberOutOfBand: 40,
-        belowMomentumThreshold: 8,
-        bestRejectedMomentumScore: 22.5,
         duplicateSoundchartsMatch: 3,
       },
     });
@@ -675,9 +666,11 @@ describe('YouTube discovery — candidates without a Soundcharts identity', () =
     expect(latest.rejected_below_min_views).toBe(12);
     expect(latest.rejected_no_subscriber_count).toBe(30);
     expect(latest.rejected_subscriber_out_of_band).toBe(40);
-    expect(latest.rejected_below_momentum_threshold).toBe(8);
-    expect(latest.best_rejected_momentum_score).toBe(22.5);
     expect(latest.rejected_duplicate_soundcharts_match).toBe(3);
+    // Legacy momentum-score columns: always null now that no such score is
+    // computed (see the momentum_score comment in lib/db.ts's schema).
+    expect(latest.rejected_below_momentum_threshold ?? null).toBeNull();
+    expect(latest.best_rejected_momentum_score ?? null).toBeNull();
   });
 
   it('a Soundcharts run (no rejection filtering) leaves the breakdown columns null, not zero', () => {

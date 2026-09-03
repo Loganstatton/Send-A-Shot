@@ -1,11 +1,12 @@
 // Orchestrates one YouTube discovery scan: search several genre buckets
 // for recent Music-category uploads, pull real stats for the videos/
-// channels found, analyze top comments for genuine "how is this not
-// viral" sentiment, score momentum (now including that sentiment as one
-// factor), filter to genuine candidates, then attempt a best-effort
-// Soundcharts match/enrich. This is the only file that reads
-// YouTube-scan env vars — lib/youtube.ts (API I/O) and
-// lib/youtube-momentum.ts (pure scoring) both stay env-free.
+// channels found, filter to genuine candidates via simple threshold gates,
+// analyze top comments for genuine "how is this not viral" sentiment for
+// context, then attempt a best-effort Soundcharts match/enrich. No blended
+// score is computed anywhere in this flow — see lib/youtube-momentum.ts's
+// file header for why. This is the only file that reads YouTube-scan env
+// vars — lib/youtube.ts (API I/O) and lib/youtube-momentum.ts (pure signal
+// computation) both stay env-free.
 //
 // Implements the DiscoverySource contract (lib/discovery-source.ts) so a
 // future third source can follow the same shape.
@@ -13,8 +14,8 @@
 import { NewDiscoveryCandidate } from './db';
 import { DiscoveryRejectionBreakdown, DiscoveryScanOutcome, DiscoverySource, KnownIdentitySets } from './discovery-source';
 import {
-  classifyYoutubeCandidate, computeYoutubeMetrics, detectHypeComments, HypeCommentAnalysis, passesCheapGates,
-  youtubeFlaggedReason, youtubeMomentumScore, YoutubeThresholds,
+  computeYoutubeMetrics, detectHypeComments, HypeCommentAnalysis, passesCheapGates,
+  youtubeFlaggedReason, YoutubeThresholds,
 } from './youtube-momentum';
 import { getChannelsStats, getTopComments, getVideosStats, searchRecentMusicVideos, youtubeConfigured } from './youtube';
 import { getArtistData, searchArtists, soundchartsConfigured } from './soundcharts';
@@ -54,7 +55,6 @@ function scanThresholds(): YoutubeThresholds {
   return {
     minSubscribers: process.env.YOUTUBE_MIN_SUBSCRIBERS ? envInt('YOUTUBE_MIN_SUBSCRIBERS', 0) : undefined,
     maxSubscribers: process.env.YOUTUBE_MAX_SUBSCRIBERS ? envInt('YOUTUBE_MAX_SUBSCRIBERS', 0) : undefined,
-    minMomentumScore: process.env.YOUTUBE_MOMENTUM_THRESHOLD ? envInt('YOUTUBE_MOMENTUM_THRESHOLD', 0) : undefined,
   };
 }
 
@@ -209,24 +209,28 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
     if (!existing || views > existingViews) byChannel.set(hit.channelId, hit);
   }
 
-  // 5. Score, classify, rank, cap. Two-phase gating: the three cheap gates
-  // (view count, subscriber presence, subscriber band) are checked FIRST,
-  // with zero extra API calls — only a candidate that already clears
-  // those gets a commentThreads.list call spent on it. This keeps comment
-  // fetching bounded to genuinely-viable candidates instead of every
-  // search hit, while still computing the full (comment-inclusive)
-  // momentum score BEFORE ranking/capping — so a candidate with strong
-  // comment sentiment can't get cut before its comments were even read.
+  // 5. Gate, then rank/cap. The three cheap gates (title pattern, view
+  // count, subscriber band) are checked FIRST, with zero extra API calls —
+  // only a candidate that already clears those gets a commentThreads.list
+  // call spent on it (comments are read for context/hype examples, not to
+  // decide qualification — see the file header and lib/youtube-momentum.ts).
   // Every non-passing candidate's reason gets counted instead of silently
   // discarded, so "found nothing" and "a threshold/data gap filtered
   // everything" never look the same.
+  //
+  // Ranking: no blended score to sort by anymore, and nothing here computes
+  // one — see lib/youtube-momentum.ts's file header. Newest release first
+  // is a simple, transparent tiebreak (not a formula over views/subs/rates)
+  // for which qualifying candidates make the maxCandidatesPerRun cut; every
+  // qualifying candidate still reaches the queue with its full raw numbers
+  // for a Scout to judge directly.
   type Scored = {
     hit: typeof allHits[number]; viewCount: number; likeCount?: number; commentCount?: number;
-    subscriberCount?: number; channelViewCount?: number; momentumScore: number; hype: HypeCommentAnalysis;
+    subscriberCount?: number; channelViewCount?: number; hype: HypeCommentAnalysis;
   };
   const scored: Scored[] = [];
   const rejectionBreakdown: DiscoveryRejectionBreakdown = {
-    notOfficialRelease: 0, belowMinViews: 0, noSubscriberCount: 0, subscriberOutOfBand: 0, belowMomentumThreshold: 0,
+    notOfficialRelease: 0, belowMinViews: 0, noSubscriberCount: 0, subscriberOutOfBand: 0,
     duplicateSoundchartsMatch: 0,
   };
   for (const hit of byChannel.values()) {
@@ -246,44 +250,19 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
       continue;
     }
 
-    // Only reached by candidates that already clear the free gates.
+    // Only reached by candidates that already clear the gates.
     const commentsResult = await getTopComments(hit.videoId, commentsPerCandidate);
     quotaUsed += 1;
     const hype = commentsResult.ok
       ? detectHypeComments(commentsResult.data)
       : { hypeCommentRate: undefined, commentsAnalyzed: 0, examples: [] };
-    // A failed fetch (comments disabled, deleted video) leaves
-    // hypeCommentRate undefined — youtubeMomentumScore excludes a
-    // missing factor and rescales the rest, never penalizing the
-    // candidate for something YouTube didn't return.
-
-    const inputs = {
-      title: hit.title,
-      viewCount: videoStats.viewCount,
-      likeCount: videoStats.likeCount,
-      commentCount: videoStats.commentCount,
-      publishedAt: hit.publishedAt,
-      channelSubscriberCount: channelStats?.subscriberCount,
-      hypeCommentRate: hype.hypeCommentRate,
-    };
-    const metrics = computeYoutubeMetrics(inputs);
-    const momentumScore = youtubeMomentumScore(metrics);
-    const classification = classifyYoutubeCandidate(inputs, momentumScore, thresholds);
-
-    if (classification !== 'passes') {
-      // Only below_momentum_threshold is reachable here — the cheap
-      // gates were already checked above.
-      rejectionBreakdown.belowMomentumThreshold++;
-      rejectionBreakdown.bestRejectedMomentumScore = Math.max(rejectionBreakdown.bestRejectedMomentumScore ?? 0, momentumScore);
-      continue;
-    }
 
     scored.push({
       hit, viewCount: videoStats.viewCount, likeCount: videoStats.likeCount, commentCount: videoStats.commentCount,
-      subscriberCount: channelStats?.subscriberCount, channelViewCount: channelStats?.viewCount, momentumScore, hype,
+      subscriberCount: channelStats?.subscriberCount, channelViewCount: channelStats?.viewCount, hype,
     });
   }
-  scored.sort((a, b) => b.momentumScore - a.momentumScore);
+  scored.sort((a, b) => new Date(b.hit.publishedAt).getTime() - new Date(a.hit.publishedAt).getTime());
   const top = scored.slice(0, maxCandidatesPerRun);
 
   // 6. Best-effort Soundcharts match/enrich — never blocks a candidate.
@@ -338,7 +317,6 @@ async function runYoutubeDiscoveryScan(known: KnownIdentitySets): Promise<Discov
       yt_example_comment_1_likes: bestExample?.likeCount,
       yt_example_comment_2: s.hype.examples[1]?.text,
       yt_example_comment_2_likes: s.hype.examples[1]?.likeCount,
-      momentum_score: s.momentumScore,
       flagged_reason: youtubeFlaggedReason(inputs, metrics, bestExample),
     });
   }

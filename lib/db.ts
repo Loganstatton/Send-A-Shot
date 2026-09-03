@@ -502,6 +502,9 @@ const DISCOVERY_CANDIDATES_DDL = `
     yt_example_comment_1_likes INTEGER,
     yt_example_comment_2 TEXT,
     yt_example_comment_2_likes INTEGER,
+    -- Legacy: the blended YouTube momentum score this column stored was
+    -- removed pre-beta (lib/youtube-momentum.ts). Kept, unwritten, so
+    -- existing candidate rows aren't altered — never populated by new scans.
     momentum_score REAL,
     flagged_reason TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'new',
@@ -2977,6 +2980,11 @@ export function completeDiscoveryRun(
   }
 ): void {
   const r = result.rejectionBreakdown;
+  // rejected_below_momentum_threshold / best_rejected_momentum_score are
+  // legacy columns (see the momentum_score comment in the schema above) —
+  // always written null now that no momentum score is computed to reject
+  // candidates against; kept so historical pre-migration run rows are
+  // untouched.
   db.prepare(`
     UPDATE discovery_runs
     SET completed_at = ?, status = ?, searched_count = ?, candidates_found = ?, error = ?, quota_used = ?,
@@ -2987,7 +2995,7 @@ export function completeDiscoveryRun(
   `).run(
     new Date().toISOString(), result.status, result.searchedCount, result.candidatesFound, result.error ?? null, result.quotaUsed ?? null,
     r?.notOfficialRelease ?? null, r?.belowMinViews ?? null, r?.noSubscriberCount ?? null, r?.subscriberOutOfBand ?? null,
-    r?.belowMomentumThreshold ?? null, r?.bestRejectedMomentumScore ?? null, r?.duplicateSoundchartsMatch ?? null, id
+    null, null, r?.duplicateSoundchartsMatch ?? null, id
   );
 }
 
@@ -3029,7 +3037,6 @@ export type NewDiscoveryCandidate = {
   yt_example_comment_1_likes?: number;
   yt_example_comment_2?: string;
   yt_example_comment_2_likes?: number;
-  momentum_score?: number;
   flagged_reason: string;
   // Which scan run found this candidate — see the discovery_run_id column
   // comment. Optional because the (dormant) Soundcharts source predates
@@ -3048,7 +3055,7 @@ const DISCOVERY_CANDIDATE_COLUMNS = [
   'yt_comment_count', 'yt_published_at', 'yt_channel_subscriber_count', 'yt_channel_view_count',
   'yt_views_per_day', 'yt_like_rate', 'yt_comment_rate', 'yt_views_per_subscriber', 'yt_hype_comment_rate',
   'yt_comments_analyzed', 'yt_example_comment_1', 'yt_example_comment_1_likes', 'yt_example_comment_2',
-  'yt_example_comment_2_likes', 'momentum_score', 'flagged_reason', 'discovery_run_id',
+  'yt_example_comment_2_likes', 'flagged_reason', 'discovery_run_id',
   'submitted_by_user_id', 'submission_url',
 ] as const;
 
@@ -3081,14 +3088,15 @@ const DISCOVERY_CANDIDATE_SELECT = `
   LEFT JOIN users submitters ON submitters.id = discovery_candidates.submitted_by_user_id
 `;
 
-// Soundcharts candidates rank by 30-day growth %, YouTube candidates by
-// momentum_score — different scales, but both roughly "how hot is this
-// right now" on a 0-a-few-hundred range, so COALESCE-ing them into one
-// sort is an acceptable MVP approximation rather than two separate lists.
+// Soundcharts candidates rank by 30-day growth % (a single real metric, not
+// a blended score). YouTube candidates no longer carry any composite score
+// (pre-beta migration — see lib/youtube-momentum.ts) so they fall through
+// to the discovered_at tiebreak, newest first — a simple, non-derived order,
+// not a replacement formula.
 export function getDiscoveryCandidates(status?: DiscoveryCandidateStatus): DiscoveryCandidate[] {
   if (status) {
     return db
-      .prepare(`${DISCOVERY_CANDIDATE_SELECT} WHERE discovery_candidates.status = ? ORDER BY COALESCE(discovery_candidates.momentum_score, discovery_candidates.growth_30d_pct) DESC NULLS LAST, discovery_candidates.discovered_at DESC`)
+      .prepare(`${DISCOVERY_CANDIDATE_SELECT} WHERE discovery_candidates.status = ? ORDER BY discovery_candidates.growth_30d_pct DESC NULLS LAST, discovery_candidates.discovered_at DESC`)
       .all(status) as DiscoveryCandidate[];
   }
   return db

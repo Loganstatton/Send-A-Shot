@@ -68,14 +68,18 @@ describe('discovery_candidates migration (post-YouTube schema -> hype-comment co
     const existing = getDiscoveryCandidates().find((c) => c.yt_channel_id === 'chan-pre-hype-1');
     expect(existing).toBeDefined();
     expect(existing!.name).toBe('Pre-Hype Channel');
-    expect(existing!.momentum_score).toBe(65);
+    // momentum_score is a legacy column (pre-beta migration removed the
+    // blended score it stored — see lib/db.ts's schema comment) not on the
+    // DiscoveryCandidate type anymore, but the raw row still round-trips it
+    // untouched — confirmed via the raw driver, not the typed select.
+    expect((existing as unknown as { momentum_score: number }).momentum_score).toBe(65);
     // The new columns exist and are readable (null) on a row inserted
     // before this migration — not an error, not silently missing.
     expect(existing!.yt_hype_comment_rate ?? null).toBeNull();
 
     // And the new columns are actually writable now — the whole point.
     insertDiscoveryCandidate({
-      source: 'youtube', name: 'Post-Hype Channel', yt_channel_id: 'chan-post-hype-1', momentum_score: 80,
+      source: 'youtube', name: 'Post-Hype Channel', yt_channel_id: 'chan-post-hype-1',
       yt_hype_comment_rate: 0.2, yt_comments_analyzed: 15, yt_example_comment_1: 'wow', yt_example_comment_1_likes: 50,
       flagged_reason: 'test',
     });

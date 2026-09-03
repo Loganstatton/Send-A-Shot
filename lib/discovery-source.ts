@@ -26,8 +26,6 @@ export type DiscoveryRejectionBreakdown = {
   belowMinViews: number;
   noSubscriberCount: number;
   subscriberOutOfBand: number;
-  belowMomentumThreshold: number;
-  bestRejectedMomentumScore?: number; // the closest miss among belowMomentumThreshold rejections
   // A candidate whose best-effort Soundcharts enrichment resolved to a
   // soundcharts_uuid already tracked (a live artist, or an existing
   // discovery_candidates row of ANY status/source) — the same real artist

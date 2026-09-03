@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  classifyYoutubeCandidate, computeYoutubeMetrics, detectHypeComments, looksLikeOfficialRelease, MAX_CHANNEL_SUBSCRIBERS,
-  MIN_CHANNEL_SUBSCRIBERS, MIN_VIDEO_VIEWS, MOMENTUM_SCORE_THRESHOLD, passesCheapGates, passesYoutubeThresholds,
-  youtubeFlaggedReason, youtubeMomentumScore,
+  computeYoutubeMetrics, detectHypeComments, looksLikeOfficialRelease, MAX_CHANNEL_SUBSCRIBERS,
+  MIN_CHANNEL_SUBSCRIBERS, MIN_VIDEO_VIEWS, passesCheapGates, passesYoutubeThresholds,
+  youtubeFlaggedReason,
 } from './youtube-momentum';
 
 const OFFICIAL_TITLE = 'Song Name (Official Audio)';
@@ -38,55 +38,6 @@ describe('computeYoutubeMetrics', () => {
     const metrics = computeYoutubeMetrics({ viewCount: 1000, publishedAt: new Date().toISOString() });
     expect(Number.isFinite(metrics.viewsPerDay)).toBe(true);
     expect(metrics.viewsPerDay).toBeLessThan(1000 * 25); // not an absurd spike from a near-zero denominator
-  });
-});
-
-describe('youtubeMomentumScore', () => {
-  it('a small channel with disproportionate views scores much higher than a huge channel with more raw views', () => {
-    // The roadmap's own example: 8K-sub channel, 150K views in 6 days.
-    const small = youtubeMomentumScore(
-      computeYoutubeMetrics({ viewCount: 150_000, likeCount: 16_800, commentCount: 1_200, publishedAt: daysAgo(6), channelSubscriberCount: 8_000 })
-    );
-    // 2M-sub channel, 200K views in a similar window.
-    const huge = youtubeMomentumScore(
-      computeYoutubeMetrics({ viewCount: 200_000, likeCount: 4_000, commentCount: 200, publishedAt: daysAgo(6), channelSubscriberCount: 2_000_000 })
-    );
-    expect(small).toBeGreaterThan(huge);
-  });
-
-  it('caps at 100 and never exceeds it even far past every ceiling', () => {
-    const score = youtubeMomentumScore(
-      computeYoutubeMetrics({ viewCount: 50_000_000, likeCount: 20_000_000, commentCount: 5_000_000, publishedAt: daysAgo(1), channelSubscriberCount: 100 })
-    );
-    expect(score).toBeLessThanOrEqual(100);
-    expect(score).toBe(100);
-  });
-
-  it('rescales around missing factors instead of capping below the available weight', () => {
-    // likeCount/commentCount unavailable (disabled), but views/day and
-    // views/subscriber both max out — should still reach 100 on the
-    // available 70/100 weight, not be capped at 70 just because two
-    // factors are missing.
-    const metrics = computeYoutubeMetrics({ viewCount: 200_000, publishedAt: daysAgo(1), channelSubscriberCount: 1_000 });
-    expect(metrics.likeRate).toBeUndefined();
-    expect(metrics.commentRate).toBeUndefined();
-    const score = youtubeMomentumScore(metrics);
-    expect(score).toBe(100);
-  });
-
-  it('returns 0 when no factor has data', () => {
-    expect(youtubeMomentumScore({ videoAgeDays: 5, viewsPerDay: 0 })).toBe(0);
-  });
-
-  it('strong comment hype meaningfully raises the score over the same video with no comment data', () => {
-    const withoutHype = computeYoutubeMetrics({ viewCount: 50_000, publishedAt: daysAgo(6), channelSubscriberCount: 20_000 });
-    const withHype = computeYoutubeMetrics({ viewCount: 50_000, publishedAt: daysAgo(6), channelSubscriberCount: 20_000, hypeCommentRate: 0.3 });
-    expect(youtubeMomentumScore(withHype)).toBeGreaterThan(youtubeMomentumScore(withoutHype));
-  });
-
-  it('a real 0 hype rate (comments checked, none matched) is passed through as 0, not dropped like missing data', () => {
-    const metrics = computeYoutubeMetrics({ viewCount: 50_000, publishedAt: daysAgo(6), channelSubscriberCount: 20_000, hypeCommentRate: 0 });
-    expect(metrics.hypeCommentRate).toBe(0);
   });
 });
 
@@ -186,7 +137,7 @@ describe('looksLikeOfficialRelease', () => {
 });
 
 describe('passesCheapGates', () => {
-  it('checks all four data-already-in-hand gates — no momentum score needed', () => {
+  it('checks all four data-already-in-hand gates — no derived score needed', () => {
     expect(passesCheapGates({ title: OFFICIAL_TITLE, viewCount: 10_000, channelSubscriberCount: 5_000 })).toBe('passes');
     expect(passesCheapGates({ title: 'Album Ranking Video', viewCount: 10_000, channelSubscriberCount: 5_000 })).toBe('not_official_release');
     expect(passesCheapGates({ title: OFFICIAL_TITLE, viewCount: MIN_VIDEO_VIEWS - 1, channelSubscriberCount: 5_000 })).toBe('below_min_views');
@@ -194,74 +145,47 @@ describe('passesCheapGates', () => {
     expect(passesCheapGates({ title: OFFICIAL_TITLE, viewCount: 10_000, channelSubscriberCount: MAX_CHANNEL_SUBSCRIBERS + 1 })).toBe('subscriber_out_of_band');
   });
 
-  it('agrees with classifyYoutubeCandidate on every candidate that fails a cheap gate', () => {
-    const input = { title: OFFICIAL_TITLE, viewCount: MIN_VIDEO_VIEWS - 1, publishedAt: daysAgo(1), channelSubscriberCount: 5_000 };
-    expect(passesCheapGates(input)).toBe('below_min_views');
-    expect(classifyYoutubeCandidate(input, 100)).toBe('below_min_views');
+  it('a non-official-release title is rejected before any other gate is even checked', () => {
+    const input = { title: 'Synth Gear Demo', viewCount: MIN_VIDEO_VIEWS - 1, channelSubscriberCount: undefined };
+    expect(passesCheapGates(input)).toBe('not_official_release');
   });
 
-  it('a non-official-release title is rejected before any other gate is even checked', () => {
-    const input = { title: 'Synth Gear Demo', viewCount: MIN_VIDEO_VIEWS - 1, publishedAt: daysAgo(1), channelSubscriberCount: undefined };
-    expect(passesCheapGates(input)).toBe('not_official_release');
-    expect(classifyYoutubeCandidate(input, 100)).toBe('not_official_release');
+  it('a view-count failure is reported even when the channel would also fail on subscribers — first gate wins, not a random one', () => {
+    const input = { title: OFFICIAL_TITLE, viewCount: MIN_VIDEO_VIEWS - 1, channelSubscriberCount: undefined };
+    expect(passesCheapGates(input)).toBe('below_min_views');
   });
 });
 
 describe('passesYoutubeThresholds', () => {
-  const strongInput = { title: OFFICIAL_TITLE, viewCount: 150_000, likeCount: 16_800, commentCount: 1_200, publishedAt: daysAgo(6), channelSubscriberCount: 8_000 };
-  const strongMetrics = computeYoutubeMetrics(strongInput);
-  const strongScore = youtubeMomentumScore(strongMetrics);
+  const strongInput = { title: OFFICIAL_TITLE, viewCount: 150_000, channelSubscriberCount: 8_000 };
 
-  it('a genuinely strong candidate passes the default thresholds', () => {
-    expect(strongScore).toBeGreaterThanOrEqual(MOMENTUM_SCORE_THRESHOLD);
-    expect(passesYoutubeThresholds(strongInput, strongScore)).toBe(true);
+  it('a genuinely strong candidate passes the default thresholds — same verdict as passesCheapGates', () => {
+    expect(passesYoutubeThresholds(strongInput)).toBe(true);
+    expect(passesCheapGates(strongInput)).toBe('passes');
   });
 
   it('rejects a channel with no subscriber count at all — cannot judge "disproportionate" without a baseline', () => {
     const input = { ...strongInput, channelSubscriberCount: undefined };
-    expect(passesYoutubeThresholds(input, 100)).toBe(false);
+    expect(passesYoutubeThresholds(input)).toBe(false);
   });
 
   it('rejects an already-famous channel above the subscriber ceiling', () => {
     const input = { ...strongInput, channelSubscriberCount: MAX_CHANNEL_SUBSCRIBERS + 1 };
-    expect(passesYoutubeThresholds(input, 100)).toBe(false);
+    expect(passesYoutubeThresholds(input)).toBe(false);
   });
 
   it('rejects a near-empty channel below the subscriber floor', () => {
     const input = { ...strongInput, channelSubscriberCount: MIN_CHANNEL_SUBSCRIBERS - 1 };
-    expect(passesYoutubeThresholds(input, 100)).toBe(false);
+    expect(passesYoutubeThresholds(input)).toBe(false);
   });
 
   it('rejects a video below the minimum view floor even with a great ratio', () => {
     const input = { ...strongInput, viewCount: MIN_VIDEO_VIEWS - 1, channelSubscriberCount: 10 };
-    expect(passesYoutubeThresholds(input, 100)).toBe(false);
+    expect(passesYoutubeThresholds(input)).toBe(false);
   });
 
   it('custom thresholds override the defaults', () => {
-    expect(passesYoutubeThresholds(strongInput, strongScore, { minMomentumScore: strongScore + 1 })).toBe(false);
-    expect(passesYoutubeThresholds(strongInput, strongScore, { minMomentumScore: strongScore })).toBe(true);
-  });
-});
-
-describe('classifyYoutubeCandidate', () => {
-  const strongInput = { title: OFFICIAL_TITLE, viewCount: 150_000, likeCount: 16_800, commentCount: 1_200, publishedAt: daysAgo(6), channelSubscriberCount: 8_000 };
-  const strongScore = youtubeMomentumScore(computeYoutubeMetrics(strongInput));
-
-  it('returns "passes" for a candidate that clears every gate — same verdict as passesYoutubeThresholds', () => {
-    expect(classifyYoutubeCandidate(strongInput, strongScore)).toBe('passes');
-    expect(passesYoutubeThresholds(strongInput, strongScore)).toBe(true);
-  });
-
-  it('identifies each rejection reason distinctly, checked in gate order', () => {
-    expect(classifyYoutubeCandidate({ ...strongInput, title: 'Album Ranking Video' }, 100)).toBe('not_official_release');
-    expect(classifyYoutubeCandidate({ ...strongInput, viewCount: MIN_VIDEO_VIEWS - 1 }, 100)).toBe('below_min_views');
-    expect(classifyYoutubeCandidate({ ...strongInput, channelSubscriberCount: undefined }, 100)).toBe('no_subscriber_count');
-    expect(classifyYoutubeCandidate({ ...strongInput, channelSubscriberCount: MAX_CHANNEL_SUBSCRIBERS + 1 }, 100)).toBe('subscriber_out_of_band');
-    expect(classifyYoutubeCandidate(strongInput, 1)).toBe('below_momentum_threshold');
-  });
-
-  it('a view-count failure is reported even when the channel would also fail on subscribers — first gate wins, not a random one', () => {
-    const input = { ...strongInput, viewCount: MIN_VIDEO_VIEWS - 1, channelSubscriberCount: undefined };
-    expect(classifyYoutubeCandidate(input, 100)).toBe('below_min_views');
+    expect(passesYoutubeThresholds(strongInput, { minSubscribers: strongInput.channelSubscriberCount + 1 })).toBe(false);
+    expect(passesYoutubeThresholds(strongInput, { minSubscribers: strongInput.channelSubscriberCount })).toBe(true);
   });
 });

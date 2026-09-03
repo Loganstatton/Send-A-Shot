@@ -11,8 +11,9 @@ name: Daily discovery scan
 #
 # New candidates still land in the New Candidates queue for a human to
 # Approve/Watch/Pass — nothing here auto-adds an artist to the roster or
-# NEXT. A Momentum Score can measure disproportionate view counts; it
-# can't tell whether someone can actually sing. That judgment stays human.
+# NEXT. Raw view/subscriber/comment-sentiment numbers can flag something
+# worth a look; they can't tell whether someone can actually sing. That
+# judgment stays human — see lib/youtube-momentum.ts.
 #
 # One-time setup required (this workflow does nothing without it):
 #   Repo Settings -> Secrets and variables -> Actions -> New repository secret

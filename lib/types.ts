@@ -732,10 +732,11 @@ export type DiscoveryCandidate = {
   followers_30d_ago?: number;
   growth_7d_pct?: number;
   growth_30d_pct?: number;
-  // YouTube identity + the raw signals and derived metrics its Momentum
-  // Score is built from (see lib/youtube-momentum.ts) — kept as individual
-  // typed fields, not a JSON blob, so they stay queryable/sortable and a
-  // Scout can see exactly which numbers produced the score.
+  // YouTube identity + the raw signals and derived metrics for a Scout to
+  // read directly (see lib/youtube-momentum.ts) — kept as individual typed
+  // fields, not a JSON blob, so they stay queryable/sortable. No blended
+  // score is computed from these; the Approve/Watch/Pass call is a Scout's,
+  // not a formula's.
   yt_video_id?: string;
   yt_channel_id?: string;
   yt_channel_title?: string;
@@ -760,7 +761,6 @@ export type DiscoveryCandidate = {
   yt_example_comment_1_likes?: number;
   yt_example_comment_2?: string;
   yt_example_comment_2_likes?: number;
-  momentum_score?: number;
   flagged_reason: string;
   status: DiscoveryCandidateStatus;
   discovered_at: string;
@@ -845,6 +845,9 @@ export type DiscoveryRun = {
   rejected_below_min_views?: number;
   rejected_no_subscriber_count?: number;
   rejected_subscriber_out_of_band?: number;
+  // Legacy: always undefined on any run after the momentum-score removal
+  // (lib/youtube-momentum.ts) — kept so historical pre-migration rows keep
+  // their real values.
   rejected_below_momentum_threshold?: number;
   best_rejected_momentum_score?: number;
   rejected_duplicate_soundcharts_match?: number;
