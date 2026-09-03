@@ -7,6 +7,8 @@ import { formatCents } from '@/lib/format';
 import PriceChart from '@/components/PriceChart';
 import ScoreContributorBar from '@/components/next/ScoreContributorBar';
 import ArtistDashboardNoteForm from '@/components/next/ArtistDashboardNoteForm';
+import ArtistProfileEditForm from '@/components/next/ArtistProfileEditForm';
+import ArtistPhotoSubmitForm from '@/components/next/ArtistPhotoSubmitForm';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const id = Number(params.id);
@@ -25,11 +27,15 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Read-only, on purpose: this is the same public-safe data any NEXT trader
-// already sees on the artist's own page (app/next/artists/[id]), just
-// framed for the artist. Editing the roster row itself stays Scout-only —
-// an artist wanting a correction sends it via ArtistDashboardNoteForm below
-// instead of writing to their own data directly.
+// Stats/score/price history are read-only — the same public-safe data any
+// NEXT trader already sees on the artist's own page (app/next/artists/[id]),
+// just framed for the artist. Pre-beta migration: the profile fields below
+// (bio, genre, location, links, photo) ARE now artist-editable — see
+// CLAIMED_ARTIST_EDITABLE_FIELDS/setArtistPhotoByOwner in lib/db.ts for the
+// exact whitelist. Everything outside that whitelist (name, stage, Scout
+// notes, the Breakout Score inputs, internal discovery info) stays
+// Scout-only; an artist wanting a change there sends it via
+// ArtistDashboardNoteForm below instead.
 export default async function MyArtistDashboardPage({ params }: { params: { id: string } }) {
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
@@ -84,6 +90,17 @@ export default async function MyArtistDashboardPage({ params }: { params: { id: 
           {earlyBackerCount} Scout{earlyBackerCount === 1 ? '' : 's'} backed you before anyone else did.
         </p>
       )}
+
+      <ArtistPhotoSubmitForm artistId={id} currentPhotoUrl={artist.photo_url} />
+
+      <ArtistProfileEditForm
+        artistId={id}
+        initial={{
+          bio: artist.bio, genre: artist.genre, location: artist.location, website_url: artist.website_url,
+          tiktok_url: artist.tiktok_url, instagram_url: artist.instagram_url, youtube_url: artist.youtube_url,
+          spotify_url: artist.spotify_url, soundcloud_url: artist.soundcloud_url, featured_video_id: artist.featured_video_id,
+        }}
+      />
 
       <ArtistDashboardNoteForm artistId={id} />
     </div>

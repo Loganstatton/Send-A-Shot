@@ -7,6 +7,8 @@ import { parseYoutubeVideoId } from '@/lib/youtube-url';
 import ScoreBadge from './ScoreBadge';
 import SoundchartsSearch from './SoundchartsSearch';
 import SyncProvenance from './SyncProvenance';
+import WikidataLookup from './WikidataLookup';
+import WikimediaCommonsSearch from './WikimediaCommonsSearch';
 
 // All eight categories are Scout-rated sliders now — Growth Velocity and
 // Engagement Quality used to be computed automatically from the % fields
@@ -59,6 +61,11 @@ export default function ArtistForm({ artist }: Props) {
     professionalism: artist?.professionalism ?? 5,
     notes: artist?.notes ?? '',
     photo_url: artist?.photo_url ?? '',
+    photo_source_type: artist?.photo_source_type ?? undefined,
+    photo_source_url: artist?.photo_source_url ?? undefined,
+    photo_attribution: artist?.photo_attribution ?? undefined,
+    photo_license: artist?.photo_license ?? undefined,
+    photo_license_url: artist?.photo_license_url ?? undefined,
     bio: artist?.bio ?? '',
     top_song_url: artist?.top_song_url ?? '',
     song_preview_url: artist?.song_preview_url ?? '',
@@ -66,6 +73,7 @@ export default function ArtistForm({ artist }: Props) {
     soundcharts_uuid: artist?.soundcharts_uuid ?? undefined,
     featured_video_id: artist?.featured_video_id ?? '',
     high_rating_note: artist?.high_rating_note ?? '',
+    website_url: artist?.website_url ?? '',
   }));
 
   // A 9-10 rating is a real outlier — worth a moment's "why," not a hard
@@ -87,12 +95,32 @@ export default function ArtistForm({ artist }: Props) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  function fillFromSoundcharts(data: Partial<ArtistInput>) {
+  // Shared by SoundchartsSearch, WikidataLookup, and WikimediaCommonsSearch
+  // — each just merges its own fetched fields into form state; nothing is
+  // written to the database until this form is actually submitted.
+  function fillFields(data: Partial<ArtistInput>) {
     setForm((f) => ({ ...f, ...data }));
   }
 
   function unlinkSoundcharts() {
     setForm((f) => ({ ...f, soundcharts_uuid: '' }));
+  }
+
+  // A Scout typing/pasting a photo URL directly (as opposed to picking one
+  // via WikimediaCommonsSearch) is tagged SCOUT_MANUAL — clears any
+  // Commons-specific attribution/license left over from a previous photo,
+  // since those no longer describe this URL. See lib/db.ts's
+  // photo_source_type schema comment.
+  function setPhotoUrlManually(value: string) {
+    setForm((f) => ({
+      ...f,
+      photo_url: value,
+      photo_source_type: value.trim() ? 'SCOUT_MANUAL' : undefined,
+      photo_source_url: undefined,
+      photo_attribution: undefined,
+      photo_license: undefined,
+      photo_license_url: undefined,
+    }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -180,7 +208,10 @@ export default function ArtistForm({ artist }: Props) {
 
       {artist && <SyncProvenance artist={artist} />}
 
-      <SoundchartsSearch soundchartsUuid={form.soundcharts_uuid} onFill={fillFromSoundcharts} onUnlink={unlinkSoundcharts} />
+      <SoundchartsSearch soundchartsUuid={form.soundcharts_uuid} onFill={fillFields} onUnlink={unlinkSoundcharts} />
+
+      {artist && <WikidataLookup artistId={artist.id} onFill={fillFields} />}
+      {artist && <WikimediaCommonsSearch artistId={artist.id} onFill={fillFields} />}
 
       <div className="card space-y-4">
         <h2 className="font-bold text-lg">Basics</h2>
@@ -217,7 +248,41 @@ export default function ArtistForm({ artist }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">Photo URL</label>
-            <input className="input" value={form.photo_url ?? ''} onChange={(e) => set('photo_url', e.target.value)} placeholder="https://…jpg" />
+            <input className="input" value={form.photo_url ?? ''} onChange={(e) => setPhotoUrlManually(e.target.value)} placeholder="https://…jpg" />
+            {form.photo_source_type === 'WIKIMEDIA_COMMONS' && (
+              <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>
+                🖼️ Wikimedia Commons — {form.photo_attribution}. Editing this URL by hand clears that attribution.
+              </p>
+            )}
+            {form.photo_source_type === 'ARTIST_PROVIDED' && (
+              <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>
+                ✓ Submitted by the claimed artist, rights-confirmed. Editing this URL by hand replaces that with a plain Scout-entered photo.
+              </p>
+            )}
+            {(form.photo_source_type === 'LEGACY_DEEZER' || form.photo_source_type === 'LEGACY_SOUNDCHARTS') && (
+              <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
+                ⚠️ Sourced from {form.photo_source_type === 'LEGACY_DEEZER' ? 'Deezer' : 'Soundcharts'} — internal reference only, never shown on Public NEXT.
+              </p>
+            )}
+            {artist?.photo_source_type === 'ARTIST_PROVIDED' && (
+              <button
+                type="button"
+                className="btn text-xs mt-1.5"
+                style={{ color: 'var(--down)' }}
+                onClick={async () => {
+                  if (!confirm('Remove this artist-submitted photo? (Admin only — a non-admin will get a permission error.)')) return;
+                  const res = await fetch(`/api/admin/artists/${artist.id}/photo`, { method: 'DELETE' });
+                  if (res.ok) { setPhotoUrlManually(''); alert('Photo removed. Save is not needed — this took effect immediately.'); }
+                  else { const d = await res.json().catch(() => ({})); alert(d.error ?? 'Could not remove photo.'); }
+                }}
+              >
+                🗑️ Remove artist-submitted photo (admin)
+              </button>
+            )}
+          </div>
+          <div>
+            <label className="label">Website URL</label>
+            <input className="input" value={form.website_url ?? ''} onChange={(e) => set('website_url', e.target.value)} placeholder="https://…" />
           </div>
           <div>
             <label className="label">30-second preview clip URL</label>
