@@ -834,10 +834,10 @@ const WRITABLE_FIELDS = [
 
 // Pre-beta migration: growth_velocity/engagement_quality used to be
 // silently re-derived from growth_velocity_pct/engagement_rate_pct (a
-// Soundcharts-shaped metric) on every save — see growthVelocityScore()/
-// engagementQualityScore() in lib/scoring.ts, still exported as pure
-// helpers but no longer called from here. They're now ordinary
-// Scout-manual 0-10 categories, same as the other six (ArtistForm.tsx
+// Soundcharts-shaped metric) on every save via growthVelocityScore()/
+// engagementQualityScore() — removed from lib/scoring.ts entirely (dead
+// code once nothing called them). They're now ordinary Scout-manual 0-10
+// categories, same as the other six (ArtistForm.tsx
 // rates them with the same slider). This does NOT reset or touch any
 // artist's existing stored value — whatever was last computed/saved stays
 // exactly as-is until a Scout deliberately edits it. The *_pct columns

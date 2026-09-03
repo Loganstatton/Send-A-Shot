@@ -48,30 +48,15 @@ export function scoreContributors(inputs: ScoreInputs): ScoreContributors {
   return { realDataPoints: Math.round(realDataPoints * 10) / 10, scoutPoints: Math.round((total - realDataPoints) * 10) / 10, total };
 }
 
-// Converts a real 30-day follower growth % into the 0-10 Growth Velocity
-// category. Diminishing-returns curve (sqrt, not linear): going from 0% to
-// 10% growth matters more than going from 40% to 50% — sustained modest
-// growth is itself a strong signal for an artist this early, so it
-// shouldn't take a huge spike to register.
-export const GROWTH_VELOCITY_SCORE_CEILING_PCT = 50;
-
-export function growthVelocityScore(growthPct: number | null | undefined): number {
-  const clamped = Math.max(0, Math.min(GROWTH_VELOCITY_SCORE_CEILING_PCT, growthPct ?? 0));
-  return Math.round(Math.sqrt(clamped / GROWTH_VELOCITY_SCORE_CEILING_PCT) * 100) / 10;
-}
-
-// Converts a real engagement rate % into the 0-10 Engagement Quality
-// category. Linear, not curved — unlike growth, there's no strong reason
-// early engagement-% gains should count disproportionately more than later
-// ones. The 20% ceiling is a first-pass, deliberately simple band (most
-// engaged small accounts land well under it); worth revisiting once real
-// engagement data across many artists shows what "exceptional" looks like.
-export const ENGAGEMENT_SCORE_CEILING_PCT = 20;
-
-export function engagementQualityScore(engagementPct: number | null | undefined): number {
-  const clamped = Math.max(0, Math.min(ENGAGEMENT_SCORE_CEILING_PCT, engagementPct ?? 0));
-  return Math.round((clamped / ENGAGEMENT_SCORE_CEILING_PCT) * 100) / 10;
-}
+// Pre-beta migration: growthVelocityScore()/engagementQualityScore() used
+// to convert a real growth %/engagement % (typically Soundcharts-sourced)
+// into the Growth Velocity/Engagement Quality categories automatically on
+// every save (see breakoutScore()'s comment above). Removed — dead code,
+// no caller anywhere once lib/db.ts stopped invoking them and
+// ArtistForm.tsx stopped showing their derived preview numbers. The
+// growth_velocity_pct/engagement_rate_pct columns themselves stay in the
+// schema (a Scout can still see/edit them as reference numbers in
+// ArtistForm's Metrics card) — only the automatic conversion is gone.
 
 export type Recommendation = {
   label: string;

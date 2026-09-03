@@ -6,7 +6,6 @@ import { NEXT_STARTING_CREDITS_CENTS } from '@/lib/next-market';
 import { getNotificationsForUser } from '@/lib/notifications';
 import NextHeader from '@/components/next/NextHeader';
 import NextOnboarding from '@/components/next/NextOnboarding';
-import NowPlayingProvider from '@/components/next/NowPlayingProvider';
 
 // Self-hosted via next/font (no runtime <link> tag, no layout shift) —
 // scoped to just the /next/* route group. Scout keeps the default globals.css
@@ -34,9 +33,7 @@ export default async function NextLayout({ children }: { children: React.ReactNo
     >
       <NextHeader user={user} unreadNotifications={unreadNotifications} hasClaimedArtist={hasClaimedArtist} />
       {!user.next_onboarded_at && <NextOnboarding startingCreditsCents={NEXT_STARTING_CREDITS_CENTS} />}
-      <NowPlayingProvider>
-        <main className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14">{children}</main>
-      </NowPlayingProvider>
+      <main className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14">{children}</main>
     </div>
   );
 }

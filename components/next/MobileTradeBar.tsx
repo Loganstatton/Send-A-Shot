@@ -1,6 +1,5 @@
 'use client';
 import { formatCents } from '@/lib/format';
-import { useNowPlaying } from '@/components/next/NowPlayingProvider';
 
 // The full TradePanel already lives at the bottom of the page's single
 // mobile column — on a real phone that's 3-4 screens of scrolling past the
@@ -12,18 +11,14 @@ import { useNowPlaying } from '@/components/next/NowPlayingProvider';
 // lg:hidden because the desktop two-column layout already keeps
 // TradePanel visible via its own `sticky top-6`.
 export default function MobileTradeBar({ artistName, priceCents, changePct }: { artistName: string; priceCents: number; changePct: number }) {
-  // MiniPlayer is also a fixed bottom-0 bar (see NowPlayingProvider) — when
-  // a preview is loaded, sit above it instead of underneath/overlapping.
-  const { track } = useNowPlaying();
-
   function scrollToTrade() {
     document.getElementById('trade-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   return (
     <div
-      className="lg:hidden fixed left-0 right-0 z-30 flex items-center justify-between gap-3 px-4 py-3"
-      style={{ bottom: track ? 76 : 0, background: 'oklch(12% 0.014 40 / 0.92)', backdropFilter: 'blur(10px)', borderTop: '1px solid var(--border-soft)' }}
+      className="lg:hidden fixed left-0 right-0 bottom-0 z-30 flex items-center justify-between gap-3 px-4 py-3"
+      style={{ background: 'oklch(12% 0.014 40 / 0.92)', backdropFilter: 'blur(10px)', borderTop: '1px solid var(--border-soft)' }}
     >
       <div className="min-w-0">
         <div className="text-[11px] truncate" style={{ color: 'var(--text-faint)' }}>{artistName}</div>
