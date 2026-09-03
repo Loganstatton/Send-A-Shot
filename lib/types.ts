@@ -964,6 +964,12 @@ export type FeedEventType =
   | 'market_momentum_mover'
   | 'market_momentum_backers'
   | 'market_momentum_most_watched'
+  // Pre-beta migration additions — see lib/feed-signals.ts's
+  // MIN_TAKES_FOR_MOMENTUM/VOLUME_CHANGE_PCT_THRESHOLD for the exact
+  // thresholds. Both first-party (NEXT's own trading/User-Take activity),
+  // same as the three above.
+  | 'market_momentum_most_discussed'
+  | 'market_momentum_volume'
   // A normal user's own opinion about an artist on NEXT — the one event
   // type with real user-generated content, not a pointer to something an
   // existing system already owns. See feed_user_posts' own comment for why

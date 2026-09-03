@@ -28,6 +28,7 @@ export const FEED_TABS: { key: FeedTab; label: string }[] = [
 const MARKET_EVENT_TYPES = new Set<FeedEventType>([
   'signal_score_up', 'signal_score_down', 'signal_undervalued', 'signal_overheated',
   'market_momentum_mover', 'market_momentum_backers', 'market_momentum_most_watched',
+  'market_momentum_most_discussed', 'market_momentum_volume',
 ]);
 
 // One weight object per tab, all in the same units so they're comparable

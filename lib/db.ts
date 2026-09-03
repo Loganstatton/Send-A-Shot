@@ -1881,6 +1881,20 @@ export function getArtistTradeVolumeCents(artistId: number, hours: number): numb
   return row.volume;
 }
 
+// Same volume calculation as getArtistTradeVolumeCents, but for an
+// arbitrary [startHoursAgo, endHoursAgo) window instead of "since N hours
+// ago" — lets a caller compare two equal-length adjacent windows (e.g. this
+// week vs the week before) for a real week-over-week % change. See
+// lib/feed-signals.ts's NEXT Volume signal.
+export function getArtistTradeVolumeCentsInWindow(artistId: number, startHoursAgo: number, endHoursAgo: number): number {
+  const start = new Date(Date.now() - startHoursAgo * 60 * 60 * 1000).toISOString();
+  const end = new Date(Date.now() - endHoursAgo * 60 * 60 * 1000).toISOString();
+  const row = db
+    .prepare('SELECT COALESCE(SUM(ABS(credits_delta_cents)), 0) AS volume FROM next_transactions WHERE artist_id = ? AND created_at >= ? AND created_at < ?')
+    .get(artistId, start, end) as { volume: number };
+  return row.volume;
+}
+
 // Distinct traders who backed (bought) this artist within the window —
 // "number of people who backed the artist recently." Deliberately counts
 // anyone who bought, not just first-time buyers — a repeat backer adding
@@ -1999,6 +2013,18 @@ export function getRecentWatchCountsByArtist(hours: number): Record<number, numb
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
   const rows = db
     .prepare('SELECT artist_id, COUNT(*) AS c FROM next_watchlist WHERE created_at >= ? GROUP BY artist_id')
+    .all(cutoff) as { artist_id: number; c: number }[];
+  return Object.fromEntries(rows.map((r) => [r.artist_id, r.c]));
+}
+
+// "Most discussed" — distinct User Takes per artist within the window,
+// same shape as getRecentBackerCountsByArtist/getRecentWatchCountsByArtist
+// above. First-party (NEXT's own activity), not an external chatter/mention
+// count — see lib/feed-signals.ts's Most Discussed signal.
+export function getRecentUserTakeCountsByArtist(hours: number): Record<number, number> {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const rows = db
+    .prepare('SELECT artist_id, COUNT(*) AS c FROM feed_user_posts WHERE created_at >= ? GROUP BY artist_id')
     .all(cutoff) as { artist_id: number; c: number }[];
   return Object.fromEntries(rows.map((r) => [r.artist_id, r.c]));
 }

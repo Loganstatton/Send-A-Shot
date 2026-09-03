@@ -72,6 +72,12 @@ function cardContent(item: FeedItemDTO, viewerUserId: number): { icon: string; e
       return { icon: '⚡', eyebrow: 'Market momentum', headline: `${num('backerCount') ?? 'Several'} people backed ${artistName} today` };
     case 'market_momentum_most_watched':
       return { icon: '👀', eyebrow: 'Market momentum', headline: `${num('watchCount') ?? 'Several'} people started watching ${artistName} today` };
+    case 'market_momentum_most_discussed':
+      return { icon: '💬', eyebrow: 'Market momentum', headline: `${num('takeCount') ?? 'Several'} NEXT users are talking about ${artistName} this week` };
+    case 'market_momentum_volume': {
+      const changePct = num('changePct') ?? 0;
+      return { icon: '📊', eyebrow: 'NEXT Volume', headline: `${artistName}'s NEXT trading volume is up ${changePct.toFixed(0)}% this week` };
+    }
     case 'user_take':
       // The one type whose "headline" is real user prose, not a
       // system-generated sentence — the eyebrow carries the author instead
@@ -88,6 +94,7 @@ function cardContent(item: FeedItemDTO, viewerUserId: number): { icon: string; e
 // note that Back Artist just opens Artist Detail/trade panel for now.
 const BACK_STYLE_TYPES = new Set<FeedItemDTO['eventType']>([
   'signal_score_up', 'signal_undervalued', 'signal_overheated', 'market_momentum_mover', 'market_momentum_backers', 'market_momentum_most_watched',
+  'market_momentum_most_discussed', 'market_momentum_volume',
 ]);
 
 export default function FeedCard({

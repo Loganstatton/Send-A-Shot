@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'feed-signals-test-'));
 
 const {
-  addToWatchlist, bulkSetArtistStage, createArtist, createUser, db, executeTrade, getFeedEvents,
+  addToWatchlist, bulkSetArtistStage, createArtist, createUser, createUserTakePost, db, executeTrade, getFeedEvents,
 } = await import('./db');
 const { generateFeedSignals, SIGNAL_COOLDOWN_DAYS } = await import('./feed-signals');
 
@@ -156,6 +156,54 @@ describe('generateFeedSignals — market momentum', () => {
 
     generateFeedSignals();
     expect(eventsFor(artist.id, 'market_momentum_most_watched')).toHaveLength(1);
+  });
+
+  it('posts market_momentum_most_discussed once at least MIN_TAKES_FOR_MOMENTUM User Takes exist within the window', () => {
+    const artist = makeArtist('Momentum Discussed Artist');
+    for (let i = 0; i < 3; i++) {
+      const poster = createUser({ name: `Poster ${i}`, email: `momentum-poster-${i}@example.com`, password_hash: 'hash' });
+      createUserTakePost(poster.id, artist.id, `Take number ${i} about this artist.`);
+    }
+
+    generateFeedSignals();
+    expect(eventsFor(artist.id, 'market_momentum_most_discussed')).toHaveLength(1);
+  });
+
+  it('does not post market_momentum_most_discussed below the minimum take count', () => {
+    const artist = makeArtist('Momentum Discussed Too Few Artist');
+    const poster = createUser({ name: 'Lone Poster', email: 'momentum-lone-poster@example.com', password_hash: 'hash' });
+    createUserTakePost(poster.id, artist.id, 'Just one take.');
+
+    generateFeedSignals();
+    expect(eventsFor(artist.id, 'market_momentum_most_discussed')).toHaveLength(0);
+  });
+
+  it('posts market_momentum_volume when this week\'s volume clears VOLUME_CHANGE_PCT_THRESHOLD over a real prior week', () => {
+    const artist = makeArtist('Momentum Volume Artist');
+    const priorWeekBuyer = createUser({ name: 'Prior Week Buyer', email: 'momentum-volume-prior@example.com', password_hash: 'hash' });
+    const priorTrade = executeTrade(priorWeekBuyer.id, artist.id, 'buy', 10_000);
+    if (!priorTrade.ok) throw new Error(priorTrade.error);
+    // Push that trade into "8-9 days ago" — the prior-week window, not this week's.
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare("UPDATE next_transactions SET created_at = ? WHERE artist_id = ? AND type = 'buy'").run(eightDaysAgo, artist.id);
+
+    // This week: a much larger trade — comfortably clears +40% over the prior week's volume.
+    const thisWeekBuyer = createUser({ name: 'This Week Buyer', email: 'momentum-volume-this-week@example.com', password_hash: 'hash' });
+    const thisTrade = executeTrade(thisWeekBuyer.id, artist.id, 'buy', 50_000);
+    if (!thisTrade.ok) throw new Error(thisTrade.error);
+
+    generateFeedSignals();
+    expect(eventsFor(artist.id, 'market_momentum_volume')).toHaveLength(1);
+  });
+
+  it('never posts market_momentum_volume off a zero prior-week baseline — a first trade is not a "% increase"', () => {
+    const artist = makeArtist('Momentum Volume No Baseline Artist');
+    const buyer = createUser({ name: 'Only Buyer', email: 'momentum-volume-only@example.com', password_hash: 'hash' });
+    const trade = executeTrade(buyer.id, artist.id, 'buy', 50_000);
+    if (!trade.ok) throw new Error(trade.error);
+
+    generateFeedSignals();
+    expect(eventsFor(artist.id, 'market_momentum_volume')).toHaveLength(0);
   });
 });
 

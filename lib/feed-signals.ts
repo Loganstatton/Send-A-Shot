@@ -16,8 +16,8 @@
 // Undervalued/Overheated logic Discover and Watchlist already show.
 
 import {
-  createFeedEvent, getNextMarket, getRecentBackerCountsByArtist, getRecentWatchCountsByArtist, getScoreChanges,
-  hasFeedEventSince,
+  createFeedEvent, getArtistTradeVolumeCentsInWindow, getNextMarket, getRecentBackerCountsByArtist,
+  getRecentUserTakeCountsByArtist, getRecentWatchCountsByArtist, getScoreChanges, hasFeedEventSince,
 } from './db';
 import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, changePctForWindow, marketSentiment } from './next-market';
 import { FeedEventType } from './types';
@@ -38,6 +38,22 @@ export const SIGNAL_COOLDOWN_DAYS = 10;
 export const MIN_BACKERS_FOR_MOMENTUM = 3;
 export const MIN_WATCHERS_FOR_MOMENTUM = 5;
 export const MOMENTUM_WINDOW_HOURS = 24;
+
+// Pre-beta migration additions — same "explicit, tunable, one place"
+// pattern as the constants above. Both windows are 7 days (a week), not
+// MOMENTUM_WINDOW_HOURS's 24 hours — a single day of User Takes or trading
+// volume is too noisy to call "discussed" or "moving" off of; a week
+// smooths that out while still being recent.
+export const DISCUSSION_WINDOW_HOURS = 7 * 24;
+export const MIN_TAKES_FOR_MOMENTUM = 3;
+export const VOLUME_WINDOW_HOURS = 7 * 24;
+// Week-over-week % change required to post — only computed when the prior
+// week actually had volume (see generateFeedSignals below): a 0 -> $50
+// jump isn't a meaningful "+X%," it's just an artist's first real trading
+// activity, and dividing by a $0 baseline would be either undefined or a
+// misleadingly huge/infinite percentage. Never fabricates a signal for a
+// thin/near-zero prior week just to have a number to show.
+export const VOLUME_CHANGE_PCT_THRESHOLD = 40;
 
 export type FeedSignalResult = { checked: number; created: number };
 
@@ -101,6 +117,26 @@ export function generateFeedSignals(): FeedSignalResult {
   for (const [artistIdStr, count] of Object.entries(watchCounts)) {
     if (count < MIN_WATCHERS_FOR_MOMENTUM) continue;
     created += maybePost('market_momentum_most_watched', Number(artistIdStr), cutoff, { watchCount: count, windowHours: MOMENTUM_WINDOW_HOURS });
+  }
+
+  const takeCounts = getRecentUserTakeCountsByArtist(DISCUSSION_WINDOW_HOURS);
+  for (const [artistIdStr, count] of Object.entries(takeCounts)) {
+    if (count < MIN_TAKES_FOR_MOMENTUM) continue;
+    created += maybePost('market_momentum_most_discussed', Number(artistIdStr), cutoff, { takeCount: count, windowHours: DISCUSSION_WINDOW_HOURS });
+  }
+
+  // NEXT Volume: this week's trading volume vs the week before, per artist
+  // still live on the market — only artists with real prior-week volume to
+  // compare against (see VOLUME_CHANGE_PCT_THRESHOLD's own comment).
+  for (const { artist } of market) {
+    const priorWeekVolume = getArtistTradeVolumeCentsInWindow(artist.id, VOLUME_WINDOW_HOURS * 2, VOLUME_WINDOW_HOURS);
+    if (priorWeekVolume <= 0) continue;
+    const thisWeekVolume = getArtistTradeVolumeCentsInWindow(artist.id, VOLUME_WINDOW_HOURS, 0);
+    const changePct = ((thisWeekVolume - priorWeekVolume) / priorWeekVolume) * 100;
+    if (changePct < VOLUME_CHANGE_PCT_THRESHOLD) continue;
+    created += maybePost('market_momentum_volume', artist.id, cutoff, {
+      changePct: Math.round(changePct * 10) / 10, thisWeekVolumeCents: thisWeekVolume, priorWeekVolumeCents: priorWeekVolume, windowHours: VOLUME_WINDOW_HOURS,
+    });
   }
 
   return { checked: market.length, created };

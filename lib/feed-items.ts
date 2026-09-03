@@ -12,7 +12,7 @@ import {
 } from './db';
 import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, changePctForWindow, changePctSinceListing } from './next-market';
 import { getFoundingBelieverTier, foundingBelieverSerial } from './founding-believer';
-import { MIN_BACKERS_FOR_MOMENTUM, MIN_WATCHERS_FOR_MOMENTUM } from './feed-signals';
+import { MIN_BACKERS_FOR_MOMENTUM, MIN_TAKES_FOR_MOMENTUM, MIN_WATCHERS_FOR_MOMENTUM, VOLUME_CHANGE_PCT_THRESHOLD } from './feed-signals';
 import { FeedEvent, FeedEventType, FeedUserPost, NextMarketRow, ReactionType, ScoreChange, User } from './types';
 
 const EMPTY_REACTION_COUNTS: Record<ReactionType, number> = { fire: 0, eyes: 0, early: 0 };
@@ -82,6 +82,8 @@ const EVENT_TYPE_BASE_STRENGTH: Record<FeedEventType, number> = {
   market_momentum_mover: 0.8,
   market_momentum_backers: 0.65,
   market_momentum_most_watched: 0.6,
+  market_momentum_most_discussed: 0.55,
+  market_momentum_volume: 0.7,
   // A real opinion, but not inherently more exciting than a factual market
   // event — reactions (the engagement factor) are what should actually
   // carry a strong take upward, not this baseline.
@@ -107,6 +109,10 @@ function unusualness(eventType: FeedEventType, metadata: Record<string, unknown>
       return clamp01(num('backerCount') / (MIN_BACKERS_FOR_MOMENTUM * 3));
     case 'market_momentum_most_watched':
       return clamp01(num('watchCount') / (MIN_WATCHERS_FOR_MOMENTUM * 3));
+    case 'market_momentum_most_discussed':
+      return clamp01(num('takeCount') / (MIN_TAKES_FOR_MOMENTUM * 3));
+    case 'market_momentum_volume':
+      return clamp01(num('changePct') / (VOLUME_CHANGE_PCT_THRESHOLD * 3));
     default:
       return 0.2;
   }
