@@ -29,7 +29,6 @@ export type FeedItemDTO = {
     location?: string;
     photoUrl?: string;
     featuredVideoId?: string;
-    songPreviewUrl?: string;
     score: number;
     priceCents: number;
     changePct: number;
@@ -146,7 +145,6 @@ function buildArtistDTO(row: NextMarketRow): FeedItemDTO['artist'] {
     location: artist.location,
     photoUrl: artist.photo_url,
     featuredVideoId: artist.featured_video_id,
-    songPreviewUrl: artist.song_preview_url,
     score,
     priceCents,
     changePct: changePctSinceListing(priceCents, priceHistory),

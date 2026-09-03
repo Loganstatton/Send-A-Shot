@@ -57,7 +57,10 @@ function maybePost(eventType: FeedEventType, artistId: number, cutoff: string, m
 // its own SQL aggregation yet.
 export function generateFeedSignals(): FeedSignalResult {
   const cutoff = cooldownCutoff();
-  const market = getNextMarket().filter((row) => row.artist.stage !== 'passed');
+  // getNextMarket() already excludes stage='passed' artists internally —
+  // no need (and, since NextMarketRow.artist is now the public-safe
+  // projection, no way) to re-filter on .artist.stage here.
+  const market = getNextMarket();
   const scoreChanges = getScoreChanges();
   let created = 0;
 

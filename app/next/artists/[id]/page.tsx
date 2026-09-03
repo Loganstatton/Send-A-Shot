@@ -9,15 +9,13 @@ import {
 import { requireUser } from '@/lib/auth';
 import { marketSentiment } from '@/lib/next-market';
 import { scoreContributors } from '@/lib/scoring';
-import { formatCents, timeAgo } from '@/lib/format';
-import AudioPreview from '@/components/AudioPreview';
+import { formatCents } from '@/lib/format';
 import SpotifyPreview from '@/components/SpotifyPreview';
 import PriceChart from '@/components/PriceChart';
 import TradePanel from '@/components/TradePanel';
 import VideoBanner from '@/components/next/VideoBanner';
 import WatchButton from '@/components/next/WatchButton';
 import InfoTip from '@/components/next/InfoTip';
-import MissingStat from '@/components/next/MissingStat';
 import ScoreContributorBar from '@/components/next/ScoreContributorBar';
 import RecentActivity from '@/components/next/RecentActivity';
 import ClaimArtistPanel from '@/components/next/ClaimArtistPanel';
@@ -48,6 +46,13 @@ export default async function NextArtistPage({ params, searchParams }: { params:
   logEvent(user.id, 'artist_detail_opened', { artistId: id });
 
   const { artist, score, priceCents, priceHistory } = row;
+  // A few things on this page (the Score-contribution breakdown, the claim-
+  // ownership check) need raw Artist fields that row.artist deliberately
+  // excludes now that it's the public-safe projection (see PublicArtist in
+  // lib/types.ts) — fetched here, server-side only, never passed as a prop
+  // into a 'use client' component itself (only the derived, already-safe
+  // scoreParts/claimState values below are).
+  const rawArtist = getArtist(id)!;
   const sentiment = marketSentiment(score, priceCents);
   const holding = getHolding(user.id, id);
   const scoreHistory = getScoreHistory(id);
@@ -56,14 +61,14 @@ export default async function NextArtistPage({ params, searchParams }: { params:
   const currentBackerCount = getBackerCountsByArtist()[id] ?? 0; // currently holding shares right now
   const watchCount = getWatchCountsByArtist()[id] ?? 0;
   const watching = isWatchlisted(user.id, id);
-  const scoreParts = scoreContributors(artist);
+  const scoreParts = scoreContributors(rawArtist);
   const volumeCents24h = getArtistTradeVolumeCents(id, 24);
   const recentBackerCount24h = getRecentBackerCount(id, 24);
   const recentTrades = getRecentTradesForArtist(id);
   const claimState =
-    artist.claimed_by_user_id == null
+    rawArtist.claimed_by_user_id == null
       ? (getPendingClaimForUserAndArtist(user.id, id) ? 'pending' as const : 'unclaimed' as const)
-      : artist.claimed_by_user_id === user.id
+      : rawArtist.claimed_by_user_id === user.id
       ? 'owned_by_me' as const
       : 'claimed_by_other' as const;
 
@@ -75,7 +80,6 @@ export default async function NextArtistPage({ params, searchParams }: { params:
   const todayChangePct = todayFirst !== 0 ? ((priceCents - todayFirst) / todayFirst) * 100 : 0;
 
   const links = [
-    { label: 'Top song', url: artist.top_song_url },
     { label: 'TikTok', url: artist.tiktok_url },
     { label: 'Instagram', url: artist.instagram_url },
     { label: 'YouTube', url: artist.youtube_url },
@@ -137,7 +141,6 @@ export default async function NextArtistPage({ params, searchParams }: { params:
             </svg>
             {todayChangePct >= 0 ? '+' : ''}{todayChangePct.toFixed(1)}% today
           </div>
-          <AudioPreview artistId={artist.id} artistName={artist.name} src={artist.song_preview_url} />
           <WatchButton artistId={artist.id} initialWatching={watching} variant="labeled" />
         </div>
         <p className="m-0 text-[12.5px]" style={{ color: 'var(--text-faint)' }}>
@@ -153,7 +156,7 @@ export default async function NextArtistPage({ params, searchParams }: { params:
 
       {artist.bio && <p className="text-[14.5px] leading-relaxed max-w-[68ch] m-0" style={{ color: 'var(--text-muted)' }}>{artist.bio}</p>}
 
-      <SpotifyPreview trackUrl={artist.top_song_url} artistUrl={artist.spotify_url} />
+      <SpotifyPreview artistUrl={artist.spotify_url} />
 
       <ClaimArtistPanel artistId={id} artistName={artist.name} initialState={claimState} />
 
@@ -182,11 +185,8 @@ export default async function NextArtistPage({ params, searchParams }: { params:
           <div className="flex-1 min-w-0">
             <p className="m-0 font-display font-bold text-[14.5px]" style={{ color: 'var(--gold)' }}>Founding Believer</p>
             <p className="mt-[3px] mb-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              You backed {artist.name} on {new Date(foundingRecord.purchased_at).toLocaleDateString()}
-              {foundingRecord.followers_count != null && (
-                <> — <span className="num">{foundingRecord.followers_count.toLocaleString()}</span> followers then, <span className="num">{artist.followers_count?.toLocaleString() ?? '—'}</span> today</>
-              )}
-              . You were backer <strong style={{ color: 'var(--text)' }}>#{foundingRecord.discovery_rank}</strong>. This stays true even if you sell.
+              You backed {artist.name} on {new Date(foundingRecord.purchased_at).toLocaleDateString()}. You were backer{' '}
+              <strong style={{ color: 'var(--text)' }}>#{foundingRecord.discovery_rank}</strong>. This stays true even if you sell.
             </p>
             <p className="mt-1.5 mb-0 text-xs" style={{ color: 'var(--text-faint)' }}>
               Score <span className="num">{foundingRecord.next_score.toFixed(0)}</span> then → <span className="num">{score.toFixed(0)}</span> now
@@ -239,50 +239,28 @@ export default async function NextArtistPage({ params, searchParams }: { params:
           <div className="next-card p-6">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-[18px]">
               <h2 className="font-display font-bold text-[17px] m-0">Momentum</h2>
-              <div className="flex items-center gap-2 text-[11.5px]" style={{ color: 'var(--text-faint)' }}>
-                {artist.soundcharts_uuid ? (
-                  <span className="flex items-center gap-1" style={{ color: 'var(--up)' }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path d="M20 6 9 17l-5-5" /></svg>
-                    Linked to a live data source
-                  </span>
-                ) : (
-                  <span>Entered by hand, not auto-synced</span>
-                )}
-                <span>· Updated {timeAgo(artist.updated_at)}</span>
-              </div>
+              <span className="text-[11.5px]" style={{ color: 'var(--text-faint)' }}>On NEXT right now</span>
             </div>
+            {/* First-party — computed live from NEXT's own trading/watch
+                activity, not an external platform's numbers. */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
               <div>
-                <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>Followers</div>
-                {artist.followers_count != null ? (
-                  <div className="num text-[19px] font-bold">{artist.followers_count.toLocaleString()}</div>
-                ) : (
-                  <MissingStat reason="Not linked yet" />
-                )}
+                <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>Backers</div>
+                <div className="num text-[19px] font-bold">{currentBackerCount.toLocaleString()}</div>
               </div>
               <div>
-                <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>Monthly listeners</div>
-                {artist.monthly_listeners != null ? (
-                  <div className="num text-[19px] font-bold">{artist.monthly_listeners.toLocaleString()}</div>
-                ) : (
-                  <MissingStat reason="Not available" />
-                )}
+                <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>Watching</div>
+                <div className="num text-[19px] font-bold">{watchCount.toLocaleString()}</div>
               </div>
               <div>
-                <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>30-day growth</div>
-                {artist.growth_velocity_pct != null ? (
-                  <div className="num text-[19px] font-bold" style={{ color: 'var(--up)' }}>+{artist.growth_velocity_pct}%</div>
-                ) : (
-                  <MissingStat reason="Not tracked yet" />
-                )}
+                <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>24h volume</div>
+                <div className="num text-[19px] font-bold">{formatCents(volumeCents24h)}</div>
               </div>
               <div>
-                <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>Engagement</div>
-                {artist.engagement_rate_pct != null ? (
-                  <div className="num text-[19px] font-bold">{artist.engagement_rate_pct}%</div>
-                ) : (
-                  <MissingStat reason="Not tracked yet" />
-                )}
+                <div className="text-xs mb-1" style={{ color: 'var(--text-faint)' }}>New backers (24h)</div>
+                <div className="num text-[19px] font-bold" style={{ color: recentBackerCount24h > 0 ? 'var(--up)' : undefined }}>
+                  {recentBackerCount24h > 0 ? '+' : ''}{recentBackerCount24h.toLocaleString()}
+                </div>
               </div>
             </div>
             {links.length > 0 && (
@@ -294,9 +272,8 @@ export default async function NextArtistPage({ params, searchParams }: { params:
                     target="_blank"
                     rel="noreferrer"
                     className="flex items-center gap-1.5 px-4 py-2 rounded-full text-[13px]"
-                    style={{ border: '1px solid var(--border-soft)', color: l.label === 'Top song' ? 'var(--text)' : 'var(--text-muted)' }}
+                    style={{ border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
                   >
-                    {l.label === 'Top song' && <svg width="10" height="10" viewBox="0 0 24 24" fill="var(--text)"><path d="M6 4 20 12 6 20Z" /></svg>}
                     {l.label}
                   </a>
                 ))}

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NextMarketRow } from '@/lib/types';
 import { formatCents, timeAgo } from '@/lib/format';
 import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, marketSentiment } from '@/lib/next-market';
-import AudioPreview from '@/components/AudioPreview';
+import YouTubePreviewButton from '@/components/next/YouTubePreviewButton';
 import ScoreGapBar from '@/components/next/ScoreGapBar';
 import PriceSparkline from '@/components/next/PriceSparkline';
 import WatchButton from '@/components/next/WatchButton';
@@ -64,15 +64,7 @@ export default function ArtistCard({
   }, [heroImageUrl]);
   const showImage = Boolean(heroImageUrl) && !imgFailed;
 
-  const blurb =
-    artist.growth_velocity_pct != null || artist.engagement_rate_pct != null
-      ? [
-          artist.growth_velocity_pct != null ? `+${artist.growth_velocity_pct}% listeners in 30D` : null,
-          artist.engagement_rate_pct != null ? `${artist.engagement_rate_pct}% engagement` : null,
-        ]
-          .filter(Boolean)
-          .join(' · ')
-      : artist.why_trending || null;
+  const blurb = artist.why_trending || null;
 
   return (
     <div className="next-card next-card-hover relative flex flex-col overflow-hidden transition-transform active:scale-[0.98]">
@@ -173,7 +165,7 @@ export default function ArtistCard({
       )}
 
       <div className="px-5 pb-5 flex items-center gap-2.5">
-        <AudioPreview artistId={artist.id} artistName={artist.name} src={artist.song_preview_url} variant="icon" />
+        <YouTubePreviewButton artistId={artist.id} artistName={artist.name} videoId={artist.featured_video_id} variant="icon" />
         <Link
           href={`/next/artists/${artist.id}`}
           className={`flex-1 text-center py-2.5 rounded-[10px] text-[13.5px] font-bold ${undervalued ? 'next-btn-primary' : 'next-btn-ghost'}`}

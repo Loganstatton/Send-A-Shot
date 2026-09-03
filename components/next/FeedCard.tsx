@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { FeedItemDTO } from '@/lib/feed-items';
 import { formatCents, timeAgo } from '@/lib/format';
 import { track } from '@/lib/track';
-import AudioPreview from '@/components/AudioPreview';
+import YouTubePreviewButton from '@/components/next/YouTubePreviewButton';
 import WatchButton from '@/components/next/WatchButton';
 import ReactionBar from '@/components/next/ReactionBar';
 import { heroGradient } from '@/components/next/heroGradient';
@@ -216,7 +216,7 @@ export default function FeedCard({
                 if (isUserTake) track('feed_user_post_audio_played', { feedEventId: item.id, artistId: artist.id });
               }}
             >
-              <AudioPreview artistId={artist.id} artistName={artist.name} src={artist.songPreviewUrl} variant="icon" />
+              <YouTubePreviewButton artistId={artist.id} artistName={artist.name} videoId={artist.featuredVideoId} variant="icon" />
             </span>
             {isUserTake ? (
               // The spec's explicit two-button layout for this type — the

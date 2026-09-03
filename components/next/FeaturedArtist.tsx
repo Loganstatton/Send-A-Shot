@@ -17,13 +17,7 @@ export default function FeaturedArtist({ row }: { row: NextMarketRow }) {
   const sentiment = marketSentiment(score, priceCents);
   const undervalued = sentiment.tone === 'undervalued';
 
-  const blurb =
-    artist.growth_velocity_pct != null || artist.engagement_rate_pct != null
-      ? [
-          artist.growth_velocity_pct != null ? `+${artist.growth_velocity_pct}% listeners in 30D` : null,
-          artist.engagement_rate_pct != null ? `${artist.engagement_rate_pct}% engagement` : null,
-        ].filter(Boolean).join(' · ')
-      : artist.why_trending || null;
+  const blurb = artist.why_trending || null;
 
   return (
     <Link href={`/next/artists/${artist.id}`} className="next-card next-card-hover block overflow-hidden relative">

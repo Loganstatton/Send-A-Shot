@@ -39,7 +39,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const { artist, score, priceCents } = row;
   const scoreUp = score >= record.next_score;
   const priceUp = priceCents >= record.next_price_cents;
-  const followersUp = artist.followers_count != null && record.followers_count != null && artist.followers_count >= record.followers_count;
 
   const tier = getFoundingBelieverTier(record.discovery_rank);
   const accent = TIER_ACCENT_HEX[tier.key];
@@ -47,7 +46,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const lockedDate = new Date(record.purchased_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
   const stats = [
-    { label: 'FOLLOWERS', then: record.followers_count != null ? record.followers_count.toLocaleString() : '—', now: artist.followers_count != null ? artist.followers_count.toLocaleString() : '—', up: followersUp },
     { label: 'NEXT SCORE', then: record.next_score.toFixed(0), now: score.toFixed(0), up: scoreUp },
     { label: 'NEXT PRICE', then: formatCents(record.next_price_cents), now: formatCents(priceCents), up: priceUp },
   ];

@@ -5,15 +5,13 @@ import { changePctForWindow as sharedChangePctForWindow, changePctSinceListing, 
 import { track } from '@/lib/track';
 import ArtistCard, { SinceWatched } from '@/components/next/ArtistCard';
 
-type SortMode = 'score' | 'growth' | 'gain' | 'loss' | 'new' | 'smallest' | 'gap' | 'watched' | 'backed' | 'trending' | 'momentum';
+type SortMode = 'score' | 'gain' | 'loss' | 'new' | 'gap' | 'watched' | 'backed' | 'trending' | 'momentum';
 
 const SORT_LABELS: Record<SortMode, string> = {
   score: 'NEXT Score',
-  growth: 'Fastest growth',
   gain: 'Biggest price gain',
   loss: 'Biggest price loss',
   new: 'Newest artist',
-  smallest: 'Smallest audience',
   gap: 'Biggest Score-vs-Price gap',
   watched: 'Most watched',
   backed: 'Most backed',
@@ -76,29 +74,16 @@ export default function DiscoverGrid({
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([genre]) => genre).slice(0, 6);
   }, [rows]);
 
-  // "Small audience, strong fundamentals" — small is relative to today's
-  // roster (below the median follower count among artists that actually
-  // report one), strong is a flat Score bar high enough to mean something
-  // regardless of roster size. Artists with no follower count at all are
-  // left out rather than assumed small — an unknown isn't a gem.
-  const followerMedian = useMemo(() => {
-    const counts = rows.map((r) => r.artist.followers_count).filter((v): v is number => v != null).sort((a, b) => a - b);
-    return counts.length ? counts[Math.floor(counts.length / 2)] : null;
-  }, [rows]);
-  const HIDDEN_GEM_MIN_SCORE = 65;
-
   const [genre, setGenre] = useState<string | null>(null);
   const [signalOnly, setSignalOnly] = useState(false);
   const [watchlistOnly, setWatchlistOnly] = useState(false);
-  const [hiddenGemsOnly, setHiddenGemsOnly] = useState(false);
   const [sort, setSort] = useState<SortMode>('score');
   const [search, setSearch] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [followerRange, setFollowerRange] = useState<RangeFilter>(EMPTY_RANGE);
   const [scoreRange, setScoreRange] = useState<RangeFilter>(EMPTY_RANGE);
   const [priceRange, setPriceRange] = useState<RangeFilter>(EMPTY_RANGE);
 
-  const activeRangeCount = [followerRange, scoreRange, priceRange].filter((r) => r.min !== '' || r.max !== '').length;
+  const activeRangeCount = [scoreRange, priceRange].filter((r) => r.min !== '' || r.max !== '').length;
 
   // Debounced, not per-keystroke — logs once ~600ms after the user stops
   // typing a non-empty term, skipping the mount itself (isFirstRun guard
@@ -127,21 +112,15 @@ export default function DiscoverGrid({
     if (genre) list = list.filter((r) => r.artist.genre === genre);
     if (signalOnly) list = list.filter((r) => marketSentiment(r.score, r.priceCents).tone === 'undervalued');
     if (watchlistOnly) list = list.filter((r) => watchedSet.has(r.artist.id));
-    if (hiddenGemsOnly) {
-      list = list.filter((r) => r.artist.followers_count != null && followerMedian != null && r.artist.followers_count <= followerMedian && r.score >= HIDDEN_GEM_MIN_SCORE);
-    }
-    if (followerRange.min !== '' || followerRange.max !== '') list = list.filter((r) => inRange(r.artist.followers_count, followerRange));
     if (scoreRange.min !== '' || scoreRange.max !== '') list = list.filter((r) => inRange(r.score, scoreRange));
     if (priceRange.min !== '' || priceRange.max !== '') list = list.filter((r) => inRange(r.priceCents / 100, priceRange));
 
     const sorted = [...list];
     switch (sort) {
       case 'score': sorted.sort((a, b) => b.score - a.score); break;
-      case 'growth': sorted.sort((a, b) => (b.artist.growth_velocity_pct ?? -Infinity) - (a.artist.growth_velocity_pct ?? -Infinity)); break;
       case 'gain': sorted.sort((a, b) => changePctFor(b) - changePctFor(a)); break;
       case 'loss': sorted.sort((a, b) => changePctFor(a) - changePctFor(b)); break;
       case 'new': sorted.sort((a, b) => (b.artist.created_at > a.artist.created_at ? 1 : -1)); break;
-      case 'smallest': sorted.sort((a, b) => (a.artist.followers_count ?? Infinity) - (b.artist.followers_count ?? Infinity)); break;
       case 'gap': sorted.sort((a, b) => Math.abs(marketSentiment(b.score, b.priceCents).diff) - Math.abs(marketSentiment(a.score, a.priceCents).diff)); break;
       case 'watched': sorted.sort((a, b) => (watchCounts[b.artist.id] ?? 0) - (watchCounts[a.artist.id] ?? 0)); break;
       case 'backed': sorted.sort((a, b) => (backerCounts[b.artist.id] ?? 0) - (backerCounts[a.artist.id] ?? 0)); break;
@@ -149,7 +128,7 @@ export default function DiscoverGrid({
       case 'momentum': sorted.sort((a, b) => (scoreChanges[b.artist.id]?.changeAbs ?? -Infinity) - (scoreChanges[a.artist.id]?.changeAbs ?? -Infinity)); break;
     }
     return sorted;
-  }, [rows, genre, signalOnly, watchlistOnly, hiddenGemsOnly, followerMedian, followerRange, scoreRange, priceRange, sort, search, watchedSet, watchCounts, backerCounts, scoreChanges]);
+  }, [rows, genre, signalOnly, watchlistOnly, scoreRange, priceRange, sort, search, watchedSet, watchCounts, backerCounts, scoreChanges]);
 
   const chip = (active: boolean) => `next-pill ${active ? 'next-pill-active' : ''}`;
 
@@ -215,25 +194,13 @@ export default function DiscoverGrid({
         >
           Watchlisted
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            const next = !hiddenGemsOnly;
-            setHiddenGemsOnly(next);
-            if (next) track('filter_used', { filter: 'hidden_gems' });
-          }}
-          className={chip(hiddenGemsOnly)}
-        >
-          Hidden gems
-        </button>
         <button type="button" onClick={() => setFiltersOpen((v) => !v)} className={chip(filtersOpen || activeRangeCount > 0)}>
           Filters{activeRangeCount > 0 ? ` (${activeRangeCount})` : ''}
         </button>
       </div>
 
       {filtersOpen && (
-        <div className="next-card p-5 grid grid-cols-1 sm:grid-cols-3 gap-5">
-          <RangeInput label="Followers" range={followerRange} onChange={setFollowerRange} />
+        <div className="next-card p-5 grid grid-cols-1 sm:grid-cols-2 gap-5">
           <RangeInput label="NEXT Score" range={scoreRange} onChange={setScoreRange} max={100} />
           <RangeInput label="Price ($)" range={priceRange} onChange={setPriceRange} />
         </div>

@@ -27,8 +27,10 @@ export default async function NextMarketPage() {
   logEvent(user.id, 'discover_viewed');
   logArtistCardViews(user.id, rows.map((r) => r.artist.id));
 
-  const growthRates = rows.map((r) => r.artist.growth_velocity_pct).filter((v): v is number => v != null);
-  const avgGrowth = growthRates.length ? growthRates.reduce((a, b) => a + b, 0) / growthRates.length : null;
+  // First-party in place of the old Soundcharts-derived "Avg. 30D growth"
+  // stat — real NEXT activity (currently-held positions across the whole
+  // roster) instead of an external platform metric.
+  const totalBackers = Object.values(backerCounts).reduce((a, b) => a + b, 0);
 
   let biggestMover: { name: string; changePct: number } | null = null;
   let mostUndervalued: { name: string; diff: number } | null = null;
@@ -58,7 +60,7 @@ export default async function NextMarketPage() {
   type Stat = { label: string; value: string; valueTone?: 'up' | 'down' | 'ember'; delta?: string; deltaTone?: 'up' | 'down' | 'ember' };
   const stats: Stat[] = [
     { label: 'Artists live', value: String(rows.length) },
-    { label: 'Avg. 30D growth', value: avgGrowth != null ? `+${avgGrowth.toFixed(0)}%` : '—', valueTone: 'up' },
+    { label: 'Total backers', value: totalBackers.toLocaleString(), valueTone: 'up' },
     {
       label: "Today's biggest mover",
       value: biggestMover?.name ?? '—',

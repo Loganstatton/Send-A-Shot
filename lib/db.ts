@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { breakoutScore, engagementQualityScore, growthVelocityScore } from './scoring';
+import { toPublicArtist } from './public-artist';
 import { DATA_DIR } from './data-dir';
 import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents, quoteSell } from './next-market';
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
@@ -1506,11 +1507,20 @@ function getNextPriceHistory(artistId: number): NextPricePoint[] {
     .all(artistId) as NextPricePoint[];
 }
 
+// Returns Public NEXT's market rows — every artist row's own `.artist` is
+// already narrowed to PublicArtist (see toPublicArtist/lib/public-artist.ts)
+// before it leaves this function, since this is the data that gets passed
+// straight into 'use client' components (ArtistCard, DiscoverGrid,
+// FeaturedArtist, FeedCard) and serialized into the page's RSC payload.
+// Server-only code that needs a raw Artist field (stage, Scout notes, the
+// raw ScoreInputs categories, soundcharts_uuid, claimed_by_user_id, etc)
+// must fetch it separately via getArtist()/getAllArtists() — never widen
+// this function's return type to route around that.
 export function getNextMarket(): NextMarketRow[] {
   return getAllArtists()
     .filter((a) => a.stage !== 'passed')
     .map((artist) => ({
-      artist,
+      artist: toPublicArtist(artist),
       score: breakoutScore(artist),
       priceCents: ensureNextPrice(artist),
       priceHistory: getNextPriceHistory(artist.id),
@@ -1520,7 +1530,8 @@ export function getNextMarket(): NextMarketRow[] {
 // Batch sibling of getNextArtist — NEXT Feed needs live score/price context
 // for a page of feed_events, which typically names far fewer distinct
 // artists than the full roster getNextMarket() would load. One IN query
-// for the artists themselves rather than N calls to getArtist.
+// for the artists themselves rather than N calls to getArtist. Same public
+// projection as getNextMarket() above — see its comment.
 export function getNextArtistsByIds(ids: number[]): Map<number, NextMarketRow> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return new Map();
@@ -1529,7 +1540,7 @@ export function getNextArtistsByIds(ids: number[]): Map<number, NextMarketRow> {
   return new Map(
     rows.map((artist) => [
       artist.id,
-      { artist, score: breakoutScore(artist), priceCents: ensureNextPrice(artist), priceHistory: getNextPriceHistory(artist.id) },
+      { artist: toPublicArtist(artist), score: breakoutScore(artist), priceCents: ensureNextPrice(artist), priceHistory: getNextPriceHistory(artist.id) },
     ])
   );
 }
@@ -1568,11 +1579,15 @@ export function getBackerCountsByArtist(): Record<number, number> {
   return Object.fromEntries(rows.map((r) => [r.artist_id, r.c]));
 }
 
+// Same public projection as getNextMarket() above (see its comment) — a
+// server component that needs raw Artist fields alongside this (e.g. the
+// claim-owner check or scoreContributors() on Artist Detail) should call
+// getArtist(artistId) itself for those, not expect this function to widen.
 export function getNextArtist(artistId: number): NextMarketRow | undefined {
   const artist = getArtist(artistId);
   if (!artist) return undefined;
   return {
-    artist,
+    artist: toPublicArtist(artist),
     score: breakoutScore(artist),
     priceCents: ensureNextPrice(artist),
     priceHistory: getNextPriceHistory(artistId),

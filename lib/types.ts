@@ -498,8 +498,43 @@ export type NextTransaction = {
 
 export type NextPricePoint = { recorded_at: string; price_cents: number };
 
+// The whitelist of Artist fields Public NEXT is allowed to receive — see
+// lib/public-artist.ts's toPublicArtist(). Deliberately excludes: stage,
+// scout_name, notes, created_by, high_rating_note, claimed_by_user_id (raw),
+// the 8 raw ScoreInputs categories, every *_synced_at/*_no_match_at
+// timestamp, soundcharts_uuid, and every Soundcharts/Deezer-sourced metric
+// (followers_count, monthly_listeners, growth_velocity_pct,
+// engagement_rate_pct, top_song_url, song_preview_url). Any server-side code
+// that genuinely needs one of those (score-contribution math, claim-owner
+// checks) must fetch the raw Artist itself via getArtist()/getArtistTx() —
+// never widen this type to route around that on the client-serialization
+// path, since NextMarketRow.artist is exactly what gets passed as props into
+// 'use client' components (ArtistCard, DiscoverGrid, FeaturedArtist,
+// FeedCard) and serialized into the RSC payload.
+export type PublicArtist = {
+  id: number;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  genre?: string;
+  location?: string;
+  bio?: string;
+  photo_url?: string;
+  why_trending?: string;
+  featured_video_id?: string;
+  tiktok_url?: string;
+  instagram_url?: string;
+  youtube_url?: string;
+  spotify_url?: string;
+  soundcloud_url?: string;
+  // Whether *someone* has a verified claim on this artist — never the raw
+  // user id (a caller that needs "is it ME" does that comparison
+  // server-side against the raw Artist, e.g. app/next/artists/[id]/page.tsx).
+  isClaimed: boolean;
+};
+
 export type NextMarketRow = {
-  artist: Artist;
+  artist: PublicArtist;
   score: number;
   priceCents: number;
   priceHistory: NextPricePoint[];

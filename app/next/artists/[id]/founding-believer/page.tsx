@@ -115,13 +115,7 @@ export default async function FoundingBelieverReceiptPage({ params }: { params: 
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <StatComparison
-                label="Followers"
-                then={record.followers_count != null ? record.followers_count.toLocaleString() : '—'}
-                now={artist.followers_count != null ? artist.followers_count.toLocaleString() : '—'}
-                tone={artist.followers_count != null && record.followers_count != null ? (artist.followers_count >= record.followers_count ? 'up' : 'down') : 'flat'}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <StatComparison
                 label="NEXT Score"
                 then={record.next_score.toFixed(0)}
