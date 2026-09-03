@@ -1,13 +1,20 @@
 import { SCORE_WEIGHTS, ScoreInputs } from './types';
 
-// Weighted 0-10 scout ratings -> 0-100 Breakout Score. Six of the eight
-// inputs are still a human's own rating (music/talent, personality, etc. —
-// judgment a number can't replace). The other two, Growth Velocity and
-// Engagement Quality, are never hand-set anymore: see
-// growthVelocityScore()/engagementQualityScore() below, which convert a
-// real growth/engagement % into the 0-10 this function expects. This
+// Weighted 0-10 scout ratings -> 0-100 Breakout Score. All eight inputs are
+// a human Scout's own 0-10 rating (music/talent, personality, growth,
+// engagement, etc. — judgment a formula can't fully replace). This
 // function itself doesn't know or care where an input came from — it just
 // sums whatever 0-10 values it's given.
+//
+// Pre-beta migration note: Growth Velocity and Engagement Quality used to
+// be auto-computed from a real growth %/engagement % (typically
+// Soundcharts-sourced) via growthVelocityScore()/engagementQualityScore()
+// below, on every single save. To stop the Breakout Score depending on a
+// paid third-party API, both are now ordinary Scout-manual 0-10 ratings
+// (lib/db.ts's WRITABLE_FIELDS, ArtistForm.tsx's rating sliders) — nothing
+// derives them automatically anymore. Existing artists' already-computed
+// values were left exactly as they were (not reset); only future
+// create/update calls stop re-deriving them.
 export function breakoutScore(inputs: ScoreInputs): number {
   const total = (Object.keys(SCORE_WEIGHTS) as (keyof ScoreInputs)[]).reduce(
     (sum, key) => sum + (inputs[key] ?? 0) * (SCORE_WEIGHTS[key] / 10),
@@ -16,15 +23,23 @@ export function breakoutScore(inputs: ScoreInputs): number {
   return Math.round(total * 10) / 10;
 }
 
-// Splits the same total breakoutScore() computes into the two buckets that
-// actually explain "why is the score what it is" for NEXT's public Artist
-// Detail page (see the "Why the NEXT Score is what it is" module): the
-// growth_velocity/engagement_quality pair (real, auto-derived numbers) vs.
-// the other six (a Scout's own rating). Deliberately NOT broken out
-// category-by-category on NEXT — publicly showing "Professionalism: 4/10"
-// about a real artist is a different, harsher thing than the same number
-// sitting in Scout's internal tool, and the two-bucket split is honest
-// about the real/judgment split without that.
+// Splits the same total breakoutScore() computes into two buckets for
+// NEXT's public Artist Detail page (the "Why the Score is what it is"
+// module): the growth_velocity/engagement_quality pair vs. the other six.
+// Deliberately NOT broken out category-by-category on NEXT — publicly
+// showing "Professionalism: 4/10" about a real artist is a different,
+// harsher thing than the same number sitting in Scout's internal tool.
+//
+// Field names here (realDataPoints/scoutPoints) predate the pre-beta
+// migration, when growth_velocity/engagement_quality really were
+// auto-derived from a live growth %/engagement % and this split was
+// literally "real external data vs. Scout judgment." Both categories are
+// Scout-manual now (see breakoutScore()'s comment above), so the public
+// copy that renders this was reworded to stop claiming "real data" — see
+// app/next/artists/[id]/page.tsx and app/next/my-artist/[id]/page.tsx.
+// Kept the field names and the two-bucket shape as-is (not a public API,
+// low value in a rename) rather than touching every call site for a
+// cosmetic rename.
 export type ScoreContributors = { realDataPoints: number; scoutPoints: number; total: number };
 
 export function scoreContributors(inputs: ScoreInputs): ScoreContributors {

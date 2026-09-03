@@ -1,19 +1,18 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { breakoutScore, engagementQualityScore, growthVelocityScore } from '@/lib/scoring';
+import { breakoutScore } from '@/lib/scoring';
 import { Artist, ArtistInput, SCORE_LABELS, SCORE_WEIGHTS, STAGES, STAGE_LABELS, ScoreInputs } from '@/lib/types';
 import { parseYoutubeVideoId } from '@/lib/youtube-url';
 import ScoreBadge from './ScoreBadge';
 import SoundchartsSearch from './SoundchartsSearch';
 import SyncProvenance from './SyncProvenance';
 
-// Growth Velocity and Engagement Quality are excluded here — they're no
-// longer a human-rated slider, see the computed-value note in the Metrics
-// section below instead.
-const RATED_SCORE_FIELDS = (Object.keys(SCORE_WEIGHTS) as (keyof ScoreInputs)[]).filter(
-  (f) => f !== 'growth_velocity' && f !== 'engagement_quality'
-);
+// All eight categories are Scout-rated sliders now — Growth Velocity and
+// Engagement Quality used to be computed automatically from the % fields
+// in Metrics below (pre-beta migration: see the WRITABLE_FIELDS comment
+// in lib/db.ts for why that stopped).
+const RATED_SCORE_FIELDS = Object.keys(SCORE_WEIGHTS) as (keyof ScoreInputs)[];
 
 // 9-10 is the top 20% of the 0-10 scale — rare enough that a Scout should
 // have a specific reason, not just "seems great." Encouraged with a
@@ -51,6 +50,8 @@ export default function ArtistForm({ artist }: Props) {
     growth_velocity_pct: artist?.growth_velocity_pct ?? undefined,
     engagement_rate_pct: artist?.engagement_rate_pct ?? undefined,
     music_talent: artist?.music_talent ?? 5,
+    growth_velocity: artist?.growth_velocity ?? 5,
+    engagement_quality: artist?.engagement_quality ?? 5,
     original_song_response: artist?.original_song_response ?? 5,
     brand_personality: artist?.brand_personality ?? 5,
     content_consistency: artist?.content_consistency ?? 5,
@@ -71,13 +72,10 @@ export default function ArtistForm({ artist }: Props) {
   // gate on saving. See HIGH_RATING_THRESHOLD's own reasoning below.
   const hasHighRating = RATED_SCORE_FIELDS.some((field) => ((form[field] as number) ?? 0) >= HIGH_RATING_THRESHOLD);
 
-  const liveGrowthScore = growthVelocityScore(form.growth_velocity_pct);
-  const liveEngagementScore = engagementQualityScore(form.engagement_rate_pct);
-
   const liveScore = breakoutScore({
     music_talent: form.music_talent ?? 0,
-    growth_velocity: liveGrowthScore,
-    engagement_quality: liveEngagementScore,
+    growth_velocity: form.growth_velocity ?? 0,
+    engagement_quality: form.engagement_quality ?? 0,
     original_song_response: form.original_song_response ?? 0,
     brand_personality: form.brand_personality ?? 0,
     content_consistency: form.content_consistency ?? 0,
@@ -274,12 +272,12 @@ export default function ArtistForm({ artist }: Props) {
       </div>
 
       <div className="card space-y-4">
-        <h2 className="font-bold text-lg">Metrics</h2>
+        <h2 className="font-bold text-lg">Metrics <span className="font-normal text-sm" style={{ color: 'var(--text-faint)' }}>— context only, doesn&apos;t drive the score</span></h2>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-          30-day growth and engagement rate directly drive two of the Breakout Score categories below —
-          no separate rating needed. Followers and 30-day growth fill automatically via Soundcharts sync
-          when linked; monthly listeners and engagement rate stay manual — no API (Soundcharts&apos; or
-          otherwise) exposes either of those for Spotify, on any plan.
+          Reference numbers for your own judgment call on Growth Velocity/Engagement Quality below — none of
+          these feed the Breakout Score automatically anymore (pre-beta migration off Soundcharts). Followers
+          and 30-day growth can still be filled via Soundcharts sync if an artist is linked; everything here
+          is otherwise manual.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
@@ -295,12 +293,12 @@ export default function ArtistForm({ artist }: Props) {
           <div>
             <label className="label">30-day growth %</label>
             <input type="number" step="0.1" className="input" value={form.growth_velocity_pct ?? ''} onChange={(e) => set('growth_velocity_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
-            <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Soundcharts sync fills this when linked · → Growth Velocity {liveGrowthScore.toFixed(1)}/10</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Soundcharts sync fills this when linked</p>
           </div>
           <div>
             <label className="label">Engagement rate %</label>
             <input type="number" step="0.1" className="input" value={form.engagement_rate_pct ?? ''} onChange={(e) => set('engagement_rate_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
-            <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>Manual only — not returned by Soundcharts on this plan · → Engagement Quality {liveEngagementScore.toFixed(1)}/10</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>Manual only — not returned by Soundcharts on this plan</p>
           </div>
         </div>
       </div>
@@ -312,13 +310,9 @@ export default function ArtistForm({ artist }: Props) {
         </div>
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
           Rate each category 0–10. Weighted automatically into the Breakout Score (music/talent counts most,
-          professionalism/commercial potential count least). Growth Velocity and Engagement Quality aren't
-          rated here anymore — they're computed from the real numbers in Metrics above.
+          professionalism/commercial potential count least). All eight — Growth Velocity and Engagement
+          Quality included — are your own rating; use the % numbers in Metrics above as reference if helpful.
         </p>
-        <div className="flex items-center gap-4 text-sm rounded-lg px-4 py-3" style={{ border: '1px solid var(--border-soft)' }}>
-          <span className="num" style={{ color: 'var(--text-muted)' }}>Growth Velocity <strong style={{ color: 'var(--text)' }}>{liveGrowthScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.growth_velocity}%</span>
-          <span className="num" style={{ color: 'var(--text-muted)' }}>Engagement Quality <strong style={{ color: 'var(--text)' }}>{liveEngagementScore.toFixed(1)}/10</strong> · weight {SCORE_WEIGHTS.engagement_quality}%</span>
-        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
           {RATED_SCORE_FIELDS.map((field) => (
             <div key={field}>

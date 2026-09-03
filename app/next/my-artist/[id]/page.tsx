@@ -73,8 +73,8 @@ export default async function MyArtistDashboardPage({ params }: { params: { id: 
         <div className="mt-5 pt-5" style={{ borderTop: '1px solid var(--border-soft)' }}>
           <div className="text-xs uppercase tracking-[0.06em] font-mono mb-3" style={{ color: 'var(--text-faint)' }}>Why the Score is what it is</div>
           <div className="flex flex-col gap-2.5">
-            <ScoreContributorBar label="Real growth &amp; engagement data" points={scoreParts.realDataPoints} total={scoreParts.total} color="var(--up)" />
-            <ScoreContributorBar label="Scout evaluation" points={scoreParts.scoutPoints} total={scoreParts.total} color="var(--ember)" />
+            <ScoreContributorBar label="Growth &amp; engagement" points={scoreParts.realDataPoints} total={scoreParts.total} color="var(--up)" />
+            <ScoreContributorBar label="Everything else" points={scoreParts.scoutPoints} total={scoreParts.total} color="var(--ember)" />
           </div>
         </div>
       </div>

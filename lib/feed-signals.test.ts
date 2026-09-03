@@ -18,8 +18,8 @@ function makeArtist(name: string) {
   // Same deterministic breakout_score=80 recipe as lib/db.test.ts's
   // makeArtist — every rated category lands on 8/10.
   return createArtist({
-    name, music_talent: 8, growth_velocity_pct: 32, engagement_rate_pct: 16, original_song_response: 8,
-    brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8,
+    name, music_talent: 8, growth_velocity: 8, growth_velocity_pct: 32, engagement_quality: 8, engagement_rate_pct: 16,
+    original_song_response: 8, brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8,
   });
 }
 

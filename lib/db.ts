@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { breakoutScore, engagementQualityScore, growthVelocityScore } from './scoring';
+import { breakoutScore } from './scoring';
 import { toPublicArtist } from './public-artist';
 import { DATA_DIR } from './data-dir';
 import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents, quoteSell } from './next-market';
@@ -768,23 +768,23 @@ const WRITABLE_FIELDS = [
   'name', 'stage', 'genre', 'location', 'scout_name',
   'tiktok_url', 'instagram_url', 'youtube_url', 'spotify_url', 'soundcloud_url',
   'followers_count', 'monthly_listeners', 'growth_velocity_pct', 'engagement_rate_pct',
-  'music_talent', 'original_song_response',
+  'music_talent', 'growth_velocity', 'engagement_quality', 'original_song_response',
   'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
   'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending', 'soundcharts_uuid',
   'featured_video_id', 'high_rating_note',
 ] as const;
 
-// growth_velocity and engagement_quality are deliberately NOT writable
-// fields — they're always derived from growth_velocity_pct/
-// engagement_rate_pct (see lib/scoring.ts) right here, so every write path
-// (the form, the API, Discovery's Approve) stays consistent by
-// construction instead of each caller needing to remember to compute them.
-const DERIVED_SCORE_FIELDS = ['growth_velocity', 'engagement_quality'] as const;
-
-// The six remaining (human-rated) score columns are NOT NULL DEFAULT 0 in
-// the schema — a caller that omits them (e.g. approving a Discovery
-// candidate, which deliberately leaves rating to a human) must still get
-// 0, not null, or the insert violates that constraint.
+// Pre-beta migration: growth_velocity/engagement_quality used to be
+// silently re-derived from growth_velocity_pct/engagement_rate_pct (a
+// Soundcharts-shaped metric) on every save — see growthVelocityScore()/
+// engagementQualityScore() in lib/scoring.ts, still exported as pure
+// helpers but no longer called from here. They're now ordinary
+// Scout-manual 0-10 categories, same as the other six (ArtistForm.tsx
+// rates them with the same slider). This does NOT reset or touch any
+// artist's existing stored value — whatever was last computed/saved stays
+// exactly as-is until a Scout deliberately edits it. The *_pct columns
+// stay in the schema (legacy context a Scout can still see/edit) but no
+// longer drive anything automatically.
 const SCORE_FIELD_SET = new Set(Object.keys(SCORE_WEIGHTS));
 
 export function createArtist(input: ArtistInput, actor?: Actor | null): Artist {
@@ -797,10 +797,8 @@ export function createArtist(input: ArtistInput, actor?: Actor | null): Artist {
     else if (SCORE_FIELD_SET.has(field)) row[field] = 0;
     else row[field] = null;
   }
-  row.growth_velocity = growthVelocityScore(row.growth_velocity_pct as number | null);
-  row.engagement_quality = engagementQualityScore(row.engagement_rate_pct as number | null);
 
-  const columns = ['created_at', 'updated_at', 'created_by', ...WRITABLE_FIELDS, ...DERIVED_SCORE_FIELDS];
+  const columns = ['created_at', 'updated_at', 'created_by', ...WRITABLE_FIELDS];
   const placeholders = columns.map((c) => `@${c}`).join(', ');
   const info = db
     .prepare(`INSERT INTO artists (${columns.join(', ')}) VALUES (${placeholders})`)
@@ -823,15 +821,6 @@ export function updateArtist(id: number, input: ArtistInput, actor?: Actor | nul
     }
   }
   if (sets.length > 0) {
-    // Re-derive from whatever the growth/engagement % ends up being after
-    // this update (the new value if this update touched it, the existing
-    // one otherwise) — never left stale relative to the % that actually
-    // drives it.
-    const nextGrowthPct = 'growth_velocity_pct' in input ? input.growth_velocity_pct ?? null : existing.growth_velocity_pct ?? null;
-    const nextEngagementPct = 'engagement_rate_pct' in input ? input.engagement_rate_pct ?? null : existing.engagement_rate_pct ?? null;
-    sets.push('growth_velocity = @growth_velocity', 'engagement_quality = @engagement_quality');
-    row.growth_velocity = growthVelocityScore(nextGrowthPct);
-    row.engagement_quality = engagementQualityScore(nextEngagementPct);
     db.prepare(`UPDATE artists SET updated_at = @updated_at, ${sets.join(', ')} WHERE id = @id`).run(row);
   }
   const updated = getArtist(id)!;
@@ -3535,19 +3524,20 @@ export function approveDiscoveryCandidate(id: number, actor: Actor): Artist | un
       soundcharts_uuid: candidate.soundcharts_uuid,
       why_trending: candidate.flagged_reason,
       featured_video_id: candidate.yt_video_id,
-      // The Add Artist form always starts these six human-judgment ratings
-      // at a neutral 5/10 (see ArtistForm.tsx) rather than leaving them
-      // unset — approval bypasses that form entirely and was falling
-      // through to createArtist's raw 0 default instead. At weights
-      // summing to 70% of the Breakout Score, that meant every
-      // freshly-discovered artist scored as "Pass" regardless of how
-      // strong the real momentum signal that flagged them was — a Scout
-      // had to hand-rate all six before NEXT Score reflected anything.
-      // Matching the form's own neutral starting point here means a new
-      // artist's score is driven by what's actually known (growth/
-      // engagement, both real, auto-derived below) until a Scout reviews
-      // and adjusts these to their own judgment.
+      // The Add Artist form always starts all eight rated categories at a
+      // neutral 5/10 (see ArtistForm.tsx) rather than leaving them unset —
+      // approval bypasses that form entirely and was falling through to
+      // createArtist's raw 0 default instead. At weights summing to 100%
+      // of the Breakout Score, that meant every freshly-discovered artist
+      // scored as "Pass" regardless of how strong the signal that flagged
+      // them was. growth_velocity/engagement_quality used to get a real
+      // starting value for free here (auto-derived from the candidate's
+      // real growth %) — now that both are Scout-manual (pre-beta
+      // migration, see the WRITABLE_FIELDS comment above), they get the
+      // same neutral 5 as the other six, pending an actual Scout rating.
       music_talent: 5,
+      growth_velocity: 5,
+      engagement_quality: 5,
       original_song_response: 5,
       brand_personality: 5,
       content_consistency: 5,

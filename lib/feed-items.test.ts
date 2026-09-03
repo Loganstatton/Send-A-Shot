@@ -14,8 +14,8 @@ const { buildFeedAssemblyContext, buildFeedItems } = await import('./feed-items'
 
 function makeArtist(name: string, overrides: Partial<Parameters<typeof createArtist>[0]> = {}) {
   return createArtist({
-    name, music_talent: 8, growth_velocity_pct: 32, engagement_rate_pct: 16, original_song_response: 8,
-    brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8, ...overrides,
+    name, music_talent: 8, growth_velocity: 8, growth_velocity_pct: 32, engagement_quality: 8, engagement_rate_pct: 16,
+    original_song_response: 8, brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8, ...overrides,
   });
 }
 

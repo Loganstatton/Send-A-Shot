@@ -227,11 +227,11 @@ export default async function NextArtistPage({ params, searchParams }: { params:
             <div className="mt-5 pt-5" style={{ borderTop: '1px solid var(--border-soft)' }}>
               <div className="text-xs uppercase tracking-[0.06em] font-mono mb-3" style={{ color: 'var(--text-faint)' }}>Why the Score is what it is</div>
               <div className="flex flex-col gap-2.5">
-                <ScoreContributorBar label="Real growth &amp; engagement data" points={scoreParts.realDataPoints} total={scoreParts.total} color="var(--up)" />
-                <ScoreContributorBar label="Scout evaluation" points={scoreParts.scoutPoints} total={scoreParts.total} color="var(--ember)" />
+                <ScoreContributorBar label="Growth &amp; engagement" points={scoreParts.realDataPoints} total={scoreParts.total} color="var(--up)" />
+                <ScoreContributorBar label="Everything else" points={scoreParts.scoutPoints} total={scoreParts.total} color="var(--ember)" />
               </div>
               <p className="mt-3 mb-0 text-[12px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-                Growth Velocity and Engagement Quality come straight from real follower/engagement numbers. The rest is a Scout&apos;s own judgment call on talent, brand, and execution — not something a formula can measure.
+                NEXT Score is a Scout&apos;s own 0–100 evaluation across eight weighted categories — talent, growth, engagement, brand, and more. It&apos;s a human judgment call, not a formula pulled from an external platform.
               </p>
             </div>
           </div>
