@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lead Rescue — Cinematic Ad Preview</title>
+<style>
+  :root{
+    --ink:#eef2ff;
+    --dim:#9aa4c0;
+    --blue:#3b82f6;
+    --cyan:#22d3ee;
+    --amber:#f5a524;
+    --red:#ef4444;
+    --green:#22c55e;
+    --card:#11141d;
+    --bezel:#1c202c;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;
+    height:100%;
+    background:#000;
+    color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  body{ padding:16px; }
+
+  .frame{
+    position:relative;
+    width:min(94vw, 56.25vh, 460px);
+    aspect-ratio:9/16;
+    border-radius:20px;
+    overflow:hidden;
+    background:radial-gradient(120% 90% at 50% 18%, #131829 0%, #0a0c14 55%, #050609 100%);
+    box-shadow:0 30px 80px -20px rgba(0,0,0,.8), inset 0 0 0 1px rgba(255,255,255,.05);
+    container-type: inline-size;
+  }
+
+  /* ---------- shared scale unit ---------- */
+  .frame{ --u: 1cqw; }
+
+  /* ---------- the "camera": everything below drifts/zooms as one ---------- */
+  .stage{
+    position:absolute; inset:0;
+    animation: cameraMove 20s infinite cubic-bezier(.45,0,.2,1);
+    transform-origin: 50% 55%;
+  }
+  @keyframes cameraMove{
+    0%   { transform: scale(1.06) translateY(1%); }
+    37%  { transform: scale(1.1)  translateY(0%); }
+    47%  { transform: scale(1.02) translateY(-1%); }
+    80%  { transform: scale(1.0)  translateY(-1%); }
+    85%  { transform: scale(1.15) translateY(-3%); }
+    97%  { transform: scale(1.5)  translateY(-5%); }
+    100% { transform: scale(1.55) translateY(-5%); }
+  }
+
+  .glow{
+    position:absolute; border-radius:50%; filter:blur(30px); pointer-events:none;
+  }
+  .glow.blue{ width:70cqw; height:70cqw; left:-20cqw; top:-6cqw; background:radial-gradient(circle, rgba(59,130,246,.35), transparent 70%); }
+  .glow.amber{ width:60cqw; height:60cqw; right:-22cqw; bottom:6cqw; background:radial-gradient(circle, rgba(245,165,36,.16), transparent 70%);
+    animation: warmPulse 20s infinite; }
+  @keyframes warmPulse{
+    0%,68%{ opacity:.0; }
+    73%,84%{ opacity:1; }
+    90%,100%{ opacity:.4; }
+  }
+  .glow.red{ width:90cqw; height:90cqw; left:5cqw; top:20cqw; background:radial-gradient(circle, rgba(239,68,68,.28), transparent 65%); opacity:0;
+    animation: redPulse 20s infinite; }
+  @keyframes redPulse{
+    0%,32%{ opacity:0; }
+    34%,46%{ opacity:1; }
+    54%,100%{ opacity:0; }
+  }
+
+  /* ---------- phone ---------- */
+  .phone{
+    position:absolute; left:50%; top:46%;
+    width:56cqw; height:calc(56cqw * 2.02);
+    transform:translate(-50%,-50%) rotate(0deg);
+    border-radius:8cqw;
+    background:linear-gradient(155deg,#2a2f3d,#14161d 60%,#0c0d12);
+    box-shadow:
+      0 2cqw 6cqw rgba(0,0,0,.7),
+      inset 0 0 0 0.3cqw rgba(255,255,255,.06);
+    animation: phoneLife 20s infinite ease-in-out;
+    padding:2.4cqw;
+  }
+  @keyframes phoneLife{
+    0%   { transform:translate(-50%,-50%) translateY(2cqw) rotate(-1.2deg); opacity:0; }
+    6%   { opacity:1; }
+    7%   { transform:translate(-50%,-50%) translateY(0) rotate(0deg); opacity:1; }
+    9%   { transform:translate(-50%,-50%) translate(.6cqw,0) rotate(.8deg); }
+    10%  { transform:translate(-50%,-50%) translate(-.6cqw,0) rotate(-.8deg); }
+    11%  { transform:translate(-50%,-50%) translate(.4cqw,0) rotate(.5deg); }
+    12%  { transform:translate(-50%,-50%) translate(0,0) rotate(0deg); }
+    24%  { transform:translate(-50%,-50%) translate(.5cqw,0) rotate(.6deg); }
+    25%  { transform:translate(-50%,-50%) translate(-.5cqw,0) rotate(-.6deg); }
+    26%  { transform:translate(-50%,-50%) translate(0,0) rotate(0deg); }
+    32%  { transform:translate(-50%,-50%) rotate(0deg); }
+    37%  { transform:translate(-50%,-50%) translateY(-.4cqw) rotate(-1deg); }
+    80%  { transform:translate(-50%,-50%) translateY(-.4cqw) rotate(-1deg); }
+    85%  { transform:translate(-50%,-50%) translateY(-1cqw) scale(.94) rotate(0deg); opacity:1;}
+    97%  { transform:translate(-50%,-50%) translateY(-1cqw) scale(.7) rotate(0deg); opacity:0;}
+    100% { transform:translate(-50%,-50%) translateY(-1cqw) scale(.7) rotate(0deg); opacity:0;}
+  }
+  .phone-cam{
+    position:absolute; top:1.6cqw; left:50%; transform:translateX(-50%);
+    width:9cqw; height:2.6cqw; border-radius:2cqw;
+    background:#05060a;
+    box-shadow: inset 0 0 0 .15cqw rgba(255,255,255,.05);
+    z-index:3;
+  }
+  .screen{
+    position:relative; width:100%; height:100%;
+    border-radius:5.6cqw;
+    background:#05060a;
+    overflow:hidden;
+  }
+  .screen::after{
+    content:"";
+    position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(255,255,255,.05), transparent 30%);
+    pointer-events:none;
+  }
+
+  /* ---------- call UI ---------- */
+  .call-ui{
+    position:absolute; inset:0; padding:10cqw 6cqw 0;
+    text-align:center;
+    opacity:0;
+    animation: showCall 20s infinite;
+  }
+  @keyframes showCall{
+    0%,7%{ opacity:0; }
+    8%,31%{ opacity:1; }
+    33%,100%{ opacity:0; }
+  }
+  .call-kicker{ font-size:3.1cqw; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); }
+  .call-name{ font-size:5.4cqw; font-weight:700; margin-top:2cqw; color:var(--ink); white-space:nowrap; }
+  .call-sub{ font-size:3.3cqw; color:var(--dim); margin-top:1.4cqw; }
+  .ring-rings{ position:relative; width:26cqw; height:26cqw; margin:6cqw auto 0; }
+  .ring-rings span{
+    position:absolute; inset:0; border-radius:50%;
+    border:.35cqw solid rgba(59,130,246,.55);
+    animation: ringOut 1.6s infinite ease-out;
+  }
+  .ring-rings span:nth-child(2){ animation-delay:.5s; }
+  .ring-rings span:nth-child(3){ animation-delay:1s; }
+  @keyframes ringOut{
+    0%{ transform:scale(.5); opacity:1; }
+    100%{ transform:scale(1.5); opacity:0; }
+  }
+  .ring-rings .dot{
+    position:absolute; inset:0; margin:auto; width:9cqw; height:9cqw; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #7db8ff, var(--blue) 60%, #1d4ed8);
+    box-shadow:0 0 3cqw rgba(59,130,246,.7);
+  }
+  .value-particles span{
+    position:absolute; width:.9cqw; height:.9cqw; border-radius:50%;
+    background:var(--amber); opacity:0; filter:blur(.15cqw);
+    animation: floatUp 3.4s infinite ease-in;
+  }
+  @keyframes floatUp{
+    0%{ transform:translateY(0); opacity:0; }
+    15%{ opacity:.9; }
+    100%{ transform:translateY(-30cqw); opacity:0; }
+  }
+
+  /* ---------- missed call UI ---------- */
+  .missed-ui{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    opacity:0;
+    animation: showMissed 20s infinite;
+  }
+  @keyframes showMissed{
+    0%,32.4%{ opacity:0; }
+    33%,46%{ opacity:1; }
+    47.5%,100%{ opacity:0; }
+  }
+  .missed-icon{
+    width:16cqw; height:16cqw; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #fca5a5, var(--red) 60%, #7f1d1d);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 5cqw rgba(239,68,68,.6);
+    margin-bottom:3cqw;
+  }
+  .missed-label{ font-size:6cqw; font-weight:800; letter-spacing:.02em; color:#fecaca; }
+  .missed-sub{ font-size:3cqw; color:var(--dim); margin-top:1.5cqw; }
+
+  /* ---------- drifting lead avatar ---------- */
+  .avatar{
+    position:absolute; left:50%; top:46%; width:6.4cqw; height:6.4cqw;
+    margin-left:20cqw; margin-top:-2cqw;
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #fff, var(--cyan) 55%, #0891b2);
+    box-shadow:0 0 2.4cqw rgba(34,211,238,.7);
+    opacity:0;
+    animation: leadDrift 20s infinite ease-in-out;
+  }
+  .avatar::after{
+    content:""; position:absolute; inset:-2.4cqw; border-radius:50%;
+    border:.3cqw solid rgba(34,211,238,.4);
+  }
+  @keyframes leadDrift{
+    0%,32%   { opacity:0; transform:translate(0,0) scale(1); }
+    34%      { opacity:1; transform:translate(0,0) scale(1); }
+    47%      { opacity:.85; transform:translate(8cqw,-16cqw) scale(.7); }
+    49%      { opacity:1;  transform:translate(6cqw,-13cqw) scale(.85); }
+    64%      { opacity:1;  transform:translate(6cqw,-13cqw) scale(.85); }
+    72%      { opacity:1;  transform:translate(-1cqw,0cqw) scale(1); }
+    77%,100% { opacity:0;  transform:translate(-1cqw,0cqw) scale(.4); }
+  }
+
+  /* ---------- rescue activation wave ---------- */
+  .rescue-wave{
+    position:absolute; left:50%; top:46%; width:4cqw; height:4cqw;
+    transform:translate(-50%,-50%);
+    border-radius:50%;
+    border:.4cqw solid rgba(59,130,246,0);
+    opacity:0;
+    animation: waveOut 20s infinite;
+  }
+  @keyframes waveOut{
+    0%,47%   { opacity:0; width:4cqw; height:4cqw; border-color:rgba(59,130,246,0); }
+    48%      { opacity:1; width:4cqw; height:4cqw; border-color:rgba(59,130,246,.9); }
+    56%      { opacity:0; width:140cqw; height:140cqw; border-color:rgba(59,130,246,0); }
+    100%     { opacity:0; }
+  }
+
+  /* ---------- badge (Lead Rescue mark) ---------- */
+  .badge{
+    position:absolute; left:50%; top:20cqw; transform:translate(-50%,0) scale(.001);
+    display:flex; align-items:center; gap:2.4cqw;
+    opacity:0;
+    animation: badgeLife 20s infinite;
+  }
+  @keyframes badgeLife{
+    0%,46%  { opacity:0; transform:translate(-50%,0) scale(.6); }
+    49%,78% { opacity:1; transform:translate(-50%,0) scale(1); }
+    82%,100%{ opacity:0; transform:translate(-50%,-2cqw) scale(.9); }
+  }
+  .badge-mark{
+    width:8cqw; height:8cqw; border-radius:2.4cqw;
+    background:linear-gradient(155deg,#3b82f6,#1d4ed8);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 2cqw rgba(59,130,246,.6);
+  }
+  .badge-mark svg{ width:60%; height:60%; }
+  .badge-word{ font-size:4.6cqw; font-weight:800; letter-spacing:-.01em; }
+
+  /* ---------- message thread ---------- */
+  .thread-ui{
+    position:absolute; left:8%; right:8%; bottom:12%;
+    display:flex; flex-direction:column; gap:2.4cqw;
+  }
+  .bubble{
+    max-width:82%; padding:2.6cqw 3.4cqw; border-radius:4cqw; font-size:3.2cqw; line-height:1.35;
+    opacity:0; transform:translateY(2cqw) scale(.9); transform-origin:bottom left;
+  }
+  .bubble.out{
+    align-self:flex-end; background:linear-gradient(155deg,#3b82f6,#1d4ed8); color:#fff;
+    border-bottom-right-radius:1cqw;
+    animation: bubbleOut 20s infinite;
+  }
+  .bubble.in{
+    align-self:flex-start; background:#1e2230; color:var(--ink);
+    border-bottom-left-radius:1cqw;
+    animation: bubbleIn 20s infinite;
+  }
+  @keyframes bubbleOut{
+    0%,54%{ opacity:0; transform:translateY(2cqw) scale(.9); }
+    58%,66%{ opacity:1; transform:translateY(0) scale(1); }
+    70%,100%{ opacity:0; transform:translateY(-1cqw) scale(.96); }
+  }
+  @keyframes bubbleIn{
+    0%,64%{ opacity:0; transform:translateY(2cqw) scale(.9); }
+    68%,70%{ opacity:1; transform:translateY(0) scale(1); }
+    73%,100%{ opacity:0; transform:translateY(-1cqw) scale(.96); }
+  }
+
+  /* ---------- recovered UI (checkmark over screen) ---------- */
+  .recovered-ui{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    opacity:0;
+    animation: showRecovered 20s infinite;
+  }
+  @keyframes showRecovered{
+    0%,71%{ opacity:0; }
+    73%,79%{ opacity:1; }
+    84%,100%{ opacity:0; }
+  }
+  .check-ring{
+    width:17cqw; height:17cqw; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #86efac, var(--green) 60%, #14532d);
+    box-shadow:0 0 5cqw rgba(34,197,94,.6);
+    display:flex; align-items:center; justify-content:center; margin-bottom:3cqw;
+  }
+  .check-ring svg{ width:56%; height:56%; }
+  .recovered-label{ font-size:5.6cqw; font-weight:800; color:#bbf7d0; }
+
+  /* ---------- dashboard notification card ---------- */
+  .dash-card{
+    position:absolute; left:6%; right:6%; bottom:6%;
+    background:var(--card); border:1px solid rgba(255,255,255,.08);
+    border-radius:3.6cqw; padding:3cqw 3.6cqw;
+    display:flex; align-items:center; gap:2.6cqw;
+    opacity:0; transform:translateY(10cqw);
+    animation: dashCard 20s infinite;
+  }
+  @keyframes dashCard{
+    0%,78.5%{ opacity:0; transform:translateY(10cqw); }
+    80.5%,84%{ opacity:1; transform:translateY(0); }
+    86%,100%{ opacity:0; transform:translateY(-4cqw); }
+  }
+  .dash-dot{ width:2.4cqw; height:2.4cqw; border-radius:50%; background:var(--green); flex:none; box-shadow:0 0 1.4cqw rgba(34,197,94,.8); }
+  .dash-title{ font-size:3.2cqw; font-weight:700; }
+  .dash-sub{ font-size:2.7cqw; color:var(--dim); }
+
+  /* ---------- captions ---------- */
+  .caption{
+    position:absolute; left:8%; right:8%; text-align:center;
+    font-size:4.6cqw; font-weight:600; color:var(--ink);
+    text-shadow:0 .4cqw 1.6cqw rgba(0,0,0,.6);
+    opacity:0;
+  }
+  .caption.c1{ top:8%; animation: cap 20s infinite; animation-delay:0s; --show:13%,24%; }
+  .caption.c2{ top:76%; animation: capA 20s infinite; }
+  .caption.c3{ top:76%; animation: capB 20s infinite; }
+  @keyframes cap{
+    0%,12.4%{ opacity:0; }
+    13%,24%{ opacity:1; }
+    25%,100%{ opacity:0; }
+  }
+  @keyframes capA{
+    0%,37%{ opacity:0; }
+    38%,44%{ opacity:1; }
+    45.5%,100%{ opacity:0; }
+  }
+  @keyframes capB{
+    0%,45.9%{ opacity:0; }
+    46.5%,54.5%{ opacity:1; }
+    56%,100%{ opacity:0; }
+  }
+
+  /* ---------- final scene ---------- */
+  .final{
+    position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:0 9%; text-align:center; gap:2.6cqw;
+    opacity:0;
+    animation: finalLife 20s infinite;
+  }
+  @keyframes finalLife{
+    0%,83.5%{ opacity:0; }
+    86%,97.5%{ opacity:1; }
+    99.5%,100%{ opacity:0; }
+  }
+  .final-badge{ display:flex; align-items:center; gap:2cqw; margin-bottom:1cqw; }
+  .final-badge .badge-mark{ width:9cqw; height:9cqw; }
+  .final-headline{ font-size:5.4cqw; font-weight:800; line-height:1.2; letter-spacing:-.01em; }
+  .final-sub{ font-size:3.6cqw; color:var(--dim); line-height:1.4; max-width:80%; }
+  .final-cta{
+    margin-top:1.4cqw; padding:2.8cqw 6.5cqw; border-radius:100px;
+    background:linear-gradient(120deg,#3b82f6,#22d3ee);
+    color:#04101f; font-weight:800; font-size:3.6cqw; letter-spacing:.02em;
+    box-shadow:0 1cqw 3cqw rgba(59,130,246,.45);
+  }
+  .final-tag{ font-size:3cqw; color:var(--dim); margin-top:1cqw; font-style:italic; }
+
+  /* ---------- loop seam ---------- */
+  .seam{
+    position:absolute; inset:0; background:#000; pointer-events:none; opacity:0;
+    animation: seamFade 20s infinite;
+  }
+  @keyframes seamFade{
+    0%,96.5%{ opacity:0; }
+    99%,100%{ opacity:1; }
+  }
+
+  .hint{
+    margin-top:14px; color:#6b7280; font-size:12px; text-align:center; max-width:460px;
+  }
+</style>
+</head>
+<body>
+
+  <div>
+    <div class="frame">
+      <div class="stage">
+        <div class="glow blue"></div>
+        <div class="glow amber"></div>
+        <div class="glow red"></div>
+
+        <div class="phone">
+          <div class="phone-cam"></div>
+          <div class="screen">
+            <div class="call-ui">
+              <div class="call-kicker">Incoming call</div>
+              <div class="call-name">New Customer</div>
+              <div class="call-sub">mobile · ringing…</div>
+              <div class="ring-rings">
+                <span></span><span></span><span></span>
+                <div class="dot"></div>
+              </div>
+              <div class="value-particles">
+                <span style="left:20%; top:70%; animation-delay:.1s;"></span>
+                <span style="left:70%; top:74%; animation-delay:.9s;"></span>
+                <span style="left:35%; top:66%; animation-delay:1.7s;"></span>
+                <span style="left:60%; top:78%; animation-delay:2.4s;"></span>
+              </div>
+            </div>
+
+            <div class="missed-ui">
+              <div class="missed-icon">
+                <svg viewBox="0 0 24 24" width="42%" height="42%" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+                  <path d="M4 16c4-6 12-6 16 0" transform="rotate(135 12 12)"/>
+                  <path d="M2 2l20 20" stroke="#fff"/>
+                </svg>
+              </div>
+              <div class="missed-label">MISSED CALL</div>
+              <div class="missed-sub">New Customer · just now</div>
+            </div>
+
+            <div class="thread-ui">
+              <div class="bubble out">Hey! Sorry we missed your call. How can we help?</div>
+              <div class="bubble in">Hi! I was calling about getting a quote.</div>
+            </div>
+
+            <div class="recovered-ui">
+              <div class="check-ring">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#04250f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 12.5l5 5L20 6"/>
+                </svg>
+              </div>
+              <div class="recovered-label">LEAD RECOVERED</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="avatar"></div>
+        <div class="rescue-wave"></div>
+      </div>
+
+      <!-- HUD layer: text/UI overlays stay crisp and readable, independent of the camera dolly on .stage -->
+      <div class="badge">
+        <div class="badge-mark">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M12 2l8 3v6c0 5-3.4 8.4-8 11-4.6-2.6-8-6-8-11V5l8-3z" fill="#fff" opacity=".18"/>
+            <path d="M13 3l-6 10h4l-2 8 7-11h-4l1-7z" fill="#fff"/>
+          </svg>
+        </div>
+        <div class="badge-word">Lead Rescue</div>
+      </div>
+
+      <div class="dash-card">
+        <div class="dash-dot"></div>
+        <div>
+          <div class="dash-title">Recovered Lead</div>
+          <div class="dash-sub">New conversation started</div>
+        </div>
+      </div>
+
+      <div class="caption c1">A new lead is calling.</div>
+      <div class="caption c2">Missed call?</div>
+      <div class="caption c3">That could've been your next customer.</div>
+
+      <div class="final">
+        <div class="final-badge">
+          <div class="badge-mark">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 2l8 3v6c0 5-3.4 8.4-8 11-4.6-2.6-8-6-8-11V5l8-3z" fill="#fff" opacity=".18"/>
+              <path d="M13 3l-6 10h4l-2 8 7-11h-4l1-7z" fill="#fff"/>
+            </svg>
+          </div>
+        </div>
+        <div class="final-headline">STOP LOSING LEADS TO MISSED CALLS.</div>
+        <div class="final-sub">Lead Rescue automatically follows up when you can't answer.</div>
+        <div class="final-cta">RESCUE YOUR LEADS</div>
+        <div class="final-tag">You miss the call. Lead Rescue doesn't miss the opportunity.</div>
+      </div>
+
+      <div class="seam"></div>
+    </div>
+    <div class="hint">Lead Rescue — cinematic ad preview · loops every 20s · plays and reads fully muted</div>
+  </div>
+
+</body>
+</html>
