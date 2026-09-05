@@ -28,16 +28,21 @@ export default function TermsPage() {
 
       <section className="space-y-2">
         <h2 className="font-semibold text-neutral-100">5. Artist data</h2>
-        <p>NEXT Score, NEXT Price, and artist metrics are generated from a mix of internal research and third-party data sources (including but not limited to Soundcharts, Deezer, and YouTube). We don't guarantee this data is complete, accurate, or up to date, and NEXT Score is not investment advice, professional opinion, or a prediction of any artist's real-world commercial success.</p>
+        <p>NEXT Score, NEXT Price, and artist metrics are generated from a mix of internal research and third-party data sources (including but not limited to Wikidata, Wikimedia Commons, and YouTube). We don't guarantee this data is complete, accurate, or up to date, and NEXT Score is not investment advice, professional opinion, or a prediction of any artist's real-world commercial success.</p>
       </section>
 
       <section className="space-y-2">
-        <h2 className="font-semibold text-neutral-100">6. No warranty</h2>
+        <h2 className="font-semibold text-neutral-100">6. YouTube API Services</h2>
+        <p>NEXT uses YouTube API Services to show official artist videos and to help discover artists. By using NEXT, you are also bound by the <a href="https://www.youtube.com/t/terms" className="underline" target="_blank" rel="noreferrer">YouTube Terms of Service</a>.</p>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="font-semibold text-neutral-100">7. No warranty</h2>
         <p>NEXT is provided "as is," without warranties of any kind. We don't guarantee the app will be uninterrupted, error-free, or permanently available.</p>
       </section>
 
       <section className="space-y-2">
-        <h2 className="font-semibold text-neutral-100">7. Changes</h2>
+        <h2 className="font-semibold text-neutral-100">8. Changes</h2>
         <p>We may update these terms as the product evolves. Continued use of NEXT after a change means you accept the updated terms.</p>
       </section>
 

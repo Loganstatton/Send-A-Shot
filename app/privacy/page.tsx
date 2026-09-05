@@ -18,7 +18,12 @@ export default function PrivacyPage() {
 
       <section className="space-y-2">
         <h2 className="font-semibold text-neutral-100">Third-party services</h2>
-        <p>We use third-party services to power parts of the app — for example, sending transactional emails, and pulling public artist data from services like Soundcharts, Deezer, and YouTube. These services may process limited data (like your email address, for delivery) as needed to provide that function.</p>
+        <p>We use third-party services to power parts of the app — for example, sending transactional emails, and pulling public artist data from free sources like Wikidata and Wikimedia Commons. These services may process limited data (like your email address, for delivery) as needed to provide that function.</p>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="font-semibold text-neutral-100">YouTube API Services</h2>
+        <p>NEXT uses YouTube API Services to show official artist videos and to help discover artists. By using this feature of NEXT, you are also bound by the <a href="https://www.youtube.com/t/terms" className="underline" target="_blank" rel="noreferrer">YouTube Terms of Service</a>. Google's use of information it receives is governed by the <a href="https://policies.google.com/privacy" className="underline" target="_blank" rel="noreferrer">Google Privacy Policy</a>.</p>
       </section>
 
       <section className="space-y-2">
