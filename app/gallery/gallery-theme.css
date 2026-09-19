@@ -1,0 +1,160 @@
+/* Design tokens for the gallery site — scoped under .gallery-theme so Scout
+   and NEXT (globals.css / next-theme.css) are completely untouched. A third
+   independent visual identity, the same isolation pattern next-theme.css
+   already uses for NEXT. */
+
+.gallery-theme {
+  --g-black: oklch(8% 0.004 60);
+  --g-charcoal: oklch(15% 0.006 55);
+  --g-charcoal-2: oklch(20% 0.007 55);
+  --g-offwhite: oklch(96% 0.01 80);
+  --g-offwhite-dim: oklch(90% 0.012 78);
+  --g-gray: oklch(58% 0.008 60);
+  --g-gray-faint: oklch(40% 0.008 60);
+  --g-line: oklch(100% 0 0 / 0.12);
+  --g-line-soft: oklch(100% 0 0 / 0.07);
+  --g-accent: oklch(72% 0.035 75); /* muted bronze — used sparingly, never as a wash */
+  --g-accent-line: oklch(72% 0.035 75 / 0.45);
+
+  --g-bg: var(--g-black);
+  --g-text: var(--g-offwhite);
+  --g-text-muted: var(--g-gray);
+
+  background: var(--g-bg);
+  color: var(--g-text);
+  font-family: var(--font-g-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.gallery-theme :where(a) { color: inherit; text-decoration: none; }
+
+.gallery-theme .g-serif { font-family: var(--font-g-serif), Georgia, 'Times New Roman', serif; }
+
+/* Escapes the root layout's centered `.container` (see app/layout.tsx) for
+   true edge-to-edge sections, the same negative-margin trick next-theme.css
+   uses for NEXT, plus a top-margin correction for the root's `py-6`. */
+.g-fullbleed {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+.g-cancel-root-padding { margin-top: -1.5rem; }
+
+.g-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--g-text-muted);
+}
+
+.g-hairline { border-top: 1px solid var(--g-line); }
+.g-hairline-soft { border-top: 1px solid var(--g-line-soft); }
+
+.g-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.75rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1px solid var(--g-line);
+  color: var(--g-text);
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+  white-space: nowrap;
+}
+.g-btn:hover { background: var(--g-text); color: var(--g-black); border-color: var(--g-text); }
+
+.g-btn-solid {
+  background: var(--g-text);
+  color: var(--g-black);
+  border-color: var(--g-text);
+}
+.g-btn-solid:hover { background: transparent; color: var(--g-text); }
+
+.g-btn-ghost-light {
+  color: var(--g-black);
+  border-color: oklch(0% 0 0 / 0.25);
+}
+.g-btn-ghost-light:hover { background: var(--g-black); color: var(--g-offwhite); border-color: var(--g-black); }
+
+.g-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--g-line);
+  padding: 0.65rem 0.1rem;
+  color: var(--g-text);
+  outline: none;
+  font-size: 0.95rem;
+  transition: border-color 0.2s ease;
+}
+.g-input::placeholder { color: var(--g-gray-faint); }
+.g-input:focus { border-color: var(--g-text); }
+
+.g-input-light {
+  color: var(--g-black);
+  border-bottom-color: oklch(0% 0 0 / 0.2);
+}
+.g-input-light::placeholder { color: oklch(0% 0 0 / 0.35); }
+.g-input-light:focus { border-bottom-color: var(--g-black); }
+
+.g-fade-in {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.g-fade-in.g-visible { opacity: 1; transform: translateY(0); }
+
+.g-scale-hover { transition: transform 1.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.g-scale-hover:hover { transform: scale(1.035); }
+
+.g-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--g-line);
+  color: var(--g-text-muted);
+}
+.g-tag-status-available { color: var(--g-offwhite); border-color: var(--g-line); }
+.g-tag-status-sold,
+.g-tag-status-private_collection { color: var(--g-gray-faint); border-color: var(--g-line-soft); }
+.g-tag-status-reserved { color: var(--g-accent); border-color: var(--g-accent-line); }
+
+.g-hotspot {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin-left: -11px;
+  margin-top: -11px;
+  border-radius: 999px;
+  border: 1px solid oklch(100% 0 0 / 0.7);
+  background: oklch(0% 0 0 / 0.25);
+  backdrop-filter: blur(1px);
+  cursor: pointer;
+  transition: transform 0.25s ease, background 0.25s ease;
+}
+.g-hotspot::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 999px;
+  background: oklch(100% 0 0 / 0.9);
+}
+.g-hotspot:hover, .g-hotspot[data-active="true"] {
+  transform: scale(1.3);
+  background: oklch(0% 0 0 / 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-theme *, .gallery-theme *::before, .gallery-theme *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .g-fade-in { opacity: 1 !important; transform: none !important; }
+}

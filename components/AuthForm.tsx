@@ -1,5 +1,5 @@
 'use client';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
 
@@ -10,6 +10,11 @@ type Props = {
 
 export default function AuthForm({ mode, inviteRequired = false }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Only ever a same-site path (e.g. /gallery/admin) set by our own links —
+  // never followed off-origin.
+  const nextPath = searchParams.get('next');
+  const redirectTo = nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/';
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -41,7 +46,7 @@ export default function AuthForm({ mode, inviteRequired = false }: Props) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'Something went wrong.');
       }
-      router.push('/');
+      router.push(redirectTo);
       router.refresh();
     } catch (err: any) {
       setError(err.message ?? 'Something went wrong.');

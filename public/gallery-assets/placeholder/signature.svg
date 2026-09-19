@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="240" viewBox="0 0 600 240">
+  <rect width="600" height="240" fill="#f3efe6"/>
+  <path d="M40 170 C 80 90, 120 90, 140 150 S 200 90, 230 150 S 290 90, 320 150 S 380 100, 410 150 C 430 175, 470 175, 500 140"
+        fill="none" stroke="#171412" stroke-width="4" stroke-linecap="round" opacity="0.85"/>
+  <text x="40" y="205" font-family="Georgia, serif" font-size="20" fill="#4a453e" letter-spacing="2">SIGNED, GRAPHITE ON PAPER</text>
+</svg>

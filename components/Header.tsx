@@ -23,6 +23,9 @@ export default function Header({ user, newCandidateCount = 0, pendingArtistClaim
   // NEXT has its own header (components/next/NextHeader.tsx) with its own
   // visual identity — never render this Scout/Admin nav on top of it.
   if (pathname?.startsWith('/next')) return null;
+  // Same for the gallery site (components/gallery/GalleryHeader.tsx) — a
+  // separate product living at /gallery/*, with its own minimal nav.
+  if (pathname?.startsWith('/gallery')) return null;
 
   return (
     <header style={{ borderBottom: '1px solid var(--border-soft)', background: 'var(--bg-2)' }}>
