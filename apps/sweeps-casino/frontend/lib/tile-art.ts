@@ -14,7 +14,7 @@ const PALETTES: [string, string][] = [
   ["#3ad6c4", "#3a4bd6"],
 ];
 
-function hashString(s: string): number {
+export function hashString(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
     h = (h << 5) - h + s.charCodeAt(i);

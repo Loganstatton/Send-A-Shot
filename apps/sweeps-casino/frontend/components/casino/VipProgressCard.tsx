@@ -8,6 +8,8 @@ import { useFetch } from "@/lib/hooks/useFetch";
 import { api } from "@/lib/api-client";
 import type { VipSummary } from "@/lib/types";
 import { Trophy } from "@/components/ui/icons";
+import { cn } from "@/lib/utils";
+import { tierStyleForRank } from "@/lib/vip-tiers";
 
 export function VipProgressCard() {
   const fetcher = useCallback(() => api.get<VipSummary>("/vip/me"), []);
@@ -29,24 +31,40 @@ export function VipProgressCard() {
   const intoLevel = Number(data.progress.pointsIntoLevel);
   const forLevel = data.progress.pointsForLevel != null ? Number(data.progress.pointsForLevel) : null;
   const pct = forLevel && forLevel > 0 ? Math.min(100, Math.round((intoLevel / forLevel) * 100)) : 100;
+  const tier = tierStyleForRank(data.currentLevel.rankOrder);
 
   return (
     <Link href="/rewards/vip-club">
-      <Card className="border-accent-sc/25 bg-accent-sc/5 transition-colors hover:border-accent-sc/50">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-accent-sc">
-            <Trophy className="h-4 w-4" />
-            VIP {data.currentLevel.name}
+      <Card
+        className={cn(
+          "relative overflow-hidden border-border bg-surface transition-colors hover:shadow-card-lift",
+          tier.borderSoft
+        )}
+      >
+        <CardContent className="relative flex items-center gap-3 p-4">
+          <div
+            className="bg-tier-metal flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-sm"
+            style={{ ["--tier" as any]: tier.cssVar, ["--tier-hi" as any]: tier.cssVarHi }}
+          >
+            <Trophy className="h-5 w-5 text-black/70" />
           </div>
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-raised">
-            <div
-              className="h-full rounded-full bg-accent-sc transition-[width] duration-700 ease-out"
-              style={{ width: `${pct}%` }}
-            />
+          <div className="min-w-0 flex-1">
+            <div className={cn("text-sm font-bold uppercase tracking-wide", tier.text)}>
+              {data.currentLevel.name}
+            </div>
+            <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-surface-raised">
+              <div
+                className="h-full rounded-full transition-[width] duration-700 ease-out"
+                style={{
+                  width: `${pct}%`,
+                  background: `linear-gradient(90deg, rgb(${tier.cssVar}), rgb(${tier.cssVarHi}))`,
+                }}
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-text-muted">
+              {data.nextLevel ? `${pct}% to ${data.nextLevel.name}` : "Top level reached"}
+            </p>
           </div>
-          <p className="mt-1.5 text-[11px] text-text-muted">
-            {data.nextLevel ? `${pct}% to ${data.nextLevel.name}` : "Top level reached"}
-          </p>
         </CardContent>
       </Card>
     </Link>

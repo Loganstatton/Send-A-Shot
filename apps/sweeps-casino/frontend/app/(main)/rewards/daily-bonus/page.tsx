@@ -9,7 +9,7 @@ import { api } from "@/lib/api-client";
 import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 import { useWalletStore } from "@/lib/stores/wallet-store";
-import { Gift, CheckCircle } from "@/components/ui/icons";
+import { Gift, CheckCircle, Chest } from "@/components/ui/icons";
 import { cn, formatCoins } from "@/lib/utils";
 
 // Matches backend PromotionsService.getDailyBonusState() — see
@@ -26,7 +26,7 @@ interface DailyBonusState {
 // Mirrors the 7-day schedule seeded in backend/prisma/seed.ts
 // (seedDailyBonusPromotion) purely for the visual ladder — the actual
 // amount credited always comes from the backend's own resolution.
-const SCHEDULE_GC = [25, 35, 50, 75, 100, 150, 250];
+const SCHEDULE_GC = [500, 750, 1000, 1500, 2000, 3000, 3500];
 
 /** "13.7 hours remaining" -> "13h 42m". Static, computed on load — no
  * live-ticking clock (not worth the added complexity/risk for this sprint). */
@@ -109,26 +109,47 @@ export default function DailyBonusPage() {
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
             {SCHEDULE_GC.map((amount, idx) => {
               const day = idx + 1;
+              const isMystery = day === 7;
               const isPast = day < streakDay || (day === streakDay && claimedToday);
               const isToday = day === streakDay && !claimedToday;
               const justPopped = justClaimed?.day === day;
+              // Day 7 is a "Mystery Chest" reveal — the amount is real and
+              // fixed server-side (true per-claim randomization would be a
+              // backend resolveReward() change, out of scope here), but we
+              // don't show the number up front so it reads as a surprise.
+              // The claim button and post-claim flourish below both source
+              // the real amount from the API response, never this constant,
+              // so the reveal is never actually wrong once it's their day.
+              const revealAmount = !isMystery || isPast || isToday;
               return (
                 <div
                   key={day}
                   className={cn(
                     "flex flex-col items-center gap-1 rounded-lg border p-1.5 text-center transition-all duration-200 sm:p-2",
-                    isPast && "border-success/30 bg-success/10",
+                    isPast && "border-success/30 bg-success/10 coin-shimmer",
                     isToday && "border-accent-gc bg-accent-gc/10 shadow-glow-gc",
                     !isPast && !isToday && "border-border bg-surface-raised opacity-60",
+                    isMystery && !isPast && "border-accent-gc/40",
                     justPopped && "animate-pulse-glow"
                   )}
                 >
                   <span className={cn("inline-flex", justPopped && "animate-pop")}>
-                    <Gift className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", isToday ? "text-accent-gc" : "text-text-muted")} />
+                    {isMystery && !isPast ? (
+                      <Chest className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", isToday ? "text-accent-gc" : "text-text-muted")} />
+                    ) : (
+                      <Gift className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", isToday ? "text-accent-gc" : "text-text-muted")} />
+                    )}
                   </span>
-                  <span className="text-[9px] font-semibold text-text-muted sm:text-[10px]">Day {day}</span>
-                  <span className="font-mono text-[9px] text-text-primary sm:text-[10px]">
-                    {formatCoins(amount * 100)}
+                  <span className="text-[9px] font-semibold text-text-muted sm:text-[10px]">
+                    {isMystery ? "Mystery" : `Day ${day}`}
+                  </span>
+                  <span
+                    className={cn(
+                      "font-mono text-[9px] sm:text-[10px]",
+                      isMystery && !revealAmount ? "text-accent-gc/70" : "text-text-primary"
+                    )}
+                  >
+                    {revealAmount ? formatCoins(amount * 100) : "Chest"}
                   </span>
                 </div>
               );

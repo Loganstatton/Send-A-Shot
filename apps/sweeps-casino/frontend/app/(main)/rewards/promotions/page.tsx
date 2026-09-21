@@ -67,14 +67,15 @@ export default function PromotionsPage() {
   }
 
   return (
-    <div className="p-4 lg:p-6">
-      <h1 className="mb-4 text-xl font-bold text-text-primary">Promotions</h1>
+    <div className="bg-casino-ambient p-4 lg:p-6">
+      <h1 className="mb-1 text-xl font-bold text-text-primary">Promotions</h1>
+      <p className="mb-5 text-sm text-text-muted">Bonuses, challenges and rewards — live and ready to claim.</p>
 
       {/* De-emphasized relative to the promotions below — a slim inline
           form, not a full-width card competing for attention. */}
       <form
         onSubmit={redeemCode}
-        className="mb-5 flex items-center gap-2 rounded-lg border border-border bg-surface-raised/60 px-3 py-2"
+        className="mb-6 flex items-center gap-2 rounded-lg border border-border bg-surface-raised/60 px-3 py-2"
       >
         <span className="hidden shrink-0 text-xs text-text-muted sm:inline">Promo code</span>
         <input
@@ -88,9 +89,9 @@ export default function PromotionsPage() {
         </Button>
       </form>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {loading &&
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-48 w-full rounded-xl" />)}
+          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-64 w-full rounded-2xl" />)}
 
         {!loading && (data?.length ?? 0) === 0 && (
           <p className="text-sm text-text-muted sm:col-span-2">No active promotions right now — check back soon.</p>

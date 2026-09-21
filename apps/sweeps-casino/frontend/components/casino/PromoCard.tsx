@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CheckCircle, Gift, Lock } from "@/components/ui/icons";
@@ -90,39 +89,47 @@ export function PromoCard({ promo, claimed, claiming, onClaim, index }: PromoCar
   const hints = eligibilityHints(promo);
 
   return (
-    <Card
-      className="flex flex-col overflow-hidden animate-fade-in-up"
+    <div
+      className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-lift transition-transform duration-300 ease-premium animate-fade-in-up hover:-translate-y-0.5"
       style={index != null ? { animationDelay: `${Math.min(index, 8) * 40}ms`, animationFillMode: "backwards" } : undefined}
     >
+      {/* Large artwork-forward banner — a generated original gradient
+          (tile-art.ts) rather than a flat swatch, with a diagonal shimmer
+          sweep layered on top for extra richness. */}
       <div
-        className="relative flex h-20 items-start justify-between p-3"
+        className={cn("coin-shimmer relative flex h-32 flex-col justify-between p-4 sm:h-36", claimed && "grayscale")}
         style={{ background: tileGradient(promo.id) }}
       >
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-        <Badge variant="gc" className="relative z-10">
-          {TYPE_LABELS[promo.type] ?? promo.type.replace(/_/g, " ")}
-        </Badge>
-        {expiry && (
-          <span
-            className={cn(
-              "relative z-10 rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur",
-              expiry.urgent && "text-accent-gc"
-            )}
-          >
-            {expiry.label}
-          </span>
-        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+        <div className="absolute inset-0 bg-casino-vignette" />
+        <div className="relative z-10 flex items-start justify-between">
+          <Badge variant="gc" className="bg-black/30 text-white backdrop-blur">
+            {TYPE_LABELS[promo.type] ?? promo.type.replace(/_/g, " ")}
+          </Badge>
+          {expiry && (
+            <span
+              className={cn(
+                "rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur",
+                expiry.urgent && "text-accent-gc"
+              )}
+            >
+              {expiry.label}
+            </span>
+          )}
+        </div>
+        <h3 className="relative z-10 text-lg font-black uppercase leading-tight tracking-tight text-white drop-shadow-md sm:text-xl">
+          {promo.name}
+        </h3>
       </div>
 
-      <CardContent className="flex flex-1 flex-col p-4">
-        <h3 className="text-sm font-semibold text-text-primary">{promo.name}</h3>
+      <div className="flex flex-1 flex-col p-4">
         {promo.description && (
-          <p className="mt-1 line-clamp-2 flex-1 text-xs text-text-muted">{promo.description}</p>
+          <p className="line-clamp-2 flex-1 text-xs text-text-muted">{promo.description}</p>
         )}
 
         {rewardLine && (
-          <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-accent-gc">
-            <Gift className="h-3.5 w-3.5" /> {rewardLine}
+          <p className="mt-2 flex items-center gap-1.5 text-sm font-bold text-glow-gold">
+            <Gift className="h-4 w-4" /> {rewardLine}
           </p>
         )}
 
@@ -141,16 +148,21 @@ export function PromoCard({ promo, claimed, claiming, onClaim, index }: PromoCar
 
         <div className="mt-4">
           {claimed ? (
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-semibold text-success">
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-success/30 bg-success/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-success">
               <CheckCircle className="h-3.5 w-3.5" /> Claimed
             </span>
           ) : (
-            <Button size="sm" onClick={() => onClaim(promo.id)} loading={claiming}>
-              Claim
+            <Button
+              size="md"
+              className="w-full font-black uppercase tracking-wide sm:w-auto"
+              onClick={() => onClaim(promo.id)}
+              loading={claiming}
+            >
+              Claim Now
             </Button>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
