@@ -246,9 +246,9 @@ export function slugify(title: string): string {
     .replace(/(^-|-$)/g, '');
 }
 
-const ARTWORK_CODE_PREFIX = 'SO';
+const ARTWORK_CODE_PREFIX = 'NH';
 
-// Next sequential artwork ID for a given year, e.g. SO-2026-001. Purely
+// Next sequential artwork ID for a given year, e.g. NH-2026-001. Purely
 // informational/provenance — never used as a primary key.
 export function nextArtworkCode(year: number): string {
   const row = galleryDb

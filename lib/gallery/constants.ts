@@ -1,1 +1,1 @@
-export const ARTIST_NAME = 'Stephen Oleksiuk';
+export const ARTIST_NAME = 'NINTH HOUR';

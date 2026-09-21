@@ -57,7 +57,7 @@ export type Artwork = {
   edition_total: number | null;
   edition_remaining: number | null;
   edition_closed: boolean;
-  artwork_code: string; // e.g. SO-2026-001
+  artwork_code: string; // e.g. NH-2026-001
   certificate_number: string | null;
   hero_image_url: string | null;
   silhouette_image_url: string | null;
