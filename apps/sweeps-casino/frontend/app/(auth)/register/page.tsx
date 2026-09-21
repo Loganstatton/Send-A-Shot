@@ -16,7 +16,7 @@ export default function RegisterPage() {
     email: "",
     username: "",
     password: "",
-    dob: "",
+    dateOfBirth: "",
     stateOfRecord: "",
   });
   const [agreed, setAgreed] = useState(false);
@@ -94,8 +94,8 @@ export default function RegisterPage() {
           label="Date of birth"
           type="date"
           required
-          value={form.dob}
-          onChange={(e) => set("dob", e.target.value)}
+          value={form.dateOfBirth}
+          onChange={(e) => set("dateOfBirth", e.target.value)}
         />
         <Select
           label="State of record"
