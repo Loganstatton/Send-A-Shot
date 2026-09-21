@@ -43,7 +43,12 @@ export function Topbar() {
 
       <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
         <BalancePill />
-        <CurrencySwitcher />
+        {/* Below 360px the topbar has no room for GC/SC + wallet + bell +
+            profile without overflowing (measured at 320px). Currency is
+            still reachable via the wallet button/modal and bottom nav. */}
+        <div className="max-[359px]:hidden">
+          <CurrencySwitcher />
+        </div>
         <button
           onClick={() => setWalletOpen(true)}
           className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface-raised text-text-muted hover:text-text-primary"
