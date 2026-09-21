@@ -18,4 +18,7 @@ COPY --from=build /app/prisma ./prisma
 COPY package.json ./
 
 EXPOSE 4000
-CMD ["node", "dist/src/main.js"]
+# Applies pending migrations and (idempotently, via upserts) seeds demo
+# data on every boot -- fine for this Phase 1 deployment; a real
+# production rollout would run migrate/seed as a separate release step.
+CMD ["sh", "-c", "npx prisma migrate deploy && npx ts-node prisma/seed.ts && node dist/src/main.js"]
