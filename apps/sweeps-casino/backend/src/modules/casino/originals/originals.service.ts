@@ -218,10 +218,18 @@ export class OriginalsService {
         nonce: active.nonceCounter.toString(),
         createdAt: active.createdAt,
       },
+      // NOTE (schema gap, flagged for the implementation report): the
+      // ProvablyFairSeed model has no separate `serverSeedRevealed`
+      // column — only `serverSeed` (plaintext from creation) and
+      // `revealedAt`. So "revealed" here means "this row's own
+      // `serverSeed` may now be shown," gated on `revealedAt` being set,
+      // rather than a distinct revealed-copy column (GameRound does have
+      // a real `serverSeedRevealed` column — see the backfill in
+      // rotateSeed below, which is what actually uses it).
       history: history.map((s) => ({
         id: s.id,
         serverSeedHash: s.serverSeedHash,
-        serverSeedRevealed: s.serverSeedRevealed,
+        serverSeedRevealed: s.revealedAt ? s.serverSeed : null,
         clientSeed: s.clientSeed,
         nonce: s.nonceCounter.toString(),
         revealedAt: s.revealedAt,
@@ -234,13 +242,21 @@ export class OriginalsService {
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.provablyFairSeed.findFirst({ where: { userId, active: true } });
       if (current) {
+        const revealedAt = new Date();
         await tx.provablyFairSeed.update({
           where: { id: current.id },
-          data: {
-            active: false,
-            serverSeedRevealed: current.serverSeed,
-            revealedAt: new Date(),
-          },
+          data: { active: false, revealedAt },
+        });
+
+        // Backfill the plaintext server seed onto every past round played
+        // under it, so /casino/originals/:game/history and
+        // /provably-fair/verify can show/verify them without needing to
+        // re-fetch this (now-inactive) seed row — this is the real
+        // `game_rounds.server_seed_revealed` column doing its documented
+        // job ("filled on seed rotation").
+        await tx.gameRound.updateMany({
+          where: { userId, serverSeedHash: current.serverSeedHash, serverSeedRevealed: null },
+          data: { serverSeedRevealed: current.serverSeed },
         });
       }
 
@@ -362,6 +378,7 @@ export class OriginalsService {
         multiplier: round.multiplier?.toString() ?? null,
         result: round.resultPayload,
         serverSeedHash: round.serverSeedHash,
+        serverSeedRevealed: round.serverSeedRevealed,
         clientSeed: round.clientSeed,
         nonce: round.nonce.toString(),
       },
@@ -380,6 +397,7 @@ export class OriginalsService {
       multiplier: round.multiplier?.toString() ?? null,
       resultPayload: round.resultPayload,
       serverSeedHash: round.serverSeedHash,
+      serverSeedRevealed: round.serverSeedRevealed,
       clientSeed: round.clientSeed,
       nonce: round.nonce.toString(),
       createdAt: round.createdAt,

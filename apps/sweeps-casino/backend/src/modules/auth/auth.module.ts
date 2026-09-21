@@ -5,7 +5,9 @@ import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @Module({
-  imports: [JwtModule.register({})],
+  // global: true — JwtService must be resolvable from every module that uses
+  // JwtAuthGuard (nearly all of them), not just modules that import AuthModule.
+  imports: [JwtModule.register({ global: true })],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard],
   exports: [AuthService, JwtAuthGuard, JwtModule],

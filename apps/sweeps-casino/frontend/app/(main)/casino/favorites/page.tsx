@@ -8,8 +8,9 @@ import type { CursorPage, Game } from "@/lib/types";
 
 export default function FavoritesPage() {
   const fetchPage = useCallback((cursor: string | null) => {
-    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-    return api.get<CursorPage<Game>>(`/casino/games?favoritesOnly=true${qs ? `&${qs.slice(1)}` : ""}`);
+    const qs = new URLSearchParams({ favoritesOnly: "true" });
+    if (cursor) qs.set("cursor", cursor);
+    return api.get<CursorPage<Game>>(`/casino/games?${qs.toString()}`);
   }, []);
 
   const { items, loading, loadingMore, hasMore, loadMore } = useCursorList(fetchPage, []);

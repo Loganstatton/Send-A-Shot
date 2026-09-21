@@ -41,7 +41,6 @@ export class RiskService {
     return { outcome };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async runRules(_userId: string, _context: Record<string, unknown>): Promise<RiskOutcome> {
     // Phase 2 TODO: SELECT * FROM risk_rules WHERE active ORDER BY ...,
     // evaluate each rule's `condition` against signals derived from

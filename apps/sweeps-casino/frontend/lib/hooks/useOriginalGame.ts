@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api-client";
-import type { OriginalConfig, OriginalRoundResult, SeedState } from "@/lib/types";
+import type { CursorPage, OriginalConfig, OriginalRoundResult, SeedState } from "@/lib/types";
 import { useCurrencyStore } from "@/lib/stores/currency-store";
 import { useWalletStore } from "@/lib/stores/wallet-store";
 
@@ -38,8 +38,8 @@ export function useOriginalGame(game: GameSlug) {
       .finally(() => !cancelled && setLoadingSeed(false));
 
     api
-      .get<{ items: OriginalRoundResult[] }>(`/casino/originals/${game}/history`)
-      .then((res) => !cancelled && setHistory((res as any).items ?? (res as unknown as OriginalRoundResult[])))
+      .get<CursorPage<OriginalRoundResult>>(`/casino/originals/${game}/history`)
+      .then((res) => !cancelled && setHistory(res.items))
       .catch(() => {});
 
     return () => {

@@ -107,7 +107,9 @@ export class ComplianceService {
         },
         update: {
           ...(dto.enabled !== undefined ? { enabled: dto.enabled } : {}),
-          ...(dto.rolloutMeta !== undefined ? { rolloutMeta: dto.rolloutMeta as Prisma.InputJsonValue } : {}),
+          ...(dto.rolloutMeta !== undefined
+            ? { rolloutMeta: (dto.rolloutMeta as Prisma.InputJsonValue) ?? Prisma.JsonNull }
+            : {}),
           updatedBy: adminId,
         },
       });

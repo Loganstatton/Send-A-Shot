@@ -125,7 +125,7 @@ export class RedemptionsService {
         status: 'PENDING',
         scAmount: dto.scAmount,
         payoutMethodId: dto.payoutMethodId,
-        eligibilitySnapshot,
+        eligibilitySnapshot: eligibilitySnapshot as unknown as object,
       },
     });
 

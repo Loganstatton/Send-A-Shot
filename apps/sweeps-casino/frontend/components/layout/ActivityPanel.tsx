@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Tabs } from "@/components/ui/Tabs";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { api } from "@/lib/api-client";
-import type { ActivityItem, Currency } from "@/lib/types";
+import type { ActivityItem, CursorPage } from "@/lib/types";
 import { formatCoins, formatDate, maskDisplayName, cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight } from "@/components/ui/icons";
 
@@ -29,8 +29,8 @@ export function ActivityPanel({ collapsed, onToggle }: { collapsed: boolean; onT
 
     async function load() {
       try {
-        const res = await api.get<{ items: ActivityItem[] }>(`/activity?tab=${tab}`);
-        if (!cancelled) setItems(res.items ?? (res as unknown as ActivityItem[]));
+        const res = await api.get<CursorPage<ActivityItem>>(`/activity?tab=${tab}`);
+        if (!cancelled) setItems(res.items);
       } catch {
         if (!cancelled) setItems([]);
       } finally {

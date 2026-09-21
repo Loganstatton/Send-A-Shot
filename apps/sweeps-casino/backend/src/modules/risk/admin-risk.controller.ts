@@ -51,8 +51,8 @@ export class AdminRiskController {
           action: 'risk.resolve_event',
           targetType: 'risk_event',
           targetId: id,
-          oldState: { resolvedAt: event.resolvedAt } as object,
-          newState: { resolvedAt: rec.resolvedAt } as object,
+          oldState: { resolvedAt: event.resolvedAt } as unknown as object,
+          newState: { resolvedAt: rec.resolvedAt } as unknown as object,
           reason: dto.reason,
         },
       });

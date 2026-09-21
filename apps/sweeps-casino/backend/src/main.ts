@@ -7,7 +7,13 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { cors: false });
+  // rawBody: true populates req.rawBody (Buffer) alongside the normal
+  // parsed req.body, on every route, without disabling JSON parsing
+  // elsewhere. KYC/Payments webhook signature verification needs the exact
+  // raw bytes the HMAC was computed over (see
+  // src/modules/kyc/kyc-webhook.controller.ts,
+  // src/modules/payments/payments-webhook.controller.ts).
+  const app = await NestFactory.create(AppModule, { cors: false, rawBody: true });
 
   app.use(helmet());
   app.use(cookieParser());

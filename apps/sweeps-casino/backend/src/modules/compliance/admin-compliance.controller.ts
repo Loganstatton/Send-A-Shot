@@ -49,7 +49,11 @@ export class AdminComplianceController {
   }
 
   @Get('config-history')
-  @RequirePermission('compliance.config_history.read')
+  // Reuses an already-seeded COMPLIANCE-role permission (config history
+  // spans both jurisdiction and feature-flag versions, and RequirePermission
+  // only checks one string) rather than introducing a new permission that
+  // admin_roles wouldn't yet grant to anyone but SUPER_ADMIN.
+  @RequirePermission('compliance.jurisdictions.read')
   async configHistory(@Query('key') key?: string) {
     if (!key) {
       throw new BadRequestException({

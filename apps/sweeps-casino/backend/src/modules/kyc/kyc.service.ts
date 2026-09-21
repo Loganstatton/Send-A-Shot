@@ -150,8 +150,8 @@ export class KycService {
           action: 'kyc.decision',
           targetType: 'kyc_record',
           targetId: recordId,
-          oldState: { status: record.status } as object,
-          newState: { status: newStatus, decision: dto.decision } as object,
+          oldState: { status: record.status } as unknown as object,
+          newState: { status: newStatus, decision: dto.decision } as unknown as object,
           reason: dto.reason,
         },
       });
