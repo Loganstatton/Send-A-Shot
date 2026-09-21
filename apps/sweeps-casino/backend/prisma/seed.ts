@@ -183,6 +183,103 @@ async function seedCasinoCatalog() {
   }
 }
 
+interface DemoGameSpec {
+  slug: string;
+  name: string;
+  category: 'SLOTS' | 'TABLE_GAMES' | 'LIVE_CASINO' | 'GAME_SHOWS';
+  tags: string[];
+  rtpBps: number;
+  volatility: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+/**
+ * Casino Visual Redesign sprint: a populated-feeling lobby needs more than
+ * 3 games. Until real provider integrations exist, these are original,
+ * fictional demo entries under a single in-house "Vaultline Studios"
+ * provider (code: vaultline-studios) — clearly separable from real
+ * providers by that code for anyone querying the DB, without needing
+ * user-facing "DEMO" labeling that would undercut the premium-casino goal.
+ * None of these names/themes are copied from any real casino's catalog.
+ */
+const DEMO_GAMES: DemoGameSpec[] = [
+  // Slots
+  { slug: 'vault-heist', name: 'Vault Heist', category: 'SLOTS', tags: ['HOT', 'NEW'], rtpBps: 9600, volatility: 'HIGH' },
+  { slug: 'neon-fortune', name: 'Neon Fortune', category: 'SLOTS', tags: ['NEW'], rtpBps: 9550, volatility: 'MEDIUM' },
+  { slug: 'golden-empire', name: 'Golden Empire', category: 'SLOTS', tags: ['HOT'], rtpBps: 9650, volatility: 'MEDIUM' },
+  { slug: 'diamond-drop', name: 'Diamond Drop', category: 'SLOTS', tags: ['JACKPOT'], rtpBps: 9500, volatility: 'HIGH' },
+  { slug: 'treasure-tower', name: 'Treasure Tower', category: 'SLOTS', tags: [], rtpBps: 9600, volatility: 'MEDIUM' },
+  { slug: 'dragon-vault', name: 'Dragon Vault', category: 'SLOTS', tags: ['EXCLUSIVE'], rtpBps: 9550, volatility: 'HIGH' },
+  { slug: 'lucky-seven', name: 'Lucky Seven', category: 'SLOTS', tags: [], rtpBps: 9700, volatility: 'LOW' },
+  { slug: 'emerald-riches', name: 'Emerald Riches', category: 'SLOTS', tags: [], rtpBps: 9600, volatility: 'MEDIUM' },
+  { slug: 'kings-fortune', name: "King's Fortune", category: 'SLOTS', tags: ['HOT', 'JACKPOT'], rtpBps: 9500, volatility: 'HIGH' },
+  { slug: 'golden-reels', name: 'Golden Reels', category: 'SLOTS', tags: [], rtpBps: 9650, volatility: 'LOW' },
+  { slug: 'cyber-spins', name: 'Cyber Spins', category: 'SLOTS', tags: ['NEW'], rtpBps: 9550, volatility: 'HIGH' },
+  { slug: 'vegas-nights', name: 'Vegas Nights', category: 'SLOTS', tags: [], rtpBps: 9600, volatility: 'MEDIUM' },
+  { slug: 'fortune-mines', name: 'Fortune Mines', category: 'SLOTS', tags: [], rtpBps: 9600, volatility: 'MEDIUM' },
+  { slug: 'electric-dice', name: 'Electric Dice', category: 'SLOTS', tags: ['NEW'], rtpBps: 9600, volatility: 'MEDIUM' },
+  { slug: 'crystal-cavern', name: 'Crystal Cavern', category: 'SLOTS', tags: ['JACKPOT'], rtpBps: 9500, volatility: 'HIGH' },
+  { slug: 'golden-dragon', name: 'Golden Dragon', category: 'SLOTS', tags: ['EXCLUSIVE', 'HOT'], rtpBps: 9550, volatility: 'HIGH' },
+  { slug: 'midnight-diamonds', name: 'Midnight Diamonds', category: 'SLOTS', tags: [], rtpBps: 9600, volatility: 'MEDIUM' },
+
+  // Table games
+  { slug: 'midnight-blackjack', name: 'Midnight Blackjack', category: 'TABLE_GAMES', tags: ['HOT'], rtpBps: 9800, volatility: 'LOW' },
+  { slug: 'royal-flush', name: 'Royal Flush', category: 'TABLE_GAMES', tags: ['NEW'], rtpBps: 9750, volatility: 'LOW' },
+  { slug: 'vault-blackjack', name: 'Vault Blackjack', category: 'TABLE_GAMES', tags: [], rtpBps: 9820, volatility: 'LOW' },
+  { slug: 'golden-baccarat', name: 'Golden Baccarat', category: 'TABLE_GAMES', tags: [], rtpBps: 9860, volatility: 'MEDIUM' },
+  { slug: 'diamond-poker', name: 'Diamond Poker', category: 'TABLE_GAMES', tags: ['EXCLUSIVE'], rtpBps: 9740, volatility: 'LOW' },
+  { slug: 'classic-roulette', name: 'Classic Roulette', category: 'TABLE_GAMES', tags: [], rtpBps: 9730, volatility: 'LOW' },
+  { slug: 'high-stakes-blackjack', name: 'High Stakes Blackjack', category: 'TABLE_GAMES', tags: ['JACKPOT'], rtpBps: 9810, volatility: 'LOW' },
+  { slug: 'vegas-baccarat', name: 'Vegas Baccarat', category: 'TABLE_GAMES', tags: [], rtpBps: 9850, volatility: 'MEDIUM' },
+  { slug: 'royal-vault', name: 'Royal Vault', category: 'TABLE_GAMES', tags: ['EXCLUSIVE'], rtpBps: 9780, volatility: 'LOW' },
+
+  // Live casino
+  { slug: 'moonlight-roulette', name: 'Moonlight Roulette', category: 'LIVE_CASINO', tags: ['HOT'], rtpBps: 9730, volatility: 'LOW' },
+  { slug: 'vault-roulette-live', name: 'Vault Roulette Live', category: 'LIVE_CASINO', tags: ['NEW'], rtpBps: 9730, volatility: 'LOW' },
+  { slug: 'emerald-baccarat-live', name: 'Emerald Baccarat Live', category: 'LIVE_CASINO', tags: [], rtpBps: 9860, volatility: 'MEDIUM' },
+  { slug: 'golden-blackjack-live', name: 'Golden Blackjack Live', category: 'LIVE_CASINO', tags: [], rtpBps: 9800, volatility: 'LOW' },
+  { slug: 'crystal-roulette-live', name: 'Crystal Roulette Live', category: 'LIVE_CASINO', tags: ['EXCLUSIVE'], rtpBps: 9730, volatility: 'LOW' },
+  { slug: 'platinum-baccarat-live', name: 'Platinum Baccarat Live', category: 'LIVE_CASINO', tags: ['JACKPOT'], rtpBps: 9850, volatility: 'MEDIUM' },
+  { slug: 'sapphire-roulette-live', name: 'Sapphire Roulette Live', category: 'LIVE_CASINO', tags: [], rtpBps: 9730, volatility: 'LOW' },
+
+  // Game shows
+  { slug: 'golden-wheel-live', name: 'Golden Wheel Live', category: 'GAME_SHOWS', tags: ['HOT', 'NEW'], rtpBps: 9500, volatility: 'HIGH' },
+  { slug: 'lucky-ladder-live', name: 'Lucky Ladder Live', category: 'GAME_SHOWS', tags: [], rtpBps: 9550, volatility: 'MEDIUM' },
+  { slug: 'vault-wheel', name: 'Vault Wheel', category: 'GAME_SHOWS', tags: ['NEW'], rtpBps: 9500, volatility: 'HIGH' },
+  { slug: 'fortune-wheel-live', name: 'Fortune Wheel Live', category: 'GAME_SHOWS', tags: ['JACKPOT'], rtpBps: 9450, volatility: 'HIGH' },
+  { slug: 'neon-wheel', name: 'Neon Wheel', category: 'GAME_SHOWS', tags: ['NEW'], rtpBps: 9500, volatility: 'HIGH' },
+];
+
+async function seedDemoGameCatalog() {
+  console.log(`Seeding ${DEMO_GAMES.length} demo games (Vaultline Studios, Casino Visual Redesign sprint)...`);
+  const provider = await prisma.gameProvider.upsert({
+    where: { code: 'vaultline-studios' },
+    create: { code: 'vaultline-studios', name: 'Vaultline Studios', type: 'INTERNAL', status: 'ACTIVE' },
+    update: {},
+  });
+
+  for (const [i, g] of DEMO_GAMES.entries()) {
+    await prisma.game.upsert({
+      where: { slug: g.slug },
+      create: {
+        providerId: provider.id,
+        providerGameId: g.slug,
+        name: g.name,
+        slug: g.slug,
+        category: g.category,
+        tags: g.tags,
+        supportedCurrencies: ['GC', 'SC'],
+        demoAvailable: true,
+        rtpBps: g.rtpBps,
+        volatility: g.volatility,
+        status: 'ACTIVE',
+        restrictedJurisdictions: [],
+        sortWeight: 80 - i,
+      },
+      update: {},
+    });
+  }
+}
+
 async function seedDailyBonusPromotion() {
   console.log('Seeding the daily bonus promotion...');
   const existing = await prisma.promotion.findFirst({ where: { type: 'DAILY', status: 'ACTIVE' } });
@@ -464,6 +561,7 @@ async function main() {
   const adminRoles = await seedAdminRoles();
   const vipLevels = await seedVipLevels();
   await seedCasinoCatalog();
+  await seedDemoGameCatalog();
   await seedDailyBonusPromotion();
   await seedDemoUsers(vipLevels, adminRoles);
   console.log('--- Seed complete ---');

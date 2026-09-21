@@ -109,31 +109,90 @@ export class CatalogService {
   }
 
   /**
-   * Home lobby sections. Only real provider seeded in Phase 1 is internal
-   * Originals, so "Trending" / "New Releases" are honest different sort
-   * orders over the same Game table (sortWeight desc / createdAt desc)
-   * rather than fabricated engagement data — there's no play-count/view
-   * telemetry yet to rank by.
+   * Home lobby sections. Phase 1 has no play-count/view telemetry to rank
+   * by, so every "engagement" section below is an honest, documented proxy
+   * over the same Game table rather than fabricated data:
+   *  - popular: curated via sortWeight (admin-set featured weight)
+   *  - trending: tagged HOT, sorted by sortWeight
+   *  - new-releases: createdAt desc
+   *  - jackpots: tagged JACKPOT
+   *  - slots / table-games / live-casino / game-shows: straight category
+   *    filters, sortWeight desc. Populated by the Mobile MVP Visual Sprint's
+   *    demo catalog (prisma/seed.ts) — real provider integrations replace
+   *    this data source, not this method's shape, in a later phase.
    */
   async getSections(userId?: string) {
     const favoriteGameIds = await this.getFavoriteGameIds(userId);
 
-    const [originals, trending, newReleases, recentlyPlayed, favorites] = await Promise.all([
+    const featuredOrder: Prisma.GameOrderByWithRelationInput[] = [
+      { sortWeight: 'desc' },
+      { createdAt: 'desc' },
+    ];
+
+    const [
+      originals,
+      popular,
+      trending,
+      newReleases,
+      slots,
+      tableGames,
+      liveCasino,
+      gameShows,
+      jackpots,
+      recentlyPlayed,
+      favorites,
+    ] = await Promise.all([
       this.prisma.game.findMany({
         where: { status: 'ACTIVE', category: 'ORIGINALS' },
-        orderBy: [{ sortWeight: 'desc' }, { createdAt: 'desc' }],
+        orderBy: featuredOrder,
         take: SECTION_TAKE,
         include: { provider: true },
       }),
       this.prisma.game.findMany({
         where: { status: 'ACTIVE' },
-        orderBy: [{ sortWeight: 'desc' }, { createdAt: 'desc' }],
+        orderBy: featuredOrder,
+        take: SECTION_TAKE,
+        include: { provider: true },
+      }),
+      this.prisma.game.findMany({
+        where: { status: 'ACTIVE', tags: { has: 'HOT' } },
+        orderBy: featuredOrder,
         take: SECTION_TAKE,
         include: { provider: true },
       }),
       this.prisma.game.findMany({
         where: { status: 'ACTIVE' },
         orderBy: [{ createdAt: 'desc' }],
+        take: SECTION_TAKE,
+        include: { provider: true },
+      }),
+      this.prisma.game.findMany({
+        where: { status: 'ACTIVE', category: 'SLOTS' },
+        orderBy: featuredOrder,
+        take: SECTION_TAKE,
+        include: { provider: true },
+      }),
+      this.prisma.game.findMany({
+        where: { status: 'ACTIVE', category: 'TABLE_GAMES' },
+        orderBy: featuredOrder,
+        take: SECTION_TAKE,
+        include: { provider: true },
+      }),
+      this.prisma.game.findMany({
+        where: { status: 'ACTIVE', category: 'LIVE_CASINO' },
+        orderBy: featuredOrder,
+        take: SECTION_TAKE,
+        include: { provider: true },
+      }),
+      this.prisma.game.findMany({
+        where: { status: 'ACTIVE', category: 'GAME_SHOWS' },
+        orderBy: featuredOrder,
+        take: SECTION_TAKE,
+        include: { provider: true },
+      }),
+      this.prisma.game.findMany({
+        where: { status: 'ACTIVE', tags: { has: 'JACKPOT' } },
+        orderBy: featuredOrder,
         take: SECTION_TAKE,
         include: { provider: true },
       }),
@@ -159,10 +218,16 @@ export class CatalogService {
 
     return [
       { key: 'recently-played', title: 'Recently Played', games: recentlyPlayed.map((r) => dto(r.game)) },
-      { key: 'favorites', title: 'Favorites', games: favorites.map((f) => dto(f.game)) },
-      { key: 'originals', title: 'Originals', games: originals.map(dto) },
+      { key: 'popular', title: 'Popular Now', games: popular.map(dto) },
+      { key: 'originals', title: 'Vaultline Originals', games: originals.map(dto) },
       { key: 'trending', title: 'Trending', games: trending.map(dto) },
       { key: 'new-releases', title: 'New Releases', games: newReleases.map(dto) },
+      { key: 'slots', title: 'Slots', games: slots.map(dto) },
+      { key: 'table-games', title: 'Table Games', games: tableGames.map(dto) },
+      { key: 'live-casino', title: 'Live Casino', games: liveCasino.map(dto) },
+      { key: 'game-shows', title: 'Game Shows', games: gameShows.map(dto) },
+      { key: 'jackpots', title: 'Jackpots', games: jackpots.map(dto) },
+      { key: 'favorites', title: 'Favorites', games: favorites.map((f) => dto(f.game)) },
     ];
   }
 

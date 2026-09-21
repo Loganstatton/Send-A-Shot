@@ -3,20 +3,41 @@
 @tailwind utilities;
 
 :root {
-  /* Dark graphite base (default & only theme in Phase 1, structured for a future light mode) */
-  --color-bg: 13 15 18;
-  --color-surface: 20 23 28;
-  --color-surface-raised: 27 31 38;
-  --color-border: 42 47 56;
-  --color-text-primary: 237 239 243;
-  --color-text-muted: 148 155 168;
+  /* Near-black cinematic charcoal (Casino Visual Redesign sprint — default
+     & only theme in Phase 1, structured for a future light mode). Deeper
+     than the original graphite base so elevated surfaces read as distinct
+     "lit" layers rather than flat panels. */
+  --color-bg: 8 9 11;
+  --color-surface: 15 17 21;
+  --color-surface-raised: 21 24 30;
+  --color-border: 38 43 52;
+  --color-text-primary: 240 242 246;
+  --color-text-muted: 150 157 171;
 
-  /* Original accent duo: warm amber for Gold Coins, cool teal for Sweeps Coins.
-     Deliberately not the exact hue of any specific real-money-casino brand. */
-  --color-accent-gc: 232 168 66;
-  --color-accent-gc-soft: 232 168 66;
-  --color-accent-sc: 45 191 176;
-  --color-accent-sc-soft: 45 191 176;
+  /* Accent duo: rich gold for Gold Coins, saturated teal for Sweeps Coins.
+     Deliberately not the exact hue of any specific real-money-casino brand.
+     "-soft" variants back translucent glows/ambient washes. */
+  --color-accent-gc: 234 176 62;
+  --color-accent-gc-soft: 234 176 62;
+  --color-accent-sc: 32 201 184;
+  --color-accent-sc-soft: 32 201 184;
+
+  /* VIP tier metals (Starter -> Elite). Each is a base/highlight pair used
+     by bg-gradient-to-br for a believable metallic sheen. */
+  --color-tier-starter: 60 66 78;
+  --color-tier-starter-hi: 90 98 112;
+  --color-tier-bronze: 140 84 44;
+  --color-tier-bronze-hi: 196 130 76;
+  --color-tier-silver: 148 156 168;
+  --color-tier-silver-hi: 214 220 228;
+  --color-tier-gold: 180 132 40;
+  --color-tier-gold-hi: 244 200 100;
+  --color-tier-platinum: 90 128 158;
+  --color-tier-platinum-hi: 206 226 238;
+  --color-tier-diamond: 24 140 150;
+  --color-tier-diamond-hi: 130 232 224;
+  --color-tier-elite: 20 20 24;
+  --color-tier-elite-hi: 224 176 70;
 
   --color-success: 74 201 122;
   --color-danger: 235 92 92;
@@ -70,6 +91,80 @@ body {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* ---- Casino Visual Redesign: shared atmosphere primitives ----
+   Kept as plain CSS (rather than only Tailwind utilities) because several
+   of these are multi-stop radial gradients that read poorly as arbitrary
+   Tailwind values. Every consumer across the redesign should reuse these
+   instead of inventing new ambient-lighting treatments per component. */
+
+/* A page-level (or large-section-level) ambient wash: two soft radial
+   glows in the brand colors plus a very subtle top-down vignette. Apply to
+   a positioned ancestor and layer content above it — it never captures
+   pointer events. */
+.bg-casino-ambient {
+  position: relative;
+  isolation: isolate;
+}
+.bg-casino-ambient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 15% 0%, rgb(var(--color-accent-sc) / 0.12), transparent 65%),
+    radial-gradient(55% 45% at 90% 15%, rgb(var(--color-accent-gc) / 0.10), transparent 65%),
+    linear-gradient(180deg, rgb(var(--color-bg)) 0%, rgb(var(--color-bg)) 100%);
+}
+
+/* Faint corner vignette + grain-free depth cue for hero/banner surfaces. */
+.bg-casino-vignette {
+  position: relative;
+}
+.bg-casino-vignette::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 100% at 50% 0%, transparent 45%, rgb(0 0 0 / 0.55) 100%);
+}
+
+/* Metallic tier surfaces for VIP (Starter -> Elite). Pass the tier's two
+   CSS vars via a `--tier` / `--tier-hi` custom-property pair set inline,
+   e.g. style={{ '--tier': 'var(--color-tier-gold)', '--tier-hi': 'var(--color-tier-gold-hi)' }}. */
+.bg-tier-metal {
+  background: linear-gradient(135deg, rgb(var(--tier, var(--color-tier-starter))) 0%, rgb(var(--tier-hi, var(--color-tier-starter-hi))) 50%, rgb(var(--tier, var(--color-tier-starter))) 100%);
+}
+
+/* Soft glowing number treatment for jackpot/reward totals. */
+.text-glow-gold {
+  color: rgb(var(--color-accent-gc));
+  text-shadow: 0 0 18px rgb(var(--color-accent-gc) / 0.55), 0 0 42px rgb(var(--color-accent-gc) / 0.25);
+}
+.text-glow-teal {
+  color: rgb(var(--color-accent-sc));
+  text-shadow: 0 0 18px rgb(var(--color-accent-sc) / 0.5), 0 0 42px rgb(var(--color-accent-sc) / 0.22);
+}
+
+/* Coin-shimmer sweep for currency pills / reward chips — a slow, subtle
+   diagonal highlight pass, not a loud attention-grabber. */
+.coin-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.coin-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgb(255 255 255 / 0.16) 50%, transparent 60%);
+  transform: translateX(-120%);
+  animation: coin-shimmer-sweep 3.2s ease-in-out infinite;
+}
+@keyframes coin-shimmer-sweep {
+  0%, 30% { transform: translateX(-120%); }
+  60%, 100% { transform: translateX(120%); }
 }
 
 .skeleton {

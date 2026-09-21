@@ -22,6 +22,17 @@ const config: Config = {
         "accent-sc-soft": "rgb(var(--color-accent-sc-soft) / <alpha-value>)",
         success: "rgb(var(--color-success) / <alpha-value>)",
         danger: "rgb(var(--color-danger) / <alpha-value>)",
+        // VIP tier metals — Starter through Elite. Use with bg-tier-metal
+        // (styles/globals.css) for the gradient sheen, or these flat tokens
+        // for borders/badges/text (e.g. text-tier-gold, border-tier-diamond/40).
+        "tier-starter": "rgb(var(--color-tier-starter) / <alpha-value>)",
+        "tier-bronze": "rgb(var(--color-tier-bronze) / <alpha-value>)",
+        "tier-silver": "rgb(var(--color-tier-silver) / <alpha-value>)",
+        "tier-gold": "rgb(var(--color-tier-gold) / <alpha-value>)",
+        "tier-platinum": "rgb(var(--color-tier-platinum) / <alpha-value>)",
+        "tier-diamond": "rgb(var(--color-tier-diamond) / <alpha-value>)",
+        "tier-elite": "rgb(var(--color-tier-elite) / <alpha-value>)",
+        "tier-elite-hi": "rgb(var(--color-tier-elite-hi) / <alpha-value>)",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
@@ -29,6 +40,15 @@ const config: Config = {
       boxShadow: {
         "glow-gc": "0 0 24px 0 rgb(var(--color-accent-gc) / 0.35)",
         "glow-sc": "0 0 24px 0 rgb(var(--color-accent-sc) / 0.35)",
+        // Larger, softer versions for hero-scale elements (jackpot display,
+        // active-currency pill, featured hero CTA) — still restrained, just
+        // sized for a bigger surface than the original card-level glow.
+        "glow-gc-lg": "0 0 48px 4px rgb(var(--color-accent-gc) / 0.30)",
+        "glow-sc-lg": "0 0 48px 4px rgb(var(--color-accent-sc) / 0.30)",
+        // Card lift-on-hover shadow (desktop game-card hover per the
+        // Casino Visual Redesign spec): a soft ambient shadow, not a hard
+        // drop shadow, so the card reads as physically lifted off the felt.
+        "card-lift": "0 18px 40px -12px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(var(--color-border) / 0.6)",
       },
       // Restrained, fast microinteraction easings. "premium" is a snappy
       // ease-out-expo feel for anything that appears (cards, menus,
@@ -88,6 +108,24 @@ const config: Config = {
           "60%": { transform: "translateX(-3px)" },
           "80%": { transform: "translateX(3px)" },
         },
+        // Slow ambient breathing glow for the jackpot total / hero accents
+        // — a living-but-calm presence, not an alert.
+        "jackpot-pulse": {
+          "0%, 100%": { textShadow: "0 0 18px rgb(var(--color-accent-gc) / 0.55), 0 0 42px rgb(var(--color-accent-gc) / 0.22)" },
+          "50%": { textShadow: "0 0 26px rgb(var(--color-accent-gc) / 0.75), 0 0 58px rgb(var(--color-accent-gc) / 0.35)" },
+        },
+        // Very slow positional drift for large ambient background gradients
+        // (hero banners, page-level bg-casino-ambient) — imperceptible as
+        // motion, felt as atmosphere.
+        "ambient-drift": {
+          "0%, 100%": { backgroundPosition: "0% 0%" },
+          "50%": { backgroundPosition: "3% 2%" },
+        },
+        // New row/card arriving in the Live Wins ticker.
+        "win-enter": {
+          "0%": { opacity: "0", transform: "translateY(-10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         shimmer: "shimmer 1.6s linear infinite",
@@ -99,6 +137,9 @@ const config: Config = {
         "slide-up": "slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1)",
         "slide-in-right": "slide-in-right 0.22s cubic-bezier(0.16, 1, 0.3, 1)",
         shake: "shake 0.35s ease-in-out",
+        "jackpot-pulse": "jackpot-pulse 3.5s ease-in-out infinite",
+        "ambient-drift": "ambient-drift 18s ease-in-out infinite",
+        "win-enter": "win-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
       },
     },
   },
