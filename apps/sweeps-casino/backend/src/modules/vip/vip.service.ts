@@ -156,14 +156,12 @@ export class VipService {
       let rank = currentLevel.rankOrder;
       const lifetime = progress.lifetimePoints.toString();
 
-      while (true) {
-        const nextLevel = await tx.vipLevel.findUnique({ where: { rankOrder: rank + 1 } });
-        if (!nextLevel) break;
-        if (toCents(nextLevel.minPoints.toString()) > toCents(lifetime)) break;
-
+      let nextLevel = await tx.vipLevel.findUnique({ where: { rankOrder: rank + 1 } });
+      while (nextLevel && toCents(nextLevel.minPoints.toString()) <= toCents(lifetime)) {
         await tx.vipProgress.update({ where: { userId }, data: { currentLevelId: nextLevel.id } });
         rankUps.push(nextLevel);
         rank = nextLevel.rankOrder;
+        nextLevel = await tx.vipLevel.findUnique({ where: { rankOrder: rank + 1 } });
       }
 
       return { rankUps };

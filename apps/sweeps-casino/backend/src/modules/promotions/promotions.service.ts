@@ -31,6 +31,13 @@ function ledgerTypeForPromotion(type: PromotionType): LedgerEntryType {
   return type === 'DAILY' ? 'DAILY_BONUS' : 'PROMO_GRANT';
 }
 
+/** Round-trips a Prisma model (which may carry Decimal/Date fields) through
+ * JSON so it's a plain, Prisma-Json-safe value before writing it into an
+ * audit_logs.old_state/new_state jsonb column. */
+function toJsonSafe(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
 @Injectable()
 export class PromotionsService {
   constructor(
@@ -369,8 +376,8 @@ export class PromotionsService {
         minVipLevelId: dto.minVipLevelId,
         eligibleGameIds: dto.eligibleGameIds ?? [],
         eligibleCurrency: dto.eligibleCurrency,
-        rewardConfig: dto.rewardConfig as Prisma.InputJsonValue,
-        playthroughRequirement: dto.playthroughRequirement as Prisma.InputJsonValue,
+        rewardConfig: dto.rewardConfig as unknown as Prisma.InputJsonValue,
+        playthroughRequirement: dto.playthroughRequirement as unknown as Prisma.InputJsonValue,
         claimLimitPerUser: dto.claimLimitPerUser,
         maxParticipants: dto.maxParticipants,
         createdBy: adminId,
@@ -399,10 +406,10 @@ export class PromotionsService {
         ...(dto.eligibleGameIds !== undefined ? { eligibleGameIds: dto.eligibleGameIds } : {}),
         ...(dto.eligibleCurrency !== undefined ? { eligibleCurrency: dto.eligibleCurrency } : {}),
         ...(dto.rewardConfig !== undefined
-          ? { rewardConfig: dto.rewardConfig as Prisma.InputJsonValue }
+          ? { rewardConfig: dto.rewardConfig as unknown as Prisma.InputJsonValue }
           : {}),
         ...(dto.playthroughRequirement !== undefined
-          ? { playthroughRequirement: dto.playthroughRequirement as Prisma.InputJsonValue }
+          ? { playthroughRequirement: dto.playthroughRequirement as unknown as Prisma.InputJsonValue }
           : {}),
         ...(dto.claimLimitPerUser !== undefined ? { claimLimitPerUser: dto.claimLimitPerUser } : {}),
         ...(dto.maxParticipants !== undefined ? { maxParticipants: dto.maxParticipants } : {}),
@@ -458,8 +465,8 @@ export class PromotionsService {
         action: 'amoe.decide',
         targetType: 'amoe_request',
         targetId: id,
-        oldState: before as unknown as object,
-        newState: updated as unknown as object,
+        oldState: toJsonSafe(before),
+        newState: toJsonSafe(updated),
         reason: dto.reason,
       },
     });

@@ -10,10 +10,8 @@ import {
 
 function deepMergePreferences(base: PreferencesShape, patch: PreferencesShape): PreferencesShape {
   const result: PreferencesShape = { ...base };
-  for (const [channel, categories] of Object.entries(patch) as [
-    keyof PreferencesShape,
-    PreferencesShape[keyof PreferencesShape],
-  ][]) {
+  for (const channel of Object.keys(patch) as (keyof PreferencesShape)[]) {
+    const categories = patch[channel];
     if (!categories) continue;
     result[channel] = { ...(result[channel] ?? {}), ...categories };
   }

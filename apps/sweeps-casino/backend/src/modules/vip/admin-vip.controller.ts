@@ -8,6 +8,13 @@ import { RequirePermission } from '../../common/decorators/permissions.decorator
 import { CurrentAdminId } from '../../common/decorators/current-admin.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 
+/** Round-trips a Prisma model (which may carry Decimal/Date fields) through
+ * JSON so it's a plain, Prisma-Json-safe value before writing it into an
+ * audit_logs.old_state/new_state jsonb column. */
+function toJsonSafe(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
 /** Admin-only: full ladder CRUD incl. multipliers/minPoints/benefits/reward configs. */
 @Controller('admin/vip/levels')
 @UseGuards(JwtAuthGuard, AdminGuard)
@@ -43,7 +50,7 @@ export class AdminVipController {
         targetType: 'vip_level',
         targetId: created.id,
         oldState: Prisma.JsonNull,
-        newState: created as unknown as object,
+        newState: toJsonSafe(created),
         reason: 'VIP level created via admin API',
       },
     });
@@ -67,8 +74,8 @@ export class AdminVipController {
         action: 'vip.level.update',
         targetType: 'vip_level',
         targetId: id,
-        oldState: before as unknown as object,
-        newState: updated as unknown as object,
+        oldState: toJsonSafe(before),
+        newState: toJsonSafe(updated),
         reason: 'VIP level updated via admin API',
       },
     });
