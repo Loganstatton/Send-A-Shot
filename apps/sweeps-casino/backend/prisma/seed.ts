@@ -280,10 +280,32 @@ async function seedDemoGameCatalog() {
   }
 }
 
+/**
+ * Casino Visual Redesign sprint bumped these values to feel like a real
+ * casino's daily-reward ladder. Day 7 is presented on the frontend as a
+ * "Mystery Chest" reveal, but the credited amount is this fixed value —
+ * true per-claim randomization would be a resolveReward() behavior change
+ * (reward-config.ts), which is out of scope for a visual-only sprint.
+ */
+const DAILY_BONUS_SCHEDULE = [
+  { day: 1, gc: '500.00', sc: '0' },
+  { day: 2, gc: '750.00', sc: '0' },
+  { day: 3, gc: '1000.00', sc: '0' },
+  { day: 4, gc: '1500.00', sc: '0' },
+  { day: 5, gc: '2000.00', sc: '0' },
+  { day: 6, gc: '3000.00', sc: '0' },
+  { day: 7, gc: '3500.00', sc: '0' },
+];
+
 async function seedDailyBonusPromotion() {
   console.log('Seeding the daily bonus promotion...');
+  const rewardConfig = { cooldownHours: 20, schedule: DAILY_BONUS_SCHEDULE };
   const existing = await prisma.promotion.findFirst({ where: { type: 'DAILY', status: 'ACTIVE' } });
-  if (existing) return;
+
+  if (existing) {
+    await prisma.promotion.update({ where: { id: existing.id }, data: { rewardConfig } });
+    return;
+  }
 
   await prisma.promotion.create({
     data: {
@@ -292,18 +314,7 @@ async function seedDailyBonusPromotion() {
       description: 'Claim free Gold Coins every day — the streak resets if you miss a day.',
       status: 'ACTIVE',
       eligibleCurrency: 'GC',
-      rewardConfig: {
-        cooldownHours: 20,
-        schedule: [
-          { day: 1, gc: '25.00', sc: '0' },
-          { day: 2, gc: '35.00', sc: '0' },
-          { day: 3, gc: '50.00', sc: '0' },
-          { day: 4, gc: '75.00', sc: '0' },
-          { day: 5, gc: '100.00', sc: '0' },
-          { day: 6, gc: '150.00', sc: '0' },
-          { day: 7, gc: '250.00', sc: '0' },
-        ],
-      },
+      rewardConfig,
     },
   });
 }

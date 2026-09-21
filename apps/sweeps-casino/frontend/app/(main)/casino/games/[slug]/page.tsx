@@ -46,8 +46,8 @@ export default function GameDetailPage({ params }: { params: { slug: string } })
     <div className="mx-auto max-w-2xl p-6">
       <EmptyState
         icon={<Dice className="h-10 w-10" />}
-        title={`${game.name} launches in Phase 2`}
-        description={`${game.name} is cataloged from ${game.provider}, but real-money-equivalent game launch requires a provider aggregator integration that ships in Phase 2. Vaultline Originals (Dice, Mines, Plinko) are fully playable today.`}
+        title={`${game.name} is coming soon`}
+        description={`${game.name} is part of the growing Vaultline lobby — this card isn't playable yet. Vaultline Originals (Dice, Mines, Plinko) are fully playable today.`}
         phase="P2"
         action={
           <Link href="/casino/originals/dice">
