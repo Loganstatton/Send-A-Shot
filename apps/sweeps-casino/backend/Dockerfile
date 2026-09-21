@@ -1,4 +1,8 @@
 FROM node:22-alpine AS base
+# Prisma's query/schema engine binaries need OpenSSL to run; without it
+# they fail at runtime with an unhelpful "Could not parse schema engine
+# response" error instead of a clear "openssl not found" message.
+RUN apk add --no-cache openssl
 WORKDIR /app
 
 FROM base AS deps
