@@ -16,9 +16,17 @@ RUN npm run build
 
 FROM base AS runtime
 ENV NODE_ENV=production
-COPY --from=deps /app/node_modules ./node_modules
+# node_modules must come from the `build` stage, not `deps` -- `prisma
+# generate` runs in `build` and writes the generated client into
+# node_modules/@prisma/client; copying from `deps` (pre-generate) ships a
+# stale/default client missing generated types and enums.
+COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
+# prisma/seed.ts imports directly from TS source (../src/libs/...), so
+# the runtime image needs src/ too, not just the compiled dist/.
+COPY --from=build /app/src ./src
+COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY package.json ./
 
 EXPOSE 4000
