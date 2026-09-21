@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Dark graphite base (default & only theme in Phase 1, structured for a future light mode) */
+  --color-bg: 13 15 18;
+  --color-surface: 20 23 28;
+  --color-surface-raised: 27 31 38;
+  --color-border: 42 47 56;
+  --color-text-primary: 237 239 243;
+  --color-text-muted: 148 155 168;
+
+  /* Original accent duo: warm amber for Gold Coins, cool teal for Sweeps Coins.
+     Deliberately not the exact hue of any specific real-money-casino brand. */
+  --color-accent-gc: 232 168 66;
+  --color-accent-gc-soft: 232 168 66;
+  --color-accent-sc: 45 191 176;
+  --color-accent-sc-soft: 45 191 176;
+
+  --color-success: 74 201 122;
+  --color-danger: 235 92 92;
+}
+
+:root[data-theme="light"] {
+  --color-bg: 246 247 249;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 255 255 255;
+  --color-border: 224 227 232;
+  --color-text-primary: 20 23 28;
+  --color-text-muted: 96 103 115;
+  --color-accent-gc: 189 128 30;
+  --color-accent-gc-soft: 189 128 30;
+  --color-accent-sc: 12 133 122;
+  --color-accent-sc-soft: 12 133 122;
+  --color-success: 39 138 82;
+  --color-danger: 197 55 55;
+}
+
+* {
+  border-color: rgb(var(--color-border));
+}
+
+html,
+body {
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-text-primary));
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border));
+  border-radius: 999px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: rgb(var(--color-surface-raised));
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(var(--color-border) / 0.5),
+    transparent
+  );
+  animation: shimmer-sweep 1.6s infinite;
+}
+@keyframes shimmer-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}

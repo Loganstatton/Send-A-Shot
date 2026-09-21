@@ -10,3 +10,9 @@ data/pre-restore-*.db
 .env.local
 *.log
 *.tsbuildinfo
+
+# apps/sweeps-casino
+dist/
+.env
+!.env.example
+coverage/
