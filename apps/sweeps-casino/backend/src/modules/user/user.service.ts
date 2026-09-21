@@ -14,9 +14,10 @@ import { SelfExcludeDto } from './dto/self-exclude.dto';
 
 /**
  * Flags surfaced on the profile so the client knows what to render: the
- * original two SC-adjacent flags, plus one per not-yet-built nav section
+ * original two SC-adjacent flags, one per not-yet-built nav section
  * (spec: "Mobile MVP Polish Sprint" item 10 — feature-flag-driven nav
- * instead of hardcoded "Coming Soon" everywhere). Each defaults to
+ * instead of hardcoded "Coming Soon" everywhere), plus `redemptions.enabled`
+ * (sprint item 9 — gates the wallet's Redeem tab). Each defaults to
  * disabled (see prisma/seed.ts) and admins can flip them individually
  * from /admin/compliance/feature-flags; the frontend nav config decides
  * per-item whether "disabled" means hidden entirely or a polished
@@ -33,6 +34,7 @@ const ME_FEATURE_FLAG_KEYS = [
   'nav.leaderboards',
   'nav.challenges',
   'nav.raffles',
+  'redemptions.enabled',
 ] as const;
 
 @Injectable()

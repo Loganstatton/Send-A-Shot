@@ -66,7 +66,7 @@ export function CurrencySwitcher() {
       </button>
 
       {confirming && (
-        <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-64 rounded-lg border border-border bg-surface p-3 shadow-xl animate-fade-in">
+        <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-64 origin-top-right rounded-lg border border-border bg-surface p-3 shadow-xl animate-scale-in ease-snappy">
           <p className="text-xs text-text-muted">
             Switch active play currency to{" "}
             <span className={cn("font-bold", confirming === "GC" ? "text-accent-gc" : "text-accent-sc")}>

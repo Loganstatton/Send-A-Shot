@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AuthCard } from "@/components/layout/AuthCard";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -25,7 +26,7 @@ function ResetPasswordForm() {
       setDone(true);
       setTimeout(() => router.push("/login"), 1500);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "This reset link is invalid or expired.");
+      setError(friendlyErrorMessage(err, "This reset link is invalid or expired."));
     } finally {
       setLoading(false);
     }

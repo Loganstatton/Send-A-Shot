@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 
 // Full admin-facing shape (backend VipLevel Prisma model), distinct from
@@ -39,7 +40,7 @@ export default function AdminVipPage() {
       toast.push(`${level.name} updated.`, "success");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update level.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update level."), "danger");
     } finally {
       setSavingId(null);
     }

@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import type { FaqItem, SupportTicket } from "@/lib/types";
 import { useToast } from "@/components/layout/Toast";
 import { formatDate } from "@/lib/utils";
@@ -38,7 +39,7 @@ export default function SupportPage() {
       refetchTickets();
       setTab("tickets");
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not submit ticket.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not submit ticket."), "danger");
     } finally {
       setCreating(false);
     }

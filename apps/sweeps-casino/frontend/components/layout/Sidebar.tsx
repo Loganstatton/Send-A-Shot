@@ -2,13 +2,29 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_TREE } from "@/lib/nav-config";
+import { NAV_TREE, type NavLeaf } from "@/lib/nav-config";
 import { Home } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/lib/stores/auth-store";
+
+/**
+ * Resolves how a nav item should render for the current user.
+ * Before the user object is known (logged out / still loading) a flagged
+ * item is treated as disabled — the safe default is never to show
+ * functionality that isn't real yet.
+ */
+function resolveNavItem(item: NavLeaf, featureFlags: Record<string, boolean> | undefined) {
+  if (!item.flagKey) return { visible: true, enabled: true } as const;
+  const enabled = featureFlags?.[item.flagKey] ?? false;
+  if (enabled) return { visible: true, enabled: true } as const;
+  if (item.presentation === "coming-soon") return { visible: true, enabled: false } as const;
+  return { visible: false, enabled: false } as const;
+}
 
 export function Sidebar() {
   const pathname = usePathname();
+  const user = useAuthStore((s) => s.user);
 
   return (
     <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-border bg-surface/60 lg:flex">
@@ -39,7 +55,25 @@ export function Sidebar() {
             </div>
             <div className="flex flex-col gap-0.5">
               {section.items.map((item) => {
+                const { visible, enabled } = resolveNavItem(item, user?.featureFlags);
+                if (!visible) return null;
                 const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+
+                if (!enabled) {
+                  return (
+                    <span
+                      key={item.href}
+                      aria-disabled="true"
+                      className="flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-sm text-text-muted/50"
+                    >
+                      {item.label}
+                      <Badge variant="neutral" className="text-[9px]">
+                        Coming Soon
+                      </Badge>
+                    </span>
+                  );
+                }
+
                 return (
                   <Link
                     key={item.href}
@@ -52,11 +86,6 @@ export function Sidebar() {
                     )}
                   >
                     {item.label}
-                    {item.comingSoon && (
-                      <Badge variant="neutral" className="text-[9px]">
-                        Soon
-                      </Badge>
-                    )}
                   </Link>
                 );
               })}

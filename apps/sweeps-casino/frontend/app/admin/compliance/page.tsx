@@ -7,7 +7,8 @@ import { Select } from "@/components/ui/Select";
 import { Tabs } from "@/components/ui/Tabs";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 import { US_STATES } from "@/lib/us-states";
 
@@ -48,7 +49,7 @@ export default function AdminCompliancePage() {
       toast.push(`${state} status updated to ${status}.`, "success");
       refetchJ();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update jurisdiction.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update jurisdiction."), "danger");
     }
   }
 
@@ -58,7 +59,7 @@ export default function AdminCompliancePage() {
       toast.push(`${key} ${enabled ? "enabled" : "disabled"}.`, "success");
       refetchF();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update flag.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update flag."), "danger");
     }
   }
 

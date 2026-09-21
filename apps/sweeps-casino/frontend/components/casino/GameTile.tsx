@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { StarFilled, Star } from "@/components/ui/icons";
 import { tileGradient, tilePatternId } from "@/lib/tile-art";
+import { hasCustomArt, OriginalArt } from "@/components/casino/originals-art";
 import { api } from "@/lib/api-client";
 import type { Game } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -17,11 +18,11 @@ const PATTERNS = [
   "repeating-radial-gradient(circle at 50% 50%, rgba(255,255,255,0.15) 0 2px, transparent 2px 14px)",
 ];
 
-export function GameTile({ game, href }: { game: Game; href?: string }) {
+export function GameTile({ game, href, index }: { game: Game; href?: string; index?: number }) {
   const [favorite, setFavorite] = useState(!!game.isFavorite);
   const [busy, setBusy] = useState(false);
   const seed = game.thumbSeed || game.slug;
-  const isOriginal = ["dice", "mines", "plinko"].includes(game.slug);
+  const isOriginal = hasCustomArt(game.slug);
   const link = href ?? (isOriginal ? `/casino/originals/${game.slug}` : `/casino/games/${game.slug}`);
 
   async function toggleFavorite(e: React.MouseEvent) {
@@ -45,12 +46,22 @@ export function GameTile({ game, href }: { game: Game; href?: string }) {
   }
 
   return (
-    <Link href={link} className="group block w-[160px] shrink-0 sm:w-[180px]">
+    <Link
+      href={link}
+      className="group block w-[40vw] max-w-[152px] shrink-0 snap-start animate-fade-in-up sm:w-[180px] sm:max-w-none"
+      style={index != null ? { animationDelay: `${Math.min(index, 8) * 30}ms`, animationFillMode: "backwards" } : undefined}
+    >
       <div
-        className="relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-border transition-all duration-200 group-hover:scale-[1.03] group-hover:shadow-glow-sc"
-        style={{ background: tileGradient(seed) }}
+        className="relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-border transition-all duration-200 ease-premium group-hover:scale-[1.03] group-hover:shadow-glow-sc group-active:scale-95"
+        style={isOriginal ? undefined : { background: tileGradient(seed) }}
       >
-        <div className="absolute inset-0" style={{ background: PATTERNS[tilePatternId(seed)] }} />
+        {hasCustomArt(game.slug) ? (
+          <div className="absolute inset-0 animate-fade-in">
+            <OriginalArt slug={game.slug} />
+          </div>
+        ) : (
+          <div className="absolute inset-0 animate-fade-in" style={{ background: PATTERNS[tilePatternId(seed)] }} />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
 
         <div className="absolute left-2 top-2 flex gap-1">
@@ -61,9 +72,11 @@ export function GameTile({ game, href }: { game: Game; href?: string }) {
         <button
           onClick={toggleFavorite}
           aria-label="Toggle favorite"
-          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-transform hover:scale-110"
+          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur transition-transform duration-150 ease-snappy hover:scale-110 active:scale-90"
         >
-          {favorite ? <StarFilled className="h-3.5 w-3.5 text-accent-gc" /> : <Star className="h-3.5 w-3.5" />}
+          <span key={favorite ? "on" : "off"} className="inline-flex animate-pop">
+            {favorite ? <StarFilled className="h-3.5 w-3.5 text-accent-gc" /> : <Star className="h-3.5 w-3.5" />}
+          </span>
         </button>
 
         <div className="absolute inset-x-0 bottom-0 p-2.5">

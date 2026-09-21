@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Shield } from "@/components/ui/icons";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 
 interface VerifyResult {
   result: Record<string, unknown>;
@@ -38,7 +39,7 @@ export default function ProvablyFairPage() {
       );
       setResult(res);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Verification failed — check your inputs.");
+      setError(friendlyErrorMessage(err, "Verification failed — check your inputs."));
     } finally {
       setLoading(false);
     }

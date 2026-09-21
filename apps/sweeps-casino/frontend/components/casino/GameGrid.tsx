@@ -25,7 +25,7 @@ export function GameGrid({ games, loading, loadingMore, hasMore, onLoadMore, emp
               <Skeleton className="mt-2 h-3 w-3/4" />
             </div>
           ))}
-        {!loading && games.map((g) => <GameTile key={g.id} game={g} />)}
+        {!loading && games.map((g, i) => <GameTile key={g.id} game={g} index={i} />)}
       </div>
 
       {!loading && games.length === 0 && (

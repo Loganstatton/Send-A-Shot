@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 import type { Game } from "@/lib/types";
 
@@ -28,7 +29,7 @@ export default function AdminGamesPage() {
       await api.patch(`/admin/games/${id}`, { [field]: value });
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update game.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update game."), "danger");
     } finally {
       setBusyId(null);
     }

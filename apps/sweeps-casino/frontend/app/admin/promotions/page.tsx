@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 import type { Promotion } from "@/lib/types";
 import { Plus } from "@/components/ui/icons";
@@ -29,14 +30,14 @@ export default function AdminPromotionsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post("/admin/promotions", { title, description, type, status: "active" });
+      await api.post("/admin/promotions", { name: title, description, type, status: "ACTIVE" });
       toast.push("Promotion created.", "success");
       setOpen(false);
       setTitle("");
       setDescription("");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not create promotion.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not create promotion."), "danger");
     } finally {
       setSaving(false);
     }
@@ -44,10 +45,10 @@ export default function AdminPromotionsPage() {
 
   async function toggleStatus(id: string, status: string) {
     try {
-      await api.patch(`/admin/promotions/${id}`, { status: status === "active" ? "inactive" : "active" });
+      await api.patch(`/admin/promotions/${id}`, { status: status === "ACTIVE" ? "PAUSED" : "ACTIVE" });
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update promotion.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update promotion."), "danger");
     }
   }
 
@@ -77,13 +78,13 @@ export default function AdminPromotionsPage() {
               data?.map((p) => (
                 <div key={p.id} className="flex items-center justify-between border-b border-border/60 px-4 py-3 text-sm last:border-b-0">
                   <div>
-                    <p className="font-medium text-text-primary">{p.title}</p>
+                    <p className="font-medium text-text-primary">{p.name}</p>
                     <p className="text-xs text-text-muted">{p.type}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={p.status === "active" ? "success" : "neutral"}>{p.status}</Badge>
+                    <Badge variant={p.status === "ACTIVE" ? "success" : "neutral"}>{p.status}</Badge>
                     <Button size="sm" variant="secondary" onClick={() => toggleStatus(p.id, p.status)}>
-                      {p.status === "active" ? "Deactivate" : "Activate"}
+                      {p.status === "ACTIVE" ? "Deactivate" : "Activate"}
                     </Button>
                   </div>
                 </div>

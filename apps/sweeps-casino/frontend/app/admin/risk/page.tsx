@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 import { formatDate } from "@/lib/utils";
 
@@ -36,7 +37,7 @@ export default function AdminRiskPage() {
       toast.push(`Event resolved: ${action}.`, "success");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not resolve event.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not resolve event."), "danger");
     } finally {
       setBusyId(null);
     }

@@ -11,7 +11,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 import { formatCoins, formatDate } from "@/lib/utils";
 
@@ -77,7 +78,7 @@ export default function AdminUserDetailPage({ params }: { params: { id: string }
       setAdjustReason("");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not adjust balance.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not adjust balance."), "danger");
     } finally {
       setAdjusting(false);
     }
@@ -91,7 +92,7 @@ export default function AdminUserDetailPage({ params }: { params: { id: string }
       setNoteBody("");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not save note.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not save note."), "danger");
     } finally {
       setSavingNote(false);
     }
@@ -103,7 +104,7 @@ export default function AdminUserDetailPage({ params }: { params: { id: string }
       toast.push(`User ${status.toLowerCase()}.`, "success");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update status.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update status."), "danger");
     }
   }
 

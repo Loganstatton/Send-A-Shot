@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Badge } from "@/components/ui/Badge";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 import { formatDate } from "@/lib/utils";
 
@@ -32,7 +33,7 @@ export default function AdminLedgerPage() {
       toast.push("Reconciliation run started.", "success");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not start reconciliation.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not start reconciliation."), "danger");
     } finally {
       setRunning(false);
     }

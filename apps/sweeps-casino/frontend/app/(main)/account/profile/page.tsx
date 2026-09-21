@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 
 export default function ProfilePage() {
@@ -31,7 +32,7 @@ export default function ProfilePage() {
       await refetchMe();
       toast.push("Profile updated.", "success");
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update profile.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update profile."), "danger");
     } finally {
       setSaving(false);
     }

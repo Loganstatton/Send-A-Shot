@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Badge } from "@/components/ui/Badge";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import type { Session } from "@/lib/types";
 import { useToast } from "@/components/layout/Toast";
 import { formatDate } from "@/lib/utils";
@@ -31,7 +32,7 @@ export default function SecurityPage() {
       setCurrentPassword("");
       setNewPassword("");
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update password.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update password."), "danger");
     } finally {
       setSaving(false);
     }
@@ -43,7 +44,7 @@ export default function SecurityPage() {
       toast.push("Session revoked.", "success");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not revoke session.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not revoke session."), "danger");
     }
   }
 

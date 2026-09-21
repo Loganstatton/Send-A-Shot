@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 import { formatDate } from "@/lib/utils";
 
@@ -32,7 +33,7 @@ export default function AdminKycPage() {
       toast.push(`Record ${decision === "approve" ? "approved" : decision === "reject" ? "rejected" : "flagged for review"}.`, "success");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not record decision.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not record decision."), "danger");
     } finally {
       setBusyId(null);
     }

@@ -104,14 +104,65 @@ export interface SeedState {
   rotatedAt?: string;
 }
 
+// Matches the real Prisma `Promotion` model — the backend's
+// PromotionsService.toPublicPromotion() returns the raw row as-is (see
+// backend/src/modules/promotions/promotions.service.ts and
+// backend/prisma/schema.prisma). `rewardConfig`'s shape varies by type;
+// see backend/src/modules/promotions/lib/reward-config.ts's
+// resolveReward() for the shapes actually in use (flat grant or streak
+// schedule) — the UI should degrade gracefully for anything else.
+export type PromotionType =
+  | "SIGNUP"
+  | "DAILY"
+  | "WEEKLY"
+  | "MONTHLY"
+  | "LEADERBOARD"
+  | "RAFFLE"
+  | "CHALLENGE"
+  | "GAME_SPECIFIC"
+  | "PROVIDER"
+  | "PROMO_CODE"
+  | "PURCHASE"
+  | "SOCIAL"
+  | "MANUAL";
+
+export type PromotionStatus = "DRAFT" | "ACTIVE" | "PAUSED" | "ENDED";
+
 export interface Promotion {
   id: string;
-  type: "DAILY_BONUS" | "WELCOME" | "RELOAD" | "CHALLENGE" | "RAFFLE" | string;
-  title: string;
-  description: string;
-  status: "active" | "inactive";
-  terms?: string;
+  type: PromotionType;
+  name: string;
+  description: string | null;
+  termsUrl: string | null;
+  status: PromotionStatus;
+  startsAt: string | null;
+  endsAt: string | null;
+  jurisdictionAllowlist: string[];
+  minAccountAgeDays: number | null;
+  requiresKyc: boolean;
+  minVipLevelId: string | null;
+  eligibleGameIds: string[];
+  eligibleCurrency: "GC" | "SC" | "BOTH";
   rewardConfig?: Record<string, unknown>;
+  playthroughRequirement?: Record<string, unknown> | null;
+  claimLimitPerUser: number | null;
+  maxParticipants: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// A row from PromotionsService.listClaims() — GET /promotions/claims.
+export interface PromotionClaim {
+  id: string;
+  promotionId: string;
+  userId: string;
+  claimSequence: number;
+  status: "GRANTED" | "IN_PROGRESS" | "COMPLETED" | "EXPIRED" | "REVOKED";
+  grantedAmount: string | null;
+  currency: Currency | null;
+  claimedAt: string;
+  completedAt: string | null;
+  promotion?: { id: string; name: string; type: PromotionType };
 }
 
 // Matches backend VipService.getMe() exactly — see

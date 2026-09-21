@@ -3,13 +3,29 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MOBILE_NAV, NAV_TREE } from "@/lib/nav-config";
+import { MOBILE_NAV, NAV_TREE, type NavLeaf } from "@/lib/nav-config";
 import { Menu, X } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/lib/stores/auth-store";
+
+/**
+ * Resolves how a nav item should render for the current user.
+ * Before the user object is known (logged out / still loading) a flagged
+ * item is treated as disabled — the safe default is never to show
+ * functionality that isn't real yet.
+ */
+function resolveNavItem(item: NavLeaf, featureFlags: Record<string, boolean> | undefined) {
+  if (!item.flagKey) return { visible: true, enabled: true } as const;
+  const enabled = featureFlags?.[item.flagKey] ?? false;
+  if (enabled) return { visible: true, enabled: true } as const;
+  if (item.presentation === "coming-soon") return { visible: true, enabled: false } as const;
+  return { visible: false, enabled: false } as const;
+}
 
 export function MobileNav() {
   const pathname = usePathname();
+  const user = useAuthStore((s) => s.user);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
@@ -44,7 +60,7 @@ export function MobileNav() {
       {drawerOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/70" onClick={() => setDrawerOpen(false)} />
-          <div className="absolute inset-y-0 right-0 flex w-72 flex-col bg-surface p-4 shadow-2xl animate-fade-in">
+          <div className="absolute inset-y-0 right-0 flex w-72 flex-col bg-surface p-4 shadow-2xl animate-slide-in-right">
             <div className="mb-4 flex items-center justify-between">
               <span className="text-lg font-bold">Menu</span>
               <button onClick={() => setDrawerOpen(false)} className="rounded-md p-1.5 hover:bg-surface-raised">
@@ -59,17 +75,36 @@ export function MobileNav() {
                     {section.label}
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    {section.items.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setDrawerOpen(false)}
-                        className="flex items-center justify-between rounded-lg px-2 py-2 text-sm text-text-muted hover:bg-surface-raised hover:text-text-primary"
-                      >
-                        {item.label}
-                        {item.comingSoon && <Badge className="text-[9px]">Soon</Badge>}
-                      </Link>
-                    ))}
+                    {section.items.map((item) => {
+                      const { visible, enabled } = resolveNavItem(item, user?.featureFlags);
+                      if (!visible) return null;
+
+                      if (!enabled) {
+                        return (
+                          <span
+                            key={item.href}
+                            aria-disabled="true"
+                            className="flex cursor-not-allowed items-center justify-between rounded-lg px-2 py-2 text-sm text-text-muted/50"
+                          >
+                            {item.label}
+                            <Badge variant="neutral" className="text-[9px]">
+                              Coming Soon
+                            </Badge>
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          onClick={() => setDrawerOpen(false)}
+                          className="flex items-center justify-between rounded-lg px-2 py-2 text-sm text-text-muted hover:bg-surface-raised hover:text-text-primary"
+                        >
+                          {item.label}
+                        </Link>
+                      );
+                    })}
                   </div>
                 </div>
               ))}

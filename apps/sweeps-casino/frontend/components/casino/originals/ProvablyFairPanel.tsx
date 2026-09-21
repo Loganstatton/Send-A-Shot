@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Shield, RefreshCw } from "@/components/ui/icons";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import type { SeedState } from "@/lib/types";
 import { useToast } from "@/components/layout/Toast";
 
@@ -28,7 +29,7 @@ export function ProvablyFairPanel({ seed, loading, onRotated }: ProvablyFairPane
       onRotated(next);
       toast.push("Seed rotated — previous server seed revealed.", "success");
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not rotate seed.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not rotate seed."), "danger");
     } finally {
       setBusy(false);
     }
@@ -43,7 +44,7 @@ export function ProvablyFairPanel({ seed, loading, onRotated }: ProvablyFairPane
       onRotated(next);
       toast.push("Client seed updated.", "success");
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update client seed.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update client seed."), "danger");
     } finally {
       setBusy(false);
     }

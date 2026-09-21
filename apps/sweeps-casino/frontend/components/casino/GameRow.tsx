@@ -48,9 +48,12 @@ export function GameRow({ title, games, loading }: { title: string; games: Game[
       )}
 
       {!loading && games.length > 0 && (
-        <div ref={scrollerRef} className="no-scrollbar flex gap-3 overflow-x-auto px-4 pb-1 lg:px-6">
-          {games.map((g) => (
-            <GameTile key={g.id} game={g} />
+        <div
+          ref={scrollerRef}
+          className="no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 lg:px-6"
+        >
+          {games.map((g, i) => (
+            <GameTile key={g.id} game={g} index={i} />
           ))}
         </div>
       )}

@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AuthCard } from "@/components/layout/AuthCard";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 
 function VerifyEmailBody() {
   const params = useSearchParams();
@@ -23,7 +24,7 @@ function VerifyEmailBody() {
       .then(() => setStatus("success"))
       .catch((err) => {
         setStatus("error");
-        setMessage(err instanceof ApiError ? err.message : "Verification failed.");
+        setMessage(friendlyErrorMessage(err, "Verification failed."));
       });
   }, [token]);
 

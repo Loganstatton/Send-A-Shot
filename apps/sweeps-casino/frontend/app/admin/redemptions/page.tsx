@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import { useToast } from "@/components/layout/Toast";
 import { formatCoins, formatDate } from "@/lib/utils";
 import { Lock } from "@/components/ui/icons";
@@ -34,7 +35,7 @@ export default function AdminRedemptionsPage() {
       toast.push(`Redemption ${decision.toLowerCase()}.`, "success");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update redemption.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update redemption."), "danger");
     } finally {
       setBusyId(null);
     }

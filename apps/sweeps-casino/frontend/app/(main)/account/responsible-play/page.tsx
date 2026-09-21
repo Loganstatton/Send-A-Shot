@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFetch } from "@/lib/hooks/useFetch";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 import type { ResponsiblePlayState } from "@/lib/types";
 import { useToast } from "@/components/layout/Toast";
 import { AlertTriangle } from "@/components/ui/icons";
@@ -50,7 +51,7 @@ export default function ResponsiblePlayPage() {
       toast.push("Limits updated.", "success");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not update limits.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not update limits."), "danger");
     } finally {
       setSaving(false);
     }
@@ -63,7 +64,7 @@ export default function ResponsiblePlayPage() {
       toast.push(`Cooling-off period started for ${coolOffDays} days.`, "success");
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not start cooling-off.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not start cooling-off."), "danger");
     } finally {
       setCoolingOff(false);
     }
@@ -80,7 +81,7 @@ export default function ResponsiblePlayPage() {
       setExclusionModal(false);
       refetch();
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not process self-exclusion.", "danger");
+      toast.push(friendlyErrorMessage(err, "Could not process self-exclusion."), "danger");
     } finally {
       setExcluding(false);
     }

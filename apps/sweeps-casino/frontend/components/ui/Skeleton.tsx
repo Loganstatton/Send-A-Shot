@@ -6,7 +6,7 @@ export function Skeleton({ className }: { className?: string }) {
 
 export function SkeletonTile() {
   return (
-    <div className="w-[160px] shrink-0 sm:w-[180px]">
+    <div className="w-[40vw] max-w-[152px] shrink-0 sm:w-[180px] sm:max-w-none">
       <Skeleton className="aspect-[3/4] w-full rounded-lg" />
       <Skeleton className="mt-2 h-3 w-3/4" />
       <Skeleton className="mt-1.5 h-2.5 w-1/2" />
