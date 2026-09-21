@@ -2,17 +2,30 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { CurrencySwitcher } from "@/components/wallet/CurrencySwitcher";
 import { BalancePill } from "@/components/wallet/BalancePill";
 import { WalletModal } from "@/components/wallet/WalletModal";
 import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
+import { VaultlineLogo } from "@/components/ui/VaultlineLogo";
 import { Search, Wallet } from "@/components/ui/icons";
 import { Button } from "@/components/ui/Button";
+import { cn } from "@/lib/utils";
+
+// Compact desktop top-nav shortcuts. The full tree still lives in the
+// sidebar — this is just the handful of top-level links a player expects
+// to reach without opening it, per the "compact top navigation" spec.
+const TOP_LINKS = [
+  { label: "Casino", href: "/" },
+  { label: "Originals", href: "/casino/originals/dice" },
+  { label: "Promotions", href: "/rewards/promotions" },
+  { label: "VIP", href: "/rewards/vip-club" },
+];
 
 export function Topbar() {
   const router = useRouter();
+  const pathname = usePathname();
   const [query, setQuery] = useState("");
   const [walletOpen, setWalletOpen] = useState(false);
 
@@ -22,12 +35,28 @@ export function Topbar() {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-bg/90 px-4 backdrop-blur lg:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-bg/90 px-4 backdrop-blur lg:px-6">
       <Link href="/" className="flex shrink-0 items-center gap-2 lg:hidden">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent-gc to-accent-sc text-sm font-bold text-bg">
-          V
-        </span>
+        <VaultlineLogo className="h-8 w-8" />
       </Link>
+
+      <nav className="hidden shrink-0 items-center gap-4 lg:flex">
+        {TOP_LINKS.map((link) => {
+          const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={cn(
+                "text-sm font-medium transition-colors",
+                isActive ? "text-text-primary" : "text-text-muted hover:text-text-primary"
+              )}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
+      </nav>
 
       <form onSubmit={onSearchSubmit} className="hidden max-w-sm flex-1 md:block">
         <div className="relative">

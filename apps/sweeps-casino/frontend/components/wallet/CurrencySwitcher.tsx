@@ -41,8 +41,8 @@ export function CurrencySwitcher() {
         aria-pressed={active === "GC"}
         title="Gold Coins — entertainment-only, no cash value"
         className={cn(
-          "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-all",
-          active === "GC" ? "bg-accent-gc text-bg shadow-glow-gc" : "text-text-muted hover:text-accent-gc"
+          "relative flex items-center gap-1.5 overflow-hidden rounded-full px-3 py-1.5 text-xs font-bold transition-all",
+          active === "GC" ? "bg-accent-gc text-bg shadow-glow-gc-lg coin-shimmer" : "text-text-muted hover:text-accent-gc"
         )}
       >
         <Coins className="h-3.5 w-3.5" />
@@ -54,8 +54,8 @@ export function CurrencySwitcher() {
         aria-pressed={active === "SC"}
         title="Sweeps Coins — promotional sweepstakes currency"
         className={cn(
-          "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-all",
-          active === "SC" ? "bg-accent-sc text-bg shadow-glow-sc" : "text-text-muted hover:text-accent-sc"
+          "relative flex items-center gap-1.5 overflow-hidden rounded-full px-3 py-1.5 text-xs font-bold transition-all",
+          active === "SC" ? "bg-accent-sc text-bg shadow-glow-sc-lg coin-shimmer" : "text-text-muted hover:text-accent-sc"
         )}
       >
         <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-current text-[8px]">

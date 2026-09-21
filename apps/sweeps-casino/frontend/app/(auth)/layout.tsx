@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { VaultlineLogo } from "@/components/ui/VaultlineLogo";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -13,9 +14,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       />
       <div className="relative z-10 w-full max-w-md">
         <Link href="/" className="mb-8 flex items-center justify-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-accent-gc to-accent-sc text-sm font-bold text-bg">
-            V
-          </span>
+          <VaultlineLogo className="h-9 w-9" />
           <span className="text-xl font-bold tracking-tight text-text-primary">Vaultline</span>
         </Link>
         {children}

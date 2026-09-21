@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Shield } from "@/components/ui/icons";
+import { VaultlineLogo } from "@/components/ui/VaultlineLogo";
 import { api } from "@/lib/api-client";
 import { friendlyErrorMessage } from "@/lib/error-messages";
 
@@ -49,9 +50,7 @@ export default function ProvablyFairPage() {
     <div className="min-h-screen bg-bg px-4 py-10">
       <div className="mx-auto max-w-xl">
         <Link href="/" className="mb-6 flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent-gc to-accent-sc text-sm font-bold text-bg">
-            V
-          </span>
+          <VaultlineLogo className="h-8 w-8" />
           <span className="text-lg font-bold">Vaultline</span>
         </Link>
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MOBILE_NAV, NAV_TREE, type NavLeaf } from "@/lib/nav-config";
+import { MOBILE_NAV, NAV_TREE, NAV_FOOTER, type NavLeaf } from "@/lib/nav-config";
 import { Menu, X } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
@@ -39,8 +39,9 @@ export function MobileNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center gap-0.5 px-2 text-[10px] font-medium",
-                isActive ? "text-accent-sc" : "text-text-muted"
+                "flex flex-col items-center gap-0.5 px-2 text-[10px] font-medium transition-colors",
+                isActive && "text-accent-sc drop-shadow-[0_0_6px_rgb(var(--color-accent-sc)/0.6)]",
+                !isActive && "text-text-muted"
               )}
             >
               <Icon className="h-5 w-5" />
@@ -108,6 +109,22 @@ export function MobileNav() {
                   </div>
                 </div>
               ))}
+            </div>
+            <div className="mt-2 border-t border-border pt-3">
+              {NAV_FOOTER.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setDrawerOpen(false)}
+                    className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-xs text-text-muted hover:bg-surface-raised hover:text-text-primary"
+                  >
+                    {Icon && <Icon className="h-3.5 w-3.5" />}
+                    {item.label}
+                  </Link>
+                );
+              })}
             </div>
           </div>
         </div>

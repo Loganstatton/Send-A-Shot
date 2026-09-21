@@ -17,7 +17,19 @@ const TABS = [
 
 const POLL_MS = 8000;
 
-export function ActivityPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+export function ActivityPanel({
+  collapsed,
+  onToggle,
+  standalone,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  /** Render as a normal-flow, always-visible block instead of the sticky
+   * desktop-only (`xl:`) right-hand rail — used when this panel is the
+   * main content of its own page (see app/(main)/social/live-activity)
+   * rather than layout.tsx's persistent sidebar-adjacent rail. */
+  standalone?: boolean;
+}) {
   const [tab, setTab] = useState("all");
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +59,7 @@ export function ActivityPanel({ collapsed, onToggle }: { collapsed: boolean; onT
     };
   }, [tab]);
 
-  if (collapsed) {
+  if (collapsed && !standalone) {
     return (
       <button
         onClick={onToggle}
@@ -60,13 +72,22 @@ export function ActivityPanel({ collapsed, onToggle }: { collapsed: boolean; onT
   }
 
   return (
-    <aside className="sticky top-16 hidden h-[calc(100vh-64px)] w-72 shrink-0 flex-col border-l border-border bg-surface/40 xl:flex">
-      <div className="flex items-center justify-between px-3 pt-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">Community</span>
-        <button onClick={onToggle} aria-label="Collapse activity panel" className="rounded p-1 text-text-muted hover:text-text-primary">
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      </div>
+    <aside
+      className={cn(
+        "flex-col border-border bg-surface/40",
+        standalone
+          ? "flex w-full rounded-xl border"
+          : "sticky top-16 hidden h-[calc(100vh-64px)] w-72 shrink-0 border-l xl:flex"
+      )}
+    >
+      {!standalone && (
+        <div className="flex items-center justify-between px-3 pt-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">Community</span>
+          <button onClick={onToggle} aria-label="Collapse activity panel" className="rounded p-1 text-text-muted hover:text-text-primary">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       <Tabs
         tabs={TABS}
         active={tab}
