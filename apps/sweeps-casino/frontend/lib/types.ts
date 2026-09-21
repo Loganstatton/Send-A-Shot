@@ -21,7 +21,7 @@ export interface User {
   avatarUrl?: string | null;
   dob?: string;
   stateOfRecord?: string;
-  kycStatus?: "NOT_STARTED" | "PENDING" | "APPROVED" | "REJECTED" | "REVIEW_REQUIRED";
+  kycStatus?: "UNVERIFIED" | "PENDING" | "VERIFIED" | "REJECTED" | "REVIEW_REQUIRED" | "SUSPENDED";
   vip?: { level: number; levelName: string } | null;
   featureFlags?: Record<string, boolean>;
   isAdmin?: boolean;
@@ -114,21 +114,33 @@ export interface Promotion {
   rewardConfig?: Record<string, unknown>;
 }
 
+// Matches backend VipService.getMe() exactly — see
+// backend/src/modules/vip/vip.service.ts.
 export interface VipSummary {
-  level: number;
-  levelName: string;
-  progress: number;
-  progressTarget: number;
-  nextLevelName?: string | null;
-  benefits: string[];
-  lifetimeWagered?: number;
+  currentLevel: { id: string; rankOrder: number; name: string; benefits: string[] | null };
+  periodPoints: string;
+  lifetimePoints: string;
+  progress: {
+    pointsIntoLevel: string;
+    /** null once there's no next level (top of the ladder). */
+    pointsForLevel: string | null;
+    pointsNeeded: string | null;
+  };
+  nextLevel: { name: string; pointsNeeded: string } | null;
+  rewardHistorySummary: {
+    totalRewards: number;
+    recent: Array<{ id: string; type: string; amount: string; currency: Currency; createdAt: string }>;
+  };
 }
 
+// Matches backend VipService.listLevelsPublic() / PublicVipLevel — the
+// public ladder intentionally omits point thresholds (internal formula);
+// numeric progress comes from VipSummary.progress instead.
 export interface VipLevel {
-  level: number;
+  id: string;
+  rankOrder: number;
   name: string;
-  requiredPoints: number;
-  benefits: string[];
+  benefits: string[] | null;
 }
 
 export interface Notification {

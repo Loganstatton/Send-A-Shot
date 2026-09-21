@@ -2,17 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { AuthCard } from "@/components/layout/AuthCard";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
-import { api, ApiError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 import { US_STATES } from "@/lib/us-states";
+import { buildRegisterPayload, validateRegisterForm, type RegisterFormValues } from "@/lib/validation";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 
 export default function RegisterPage() {
-  const router = useRouter();
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<RegisterFormValues>({
     email: "",
     username: "",
     password: "",
@@ -31,26 +31,24 @@ export default function RegisterPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+
     if (!agreed) {
       setError("You must confirm you're 18+ (or 21+ where required) and agree to the Terms and Sweepstakes Rules.");
       return;
     }
+
+    const validationError = validateRegisterForm(form);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
     try {
-      await api.post("/auth/register", form, { skipAuth: true });
+      await api.post("/auth/register", buildRegisterPayload(form), { skipAuth: true });
       setDone(true);
     } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.code === "JURISDICTION_BLOCKED") {
-          setError("Registration isn't currently available in your state of record.");
-        } else if (err.code === "AGE_RESTRICTED") {
-          setError("You must meet the minimum age requirement to register.");
-        } else {
-          setError(err.message);
-        }
-      } else {
-        setError("Unable to register. Please try again.");
-      }
+      setError(friendlyErrorMessage(err, "Unable to create your account right now. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -85,10 +83,10 @@ export default function RegisterPage() {
           label="Password"
           type="password"
           required
-          minLength={8}
+          minLength={10}
           value={form.password}
           onChange={(e) => set("password", e.target.value)}
-          hint="At least 8 characters."
+          hint="At least 10 characters."
         />
         <Input
           label="Date of birth"
@@ -129,7 +127,7 @@ export default function RegisterPage() {
             . No purchase necessary to play or win.
           </span>
         </label>
-        {error && <p className="text-sm text-danger">{error}</p>}
+        {error && <p className="text-sm text-danger" role="alert">{error}</p>}
         <Button type="submit" className="w-full" loading={loading}>
           Create account
         </Button>

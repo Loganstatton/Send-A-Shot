@@ -9,33 +9,45 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useFetch } from "@/lib/hooks/useFetch";
 import { api, ApiError } from "@/lib/api-client";
 import { useToast } from "@/components/layout/Toast";
-import type { VipLevel } from "@/lib/types";
+
+// Full admin-facing shape (backend VipLevel Prisma model), distinct from
+// the public VipLevel in lib/types.ts which deliberately omits point
+// thresholds/multipliers. See backend/src/modules/vip/admin-vip.controller.ts.
+interface AdminVipLevel {
+  id: string;
+  rankOrder: number;
+  name: string;
+  minPoints: string;
+  gcPointsMultiplier: string;
+  scPointsMultiplier: string;
+  benefits: string[] | null;
+}
 
 export default function AdminVipPage() {
   const toast = useToast();
-  const fetcher = useCallback(() => api.get<VipLevel[]>("/admin/vip/levels"), []);
+  const fetcher = useCallback(() => api.get<AdminVipLevel[]>("/admin/vip/levels"), []);
   const { data, loading, refetch } = useFetch(fetcher);
-  const [drafts, setDrafts] = useState<Record<number, string>>({});
-  const [savingLevel, setSavingLevel] = useState<number | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
 
-  async function save(level: VipLevel) {
-    const draft = drafts[level.level];
-    if (draft === undefined) return;
-    setSavingLevel(level.level);
+  async function save(level: AdminVipLevel) {
+    const draft = drafts[level.id];
+    if (draft === undefined || draft === "") return;
+    setSavingId(level.id);
     try {
-      await api.patch("/admin/vip/levels", { level: level.level, requiredPoints: parseInt(draft, 10) });
-      toast.push(`Level ${level.level} updated.`, "success");
+      await api.patch(`/admin/vip/levels/${level.id}`, { minPoints: Number(draft).toFixed(2) });
+      toast.push(`${level.name} updated.`, "success");
       refetch();
     } catch (err) {
       toast.push(err instanceof ApiError ? err.message : "Could not update level.", "danger");
     } finally {
-      setSavingLevel(null);
+      setSavingId(null);
     }
   }
 
   return (
     <div>
-      <AdminPageHeader title="VIP configuration" description="Edit the level ladder, point thresholds, and benefits." />
+      <AdminPageHeader title="VIP configuration" description="Edit the level ladder's point thresholds and benefits." />
       <div className="px-4 pb-8 lg:px-6">
         {loading && (
           <div className="space-y-2">
@@ -46,23 +58,25 @@ export default function AdminVipPage() {
         )}
         {!loading &&
           data?.map((lvl) => (
-            <Card key={lvl.level} className="mb-2">
+            <Card key={lvl.id} className="mb-2">
               <CardContent className="flex items-center justify-between gap-4 p-4">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-text-primary">
-                    {lvl.level}. {lvl.name}
+                    {lvl.rankOrder}. {lvl.name}
                   </p>
-                  <p className="truncate text-xs text-text-muted">{lvl.benefits.join(" · ")}</p>
+                  {Array.isArray(lvl.benefits) && lvl.benefits.length > 0 && (
+                    <p className="truncate text-xs text-text-muted">{lvl.benefits.join(" · ")}</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Input
                     className="w-32"
                     type="number"
-                    placeholder={String(lvl.requiredPoints)}
-                    value={drafts[lvl.level] ?? ""}
-                    onChange={(e) => setDrafts((d) => ({ ...d, [lvl.level]: e.target.value }))}
+                    placeholder={String(Math.round(Number(lvl.minPoints)))}
+                    value={drafts[lvl.id] ?? ""}
+                    onChange={(e) => setDrafts((d) => ({ ...d, [lvl.id]: e.target.value }))}
                   />
-                  <Button size="sm" variant="secondary" loading={savingLevel === lvl.level} onClick={() => save(lvl)}>
+                  <Button size="sm" variant="secondary" loading={savingId === lvl.id} onClick={() => save(lvl)}>
                     Save
                   </Button>
                 </div>

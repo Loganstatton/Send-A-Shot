@@ -12,8 +12,28 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateResponsiblePlayDto } from './dto/update-responsible-play.dto';
 import { SelfExcludeDto } from './dto/self-exclude.dto';
 
-/** SC-adjacent flags surfaced on the profile so the client knows what to render. */
-const ME_FEATURE_FLAG_KEYS = ['sc.enabled', 'originals.sc_enabled'] as const;
+/**
+ * Flags surfaced on the profile so the client knows what to render: the
+ * original two SC-adjacent flags, plus one per not-yet-built nav section
+ * (spec: "Mobile MVP Polish Sprint" item 10 — feature-flag-driven nav
+ * instead of hardcoded "Coming Soon" everywhere). Each defaults to
+ * disabled (see prisma/seed.ts) and admins can flip them individually
+ * from /admin/compliance/feature-flags; the frontend nav config decides
+ * per-item whether "disabled" means hidden entirely or a polished
+ * "Coming Soon" preview.
+ */
+const ME_FEATURE_FLAG_KEYS = [
+  'sc.enabled',
+  'originals.sc_enabled',
+  'nav.slots',
+  'nav.live_casino',
+  'nav.table_games',
+  'nav.game_shows',
+  'nav.chat',
+  'nav.leaderboards',
+  'nav.challenges',
+  'nav.raffles',
+] as const;
 
 @Injectable()
 export class UserService {
@@ -69,10 +89,9 @@ export class UserService {
       vip: vipProgress
         ? { levelName: vipProgress.currentLevel.name, rankOrder: vipProgress.currentLevel.rankOrder }
         : null,
-      featureFlags: {
-        'sc.enabled': flagMap.get('sc.enabled') ?? false,
-        'originals.sc_enabled': flagMap.get('originals.sc_enabled') ?? false,
-      },
+      featureFlags: Object.fromEntries(
+        ME_FEATURE_FLAG_KEYS.map((key) => [key, flagMap.get(key) ?? false]),
+      ),
     };
   }
 

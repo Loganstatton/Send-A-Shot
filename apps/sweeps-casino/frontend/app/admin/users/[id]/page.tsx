@@ -211,7 +211,7 @@ export default function AdminUserDetailPage({ params }: { params: { id: string }
         {tab === "kyc" && (
           <Card>
             <CardContent className="p-5 text-sm">
-              <Badge variant={data.kyc?.status === "APPROVED" ? "success" : "neutral"}>{data.kyc?.status ?? "NOT_STARTED"}</Badge>
+              <Badge variant={data.kyc?.status === "VERIFIED" ? "success" : "neutral"}>{data.kyc?.status ?? "UNVERIFIED"}</Badge>
               {data.kyc?.updatedAt && <p className="mt-2 text-xs text-text-muted">Updated {formatDate(data.kyc.updatedAt)}</p>}
             </CardContent>
           </Card>

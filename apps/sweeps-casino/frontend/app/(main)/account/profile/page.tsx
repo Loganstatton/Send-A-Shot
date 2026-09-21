@@ -60,8 +60,8 @@ export default function ProfilePage() {
           </div>
           <div className="flex items-center justify-between">
             <span className="text-text-muted">KYC status</span>
-            <Badge variant={user?.kycStatus === "APPROVED" ? "success" : "neutral"}>
-              {user?.kycStatus ?? "NOT_STARTED"}
+            <Badge variant={user?.kycStatus === "VERIFIED" ? "success" : "neutral"}>
+              {user?.kycStatus ?? "UNVERIFIED"}
             </Badge>
           </div>
         </CardContent>

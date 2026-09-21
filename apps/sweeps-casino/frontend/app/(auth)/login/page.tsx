@@ -6,8 +6,9 @@ import { useRouter } from "next/navigation";
 import { AuthCard } from "@/components/layout/AuthCard";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { api, ApiError, setAccessToken } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { friendlyErrorMessage } from "@/lib/error-messages";
 
 interface LoginResponse {
   accessToken?: string;
@@ -41,7 +42,7 @@ export default function LoginPage() {
         router.push("/");
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Unable to sign in. Please try again.");
+      setError(friendlyErrorMessage(err, "Unable to sign in. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -63,7 +64,7 @@ export default function LoginPage() {
         router.push("/");
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Invalid code.");
+      setError(friendlyErrorMessage(err, "Invalid code."));
     } finally {
       setLoading(false);
     }

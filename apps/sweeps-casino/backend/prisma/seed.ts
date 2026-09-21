@@ -1,5 +1,5 @@
 /* eslint-disable no-console */
-import { PrismaClient, AdminRoleKey, Prisma } from '@prisma/client';
+import { PrismaClient, AdminRoleKey, KycStatus, Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { hashServerSeed, generateServerSeed, generateClientSeed } from '../src/libs/provably-fair/provably-fair';
 
@@ -41,8 +41,21 @@ async function seedFeatureFlags() {
     { key: 'redemptions.enabled', enabled: false },
     { key: 'kyc.required_for_redemption', enabled: true },
     { key: 'geolocation.enforcement_enabled', enabled: true },
+    // Nav-section flags (Mobile MVP Polish Sprint item 10): each gates one
+    // not-yet-built casino/social section. Default OFF; the frontend nav
+    // config decides per-item whether OFF means "hidden" or a polished
+    // "Coming Soon" preview. Flip individually from
+    // /admin/compliance/feature-flags once real content exists.
+    { key: 'nav.slots', enabled: false },
+    { key: 'nav.live_casino', enabled: false },
+    { key: 'nav.table_games', enabled: false },
+    { key: 'nav.game_shows', enabled: false },
+    { key: 'nav.chat', enabled: false },
+    { key: 'nav.leaderboards', enabled: false },
+    { key: 'nav.challenges', enabled: false },
+    { key: 'nav.raffles', enabled: false },
   ];
-  console.log(`Seeding ${flags.length} feature flags (all SC-adjacent flags default OFF)...`);
+  console.log(`Seeding ${flags.length} feature flags (all SC-adjacent + unreleased-nav flags default OFF)...`);
   for (const flag of flags) {
     await prisma.featureFlag.upsert({
       where: { key: flag.key },
@@ -206,6 +219,8 @@ interface DemoUserSpec {
   scBalance: string;
   vipRankOrder: number;
   adminRoleKey?: keyof typeof ADMIN_ROLE_PERMISSIONS;
+  /** Defaults to VERIFIED (matches prior seed behavior) unless overridden. */
+  kycStatus?: KycStatus;
 }
 
 const DEMO_USERS: DemoUserSpec[] = [
@@ -252,6 +267,64 @@ const DEMO_USERS: DemoUserSpec[] = [
     vipRankOrder: 1,
     adminRoleKey: 'SUPER_ADMIN',
   },
+
+  // Predictable, purpose-named accounts (Mobile MVP Polish Sprint item 12)
+  // for exercising specific states without hand-crafting data each time.
+  {
+    email: 'new-player@demo.sweeps-casino.local',
+    username: 'newplayer',
+    stateOfRecord: DEMO_ALLOWED_STATES[0] ?? 'NJ',
+    gcBalance: '100.00',
+    scBalance: '0.00',
+    vipRankOrder: 1, // Starter, 0 XP — exercises the "brand new account" onboarding state.
+    kycStatus: 'UNVERIFIED',
+  },
+  {
+    email: 'active-player@demo.sweeps-casino.local',
+    username: 'activeplayer',
+    stateOfRecord: DEMO_ALLOWED_STATES[0] ?? 'NJ',
+    gcBalance: '3500.00',
+    scBalance: '8.00',
+    vipRankOrder: 3, // mid-ladder — has clearly played before, not a fresh signup.
+    kycStatus: 'UNVERIFIED',
+  },
+  {
+    email: 'sc-eligible-player@demo.sweeps-casino.local',
+    username: 'sceligibleplayer',
+    stateOfRecord: DEMO_ALLOWED_STATES[0] ?? 'NJ',
+    gcBalance: '1000.00',
+    scBalance: '75.00', // meaningful SC balance + verified KYC: ready for redemption once redemptions.enabled flips on.
+    vipRankOrder: 2,
+    kycStatus: 'VERIFIED',
+  },
+  {
+    email: 'blocked-state-player@demo.sweeps-casino.local',
+    username: 'blockedstateplayer',
+    stateOfRecord: 'CA', // not in DEMO_ALLOWED_STATES -> seeded REGISTRATION_DISABLED; exercises jurisdiction-blocked UI.
+    gcBalance: '500.00',
+    scBalance: '0.00',
+    vipRankOrder: 1,
+    kycStatus: 'UNVERIFIED',
+  },
+  {
+    email: 'kyc-pending-player@demo.sweeps-casino.local',
+    username: 'kycpendingplayer',
+    stateOfRecord: DEMO_ALLOWED_STATES[0] ?? 'NJ',
+    gcBalance: '500.00',
+    scBalance: '2.00',
+    vipRankOrder: 1,
+    kycStatus: 'PENDING', // shows up in /admin/kyc queue.
+  },
+  {
+    email: 'admin@demo.sweeps-casino.local',
+    username: 'admin',
+    stateOfRecord: DEMO_ALLOWED_STATES[0] ?? 'NJ',
+    gcBalance: '0.00',
+    scBalance: '0.00',
+    vipRankOrder: 1,
+    adminRoleKey: 'SUPER_ADMIN',
+    kycStatus: 'VERIFIED',
+  },
 ];
 
 async function seedDemoUsers(vipLevels: Record<number, string>, adminRoles: Record<string, string>) {
@@ -268,7 +341,7 @@ async function seedDemoUsers(vipLevels: Record<number, string>, adminRoles: Reco
         dateOfBirth: new Date('1990-01-01'),
         stateOfRecord: spec.stateOfRecord,
         emailVerifiedAt: new Date(),
-        kycStatus: 'VERIFIED',
+        kycStatus: spec.kycStatus ?? 'VERIFIED',
       },
       update: {},
     });
@@ -371,6 +444,15 @@ async function seedDemoUsers(vipLevels: Record<number, string>, adminRoles: Reco
         create: { userId: user.id, roleId, active: true },
         update: { roleId, active: true },
       });
+    }
+
+    if (spec.kycStatus === 'PENDING') {
+      const existing = await prisma.kycRecord.findFirst({ where: { userId: user.id } });
+      if (!existing) {
+        await prisma.kycRecord.create({
+          data: { userId: user.id, status: 'PENDING', level: 'BASIC', provider: 'mock' },
+        });
+      }
     }
   }
 }

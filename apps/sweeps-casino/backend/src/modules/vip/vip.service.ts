@@ -89,10 +89,30 @@ export class VipService {
       take: 10,
     });
 
+    // XP into the current level: for the base level this is just
+    // lifetimePoints (minPoints=0); for higher levels it's the points
+    // earned past that level's own threshold. currentLevel.minPoints is
+    // intentionally NOT exposed on the public ladder (/vip/levels --
+    // internal formula per docs/04), but here on the authenticated /me
+    // response it's the only way to render a real "X / Y XP" progress
+    // bar instead of a hardcoded one, so we compute with it server-side
+    // and only return the derived numbers, not the raw ladder value.
+    const currentLevelMinPoints = progress.currentLevel.minPoints.toString();
+    const pointsIntoLevelCents = toCents(lifetimePoints) - toCents(currentLevelMinPoints);
+    const pointsIntoLevel = fromCents(pointsIntoLevelCents > 0n ? pointsIntoLevelCents : 0n);
+    const levelSpan = nextLevel
+      ? fromCents(toCents(nextLevel.minPoints.toString()) - toCents(currentLevelMinPoints))
+      : null;
+
     return {
       currentLevel: this.toPublicLevel(progress.currentLevel),
       periodPoints: progress.periodPoints.toString(),
       lifetimePoints,
+      progress: {
+        pointsIntoLevel,
+        pointsForLevel: levelSpan, // null when already at the top level
+        pointsNeeded,
+      },
       nextLevel: nextLevel ? { name: nextLevel.name, pointsNeeded } : null,
       rewardHistorySummary: {
         totalRewards: rewards.length,
