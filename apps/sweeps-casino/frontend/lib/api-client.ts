@@ -121,6 +121,14 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     throw new ApiError(res.status, errBody);
   }
 
+  // Cursor-paginated backend endpoints reply { data: T[], meta: { nextCursor } }
+  // (see docs/05-api-design.md's response envelope). Call sites that type
+  // their request as CursorPage<T> (= { items, nextCursor }) get that shape
+  // normalized here in one place rather than in every page.
+  if (json && typeof json === "object" && json.meta && "nextCursor" in json.meta) {
+    return { items: json.data, nextCursor: json.meta.nextCursor } as T;
+  }
+
   return (json?.data ?? json) as T;
 }
 

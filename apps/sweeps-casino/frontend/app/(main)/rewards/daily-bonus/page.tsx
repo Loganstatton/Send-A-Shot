@@ -11,13 +11,21 @@ import { useWalletStore } from "@/lib/stores/wallet-store";
 import { Gift } from "@/components/ui/icons";
 import { cn, formatCoins } from "@/lib/utils";
 
+// Matches backend PromotionsService.getDailyBonusState() — see
+// backend/src/modules/promotions/promotions.service.ts.
 interface DailyBonusState {
-  streakDay: number;
-  claimedToday: boolean;
-  nextRewardAmount: number;
-  rewards: number[];
-  cooldownEndsAt?: string | null;
+  promotionId: string;
+  day: number;
+  claimableNow: boolean;
+  hoursRemaining: number;
+  reward: Array<{ currency: "GC" | "SC"; amount: string }>;
+  cooldownHours: number;
 }
+
+// Mirrors the 7-day schedule seeded in backend/prisma/seed.ts
+// (seedDailyBonusPromotion) purely for the visual ladder — the actual
+// amount credited always comes from the backend's own resolution.
+const SCHEDULE_GC = [25, 35, 50, 75, 100, 150, 250];
 
 export default function DailyBonusPage() {
   const toast = useToast();
@@ -48,8 +56,8 @@ export default function DailyBonusPage() {
     );
   }
 
-  const rewards = data?.rewards ?? [500, 750, 1000, 1500, 2000, 3000, 5000];
-  const streakDay = data?.streakDay ?? 1;
+  const streakDay = ((data?.day ?? 1) - 1) % 7 + 1;
+  const claimedToday = !data?.claimableNow;
 
   return (
     <div className="mx-auto max-w-2xl p-4 lg:p-6">
@@ -59,10 +67,10 @@ export default function DailyBonusPage() {
       <Card>
         <CardContent className="p-6">
           <div className="grid grid-cols-7 gap-2">
-            {rewards.map((amount, idx) => {
+            {SCHEDULE_GC.map((amount, idx) => {
               const day = idx + 1;
-              const isPast = day < streakDay || (day === streakDay && data?.claimedToday);
-              const isToday = day === streakDay && !data?.claimedToday;
+              const isPast = day < streakDay || (day === streakDay && claimedToday);
+              const isToday = day === streakDay && !claimedToday;
               return (
                 <div
                   key={day}
@@ -75,18 +83,23 @@ export default function DailyBonusPage() {
                 >
                   <Gift className={cn("h-4 w-4", isToday ? "text-accent-gc" : "text-text-muted")} />
                   <span className="text-[10px] font-semibold text-text-muted">Day {day}</span>
-                  <span className="font-mono text-[10px] text-text-primary">{formatCoins(amount)}</span>
+                  <span className="font-mono text-[10px] text-text-primary">{formatCoins(amount * 100)}</span>
                 </div>
               );
             })}
           </div>
 
           <div className="mt-6 text-center">
-            {data?.claimedToday ? (
-              <p className="text-sm text-text-muted">You've claimed today's bonus — come back tomorrow.</p>
+            {claimedToday ? (
+              <p className="text-sm text-text-muted">
+                You&apos;ve claimed today&apos;s bonus — check back in {Math.max(1, Math.round(data?.hoursRemaining ?? 0))}h.
+              </p>
             ) : (
               <Button size="lg" onClick={claim} loading={claiming}>
                 Claim Day {streakDay} Bonus
+                {data?.reward?.length
+                  ? ` · ${data.reward.map((g) => `${formatCoins(Number(g.amount) * 100)} ${g.currency}`).join(" + ")}`
+                  : ""}
               </Button>
             )}
           </div>

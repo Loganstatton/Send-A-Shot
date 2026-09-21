@@ -101,7 +101,7 @@ export default function SupportPage() {
         <div className="space-y-2">
           {ticketsLoading && Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
           {!ticketsLoading && (tickets?.length ?? 0) === 0 && (
-            <p className="text-sm text-text-muted">You haven't submitted any tickets.</p>
+            <p className="text-sm text-text-muted">You haven&apos;t submitted any tickets.</p>
           )}
           {!ticketsLoading &&
             tickets?.map((t) => (

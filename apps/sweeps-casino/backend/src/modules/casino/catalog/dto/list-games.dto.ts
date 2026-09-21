@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { GameCategory } from '@prisma/client';
 
 export type CatalogSort = 'featured' | 'new' | 'name';
@@ -30,6 +30,12 @@ export class ListGamesQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  /** Restrict to the authenticated caller's favorited games; requires auth. */
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  favoritesOnly?: boolean;
 
   @IsOptional()
   @Type(() => Number)

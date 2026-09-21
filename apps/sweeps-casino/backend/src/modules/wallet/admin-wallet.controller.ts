@@ -72,3 +72,21 @@ export class AdminWalletController {
     return { data: result };
   }
 }
+
+@Controller('admin/ledger')
+@UseGuards(JwtAuthGuard, AdminGuard)
+export class AdminLedgerController {
+  constructor(private readonly walletService: WalletService) {}
+
+  @Get('reconciliation')
+  @RequirePermission('wallet.view_ledger')
+  async getRuns() {
+    return { data: this.walletService.getReconciliationRuns() };
+  }
+
+  @Post('reconciliation/run')
+  @RequirePermission('wallet.adjust_balance')
+  async runNow() {
+    return { data: await this.walletService.runReconciliation() };
+  }
+}

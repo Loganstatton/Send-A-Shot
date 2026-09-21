@@ -17,8 +17,9 @@ export class CatalogController {
   }
 
   @Get('games')
-  async listGames(@Query() query: ListGamesQueryDto) {
-    const result = await this.catalogService.listGames(query);
+  @UseGuards(OptionalJwtAuthGuard)
+  async listGames(@Query() query: ListGamesQueryDto, @CurrentUser() user: AuthenticatedUser | undefined) {
+    const result = await this.catalogService.listGames(query, user?.userId);
     return { data: result.games, meta: { nextCursor: result.nextCursor } };
   }
 
@@ -30,8 +31,9 @@ export class CatalogController {
   }
 
   @Get('games/:slug')
-  async getGame(@Param('slug') slug: string) {
-    const game = await this.catalogService.getGameBySlug(slug);
+  @UseGuards(OptionalJwtAuthGuard)
+  async getGame(@Param('slug') slug: string, @CurrentUser() user: AuthenticatedUser | undefined) {
+    const game = await this.catalogService.getGameBySlug(slug, user?.userId);
     return { data: game };
   }
 

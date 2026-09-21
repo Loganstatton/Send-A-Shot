@@ -1,6 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
+  Get,
+  Param,
   Post,
   Req,
   Res,
@@ -69,6 +72,19 @@ export class AuthController {
     const token = req.cookies?.[REFRESH_COOKIE];
     if (token) await this.authService.logout(token);
     res.clearCookie(REFRESH_COOKIE);
+    return { data: { success: true } };
+  }
+
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  async listSessions(@CurrentUser() user: AuthenticatedUser) {
+    return { data: await this.authService.listSessions(user.userId) };
+  }
+
+  @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  async revokeSession(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    await this.authService.revokeSession(user.userId, id);
     return { data: { success: true } };
   }
 

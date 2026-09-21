@@ -14,53 +14,48 @@ import { cn } from "@/lib/utils";
 
 const GRID_SIZE = 25;
 
+// The backend settles a Mines round as a single shot: all tile picks are
+// submitted together and the round resolves immediately (see
+// backend/src/modules/casino/originals/mines/mines.outcome.ts) rather than
+// an interactive reveal-with-mid-round-cashout flow. So this UI is
+// "select your tiles, then reveal" — clicking a tile only toggles a local
+// selection until Reveal submits the whole pick set in one /play call.
 export function MinesGame() {
-  const { config, seed, setSeed, history, loadingConfig, loadingSeed, playing, lastError, lastResult, play } =
+  const { config, seed, onRotated, history, loadingConfig, loadingSeed, playing, lastError, lastResult, play } =
     useOriginalGame("mines");
 
   const [betAmount, setBetAmount] = useState(100);
   const [mineCount, setMineCount] = useState(3);
-  const [roundActive, setRoundActive] = useState(false);
-  const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  const [busted, setBusted] = useState(false);
-  const [minePositions, setMinePositions] = useState<number[]>([]);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [revealedMines, setRevealedMines] = useState<number[]>([]);
+  const [hitMine, setHitMine] = useState(false);
+  const [settled, setSettled] = useState(false);
 
-  function reset() {
-    setRoundActive(false);
-    setRevealed(new Set());
-    setBusted(false);
-    setMinePositions([]);
+  function toggleTile(idx: number) {
+    if (settled || playing) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
   }
 
-  async function startRound() {
-    reset();
-    setRoundActive(true);
+  function newRound() {
+    setSelected(new Set());
+    setRevealedMines([]);
+    setHitMine(false);
+    setSettled(false);
   }
 
-  async function cashOut() {
-    const result = await play({ betAmount, mineCount, action: "cashout", revealed: Array.from(revealed) });
-    if (result) {
-      const mines = (result.resultDetail.minePositions as number[]) || [];
-      setMinePositions(mines);
-    }
-    setRoundActive(false);
-  }
-
-  async function revealTile(idx: number) {
-    if (!roundActive || revealed.has(idx) || playing) return;
-    const result = await play({ betAmount, mineCount, action: "reveal", tile: idx, revealed: Array.from(revealed) });
+  async function reveal() {
+    if (selected.size === 0) return;
+    const result = await play({ betAmount, minesCount: mineCount, picks: Array.from(selected) });
     if (!result) return;
-    const nextRevealed = new Set(revealed);
-    nextRevealed.add(idx);
-    setRevealed(nextRevealed);
-
-    const hitMine = result.resultDetail.hitMine === true;
-    if (hitMine) {
-      setBusted(true);
-      setRoundActive(false);
-      const mines = (result.resultDetail.minePositions as number[]) || [idx];
-      setMinePositions(mines);
-    }
+    const mines = (result.resultDetail.minePositions as number[]) || [];
+    setRevealedMines(mines);
+    setHitMine(result.resultDetail.hitMine === true);
+    setSettled(true);
   }
 
   if (loadingConfig || !config) {
@@ -76,13 +71,13 @@ export function MinesGame() {
             onChange={setBetAmount}
             minMinor={config.minBet}
             maxMinor={config.maxBet}
-            disabled={playing || roundActive}
+            disabled={playing || settled}
           />
 
           <Select
             label="Mines"
             value={mineCount}
-            disabled={playing || roundActive}
+            disabled={playing || settled}
             onChange={(e) => setMineCount(parseInt(e.target.value, 10))}
           >
             {[1, 3, 5, 10, 15, 24].map((n) => (
@@ -92,15 +87,19 @@ export function MinesGame() {
             ))}
           </Select>
 
+          <p className="text-xs text-text-muted">
+            Pick up to {GRID_SIZE - mineCount} tiles, then reveal. Any mine among your picks busts the whole bet.
+          </p>
+
           {lastError && <p className="text-xs text-danger">{lastError}</p>}
 
-          {!roundActive ? (
-            <Button className="w-full" size="lg" onClick={startRound} loading={playing}>
-              Start round
+          {!settled ? (
+            <Button className="w-full" size="lg" onClick={reveal} loading={playing} disabled={selected.size === 0}>
+              Reveal ({selected.size} picked)
             </Button>
           ) : (
-            <Button className="w-full" size="lg" variant="primary" onClick={cashOut} loading={playing}>
-              Cash out
+            <Button className="w-full" size="lg" variant="secondary" onClick={newRound}>
+              New round
             </Button>
           )}
         </CardContent>
@@ -111,38 +110,42 @@ export function MinesGame() {
           <CardContent className="p-5">
             <div className="mx-auto grid max-w-md grid-cols-5 gap-2">
               {Array.from({ length: GRID_SIZE }).map((_, idx) => {
-                const isRevealed = revealed.has(idx);
-                const isMine = minePositions.includes(idx);
-                const showMine = !roundActive && isMine;
+                const isSelected = selected.has(idx);
+                const isMine = revealedMines.includes(idx);
+                const showMine = settled && isMine;
+                const showSafePick = settled && isSelected && !isMine;
                 return (
                   <button
                     key={idx}
-                    onClick={() => revealTile(idx)}
-                    disabled={!roundActive || isRevealed || playing}
+                    onClick={() => toggleTile(idx)}
+                    disabled={settled || playing}
                     className={cn(
                       "flex aspect-square items-center justify-center rounded-lg border text-lg transition-all",
-                      isRevealed && !showMine && "border-success/40 bg-success/15",
+                      showSafePick && "border-success/40 bg-success/15",
                       showMine && "border-danger/50 bg-danger/20",
-                      !isRevealed && !showMine && "border-border bg-surface-raised hover:border-accent-sc/50",
-                      (!roundActive || playing) && !isRevealed && "cursor-not-allowed opacity-70"
+                      !settled && isSelected && "border-accent-sc bg-accent-sc/15",
+                      !settled && !isSelected && "border-border bg-surface-raised hover:border-accent-sc/50",
+                      (settled || playing) && "cursor-not-allowed"
                     )}
                   >
-                    {isRevealed && !showMine && <StarFilled className="h-4 w-4 text-accent-gc" />}
+                    {showSafePick && <StarFilled className="h-4 w-4 text-accent-gc" />}
                     {showMine && <Bomb className="h-4 w-4 text-danger" />}
                   </button>
                 );
               })}
             </div>
-            {busted && <p className="mt-4 text-center text-sm font-semibold text-danger">Boom — round over.</p>}
-            {lastResult?.win && !roundActive && (
+            {settled && hitMine && (
+              <p className="mt-4 text-center text-sm font-semibold text-danger">Boom — round over.</p>
+            )}
+            {settled && !hitMine && lastResult && (
               <p className="mt-4 text-center text-sm font-semibold text-success">
-                Cashed out · {lastResult.multiplier.toFixed(2)}x
+                Cleared · {lastResult.multiplier.toFixed(2)}x
               </p>
             )}
           </CardContent>
         </Card>
 
-        <ProvablyFairPanel seed={seed} loading={loadingSeed} onRotated={setSeed} />
+        <ProvablyFairPanel seed={seed} loading={loadingSeed} onRotated={onRotated} />
         <RoundHistory rounds={history} />
       </div>
     </div>

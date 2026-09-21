@@ -120,7 +120,7 @@ async function seedVipLevels() {
         minPoints: level.minPoints,
         gcPointsMultiplier: '1.0',
         scPointsMultiplier: '2.0',
-        benefits: { description: `${level.name} tier benefits` },
+        benefits: [`${level.name} tier support`, `${level.rankOrder}x bonus event access`],
         rankUpReward:
           level.rankOrder > 1
             ? { currency: 'GC', amount: (level.rankOrder * 25).toFixed(2) }

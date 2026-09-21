@@ -8,6 +8,107 @@ import { useWalletStore } from "@/lib/stores/wallet-store";
 
 type GameSlug = "dice" | "mines" | "plinko";
 
+// The backend's actual response shapes (see
+// backend/src/modules/casino/originals/*) don't match this hook's simpler
+// internal types 1:1 — e.g. /play replies { round, win, wallet }, not a
+// flat round — so every raw response is normalized here, once, rather than
+// spreading backend-shape knowledge across each game component.
+
+interface RawPlayResponse {
+  round: {
+    id: string;
+    currency: "GC" | "SC";
+    betAmount: string;
+    winAmount: string | null;
+    multiplier: string | null;
+    result: Record<string, unknown>;
+    serverSeedHash: string;
+    clientSeed: string;
+    nonce: string;
+  };
+  win: boolean;
+  wallet: { currency: "GC" | "SC"; balance: string };
+}
+
+function fromPlayResponse(game: string, resp: RawPlayResponse): OriginalRoundResult {
+  return {
+    roundId: resp.round.id,
+    game,
+    currency: resp.round.currency,
+    betAmount: Number(resp.round.betAmount),
+    payout: Number(resp.round.winAmount ?? 0),
+    multiplier: Number(resp.round.multiplier ?? 0),
+    win: resp.win,
+    nonce: Number(resp.round.nonce),
+    resultDetail: resp.round.result ?? {},
+    balanceAfter: Number(resp.wallet.balance),
+    serverSeedHash: resp.round.serverSeedHash,
+    clientSeed: resp.round.clientSeed,
+  };
+}
+
+interface RawHistoryEntry {
+  id: string;
+  currency: "GC" | "SC";
+  betAmount: string;
+  winAmount: string | null;
+  multiplier: string | null;
+  resultPayload: Record<string, unknown>;
+  serverSeedHash: string;
+  clientSeed: string;
+  nonce: string;
+}
+
+function fromHistoryEntry(game: string, r: RawHistoryEntry): OriginalRoundResult {
+  return {
+    roundId: r.id,
+    game,
+    currency: r.currency,
+    betAmount: Number(r.betAmount),
+    payout: Number(r.winAmount ?? 0),
+    multiplier: Number(r.multiplier ?? 0),
+    win: r.winAmount != null && Number(r.winAmount) > 0,
+    nonce: Number(r.nonce),
+    resultDetail: r.resultPayload ?? {},
+    balanceAfter: 0, // not part of a history row; RoundHistory doesn't render it
+    serverSeedHash: r.serverSeedHash,
+    clientSeed: r.clientSeed,
+  };
+}
+
+interface RawConfigResponse {
+  game: string;
+  minBet: string;
+  maxBet: string;
+  houseEdgeBps: number;
+  seed: { serverSeedHash: string; clientSeed: string; nonce: string };
+}
+
+function fromConfigResponse(raw: RawConfigResponse): OriginalConfig {
+  return {
+    game: raw.game as OriginalConfig["game"],
+    minBet: Number(raw.minBet),
+    maxBet: Number(raw.maxBet),
+    houseEdge: raw.houseEdgeBps / 10000,
+    serverSeedHash: raw.seed?.serverSeedHash ?? "",
+  };
+}
+
+// GET /casino/originals/seeds -> { active, history }
+// POST .../seeds/rotate       -> { active, previous }
+// PATCH .../seeds/client-seed -> the seed row itself, flat (no wrapper)
+// All three funnel through this one normalizer.
+function toSeedState(raw: any): SeedState {
+  const active = raw?.active ?? raw;
+  return {
+    serverSeedHash: active?.serverSeedHash ?? "",
+    clientSeed: active?.clientSeed ?? "",
+    nonce: Number(active?.nonce ?? 0),
+    revealedServerSeed: raw?.previous?.serverSeedRevealed ?? null,
+    rotatedAt: raw?.previous?.revealedAt,
+  };
+}
+
 export function useOriginalGame(game: GameSlug) {
   const currency = useCurrencyStore((s) => s.active);
   const applyBalanceUpdate = useWalletStore((s) => s.applyBalanceUpdate);
@@ -25,21 +126,21 @@ export function useOriginalGame(game: GameSlug) {
     let cancelled = false;
     setLoadingConfig(true);
     api
-      .get<OriginalConfig>(`/casino/originals/${game}/config`)
-      .then((c) => !cancelled && setConfig(c))
+      .get<RawConfigResponse>(`/casino/originals/${game}/config`)
+      .then((c) => !cancelled && setConfig(fromConfigResponse(c)))
       .catch(() => {})
       .finally(() => !cancelled && setLoadingConfig(false));
 
     setLoadingSeed(true);
     api
-      .get<SeedState>("/casino/originals/seeds")
-      .then((s) => !cancelled && setSeed(s))
+      .get<any>("/casino/originals/seeds")
+      .then((s) => !cancelled && setSeed(toSeedState(s)))
       .catch(() => {})
       .finally(() => !cancelled && setLoadingSeed(false));
 
     api
-      .get<CursorPage<OriginalRoundResult>>(`/casino/originals/${game}/history`)
-      .then((res) => !cancelled && setHistory(res.items))
+      .get<CursorPage<RawHistoryEntry>>(`/casino/originals/${game}/history`)
+      .then((res) => !cancelled && setHistory(res.items.map((r) => fromHistoryEntry(game, r))))
       .catch(() => {});
 
     return () => {
@@ -48,15 +149,20 @@ export function useOriginalGame(game: GameSlug) {
   }, [game]);
 
   const play = useCallback(
-    async (params: Record<string, unknown>) => {
+    async (params: { betAmount: number; [key: string]: unknown }) => {
       setPlaying(true);
       setLastError(null);
       try {
-        const result = await api.post<OriginalRoundResult>(
+        // params.betAmount arrives in minor units (cents) per
+        // BetAmountField's contract; the backend wants a plain decimal
+        // string ("10.00"), matching its fixed-point money model.
+        const { betAmount, ...rest } = params;
+        const raw = await api.post<RawPlayResponse>(
           `/casino/originals/${game}/play`,
-          { currency, ...params },
+          { currency, betAmount: (betAmount / 100).toFixed(2), ...rest },
           { idempotent: true }
         );
+        const result = fromPlayResponse(game, raw);
         setLastResult(result);
         setHistory((prev) => [result, ...prev].slice(0, 50));
         applyBalanceUpdate(result.currency, result.balanceAfter);
@@ -78,10 +184,13 @@ export function useOriginalGame(game: GameSlug) {
     [game, currency, applyBalanceUpdate]
   );
 
+  const onRotated = useCallback((raw: any) => setSeed(toSeedState(raw)), []);
+
   return {
     config,
     seed,
     setSeed,
+    onRotated,
     history,
     loadingConfig,
     loadingSeed,

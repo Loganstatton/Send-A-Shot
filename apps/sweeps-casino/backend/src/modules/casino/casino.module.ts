@@ -9,6 +9,7 @@ import { OptionalJwtAuthGuard } from './catalog/optional-jwt-auth.guard';
 import { OriginalsController } from './originals/originals.controller';
 import { OriginalsSeedsController } from './originals/originals-seeds.controller';
 import { OriginalsService } from './originals/originals.service';
+import { ActivityController } from './activity/activity.controller';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { OriginalsService } from './originals/originals.service';
     // 'casino/originals/:game' param route.
     OriginalsSeedsController,
     OriginalsController,
+    ActivityController,
   ],
   providers: [CatalogService, OriginalsService, OptionalJwtAuthGuard],
   exports: [OriginalsService],

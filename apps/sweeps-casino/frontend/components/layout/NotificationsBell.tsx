@@ -62,7 +62,7 @@ export function NotificationsBell() {
           <div className="max-h-96 overflow-y-auto">
             {loading && <div className="px-4 py-6 text-center text-xs text-text-muted">Loading...</div>}
             {!loading && items.length === 0 && (
-              <div className="px-4 py-6 text-center text-xs text-text-muted">You're all caught up.</div>
+              <div className="px-4 py-6 text-center text-xs text-text-muted">You&apos;re all caught up.</div>
             )}
             {!loading &&
               items.map((n) => (

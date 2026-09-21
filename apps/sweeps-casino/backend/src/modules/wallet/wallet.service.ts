@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Currency, LedgerEntryType, LedgerSource, Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { addCents, toCents } from '../../libs/money/money';
 
@@ -31,11 +32,45 @@ export interface PostEntriesResult {
  * keeps the ledger invariants in docs/02-database-schema.md true
  * platform-wide instead of "true if every caller remembers."
  */
+export interface ReconciliationRun {
+  id: string;
+  status: 'OK' | 'DRIFT_DETECTED';
+  runAt: string;
+  walletsChecked: number;
+  discrepancies: number;
+}
+
 @Injectable()
 export class WalletService {
   private readonly logger = new Logger(WalletService.name);
 
+  // In-memory run history for the admin reconciliation view. Phase 1 has
+  // no dedicated reconciliation_runs table (docs/02 describes the job's
+  // *behavior*, not a persistence schema for its run history), so this is
+  // intentionally ephemeral — cleared on restart. A real deployment would
+  // persist these rows and run the job on a schedule (BullMQ, per
+  // docs/01 §9), not just on-demand from the admin panel.
+  private reconciliationRuns: ReconciliationRun[] = [];
+
   constructor(private readonly prisma: PrismaService) {}
+
+  getReconciliationRuns(): ReconciliationRun[] {
+    return this.reconciliationRuns;
+  }
+
+  async runReconciliation(): Promise<ReconciliationRun> {
+    const walletCount = await this.prisma.wallet.count();
+    const drift = await this.reconcileAllWallets();
+    const run: ReconciliationRun = {
+      id: randomUUID(),
+      status: drift.length > 0 ? 'DRIFT_DETECTED' : 'OK',
+      runAt: new Date().toISOString(),
+      walletsChecked: walletCount,
+      discrepancies: drift.length,
+    };
+    this.reconciliationRuns = [run, ...this.reconciliationRuns].slice(0, 20);
+    return run;
+  }
 
   async getWallets(userId: string) {
     const wallets = await this.prisma.wallet.findMany({ where: { userId } });

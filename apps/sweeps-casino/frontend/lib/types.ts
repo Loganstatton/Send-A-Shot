@@ -196,14 +196,20 @@ export interface JurisdictionStatus {
 }
 
 // ---- Admin ----
+// Matches backend AdminDashboardService.getMetrics() exactly — see
+// backend/src/modules/admin/admin-dashboard.service.ts.
 export interface AdminDashboardMetrics {
   totalUsers: number;
+  activeUsers: number;
   newUsersToday: number;
-  gcActivity: { wagered: number; won: number };
-  scActivity: { wagered: number; won: number };
-  pendingKyc: number;
-  activePromotions: number;
-  revenue: { purchases: number; redemptions: number };
+  gcWageredToday: string;
+  scWageredToday: string;
+  pendingKycCount: number;
+  suspiciousAccountsCount: number;
+  activePromotionsCount: number;
+  revenueTodayUsd: string;
+  purchaseCountToday: number;
+  note?: string;
 }
 
 export interface AdminUserSummary {

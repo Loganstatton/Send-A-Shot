@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 type Risk = "low" | "medium" | "high";
 
 export function PlinkoGame() {
-  const { config, seed, setSeed, history, loadingConfig, loadingSeed, playing, lastError, lastResult, play } =
+  const { config, seed, onRotated, history, loadingConfig, loadingSeed, playing, lastError, lastResult, play } =
     useOriginalGame("plinko");
 
   const [betAmount, setBetAmount] = useState(100);
@@ -23,10 +23,10 @@ export function PlinkoGame() {
   const [landedSlot, setLandedSlot] = useState<number | null>(null);
 
   async function onDrop() {
-    const result = await play({ betAmount, rows, risk });
+    const result = await play({ betAmount, rows, risk: risk.toUpperCase() });
     if (result) {
-      const slot = typeof result.resultDetail.slot === "number" ? (result.resultDetail.slot as number) : null;
-      setLandedSlot(slot);
+      const bucket = typeof result.resultDetail.bucket === "number" ? (result.resultDetail.bucket as number) : null;
+      setLandedSlot(bucket);
     }
   }
 
@@ -107,7 +107,7 @@ export function PlinkoGame() {
           </CardContent>
         </Card>
 
-        <ProvablyFairPanel seed={seed} loading={loadingSeed} onRotated={setSeed} />
+        <ProvablyFairPanel seed={seed} loading={loadingSeed} onRotated={onRotated} />
         <RoundHistory rounds={history} />
       </div>
     </div>

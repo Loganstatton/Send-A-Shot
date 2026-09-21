@@ -54,7 +54,7 @@ export default function AdminGamesPage() {
                   <div>
                     <p className="font-medium text-text-primary">{g.name}</p>
                     <p className="text-xs text-text-muted">
-                      {g.provider} · {g.category}
+                      {typeof g.provider === "string" ? g.provider : (g.provider as { name?: string })?.name} · {g.category}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

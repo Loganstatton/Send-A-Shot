@@ -28,22 +28,17 @@ export default function AdminDashboardPage() {
         {!loading && data && (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <StatCard label="Total users" value={data.totalUsers.toLocaleString()} />
+            <StatCard label="Active users (30d)" value={data.activeUsers.toLocaleString()} />
             <StatCard label="New users today" value={data.newUsersToday.toLocaleString()} />
-            <StatCard label="Pending KYC" value={data.pendingKyc.toLocaleString()} />
-            <StatCard label="Active promotions" value={data.activePromotions.toLocaleString()} />
-            <StatCard label="GC wagered" value={formatCoins(data.gcActivity.wagered)} accent="gc" />
-            <StatCard label="GC won" value={formatCoins(data.gcActivity.won)} accent="gc" />
-            <StatCard label="SC wagered" value={formatCoins(data.scActivity.wagered)} accent="sc" />
-            <StatCard label="SC won" value={formatCoins(data.scActivity.won)} accent="sc" />
+            <StatCard label="Pending KYC" value={data.pendingKycCount.toLocaleString()} />
+            <StatCard label="Suspicious accounts" value={data.suspiciousAccountsCount.toLocaleString()} />
+            <StatCard label="Active promotions" value={data.activePromotionsCount.toLocaleString()} />
+            <StatCard label="GC wagered today" value={formatCoins(Number(data.gcWageredToday) * 100)} accent="gc" />
+            <StatCard label="SC wagered today" value={formatCoins(Number(data.scWageredToday) * 100)} accent="sc" />
             <StatCard
-              label="Purchases revenue"
-              value={formatCoins(data.revenue.purchases)}
-              hint="Zeroed until payments.purchases_enabled is on"
-            />
-            <StatCard
-              label="Redemptions paid"
-              value={formatCoins(data.revenue.redemptions)}
-              hint="Zeroed until redemptions.enabled is on"
+              label="Revenue today"
+              value={`$${Number(data.revenueTodayUsd).toFixed(2)}`}
+              hint={data.note ?? `${data.purchaseCountToday} purchases`}
             />
           </div>
         )}

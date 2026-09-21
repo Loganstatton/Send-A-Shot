@@ -11,7 +11,7 @@ import { useOriginalGame } from "@/lib/hooks/useOriginalGame";
 import { cn } from "@/lib/utils";
 
 export function DiceGame() {
-  const { config, seed, setSeed, history, loadingConfig, loadingSeed, playing, lastError, lastResult, play } =
+  const { config, seed, onRotated, history, loadingConfig, loadingSeed, playing, lastError, lastResult, play } =
     useOriginalGame("dice");
 
   const [betAmount, setBetAmount] = useState(100);
@@ -23,7 +23,7 @@ export function DiceGame() {
 
   async function onRoll() {
     if (!config) return;
-    await play({ betAmount, target, direction });
+    await play({ betAmount, target, direction: direction.toUpperCase() });
   }
 
   if (loadingConfig || !config) {
@@ -122,7 +122,7 @@ export function DiceGame() {
           </CardContent>
         </Card>
 
-        <ProvablyFairPanel seed={seed} loading={loadingSeed} onRotated={setSeed} />
+        <ProvablyFairPanel seed={seed} loading={loadingSeed} onRotated={onRotated} />
         <RoundHistory rounds={history} />
       </div>
     </div>

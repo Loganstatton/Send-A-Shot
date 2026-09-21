@@ -186,6 +186,26 @@ export class AuthService {
     });
   }
 
+  async listSessions(userId: string) {
+    const sessions = await this.prisma.session.findMany({
+      where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return sessions.map((s) => ({
+      id: s.id,
+      device: s.userAgent ?? 'Unknown device',
+      ip: s.ip ?? undefined,
+      lastActiveAt: s.createdAt.toISOString(),
+    }));
+  }
+
+  async revokeSession(userId: string, sessionId: string) {
+    await this.prisma.session.updateMany({
+      where: { id: sessionId, userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
   private async issueSession(
     userId: string,
     email: string,

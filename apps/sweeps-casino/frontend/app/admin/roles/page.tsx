@@ -39,13 +39,17 @@ export default function AdminRolesPage() {
             roles?.map((r) => (
               <Card key={r.id}>
                 <CardContent className="p-4">
-                  <p className="text-sm font-semibold text-text-primary">{r.name}</p>
+                  <p className="text-sm font-semibold text-text-primary">{r.name ?? (r as unknown as { key: string }).key}</p>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {r.permissions.map((p) => (
-                      <Badge key={p} variant="neutral">
-                        {p}
-                      </Badge>
-                    ))}
+                    {Array.isArray(r.permissions) ? (
+                      r.permissions.map((p) => (
+                        <Badge key={p} variant="neutral">
+                          {p}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge variant="sc">All permissions</Badge>
+                    )}
                   </div>
                 </CardContent>
               </Card>
