@@ -65,7 +65,7 @@ export default function ParallaxHero({ artwork, artistName }: { artwork: Artwork
       <div className="relative h-full flex flex-col items-center justify-center text-center px-6">
         <p className="g-label text-[var(--g-offwhite)] opacity-80 mb-6">{artistName}</p>
         <h1 className="g-serif italic text-[clamp(1.4rem,3.4vw,2.6rem)] leading-snug max-w-2xl text-[var(--g-offwhite)]">
-          Original works exploring what people feel but rarely say.
+          Original drawings of the moments in Scripture that hit hardest — and get talked about least.
         </h1>
         <Link href="/gallery/works" className="g-btn mt-12">View the Collection</Link>
       </div>

@@ -26,13 +26,13 @@ export const metadata: Metadata = {
     default: `${ARTIST_NAME} — Original Pencil & Charcoal Drawings`,
     template: `%s — ${ARTIST_NAME}`,
   },
-  description: 'Original works exploring what people feel but rarely say. Pencil and charcoal drawings, available for private acquisition.',
+  description: 'Original pencil and charcoal drawings of the hardest, most human moments in Scripture — available for private acquisition.',
   metadataBase: process.env.NEXT_PUBLIC_SITE_URL ? new URL(process.env.NEXT_PUBLIC_SITE_URL) : undefined,
   openGraph: {
     type: 'website',
     siteName: ARTIST_NAME,
     title: `${ARTIST_NAME} — Original Pencil & Charcoal Drawings`,
-    description: 'Original works exploring what people feel but rarely say.',
+    description: 'Original drawings of the moments in Scripture that hit hardest — and get talked about least.',
   },
   twitter: { card: 'summary_large_image' },
 };

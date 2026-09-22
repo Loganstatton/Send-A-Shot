@@ -73,7 +73,7 @@ export default function GalleryHomePage() {
         <Reveal>
           <p className="g-label mb-6">The Artist</p>
           <p className="g-serif italic text-[clamp(1.3rem,2.6vw,2rem)] max-w-2xl mx-auto leading-relaxed mb-10">
-            Every piece begins with a feeling I can&rsquo;t say out loud yet, and paper.
+            Every piece begins in Scripture &mdash; a moment I&rsquo;ve read a hundred times, and paper.
           </p>
           <Link href="/gallery/about" className="g-btn">Read the Artist&rsquo;s Story</Link>
         </Reveal>

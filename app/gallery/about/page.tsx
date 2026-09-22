@@ -19,24 +19,24 @@ export default function AboutPage() {
         <div className="md:col-span-5 flex flex-col justify-center px-6 sm:px-14 py-16 md:py-0">
           <p className="g-label mb-6">The Artist</p>
           <h1 className="g-serif text-[clamp(2rem,4vw,3rem)] leading-tight">
-            I draw the moments people go to great lengths to hide.
+            I draw the moments in Scripture that get skipped over — because they&rsquo;re too human to look at directly.
           </h1>
         </div>
       </section>
 
       <Section title="Philosophy">
         <p>A drawing doesn&rsquo;t ask to be liked the way a painting can. Graphite and charcoal don&rsquo;t flatter &mdash; they just sit with something difficult until it becomes true on the page.</p>
-        <p>I&rsquo;m not interested in technical showmanship for its own sake. Every mark is in service of a single question: what does this feeling actually look like, stripped of whatever performance usually covers it?</p>
+        <p>I&rsquo;m not interested in technical showmanship for its own sake. Every mark is in service of a single question: what did this moment actually feel like, stripped of everything Sunday school leaves out?</p>
       </Section>
 
       <Section title="Process" alt>
-        <p>Each piece starts long before the pencil touches paper &mdash; with a memory, a conversation, or a moment I witnessed and couldn&rsquo;t explain to anyone at the time.</p>
+        <p>Each piece starts long before the pencil touches paper &mdash; with a passage I&rsquo;ve read a hundred times, until one line stops meaning what I thought it meant.</p>
         <p>The drawing itself is slow by necessity. Graphite and charcoal don&rsquo;t forgive an undecided hand, so most of the work happens in the thinking, the erasing, the returning to a single passage a dozen times before it&rsquo;s honest.</p>
       </Section>
 
       <Section title="Inspiration">
-        <p>Religious iconography, military portraiture, and the private psychology of people who&rsquo;ve learned to perform composure &mdash; these recur because they all share the same tension: a controlled surface over something much less controlled underneath.</p>
-        <p>I&rsquo;m drawn to what a person doesn&rsquo;t say, not because it&rsquo;s dramatic, but because it&rsquo;s usually the truest thing about them.</p>
+        <p>Every piece starts in Scripture &mdash; a specific verse, a specific person, a specific moment most retellings smooth over. Gethsemane. The centurion at the cross. The father who was already running before the son could finish his apology.</p>
+        <p>I&rsquo;m drawn to the moments the text almost apologizes for including, because that&rsquo;s usually where the truest part of the story lives.</p>
       </Section>
 
       {selected.length > 0 && (

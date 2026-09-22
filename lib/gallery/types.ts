@@ -21,7 +21,9 @@ export type ArtworkCategory =
   | 'other';
 
 export const CATEGORY_LABELS: Record<ArtworkCategory, string> = {
-  religious: 'Religious',
+  // Enum key stays `religious` (schema/URL-stable); display label reflects
+  // that every piece in this body of work is specifically Biblical.
+  religious: 'Biblical',
   human_emotion: 'Human Emotion',
   psychological: 'Psychological',
   military: 'Military',
