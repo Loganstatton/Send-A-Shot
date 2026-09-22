@@ -29,9 +29,11 @@ export function GameTile({ game, href, index }: { game: Game; href?: string; ind
 
   // EXCLUSIVE/JACKPOT aren't surfaced as dedicated booleans by the backend's
   // toDto() mapper (only isNew/isHot are) — read them off the raw tags
-  // array instead. Priority order when a card qualifies for more than two:
-  // JACKPOT > EXCLUSIVE > HOT > NEW, capped at 2 so a stack of badges never
-  // crowds a ~140px-wide card.
+  // array instead. Priority order: JACKPOT > EXCLUSIVE > HOT > NEW. Cards
+  // show at most one badge; a second is only added when the top badge is
+  // itself a "special" one (Jackpot/Exclusive) — that's the one deliberate
+  // reason to stack (e.g. a Jackpot game that's also brand new), so a
+  // merely Hot + New game never shows two badges by default clutter.
   const isExclusive = !!game.tags?.includes("EXCLUSIVE");
   const isJackpot = !!game.tags?.includes("JACKPOT");
   const allBadges: { key: string; variant: BadgeVariant; label: string }[] = [];
@@ -39,7 +41,8 @@ export function GameTile({ game, href, index }: { game: Game; href?: string; ind
   if (isExclusive) allBadges.push({ key: "exclusive", variant: "exclusive", label: "Exclusive" });
   if (game.isHot) allBadges.push({ key: "hot", variant: "hot", label: "Hot" });
   if (game.isNew) allBadges.push({ key: "new", variant: "new", label: "New" });
-  const badges = allBadges.slice(0, 2);
+  const topIsSpecial = allBadges[0]?.key === "jackpot" || allBadges[0]?.key === "exclusive";
+  const badges = allBadges.slice(0, topIsSpecial ? 2 : 1);
 
   async function toggleFavorite(e: React.MouseEvent) {
     e.preventDefault();
@@ -111,9 +114,6 @@ export function GameTile({ game, href, index }: { game: Game; href?: string; ind
         <div className="absolute inset-x-0 bottom-0 p-2.5">
           <p className="truncate text-sm font-bold leading-tight text-white drop-shadow">{game.name}</p>
           <p className="truncate text-[10px] uppercase tracking-wide text-white/55">{game.provider}</p>
-          {typeof game.rtp === "number" && (
-            <p className="text-[9px] text-white/40">RTP {game.rtp.toFixed(2)}%</p>
-          )}
         </div>
 
         <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity duration-200 group-hover:opacity-100">

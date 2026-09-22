@@ -1,11 +1,15 @@
 "use client";
 
+// Restyled + relocated for the Casino Visual Redesign (Phase C — spec item
+// 11): this used to render as an always-visible Card block in the main
+// gameplay flow; it now renders as plain content designed to live inside
+// GameInfoSheet's BottomSheet. The prop contract (seed, loading, onRotated)
+// and all rotate/client-seed logic are unchanged.
 import { useState } from "react";
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Shield, RefreshCw } from "@/components/ui/icons";
+import { RefreshCw, ChevronRight } from "@/components/ui/icons";
 import { api } from "@/lib/api-client";
 import { friendlyErrorMessage } from "@/lib/error-messages";
 import type { SeedState } from "@/lib/types";
@@ -51,56 +55,54 @@ export function ProvablyFairPanel({ seed, loading, onRotated }: ProvablyFairPane
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="flex items-center gap-2">
-          <Shield className="h-4 w-4 text-accent-sc" />
-          Provably Fair
-        </CardTitle>
-        <Link href="/provably-fair" className="text-xs text-accent-sc hover:underline">
-          Verify a round
-        </Link>
-      </CardHeader>
-      <CardContent className="space-y-3 pt-3">
-        {loading || !seed ? (
-          <p className="text-xs text-text-muted">Loading seed state...</p>
-        ) : (
-          <>
+    <div className="space-y-4">
+      {loading || !seed ? (
+        <p className="text-xs text-text-muted">Loading seed state...</p>
+      ) : (
+        <>
+          <div>
+            <p className="text-[11px] font-medium text-text-muted">Hashed server seed</p>
+            <p className="mt-1 break-all rounded-lg bg-surface-raised px-3 py-2.5 font-mono text-[11px] text-text-primary">
+              {seed.serverSeedHash}
+            </p>
+          </div>
+          <div className="flex items-end gap-2">
+            <Input
+              label="Client seed"
+              value={clientSeedDraft}
+              onChange={(e) => setClientSeedDraft(e.target.value)}
+              className="font-mono text-xs"
+            />
+            <Button type="button" size="sm" variant="secondary" onClick={saveClientSeed} disabled={busy}>
+              Save
+            </Button>
+          </div>
+          <div className="flex items-center justify-between rounded-lg bg-surface-raised px-3 py-2.5 text-[11px] text-text-muted">
+            <span>
+              Nonce <span className="font-mono text-text-primary">{seed.nonce}</span>
+            </span>
+            <Button type="button" size="sm" variant="outline" onClick={rotate} loading={busy}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Rotate seed
+            </Button>
+          </div>
+          {seed.revealedServerSeed && (
             <div>
-              <p className="text-[11px] font-medium text-text-muted">Hashed server seed</p>
-              <p className="break-all rounded-md bg-surface-raised px-2.5 py-2 font-mono text-[11px] text-text-primary">
-                {seed.serverSeedHash}
+              <p className="text-[11px] font-medium text-text-muted">Previously revealed server seed</p>
+              <p className="mt-1 break-all rounded-lg bg-surface-raised px-3 py-2.5 font-mono text-[11px] text-text-muted">
+                {seed.revealedServerSeed}
               </p>
             </div>
-            <div className="flex items-end gap-2">
-              <Input
-                label="Client seed"
-                value={clientSeedDraft}
-                onChange={(e) => setClientSeedDraft(e.target.value)}
-                className="font-mono text-xs"
-              />
-              <Button type="button" size="sm" variant="secondary" onClick={saveClientSeed} disabled={busy}>
-                Save
-              </Button>
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-text-muted">
-              <span>Nonce: {seed.nonce}</span>
-              <Button type="button" size="sm" variant="outline" onClick={rotate} loading={busy}>
-                <RefreshCw className="h-3.5 w-3.5" />
-                Rotate seed
-              </Button>
-            </div>
-            {seed.revealedServerSeed && (
-              <div>
-                <p className="text-[11px] font-medium text-text-muted">Previously revealed server seed</p>
-                <p className="break-all rounded-md bg-surface-raised px-2.5 py-2 font-mono text-[11px] text-text-muted">
-                  {seed.revealedServerSeed}
-                </p>
-              </div>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
+          )}
+          <Link
+            href="/provably-fair"
+            className="flex items-center justify-center gap-1 pt-1 text-xs font-medium text-accent-sc hover:underline"
+          >
+            Verify a past round
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Link>
+        </>
+      )}
+    </div>
   );
 }

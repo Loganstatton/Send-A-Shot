@@ -3,14 +3,13 @@
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CheckCircle, Gift, Lock } from "@/components/ui/icons";
-import { tileGradient } from "@/lib/tile-art";
-import type { Promotion } from "@/lib/types";
+import { PromoArt } from "@/components/casino/promo-art";
+import type { Promotion, PromotionType } from "@/lib/types";
 import { cn, formatCoins } from "@/lib/utils";
 
-// Reusable promotion card — banner art reuses the same original
-// CSS-gradient approach as PromoBanner.tsx/tile-art.ts (no copied
-// imagery), keyed off the promotion id so each card gets a distinct,
-// stable look.
+// Cinematic, entertainment-page-style promo cards. Artwork is layered
+// SVG-over-gradient (see promo-art.tsx) — an original per-type motif, no
+// copied imagery — so the page reads as a promo wall, not a settings form.
 
 const TYPE_LABELS: Record<string, string> = {
   SIGNUP: "Welcome",
@@ -93,33 +92,33 @@ export function PromoCard({ promo, claimed, claiming, onClaim, index }: PromoCar
       className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-lift transition-transform duration-300 ease-premium animate-fade-in-up hover:-translate-y-0.5"
       style={index != null ? { animationDelay: `${Math.min(index, 8) * 40}ms`, animationFillMode: "backwards" } : undefined}
     >
-      {/* Large artwork-forward banner — a generated original gradient
-          (tile-art.ts) rather than a flat swatch, with a diagonal shimmer
-          sweep layered on top for extra richness. */}
-      <div
-        className={cn("coin-shimmer relative flex h-32 flex-col justify-between p-4 sm:h-36", claimed && "grayscale")}
-        style={{ background: tileGradient(promo.id) }}
-      >
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-        <div className="absolute inset-0 bg-casino-vignette" />
-        <div className="relative z-10 flex items-start justify-between">
-          <Badge variant="gc" className="bg-black/30 text-white backdrop-blur">
-            {TYPE_LABELS[promo.type] ?? promo.type.replace(/_/g, " ")}
-          </Badge>
-          {expiry && (
-            <span
-              className={cn(
-                "rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur",
-                expiry.urgent && "text-accent-gc"
-              )}
-            >
-              {expiry.label}
-            </span>
-          )}
+      {/* Large, artwork-forward cinematic banner — layered SVG motif over a
+          generated gradient (promo-art.tsx), with a shimmer sweep and
+          vignette for extra depth. */}
+      <div className={cn("coin-shimmer relative h-36 sm:h-40", claimed && "grayscale")}>
+        <PromoArt seed={promo.id} type={promo.type} />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+        <div className="bg-casino-vignette absolute inset-0" />
+        <div className="relative z-10 flex h-full flex-col justify-between p-4">
+          <div className="flex items-start justify-between">
+            <Badge variant="gc" className="bg-black/30 text-white backdrop-blur">
+              {TYPE_LABELS[promo.type] ?? promo.type.replace(/_/g, " ")}
+            </Badge>
+            {expiry && (
+              <span
+                className={cn(
+                  "rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur",
+                  expiry.urgent && "text-accent-gc"
+                )}
+              >
+                {expiry.label}
+              </span>
+            )}
+          </div>
+          <h3 className="text-xl font-black uppercase leading-tight tracking-tight text-white drop-shadow-md sm:text-2xl">
+            {promo.name}
+          </h3>
         </div>
-        <h3 className="relative z-10 text-lg font-black uppercase leading-tight tracking-tight text-white drop-shadow-md sm:text-xl">
-          {promo.name}
-        </h3>
       </div>
 
       <div className="flex flex-1 flex-col p-4">
@@ -161,6 +160,51 @@ export function PromoCard({ promo, claimed, claiming, onClaim, index }: PromoCar
               Claim Now
             </Button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface PlaceholderPromoCardProps {
+  title: string;
+  description: string;
+  type: PromotionType;
+  seed: string;
+  index?: number;
+}
+
+/**
+ * A clearly-marked, disabled "coming soon" card for promotion concepts the
+ * backend doesn't run yet (no promotion row, no reward data). Never shows a
+ * reward amount or a live claim affordance — this is a roadmap teaser, not
+ * a claimable promotion.
+ */
+export function ComingSoonPromoCard({ title, description, type, seed, index }: PlaceholderPromoCardProps) {
+  return (
+    <div
+      className="group flex flex-col overflow-hidden rounded-2xl border border-dashed border-border bg-surface/60 opacity-80 animate-fade-in-up"
+      style={index != null ? { animationDelay: `${Math.min(index, 8) * 40}ms`, animationFillMode: "backwards" } : undefined}
+    >
+      <div className="relative h-36 sm:h-40">
+        <PromoArt seed={seed} type={type} dimmed />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-black/10" />
+        <div className="relative z-10 flex h-full flex-col justify-between p-4">
+          <Badge variant="neutral" className="bg-black/40 text-text-muted backdrop-blur">
+            <Lock className="mr-1 h-2.5 w-2.5" /> Coming Soon
+          </Badge>
+          <h3 className="text-xl font-black uppercase leading-tight tracking-tight text-white/70 sm:text-2xl">
+            {title}
+          </h3>
+        </div>
+      </div>
+
+      <div className="flex flex-1 flex-col p-4">
+        <p className="flex-1 text-xs text-text-muted">{description}</p>
+        <div className="mt-4">
+          <Button size="md" variant="secondary" className="w-full cursor-not-allowed font-black uppercase tracking-wide sm:w-auto" disabled>
+            Coming Soon
+          </Button>
         </div>
       </div>
     </div>

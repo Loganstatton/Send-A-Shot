@@ -3,26 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_TREE, NAV_FOOTER, type NavLeaf } from "@/lib/nav-config";
+import { NAV_TREE, NAV_FOOTER, resolveNavItem } from "@/lib/nav-config";
 import { VaultlineLogo } from "@/components/ui/VaultlineLogo";
 import { ChevronLeft, ChevronRight } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/stores/auth-store";
-
-/**
- * Resolves how a nav item should render for the current user.
- * Before the user object is known (logged out / still loading) a flagged
- * item is treated as disabled — the safe default is never to show
- * functionality that isn't real yet.
- */
-function resolveNavItem(item: NavLeaf, featureFlags: Record<string, boolean> | undefined) {
-  if (!item.flagKey) return { visible: true, enabled: true } as const;
-  const enabled = featureFlags?.[item.flagKey] ?? false;
-  if (enabled) return { visible: true, enabled: true } as const;
-  if (item.presentation === "coming-soon") return { visible: true, enabled: false } as const;
-  return { visible: false, enabled: false } as const;
-}
 
 function isItemActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");

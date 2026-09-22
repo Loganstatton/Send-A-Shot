@@ -6,13 +6,27 @@ import { Badge } from "@/components/ui/Badge";
 import { useFetch } from "@/lib/hooks/useFetch";
 import { api } from "@/lib/api-client";
 import type { VipLevel, VipSummary } from "@/lib/types";
-import { Trophy } from "@/components/ui/icons";
+import { Trophy, CheckCircle, Lock, Star } from "@/components/ui/icons";
 import { cn, formatCoins } from "@/lib/utils";
-import { tierStyleForRank } from "@/lib/vip-tiers";
+import { tierStyleForRank, type TierKey } from "@/lib/vip-tiers";
 
 function formatXp(value: string | number) {
   return Math.round(Number(value)).toLocaleString();
 }
+
+// The 7 CSS "tier metal" materials, each represented by one ladder rank
+// (Platinum's 4 sub-ranks all collapse onto a single roadmap tile — see
+// lib/vip-tiers.ts's tierKeyForRank). Purely a visual roadmap; the detailed
+// rank-by-rank ladder below still reflects the real 10-rank backend list.
+const TIER_ROADMAP: Array<{ key: TierKey; rank: number; label: string }> = [
+  { key: "starter", rank: 1, label: "Starter" },
+  { key: "bronze", rank: 2, label: "Bronze" },
+  { key: "silver", rank: 3, label: "Silver" },
+  { key: "gold", rank: 4, label: "Gold" },
+  { key: "platinum", rank: 5, label: "Platinum" },
+  { key: "diamond", rank: 9, label: "Diamond" },
+  { key: "elite", rank: 10, label: "Elite" },
+];
 
 export default function VipClubPage() {
   const meFetcher = useCallback(() => api.get<VipSummary>("/vip/me"), []);
@@ -25,28 +39,29 @@ export default function VipClubPage() {
   const forLevel = me?.progress.pointsForLevel != null ? Number(me.progress.pointsForLevel) : null;
   const pct = forLevel && forLevel > 0 ? Math.min(100, Math.round((intoLevel / forLevel) * 100)) : me ? 100 : 0;
   const atTop = !me?.nextLevel;
-  const tier = tierStyleForRank(me?.currentLevel.rankOrder ?? 1);
+  const rankOrder = me?.currentLevel.rankOrder ?? 1;
+  const tier = tierStyleForRank(rankOrder);
+  const tierVars = { ["--tier" as any]: tier.cssVar, ["--tier-hi" as any]: tier.cssVarHi };
+
+  const currentRoadmapIdx = TIER_ROADMAP.findIndex((t) => t.rank === (rankOrder <= 4 ? rankOrder : rankOrder <= 8 ? 5 : rankOrder));
 
   return (
     <div className="bg-casino-ambient p-4 lg:p-6">
       <h1 className="mb-1 text-xl font-bold text-text-primary">VIP Club</h1>
       <p className="mb-5 text-sm text-text-muted">Earn XP every time you play to climb the ladder and unlock perks.</p>
 
-      {meLoading && <Skeleton className="h-64 w-full rounded-2xl" />}
+      {meLoading && <Skeleton className="h-72 w-full rounded-2xl" />}
 
       {!meLoading && me && (
         <div className="relative mb-8 overflow-hidden rounded-2xl border border-border bg-surface animate-fade-in-up">
           {/* Low-opacity metallic tier wash behind the content, dimmed
               toward the bottom so text stays legible against it. */}
-          <div
-            className="bg-tier-metal absolute inset-0 opacity-[0.14]"
-            style={{ ["--tier" as any]: tier.cssVar, ["--tier-hi" as any]: tier.cssVarHi }}
-          />
+          <div className="bg-tier-metal absolute inset-0 opacity-[0.14]" style={tierVars} />
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-surface/60 to-surface" />
           <div className="bg-casino-vignette absolute inset-0" />
 
           <div className="relative z-10 p-6 sm:p-8">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col items-center gap-6 text-center sm:flex-row sm:items-center sm:justify-between sm:text-left">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-text-muted">Vaultline VIP</p>
                 <h2
@@ -58,13 +73,33 @@ export default function VipClubPage() {
                 <p className="mt-1 text-xs font-medium text-text-muted">
                   Rank {me.currentLevel.rankOrder} of {levels?.length ?? 10}
                 </p>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                  {me.nextLevel ? (
+                    <>
+                      Next: <span className={tier.text}>{me.nextLevel.name}</span>
+                    </>
+                  ) : (
+                    "Top level reached"
+                  )}
+                </p>
               </div>
 
-              <div
-                className="bg-tier-metal flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl shadow-card-lift sm:h-20 sm:w-20"
-                style={{ ["--tier" as any]: tier.cssVar, ["--tier-hi" as any]: tier.cssVarHi }}
-              >
-                <Trophy className="h-8 w-8 text-black/70 drop-shadow sm:h-10 sm:w-10" />
+              {/* Progress ring — pure CSS conic-gradient, no chart lib. */}
+              <div className="relative h-28 w-28 shrink-0 sm:h-32 sm:w-32">
+                <div
+                  className="absolute inset-0 rounded-full transition-[background] duration-700"
+                  style={{
+                    background: `conic-gradient(rgb(${tier.cssVarHi}) ${pct}%, rgb(var(--color-surface-raised)) ${pct}% 100%)`,
+                  }}
+                />
+                <div
+                  className="bg-tier-metal absolute inset-[5px] rounded-full opacity-90"
+                  style={tierVars}
+                />
+                <div className="absolute inset-[10px] flex flex-col items-center justify-center rounded-full bg-surface shadow-card-lift">
+                  <Trophy className={cn("h-6 w-6", tier.text)} />
+                  <span className={cn("mt-1 text-base font-black leading-none", tier.text)}>{pct}%</span>
+                </div>
               </div>
             </div>
 
@@ -92,16 +127,30 @@ export default function VipClubPage() {
                   : "You've reached the top level."}
               </p>
             </div>
+          </div>
+        </div>
+      )}
 
-            {Array.isArray(me.currentLevel.benefits) && me.currentLevel.benefits.length > 0 && (
-              <div className="mt-5 flex flex-wrap gap-2">
-                {me.currentLevel.benefits.map((b) => (
-                  <Badge key={b} variant="neutral" className={cn("bg-surface-raised/80", tier.borderSoft)}>
-                    {b}
-                  </Badge>
-                ))}
+      {/* Your Benefits — only real backend data (currentLevel.benefits),
+          never fabricated perks. */}
+      {!meLoading && me && Array.isArray(me.currentLevel.benefits) && me.currentLevel.benefits.length > 0 && (
+        <div className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">Your benefits</h2>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {me.currentLevel.benefits.map((b) => (
+              <div
+                key={b}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl border bg-surface/60 p-3.5",
+                  tier.borderSoft
+                )}
+              >
+                <div className="bg-tier-metal flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={tierVars}>
+                  <Star className="h-4 w-4 text-black/70" />
+                </div>
+                <span className="text-sm font-medium text-text-primary">{b}</span>
               </div>
-            )}
+            ))}
           </div>
         </div>
       )}
@@ -127,7 +176,49 @@ export default function VipClubPage() {
         </div>
       )}
 
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">Level ladder</h2>
+      {/* Visual tier roadmap — the 7 CSS tier materials, Starter -> Elite. */}
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">Tier roadmap</h2>
+      <div className="no-scrollbar mb-8 flex snap-x gap-3 overflow-x-auto pb-1 pt-3">
+        {TIER_ROADMAP.map((t, idx) => {
+          const style = tierStyleForRank(t.rank);
+          const styleVars = { ["--tier" as any]: style.cssVar, ["--tier-hi" as any]: style.cssVarHi };
+          const isCurrent = !meLoading && idx === currentRoadmapIdx;
+          const isReached = !meLoading && me != null && idx <= currentRoadmapIdx;
+          const isLocked = !isReached;
+          return (
+            <div
+              key={t.key}
+              className={cn(
+                "relative flex w-24 shrink-0 snap-start flex-col items-center gap-2 rounded-xl border p-3 text-center transition-transform",
+                isCurrent ? cn("border-2 scale-105 shadow-card-lift", style.borderSoft) : "border-border bg-surface/60",
+                isLocked && "opacity-55"
+              )}
+            >
+              <div
+                className={cn("bg-tier-metal relative flex h-12 w-12 items-center justify-center rounded-xl", isCurrent && "shadow-glow-gc")}
+                style={styleVars}
+              >
+                {isLocked ? (
+                  <Lock className="h-5 w-5 text-black/60" />
+                ) : (
+                  <Trophy className="h-5 w-5 text-black/70" />
+                )}
+              </div>
+              <span className={cn("text-xs font-bold uppercase tracking-wide", isCurrent ? style.text : "text-text-primary")}>
+                {t.label}
+              </span>
+              {isCurrent && (
+                <Badge variant="sc" className="absolute -top-2 right-1">
+                  You
+                </Badge>
+              )}
+              {isReached && !isCurrent && <CheckCircle className="h-3.5 w-3.5 text-success" />}
+            </div>
+          );
+        })}
+      </div>
+
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-text-muted">Full level ladder</h2>
       <div className="space-y-2">
         {levelsLoading &&
           Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}

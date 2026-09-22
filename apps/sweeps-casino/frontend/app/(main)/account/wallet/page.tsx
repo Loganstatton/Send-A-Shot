@@ -190,7 +190,7 @@ function ScTab({
         {hasBreakdown && (
           <div className="mt-4 grid grid-cols-2 gap-3">
             {sc!.locked !== undefined && (
-              <div className="rounded-lg border border-border bg-surface-raised/60 p-3">
+              <div className="rounded-lg bg-surface-raised/60 p-3">
                 <p className="text-[11px] text-text-muted">Locked / promotional</p>
                 <p className="mt-0.5 font-mono text-base font-semibold text-text-primary">
                   {formatCoins(sc!.locked!)}
@@ -198,7 +198,7 @@ function ScTab({
               </div>
             )}
             {sc!.eligible !== undefined && (
-              <div className="rounded-lg border border-border bg-surface-raised/60 p-3">
+              <div className="rounded-lg bg-surface-raised/60 p-3">
                 <p className="text-[11px] text-text-muted">Redeemable</p>
                 <p className="mt-0.5 font-mono text-base font-semibold text-text-primary">
                   {sc!.eligible ? "Yes" : "Not yet"}

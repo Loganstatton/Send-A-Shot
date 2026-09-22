@@ -37,6 +37,21 @@ export interface NavSection {
   items: NavLeaf[];
 }
 
+/**
+ * Resolves how a nav item should render for the current user, shared by
+ * every nav surface (Sidebar, ProfileMenu, …) so the flag/presentation
+ * rules only live in one place. Before the user object is known (logged
+ * out / still loading) a flagged item is treated as disabled — the safe
+ * default is never to show functionality that isn't real yet.
+ */
+export function resolveNavItem(item: NavLeaf, featureFlags: Record<string, boolean> | undefined) {
+  if (!item.flagKey) return { visible: true, enabled: true } as const;
+  const enabled = featureFlags?.[item.flagKey] ?? false;
+  if (enabled) return { visible: true, enabled: true } as const;
+  if (item.presentation === "coming-soon") return { visible: true, enabled: false } as const;
+  return { visible: false, enabled: false } as const;
+}
+
 // Casino Visual Redesign sprint: Slots/Live Casino/Table Games/Game Shows
 // now have real demo content (see backend/prisma/seed.ts's demo catalog)
 // and their nav.* flags are enabled, so they're permanent primary
@@ -47,7 +62,7 @@ export const NAV_TREE: NavSection[] = [
     label: "Casino",
     icon: Dice,
     items: [
-      { label: "Casino Home", href: "/" },
+      { label: "Casino Home", href: "/casino" },
       { label: "Originals", href: "/casino/originals/dice" },
       { label: "Slots", href: "/casino/slots" },
       { label: "Live Casino", href: "/casino/live-casino" },
@@ -70,8 +85,14 @@ export const NAV_TREE: NavSection[] = [
     label: "Social",
     icon: Users,
     items: [
-      { label: "Live Activity", href: "/social/live-activity" },
-      { label: "Leaderboards", href: "/social/leaderboards", flagKey: "nav.leaderboards", presentation: "hidden" },
+      { label: "Live Activity", href: "/social/live-activity", icon: Users },
+      {
+        label: "Leaderboards",
+        href: "/social/leaderboards",
+        icon: Trophy,
+        flagKey: "nav.leaderboards",
+        presentation: "hidden",
+      },
     ],
   },
   {
@@ -92,9 +113,13 @@ export const NAV_FOOTER: NavLeaf[] = [
   { label: "Support", href: "/account/support", icon: MessageCircle },
 ];
 
+// The persistent mobile bottom bar — max 5 items (sprint item 24). Anything
+// that doesn't fit one of these 5 primary destinations (Social/Live
+// Activity/Leaderboards, Responsible Play, Support) now lives in the
+// ProfileMenu instead of a 6th "More" tab.
 export const MOBILE_NAV: NavLeaf[] = [
   { label: "Home", href: "/", icon: Home },
-  { label: "Casino", href: "/casino/originals/dice", icon: Dice },
+  { label: "Casino", href: "/casino", icon: Dice },
   { label: "Rewards", href: "/rewards/promotions", icon: Trophy },
   { label: "Wallet", href: "/account/wallet", icon: Wallet },
   { label: "Profile", href: "/account/profile", icon: User },

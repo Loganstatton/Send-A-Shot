@@ -9,8 +9,7 @@ import { WalletModal } from "@/components/wallet/WalletModal";
 import { NotificationsBell } from "@/components/layout/NotificationsBell";
 import { ProfileMenu } from "@/components/layout/ProfileMenu";
 import { VaultlineLogo } from "@/components/ui/VaultlineLogo";
-import { Search, Wallet } from "@/components/ui/icons";
-import { Button } from "@/components/ui/Button";
+import { Search } from "@/components/ui/icons";
 import { cn } from "@/lib/utils";
 
 // Compact desktop top-nav shortcuts. The full tree still lives in the
@@ -71,20 +70,19 @@ export function Topbar() {
       </form>
 
       <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
-        <BalancePill />
-        {/* Below 360px the topbar has no room for GC/SC + wallet + bell +
-            profile without overflowing (measured at 320px). Currency is
-            still reachable via the wallet button/modal and bottom nav. */}
+        {/* The balance itself opens the wallet modal — the live number is
+            always visible (sprint item 25: no separate icon button needed
+            just to see or reach it), so there's no redundant circular
+            "Wallet" button sitting next to it any more. */}
+        <button onClick={() => setWalletOpen(true)} aria-label="Open wallet" className="rounded-full">
+          <BalancePill alwaysVisible />
+        </button>
+        {/* Below 360px the topbar has no room for GC/SC + bell + profile
+            without overflowing (measured at 320px). Currency is still
+            reachable via the balance/wallet modal and bottom nav. */}
         <div className="max-[359px]:hidden">
           <CurrencySwitcher />
         </div>
-        <button
-          onClick={() => setWalletOpen(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface-raised text-text-muted hover:text-text-primary"
-          aria-label="Wallet"
-        >
-          <Wallet className="h-4 w-4" />
-        </button>
         <NotificationsBell />
         <ProfileMenu />
       </div>

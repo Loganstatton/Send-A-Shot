@@ -76,7 +76,7 @@ export function ActivityPanel({
       className={cn(
         "flex-col border-border bg-surface/40",
         standalone
-          ? "flex w-full rounded-xl border"
+          ? "flex w-full rounded-xl bg-surface-raised/40"
           : "sticky top-16 hidden h-[calc(100vh-64px)] w-72 shrink-0 border-l xl:flex"
       )}
     >

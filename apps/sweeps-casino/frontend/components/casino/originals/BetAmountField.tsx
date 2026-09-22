@@ -1,7 +1,8 @@
 "use client";
 
+// Restyled only (Casino Visual Redesign, Phase C) — prop contract and the
+// minor-units money model are unchanged.
 import { useCurrencyStore } from "@/lib/stores/currency-store";
-import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
 interface BetAmountFieldProps {
@@ -33,15 +34,18 @@ export function BetAmountField({ valueMinor, onChange, minMinor, maxMinor, disab
         <label className="text-xs font-medium text-text-muted">Bet amount</label>
         <span
           className={cn(
-            "text-[10px] font-bold",
-            currency === "GC" ? "text-accent-gc" : "text-accent-sc"
+            "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+            currency === "GC" ? "bg-accent-gc/15 text-accent-gc" : "bg-accent-sc/15 text-accent-sc"
           )}
         >
           {currency}
         </span>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <div className="relative flex-1">
+          <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-text-muted">
+            $
+          </span>
           <input
             type="number"
             step="0.01"
@@ -49,20 +53,35 @@ export function BetAmountField({ valueMinor, onChange, minMinor, maxMinor, disab
             value={display}
             onChange={(e) => setFromString(e.target.value)}
             onBlur={() => onChange(clamp(valueMinor))}
-            className="w-full rounded-lg border border-border bg-surface-raised px-3.5 py-2.5 text-sm font-mono text-text-primary outline-none focus:border-accent-sc disabled:opacity-50"
+            className="w-full rounded-xl border border-border bg-surface-raised py-2.5 pl-7 pr-3 text-sm font-mono font-semibold text-text-primary outline-none transition-colors focus:border-accent-sc disabled:opacity-50"
           />
         </div>
-        <Button type="button" size="sm" variant="secondary" disabled={disabled} onClick={() => onChange(clamp(Math.round(valueMinor / 2)))}>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(clamp(Math.round(valueMinor / 2)))}
+          className="rounded-lg border border-border bg-surface-raised px-2.5 py-2.5 text-xs font-semibold text-text-muted transition-colors hover:border-accent-sc/50 hover:text-text-primary disabled:opacity-50"
+        >
           ½
-        </Button>
-        <Button type="button" size="sm" variant="secondary" disabled={disabled} onClick={() => onChange(clamp(valueMinor * 2))}>
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(clamp(valueMinor * 2))}
+          className="rounded-lg border border-border bg-surface-raised px-2.5 py-2.5 text-xs font-semibold text-text-muted transition-colors hover:border-accent-sc/50 hover:text-text-primary disabled:opacity-50"
+        >
           2×
-        </Button>
-        <Button type="button" size="sm" variant="secondary" disabled={disabled} onClick={() => onChange(maxMinor)}>
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(maxMinor)}
+          className="rounded-lg border border-border bg-surface-raised px-2.5 py-2.5 text-xs font-semibold text-text-muted transition-colors hover:border-accent-sc/50 hover:text-text-primary disabled:opacity-50"
+        >
           Max
-        </Button>
+        </button>
       </div>
-      <p className="mt-1 text-[11px] text-text-muted">
+      <p className="mt-1.5 text-[11px] text-text-muted">
         Min {(minMinor / 100).toFixed(2)} · Max {(maxMinor / 100).toFixed(2)} {currency}
       </p>
     </div>

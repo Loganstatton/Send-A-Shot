@@ -126,6 +126,14 @@ const config: Config = {
           "0%": { opacity: "0", transform: "translateY(-10px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        // Slow drifting sparkle for the Jackpot banner's particle field —
+        // a gentle upward rise + fade, not a burst/confetti effect.
+        "particle-float": {
+          "0%": { transform: "translateY(6px)", opacity: "0" },
+          "15%": { opacity: "1" },
+          "85%": { opacity: "1" },
+          "100%": { transform: "translateY(-22px)", opacity: "0" },
+        },
       },
       animation: {
         shimmer: "shimmer 1.6s linear infinite",
@@ -140,6 +148,7 @@ const config: Config = {
         "jackpot-pulse": "jackpot-pulse 3.5s ease-in-out infinite",
         "ambient-drift": "ambient-drift 18s ease-in-out infinite",
         "win-enter": "win-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+        "particle-float": "particle-float 4.5s ease-in-out infinite",
       },
     },
   },
