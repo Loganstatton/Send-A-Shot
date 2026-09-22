@@ -610,6 +610,26 @@ function seedIfEmpty() {
     addArtworkImage(artwork.id, { url: `/gallery-assets/placeholder/${s.imageSeed}-framed.svg`, kind: 'framed', alt: `${artwork.title}, framed and installed` });
   });
 
+  // A real work-in-progress photo (not a generated placeholder) so there's
+  // one genuine example of how actual photography renders on the site —
+  // added for testing per request; swap or remove from /gallery/admin.
+  createArtwork({
+    title: 'Untitled Study (Work in Progress)',
+    year: new Date().getFullYear(),
+    medium: 'Graphite and charcoal on paper',
+    dimensions: 'Dimensions pending',
+    short_description: 'A study in progress — posted here as a test of real photography on the site.',
+    story: '',
+    categories: [],
+    availability: 'available',
+    price_display_mode: 'hidden',
+    is_original: true,
+    signed: false,
+    hero_image_url: '/gallery-assets/samples/study-in-progress.jpg',
+    is_published: true,
+    sort_order: 50,
+  } as any);
+
   // One symbolism hotspot on the first piece, as an example for the admin.
   const garden = getArtworkBySlug('the-garden', { includeUnpublished: true });
   if (garden) {
