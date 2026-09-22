@@ -17,21 +17,52 @@ import { slotAudio } from "./audio/SlotAudio";
 import { BetChipPicker } from "./ui/BetChipPicker";
 import { VaultBreakerInfoSheet } from "./ui/VaultBreakerInfoSheet";
 import { VaultBreakerLoading } from "./ui/VaultBreakerLoading";
-import { VolumeOff, VolumeOn, Info } from "@/components/ui/icons";
+import { VolumeOff, VolumeOn, Info, RefreshCw } from "@/components/ui/icons";
 import { cn, formatCoins } from "@/lib/utils";
 import type { SlotFreeSpinsResult, SlotSpinResult } from "@/lib/types";
 
-// Presentation-only tiers — the backend has no concept of "big"/"mega"
-// win, same convention as DiceGame.tsx's BIG_WIN_MULTIPLIER. Multiplier
+// Presentation-only tiers — the backend has no concept of a win "tier" at
+// all, same convention as DiceGame.tsx's BIG_WIN_MULTIPLIER. Multiplier
 // here is always of total bet (matches SlotSpinOutcome.appliedMultiplier /
-// SlotSpinResult.totalMultiplier), never a fabricated number.
+// SlotSpinResult.totalMultiplier), never a fabricated number. Four tiers
+// per the brief (NORMAL / BIG / MEGA / EPIC) with escalating cinematic
+// weight handled entirely in WinPresentation — these thresholds are ours,
+// not a backend contract.
 const BIG_WIN_MULTIPLIER = 10;
 const MEGA_WIN_MULTIPLIER = 50;
+const EPIC_WIN_MULTIPLIER = 150;
 
 function tierFor(multiplier: number): WinTier {
+  if (multiplier >= EPIC_WIN_MULTIPLIER) return "epic";
   if (multiplier >= MEGA_WIN_MULTIPLIER) return "mega";
   if (multiplier >= BIG_WIN_MULTIPLIER) return "big";
-  return "small";
+  return "normal";
+}
+
+function tierLabel(tier: WinTier): string {
+  switch (tier) {
+    case "epic":
+      return "EPIC WIN";
+    case "mega":
+      return "MEGA WIN";
+    case "big":
+      return "BIG WIN";
+    default:
+      return "WIN";
+  }
+}
+
+function tierTextClass(tier: WinTier): string {
+  switch (tier) {
+    case "epic":
+      return "text-transparent bg-clip-text bg-gradient-to-r from-accent-gc via-pink-300 to-accent-sc";
+    case "mega":
+      return "text-pink-300";
+    case "big":
+      return "text-accent-gc";
+    default:
+      return "text-accent-sc";
+  }
 }
 
 function formatGC(n: number): string {
@@ -52,12 +83,6 @@ function sleepMs(ms: number) {
 
 type Phase = "idle" | "spinning" | "presenting" | "bonus-intro" | "bonus-spin" | "bonus-summary";
 
-interface FreeSpinHud {
-  index: number;
-  total: number;
-  multiplier: number;
-}
-
 interface WinHud {
   amount: number;
   tier: WinTier;
@@ -73,6 +98,8 @@ export function VaultBreakerGame() {
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<SlotRenderer | null>(null);
   const [rendererReady, setRendererReady] = useState(false);
+  const [loadingOverlayVisible, setLoadingOverlayVisible] = useState(true);
+  const lastFsMultiplierRef = useRef(0);
 
   // Starts null (config isn't known yet) and is set to config.minBet the
   // moment config resolves — resolved via `effectiveBet` below rather than
@@ -91,7 +118,6 @@ export function VaultBreakerGame() {
   const [infoOpen, setInfoOpen] = useState(false);
   const [winHud, setWinHud] = useState<WinHud | null>(null);
   const [winDisplayAmount, setWinDisplayAmount] = useState(0);
-  const [freeSpinsHud, setFreeSpinsHud] = useState<FreeSpinHud | null>(null);
   const [errorFlash, setErrorFlash] = useState<string | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
 
@@ -186,15 +212,17 @@ export function VaultBreakerGame() {
         const tier = tierFor(result.base.appliedMultiplier);
         renderer.celebrateWin(result.base.paylineWins, tier);
         if (soundEnabled) {
-          if (tier === "mega") slotAudio.megaWin(soundVolume);
+          if (tier === "epic" || tier === "mega") slotAudio.megaWin(soundVolume);
           else if (tier === "big") slotAudio.bigWin(soundVolume);
           else slotAudio.symbolWin(soundVolume, result.base.paylineWins[0]?.count ?? 3);
         }
-        if (tier !== "small") vibrate(tier === "mega" ? [40, 60, 40, 60, 90] : [30, 50, 30]);
+        if (tier !== "normal") vibrate(tier === "epic" ? [50, 70, 50, 70, 50, 70, 120] : tier === "mega" ? [40, 60, 40, 60, 90] : [30, 50, 30]);
         setWinHud({ amount: baseAmount, tier });
         setWinDisplayAmount(0);
-        await countUpTo(baseAmount, tier === "mega" ? 1400 : tier === "big" ? 1100 : 700);
-        await sleepMs(tier === "mega" ? 1200 : tier === "big" ? 900 : 550);
+        const countDuration = tier === "epic" ? 1700 : tier === "mega" ? 1400 : tier === "big" ? 1100 : 700;
+        const holdDuration = tier === "epic" ? 1600 : tier === "mega" ? 1200 : tier === "big" ? 900 : 550;
+        await countUpTo(baseAmount, countDuration);
+        await sleepMs(holdDuration);
         renderer.clearWin();
         setWinHud(null);
       }
@@ -207,18 +235,25 @@ export function VaultBreakerGame() {
       const renderer = rendererRef.current;
       if (!renderer || !config) return;
 
-      if (soundEnabled) slotAudio.bonusTrigger(soundVolume);
       vibrate([30, 40, 30, 40, 80]);
       setPhase("bonus-intro");
-      await renderer.playBonusTransition(freeSpins.spinsAwarded);
+      lastFsMultiplierRef.current = 0;
+      await renderer.playBonusTransition(freeSpins.spinsAwarded, {
+        onLocksRelease: () => {
+          if (soundEnabled) slotAudio.vaultUnlock(soundVolume);
+        },
+        onDoorsOpen: () => {
+          if (soundEnabled) slotAudio.bonusTrigger(soundVolume);
+          vibrate([20, 30, 20, 30, 60]);
+        },
+      });
+      await renderer.setFreeSpinsEnvironment(true);
 
       for (let i = 0; i < freeSpins.spins.length; i++) {
         setPhase("bonus-spin");
-        setFreeSpinsHud({
-          index: i + 1,
-          total: freeSpins.spins.length,
-          multiplier: freeSpins.multiplierPerSpin[i] ?? freeSpins.finalMultiplier,
-        });
+        const multiplier = freeSpins.multiplierPerSpin[i] ?? freeSpins.finalMultiplier;
+        renderer.setFreeSpinsHud({ index: i + 1, total: freeSpins.spins.length, multiplier });
+        lastFsMultiplierRef.current = multiplier;
         const outcome = freeSpins.spins[i];
         await renderer.spinToResult(outcome.grid, {
           minScatterCount: config.freeSpins.minScatterCount,
@@ -256,7 +291,8 @@ export function VaultBreakerGame() {
       await sleepMs(2200);
       renderer.clearWin();
       setWinHud(null);
-      setFreeSpinsHud(null);
+      renderer.setFreeSpinsHud(null);
+      await renderer.setFreeSpinsEnvironment(false);
     },
     [config, soundEnabled, soundVolume, countUpTo]
   );
@@ -294,7 +330,11 @@ export function VaultBreakerGame() {
   const busy = phase !== "idle" || spinning;
 
   if (loadingConfig || !config) {
-    return <VaultBreakerLoading progress={rendererReady ? 80 : 45} />;
+    return (
+      <div className="relative mx-auto flex min-h-[70vh] w-full max-w-[560px] flex-col overflow-hidden rounded-2xl">
+        <VaultBreakerLoading progress={45} ready={false} onDone={() => {}} />
+      </div>
+    );
   }
 
   return (
@@ -324,29 +364,13 @@ export function VaultBreakerGame() {
         </div>
       </div>
 
-      <div className="relative aspect-[5/6.5] w-full overflow-hidden rounded-2xl border border-border/60 bg-black shadow-card-lift lg:aspect-[5/4.6]">
+      <div className="relative aspect-[11/10] w-full overflow-hidden rounded-2xl bg-black shadow-card-lift">
         <div ref={mountRef} className="absolute inset-0" />
-
-        {freeSpinsHud && (
-          <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-3 animate-fade-in">
-            <span className="rounded-full border border-accent-sc/50 bg-black/60 px-3 py-1 text-[11px] font-bold text-accent-sc backdrop-blur">
-              FREE SPINS {freeSpinsHud.index}/{freeSpinsHud.total}
-            </span>
-            <span className="rounded-full border border-accent-gc/50 bg-black/60 px-3 py-1 text-[11px] font-bold text-accent-gc backdrop-blur">
-              VAULT MULTIPLIER {freeSpinsHud.multiplier}x
-            </span>
-          </div>
-        )}
 
         {winHud && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-0.5 p-4 animate-fade-in-up">
-            <span
-              className={cn(
-                "text-[11px] font-bold uppercase tracking-[0.2em]",
-                winHud.tier === "mega" ? "text-pink-300" : winHud.tier === "big" ? "text-accent-gc" : "text-accent-sc"
-              )}
-            >
-              {winHud.label ?? (winHud.tier === "mega" ? "MEGA WIN" : winHud.tier === "big" ? "BIG WIN" : "WIN")}
+            <span className={cn("text-[11px] font-bold uppercase tracking-[0.2em]", tierTextClass(winHud.tier))}>
+              {winHud.label ?? tierLabel(winHud.tier)}
             </span>
             <span className="font-mono text-2xl font-extrabold text-white drop-shadow-lg sm:text-3xl">
               {formatGC(winDisplayAmount)} <span className="text-sm text-white/60">GC</span>
@@ -354,7 +378,7 @@ export function VaultBreakerGame() {
           </div>
         )}
 
-        {!rendererReady && !rendererError && (
+        {!rendererReady && !rendererError && !loadingOverlayVisible && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-sc border-t-transparent" />
           </div>
@@ -364,20 +388,45 @@ export function VaultBreakerGame() {
             <p className="text-xs text-danger">{rendererError}</p>
           </div>
         )}
+
+        {loadingOverlayVisible && (
+          <VaultBreakerLoading
+            progress={rendererReady ? 100 : 65}
+            ready={rendererReady}
+            onDone={() => setLoadingOverlayVisible(false)}
+          />
+        )}
       </div>
 
       {errorFlash && <p className="px-1 text-center text-xs text-danger">{errorFlash}</p>}
 
-      <div className="flex items-center gap-3 rounded-2xl bg-surface-raised p-3">
+      {/* Clean bottom HUD: one translucent bar, text segments (no per-item bordered cards), with the spin button floating prominent and centered. */}
+      <div className="relative flex items-center gap-2 rounded-2xl bg-surface-raised/80 px-3 py-3 backdrop-blur">
         <button
           type="button"
           onClick={() => setBetPickerOpen(true)}
           disabled={busy}
-          className="flex flex-1 flex-col items-start rounded-xl border border-border bg-surface px-4 py-2.5 text-left transition-colors hover:border-accent-gc/40 disabled:opacity-50"
+          className="flex flex-1 flex-col items-start gap-0.5 py-1 text-left transition-opacity disabled:opacity-50"
         >
-          <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Bet</span>
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Bet</span>
           <span className="font-mono text-sm font-bold text-text-primary">{formatGC(effectiveBet)} GC</span>
         </button>
+
+        <div className="mx-1 h-8 w-px shrink-0 bg-border/60" />
+
+        <div className="flex flex-1 flex-col items-center gap-0.5 py-1">
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Win</span>
+          <span className="font-mono text-sm font-bold text-accent-sc">
+            {formatGC(winHud ? winDisplayAmount : 0)} GC
+          </span>
+        </div>
+
+        <div className="mx-1 h-8 w-px shrink-0 bg-border/60" />
+
+        <div className="flex flex-1 flex-col items-end gap-0.5 py-1">
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Balance</span>
+          <BalanceReadout />
+        </div>
 
         <button
           type="button"
@@ -385,20 +434,12 @@ export function VaultBreakerGame() {
           disabled={busy}
           aria-label="Spin"
           className={cn(
-            "flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-accent-sc to-accent-sc/80 text-sm font-extrabold uppercase tracking-wide text-bg shadow-glow-sc transition-all duration-150 ease-snappy active:scale-90 disabled:opacity-60 disabled:active:scale-100"
+            "absolute left-1/2 top-0 flex h-[72px] w-[72px] shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-bg bg-gradient-to-b from-accent-sc to-accent-sc/70 text-bg shadow-glow-sc transition-transform duration-150 ease-snappy active:scale-90 disabled:opacity-70 disabled:active:scale-100",
+            !busy && "animate-[vb-idle-pulse_2.4s_ease-in-out_infinite]"
           )}
         >
-          {busy ? (
-            <span className="h-5 w-5 animate-spin rounded-full border-2 border-bg/70 border-t-transparent" />
-          ) : (
-            "Spin"
-          )}
+          <RefreshCw className={cn("h-7 w-7", busy && "animate-spin")} />
         </button>
-
-        <div className="flex flex-1 flex-col items-end rounded-xl border border-border bg-surface px-4 py-2.5">
-          <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Balance</span>
-          <BalanceReadout />
-        </div>
       </div>
 
       <BetChipPicker
@@ -411,6 +452,18 @@ export function VaultBreakerGame() {
         onChange={setBetAmount}
       />
       <VaultBreakerInfoSheet open={infoOpen} onClose={() => setInfoOpen(false)} config={config} />
+
+      <style jsx global>{`
+        @keyframes vb-idle-pulse {
+          0%,
+          100% {
+            box-shadow: 0 0 0 0 rgba(45, 191, 176, 0.45);
+          }
+          50% {
+            box-shadow: 0 0 0 8px rgba(45, 191, 176, 0);
+          }
+        }
+      `}</style>
     </div>
   );
 }

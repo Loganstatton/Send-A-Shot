@@ -183,6 +183,15 @@ class SlotAudioEngine {
     this.noiseBurst({ duration: 0.6, volume: volume * 0.18, filterFreq: 1500 });
   }
 
+  /** Mechanical lock-release cluster — cued right before the vault doors open in the breach cinematic. */
+  vaultUnlock(volume: Vol) {
+    if (!this.ready) return;
+    for (let i = 0; i < 4; i++) {
+      this.tone({ freq: 180 + i * 6, type: "square", duration: 0.05, volume: volume * 0.24, delay: i * 0.07 });
+      this.noiseBurst({ duration: 0.03, volume: volume * 0.16, delay: i * 0.07, filterFreq: 2600 });
+    }
+  }
+
   coinTick(volume: Vol) {
     if (!this.ready) return;
     this.tone({ freq: 1200 + Math.random() * 400, type: "sine", duration: 0.06, volume: volume * 0.14 });

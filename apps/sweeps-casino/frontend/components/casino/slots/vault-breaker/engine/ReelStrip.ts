@@ -56,8 +56,8 @@ export class ReelStrip {
     for (let i = 0; i < spriteCount; i++) {
       const sp = new Sprite(Texture.WHITE);
       sp.anchor.set(0.5);
-      sp.width = this.cellSize * 0.86;
-      sp.height = this.cellSize * 0.86;
+      sp.width = this.cellSize * 0.96;
+      sp.height = this.cellSize * 0.96;
       this.scrollLayer.addChild(sp);
       this.sprites.push(sp);
     }
@@ -92,8 +92,8 @@ export class ReelStrip {
   resize(cellSize: number) {
     this.cellSize = cellSize;
     for (const sp of this.sprites) {
-      sp.width = this.cellSize * 0.86;
-      sp.height = this.cellSize * 0.86;
+      sp.width = this.cellSize * 0.96;
+      sp.height = this.cellSize * 0.96;
     }
     const mask = this.container.mask as Graphics;
     mask.clear().rect(0, 0, this.cellSize, this.rows * this.cellSize).fill(0xffffff);
@@ -188,7 +188,10 @@ export class ReelStrip {
   }
 
   private async playBounce() {
-    const amplitude = this.cellSize * 0.1;
+    // A real mechanical settle: small, near-constant 2-4px overshoot
+    // regardless of cell size — a proportional bounce (old: cellSize*0.1,
+    // 6-10px on a typical cell) reads as "wobbly", not "mechanical".
+    const amplitude = Math.max(2, Math.min(4, this.cellSize * 0.035));
     const t = tween(150, (p) => {
       this.bounceLayer.y = bounceCurve(p) * amplitude;
     });

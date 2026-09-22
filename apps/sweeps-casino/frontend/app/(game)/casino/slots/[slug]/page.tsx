@@ -89,7 +89,13 @@ export default function SlotGamePage({ params }: { params: { slug: string } }) {
       <SlotHeader slug={slug} title={title} />
 
       {isPlayableSlot(slug) ? (
-        <main className="bg-casino-ambient mx-auto flex w-full max-w-6xl flex-1 flex-col items-center justify-center p-3 sm:p-6">
+        // Top-aligned, not vertically centered: on a tall phone viewport,
+        // centering the (intentionally compact) game card left equal dead
+        // space above AND below it — the single most visible instance of
+        // the "too much dead space" problem. Anchoring to the top instead
+        // means any leftover space collects below the fold, not as a black
+        // band bracketing the reels.
+        <main className="bg-casino-ambient mx-auto flex w-full max-w-6xl flex-1 flex-col items-center p-3 pt-4 sm:p-6">
           <VaultBreakerGame />
         </main>
       ) : (

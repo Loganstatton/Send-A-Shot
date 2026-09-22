@@ -4,22 +4,23 @@
 // gradients, shadows, highlight sweeps, metallic bevels) rendered ONCE per
 // symbol to an offscreen canvas and uploaded to the GPU as a single
 // PIXI.Texture, reused by every sprite that shows that symbol (the "pool,
-// don't recreate" performance rule from the brief). This is the same
-// spirit as components/casino/originals-art.tsx / category-art.tsx's
-// deterministic layered-gradient house style, taken further since this is
-// the flagship game.
+// don't recreate" performance rule from the brief).
 //
-// Each symbol gets a shared "premium plaque" frame (bevelled metal border,
-// inner shadow, top glass highlight — the kind of chrome real slot UIs
-// spend their polish budget on) plus bespoke center iconography and its
-// own color identity, ascending in richness from TEN (low pay) to
-// VAULTLINE_EMBLEM (top pay), with WILD and SCATTER visually distinct
-// from the paying set.
+// IMPORTANT (V2): earlier symbols each sat on a bordered "plaque" — a
+// bevelled rounded-rect frame around every icon. That is exactly what made
+// the reels read as "a grid of square buttons" instead of a real slot. This
+// version draws NO per-symbol background, border or frame at all. Each
+// symbol is transparent canvas + a soft ambient color glow (matching its
+// identity) + a contact shadow, so it reads as an object floating inside
+// the reel strip — the reel column itself (ReelStrip/vaultBackdrop) is what
+// supplies the surrounding "machine" surface, never the symbol art.
+// Symbols are also rendered to fill far more of their canvas than before,
+// per the brief's "significantly larger" note.
 
 import { Texture } from "pixi.js";
 import type { SlotSymbolId } from "@/lib/types";
 
-const SIZE = 256;
+const SIZE = 300;
 
 function makeCanvas(): HTMLCanvasElement {
   const c = document.createElement("canvas");
@@ -28,70 +29,28 @@ function makeCanvas(): HTMLCanvasElement {
   return c;
 }
 
-function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
+/** Soft ambient glow halo behind the icon — replaces the old bordered plaque. No hard edges, no rectangle. */
+function symbolGlow(ctx: CanvasRenderingContext2D, cx: number, cy: number, color: string, strength = 0.4) {
+  ctx.save();
+  const g = ctx.createRadialGradient(cx, cy, 8, cx, cy, SIZE * 0.46);
+  g.addColorStop(0, color.replace("ALPHA", String(strength)));
+  g.addColorStop(1, color.replace("ALPHA", "0"));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  ctx.restore();
 }
 
-/** Shared bevelled-metal plaque every symbol sits on. `tint` drives the border metal color family. */
-function drawPlaque(ctx: CanvasRenderingContext2D, tintA: string, tintB: string, glassTint: string) {
-  const pad = 10;
-  const r = 26;
-  const w = SIZE - pad * 2;
-  const h = SIZE - pad * 2;
-
-  // Drop shadow
+/** Contact shadow ellipse — gives the floating icon weight/grounding without a border. */
+function contactShadow(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number) {
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.55)";
-  ctx.shadowBlur = 18;
-  ctx.shadowOffsetY = 8;
-  roundRectPath(ctx, pad, pad, w, h, r);
-  ctx.fillStyle = "#0b0f18";
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx);
+  g.addColorStop(0, "rgba(0,0,0,0.45)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, rx * 0.32, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
-
-  // Metal border gradient
-  const borderGrad = ctx.createLinearGradient(pad, pad, pad, pad + h);
-  borderGrad.addColorStop(0, tintA);
-  borderGrad.addColorStop(0.5, tintB);
-  borderGrad.addColorStop(1, tintA);
-  roundRectPath(ctx, pad, pad, w, h, r);
-  ctx.fillStyle = borderGrad;
-  ctx.fill();
-
-  // Inner face (darker glass panel)
-  const innerPad = 7;
-  const faceGrad = ctx.createLinearGradient(0, pad + innerPad, 0, pad + h - innerPad);
-  faceGrad.addColorStop(0, "#161c2c");
-  faceGrad.addColorStop(0.55, "#0d1120");
-  faceGrad.addColorStop(1, "#080a12");
-  roundRectPath(ctx, pad + innerPad, pad + innerPad, w - innerPad * 2, h - innerPad * 2, r - 8);
-  ctx.fillStyle = faceGrad;
-  ctx.fill();
-
-  // Top glass highlight sweep
-  ctx.save();
-  roundRectPath(ctx, pad + innerPad, pad + innerPad, w - innerPad * 2, h - innerPad * 2, r - 8);
-  ctx.clip();
-  const sheen = ctx.createLinearGradient(0, pad, 0, pad + h * 0.55);
-  sheen.addColorStop(0, glassTint);
-  sheen.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = sheen;
-  ctx.fillRect(pad, pad, w, h * 0.6);
-  ctx.restore();
-
-  // Outer rim highlight (thin bright edge at top)
-  roundRectPath(ctx, pad, pad, w, h, r);
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(255,255,255,0.35)";
-  ctx.stroke();
-
-  return { cx: SIZE / 2, cy: SIZE / 2, w, h, pad };
 }
 
 function glowText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, colorA: string, colorB: string) {
@@ -100,7 +59,7 @@ function glowText(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.shadowColor = colorA;
-  ctx.shadowBlur = size * 0.35;
+  ctx.shadowBlur = size * 0.4;
   const grad = ctx.createLinearGradient(x, y - size / 2, x, y + size / 2);
   grad.addColorStop(0, colorB);
   grad.addColorStop(0.5, colorA);
@@ -108,8 +67,8 @@ function glowText(ctx: CanvasRenderingContext2D, text: string, x: number, y: num
   ctx.fillStyle = grad;
   ctx.fillText(text, x, y);
   ctx.shadowBlur = 0;
-  ctx.lineWidth = size * 0.02;
-  ctx.strokeStyle = "rgba(0,0,0,0.5)";
+  ctx.lineWidth = size * 0.03;
+  ctx.strokeStyle = "rgba(0,0,0,0.55)";
   ctx.strokeText(text, x, y);
   ctx.restore();
 }
@@ -119,7 +78,6 @@ function drawFacetedGem(ctx: CanvasRenderingContext2D, cx: number, cy: number, r
   ctx.translate(cx, cy);
   const top = -r;
   const girdleY = -r * 0.15;
-  // Top table
   ctx.beginPath();
   ctx.moveTo(-r * 0.35, top + r * 0.15);
   ctx.lineTo(r * 0.35, top + r * 0.15);
@@ -135,7 +93,6 @@ function drawFacetedGem(ctx: CanvasRenderingContext2D, cx: number, cy: number, r
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Left/right upper facets
   [-1, 1].forEach((side) => {
     ctx.beginPath();
     ctx.moveTo(side * r * 0.35, top + r * 0.15);
@@ -147,7 +104,6 @@ function drawFacetedGem(ctx: CanvasRenderingContext2D, cx: number, cy: number, r
     ctx.stroke();
   });
 
-  // Pavilion (lower point) facets
   const pavPoint = r * 0.9;
   [-1, -0.33, 0.33, 1].forEach((side, i) => {
     ctx.beginPath();
@@ -181,42 +137,47 @@ function sparkle(ctx: CanvasRenderingContext2D, x: number, y: number, r: number,
   ctx.restore();
 }
 
-// ---- Per-symbol renderers ----
+// ---- Per-symbol renderers (all centered on cx,cy = SIZE/2, no enclosing frame) ----
 
-const RANK_STYLES: Record<string, { label: string; a: string; b: string; c: string }> = {
-  TEN: { label: "10", a: "#6b7280", b: "#9ca3af", c: "#d1d5db" },
-  JACK: { label: "J", a: "#2d6a5f", b: "#3f9c8a", c: "#6fd8c2" },
-  QUEEN: { label: "Q", a: "#8a2d5c", b: "#c23f85", c: "#f27ab7" },
-  KING: { label: "K", a: "#2d4a8a", b: "#3f6bc2", c: "#7fa8f2" },
-  ACE: { label: "A", a: "#8a5a2d", b: "#c28a3f", c: "#f2c47a" },
+const RANK_STYLES: Record<string, { label: string; a: string; b: string; c: string; glow: string }> = {
+  TEN: { label: "10", a: "#6b7280", b: "#9ca3af", c: "#e5e7eb", glow: "rgba(156,163,175,ALPHA)" },
+  JACK: { label: "J", a: "#1f6a5a", b: "#3f9c8a", c: "#8ff2d8", glow: "rgba(63,156,138,ALPHA)" },
+  QUEEN: { label: "Q", a: "#8a2d5c", b: "#c23f85", c: "#f7a8d6", glow: "rgba(194,63,133,ALPHA)" },
+  KING: { label: "K", a: "#2d4a8a", b: "#3f6bc2", c: "#9ec2f7", glow: "rgba(63,107,194,ALPHA)" },
+  ACE: { label: "A", a: "#8a5a2d", b: "#c28a3f", c: "#f7d29a", glow: "rgba(194,138,63,ALPHA)" },
 };
 
 function renderRankSymbol(ctx: CanvasRenderingContext2D, id: keyof typeof RANK_STYLES) {
   const s = RANK_STYLES[id];
-  const { cx, cy } = drawPlaque(ctx, "#3a4152", "#8b96ad", "rgba(255,255,255,0.18)");
-  // Small gem accent above the letter
-  drawFacetedGem(ctx, cx, cy - 62, 20, s.a, s.b, s.c);
-  glowText(ctx, s.label, cx, cy + 22, 118, s.b, s.c);
-  // Bottom ribbon
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
+  symbolGlow(ctx, cx, cy, s.glow, 0.32);
+  contactShadow(ctx, cx, cy + 92, 78);
+  drawFacetedGem(ctx, cx, cy - 82, 24, s.a, s.b, s.c);
+  glowText(ctx, s.label, cx, cy + 26, 150, s.b, s.c);
   ctx.save();
-  ctx.translate(cx, cy + 84);
+  ctx.translate(cx, cy + 108);
+  ctx.globalAlpha = 0.9;
   ctx.fillStyle = s.a;
-  ctx.fillRect(-58, -8, 116, 16);
+  ctx.fillRect(-70, -6, 140, 12);
   ctx.fillStyle = s.b;
-  ctx.fillRect(-58, -8, 116, 5);
+  ctx.fillRect(-70, -6, 140, 4);
   ctx.restore();
 }
 
 function renderCoinStack(ctx: CanvasRenderingContext2D) {
-  const { cx, cy } = drawPlaque(ctx, "#4a3315", "#caa14a", "rgba(255,255,255,0.2)");
+  const cx = SIZE / 2;
+  const cy = SIZE / 2 + 6;
+  symbolGlow(ctx, cx, cy, "rgba(212,175,55,ALPHA)", 0.4);
+  contactShadow(ctx, cx, cy + 96, 88);
   const coinColors = ["#8a6a2a", "#caa14a", "#f2d98a"];
   for (let i = 0; i < 5; i++) {
-    const y = cy + 58 - i * 16;
+    const y = cy + 68 - i * 19;
     ctx.save();
     ctx.translate(cx, y);
     ctx.beginPath();
-    ctx.ellipse(0, 0, 54, 16, 0, 0, Math.PI * 2);
-    const g = ctx.createLinearGradient(-54, 0, 54, 0);
+    ctx.ellipse(0, 0, 64, 19, 0, 0, Math.PI * 2);
+    const g = ctx.createLinearGradient(-64, 0, 64, 0);
     g.addColorStop(0, coinColors[0]);
     g.addColorStop(0.5, coinColors[2]);
     g.addColorStop(1, coinColors[0]);
@@ -226,18 +187,17 @@ function renderCoinStack(ctx: CanvasRenderingContext2D) {
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.beginPath();
-    ctx.ellipse(0, -3, 40, 9, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -3.5, 48, 11, 0, 0, Math.PI * 2);
     ctx.strokeStyle = "rgba(255,255,255,0.4)";
     ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.restore();
   }
-  // top coin face with $ emblem
   ctx.save();
-  ctx.translate(cx, cy - 22);
+  ctx.translate(cx, cy - 26);
   ctx.beginPath();
-  ctx.ellipse(0, 0, 54, 30, 0, 0, Math.PI * 2);
-  const topG = ctx.createRadialGradient(-14, -12, 6, 0, 0, 54);
+  ctx.ellipse(0, 0, 64, 36, 0, 0, Math.PI * 2);
+  const topG = ctx.createRadialGradient(-16, -14, 6, 0, 0, 64);
   topG.addColorStop(0, "#fff2c9");
   topG.addColorStop(0.45, coinColors[2]);
   topG.addColorStop(1, coinColors[0]);
@@ -246,29 +206,37 @@ function renderCoinStack(ctx: CanvasRenderingContext2D) {
   ctx.strokeStyle = "rgba(0,0,0,0.4)";
   ctx.lineWidth = 2;
   ctx.stroke();
-  glowText(ctx, "$", 0, 3, 40, "#caa14a", "#fff2c9");
+  glowText(ctx, "$", 0, 3, 48, "#caa14a", "#fff2c9");
   ctx.restore();
 }
 
 function renderLaserDevice(ctx: CanvasRenderingContext2D) {
-  const { cx, cy } = drawPlaque(ctx, "#0f3b3a", "#1ea89e", "rgba(153,255,240,0.22)");
-  // Device housing
+  const cx = SIZE / 2;
+  const cy = SIZE / 2 - 6;
+  symbolGlow(ctx, cx, cy, "rgba(45,191,176,ALPHA)", 0.42);
+  contactShadow(ctx, cx, cy + 86, 78);
   ctx.save();
   ctx.translate(cx, cy);
-  const bodyGrad = ctx.createLinearGradient(-50, -30, 50, 40);
+  const bodyGrad = ctx.createLinearGradient(-58, -34, 58, 46);
   bodyGrad.addColorStop(0, "#233045");
   bodyGrad.addColorStop(0.5, "#3a4d6b");
   bodyGrad.addColorStop(1, "#1a2536");
-  roundRectPath(ctx, -46, -40, 92, 60, 14);
+  const r1 = 16;
+  ctx.beginPath();
+  ctx.moveTo(-52 + r1, -46);
+  ctx.arcTo(54, -46, 54, 68, r1);
+  ctx.arcTo(54, 68, -54, 68, r1);
+  ctx.arcTo(-54, 68, -54, -46, r1);
+  ctx.arcTo(-54, -46, 54, -46, r1);
+  ctx.closePath();
   ctx.fillStyle = bodyGrad;
   ctx.fill();
-  ctx.strokeStyle = "rgba(45,191,176,0.7)";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(45,191,176,0.75)";
+  ctx.lineWidth = 2.5;
   ctx.stroke();
-  // Lens
   ctx.beginPath();
-  ctx.arc(0, -10, 20, 0, Math.PI * 2);
-  const lensGrad = ctx.createRadialGradient(-5, -15, 2, 0, -10, 20);
+  ctx.arc(0, -12, 24, 0, Math.PI * 2);
+  const lensGrad = ctx.createRadialGradient(-6, -18, 2, 0, -12, 24);
   lensGrad.addColorStop(0, "#e6fffb");
   lensGrad.addColorStop(0.4, "#2dbfb0");
   lensGrad.addColorStop(1, "#0a3a36");
@@ -277,227 +245,230 @@ function renderLaserDevice(ctx: CanvasRenderingContext2D) {
   ctx.strokeStyle = "#8ef2e6";
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  // Vents
   ctx.strokeStyle = "rgba(153,255,240,0.5)";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3.5;
   for (let i = 0; i < 3; i++) {
     ctx.beginPath();
-    ctx.moveTo(-32 + i * 12, 8);
-    ctx.lineTo(-32 + i * 12, 18);
+    ctx.moveTo(-36 + i * 14, 12);
+    ctx.lineTo(-36 + i * 14, 24);
     ctx.stroke();
   }
-  // Laser beam shooting down
-  const beamGrad = ctx.createLinearGradient(0, -10, 0, 92);
+  const beamGrad = ctx.createLinearGradient(0, -12, 0, 110);
   beamGrad.addColorStop(0, "rgba(150,255,235,0.95)");
   beamGrad.addColorStop(1, "rgba(45,191,176,0)");
   ctx.fillStyle = beamGrad;
   ctx.beginPath();
-  ctx.moveTo(-6, -10);
-  ctx.lineTo(6, -10);
-  ctx.lineTo(16, 92);
-  ctx.lineTo(-16, 92);
+  ctx.moveTo(-7, -12);
+  ctx.lineTo(7, -12);
+  ctx.lineTo(19, 110);
+  ctx.lineTo(-19, 110);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
 }
 
 function renderVaultKey(ctx: CanvasRenderingContext2D) {
-  const { cx, cy } = drawPlaque(ctx, "#5c3d12", "#e0ab4a", "rgba(255,235,180,0.25)");
+  const cx = SIZE / 2;
+  const cy = SIZE / 2 - 2;
+  symbolGlow(ctx, cx, cy, "rgba(212,175,55,ALPHA)", 0.4);
+  contactShadow(ctx, cx, cy + 96, 68);
   ctx.save();
   ctx.translate(cx, cy - 4);
   ctx.rotate(-0.55);
-  const goldGrad = ctx.createLinearGradient(-40, -60, 40, 60);
+  const goldGrad = ctx.createLinearGradient(-46, -70, 46, 70);
   goldGrad.addColorStop(0, "#7a5417");
   goldGrad.addColorStop(0.5, "#f2c766");
   goldGrad.addColorStop(1, "#a5751f");
 
-  // Bow (head) — ornate ring
   ctx.beginPath();
-  ctx.arc(0, -44, 26, 0, Math.PI * 2);
-  ctx.arc(0, -44, 13, 0, Math.PI * 2, true);
+  ctx.arc(0, -52, 30, 0, Math.PI * 2);
+  ctx.arc(0, -52, 15, 0, Math.PI * 2, true);
   ctx.fillStyle = goldGrad;
   ctx.fill("evenodd");
   ctx.strokeStyle = "rgba(0,0,0,0.35)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  // gem in bow
-  drawFacetedGem(ctx, 0, -44, 9, "#0f6b63", "#2dbfb0", "#bdfff5");
+  drawFacetedGem(ctx, 0, -52, 11, "#0f6b63", "#2dbfb0", "#bdfff5");
 
-  // Shaft
-  roundRectPath(ctx, -6, -20, 12, 68, 4);
-  ctx.fillStyle = goldGrad;
-  ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.3)";
-  ctx.stroke();
-
-  // Teeth (bit)
   ctx.beginPath();
-  ctx.moveTo(-6, 30);
-  ctx.lineTo(-6, 48);
-  ctx.lineTo(6, 48);
-  ctx.lineTo(6, 42);
-  ctx.lineTo(18, 42);
-  ctx.lineTo(18, 30);
-  ctx.lineTo(6, 30);
-  ctx.lineTo(6, 36);
-  ctx.lineTo(-6, 36);
+  ctx.moveTo(-7, -24);
+  ctx.lineTo(7, -24);
+  ctx.lineTo(7, 46);
+  ctx.lineTo(-7, 46);
   ctx.closePath();
   ctx.fillStyle = goldGrad;
   ctx.fill();
   ctx.strokeStyle = "rgba(0,0,0,0.3)";
   ctx.stroke();
 
-  // Highlight sweep along shaft
+  ctx.beginPath();
+  ctx.moveTo(-7, 34);
+  ctx.lineTo(-7, 56);
+  ctx.lineTo(7, 56);
+  ctx.lineTo(7, 48);
+  ctx.lineTo(21, 48);
+  ctx.lineTo(21, 34);
+  ctx.lineTo(7, 34);
+  ctx.lineTo(7, 42);
+  ctx.lineTo(-7, 42);
+  ctx.closePath();
+  ctx.fillStyle = goldGrad;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  ctx.stroke();
+
   ctx.globalAlpha = 0.55;
   ctx.strokeStyle = "#fff3d0";
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(-2, -18);
-  ctx.lineTo(-2, 44);
+  ctx.moveTo(-2, -22);
+  ctx.lineTo(-2, 50);
   ctx.stroke();
   ctx.restore();
 }
 
 function renderDiamond(ctx: CanvasRenderingContext2D) {
-  const { cx, cy } = drawPlaque(ctx, "#1a3a52", "#5ec9e8", "rgba(210,245,255,0.3)");
-  drawFacetedGem(ctx, cx, cy + 8, 66, "#1e88b8", "#6fd4f2", "#eafcff");
-  // Sparkle accents
-  sparkle(ctx, cx - 62, cy - 52, 10, "#eafcff", 0.9);
-  sparkle(ctx, cx + 58, cy - 40, 7, "#bfeeff", 0.8);
-  sparkle(ctx, cx + 44, cy + 66, 6, "#eafcff", 0.7);
-  sparkle(ctx, cx - 50, cy + 60, 5, "#bfeeff", 0.6);
+  const cx = SIZE / 2;
+  const cy = SIZE / 2 + 4;
+  symbolGlow(ctx, cx, cy, "rgba(94,201,232,ALPHA)", 0.46);
+  contactShadow(ctx, cx, cy + 92, 84);
+  drawFacetedGem(ctx, cx, cy + 6, 84, "#1e88b8", "#6fd4f2", "#eafcff");
+  sparkle(ctx, cx - 78, cy - 66, 12, "#eafcff", 0.9);
+  sparkle(ctx, cx + 74, cy - 50, 9, "#bfeeff", 0.8);
+  sparkle(ctx, cx + 56, cy + 82, 7, "#eafcff", 0.7);
+  sparkle(ctx, cx - 64, cy + 76, 6, "#bfeeff", 0.6);
 }
 
 function renderGoldBar(ctx: CanvasRenderingContext2D) {
-  const { cx, cy } = drawPlaque(ctx, "#5c4713", "#e8b73f", "rgba(255,240,190,0.25)");
+  const cx = SIZE / 2;
+  const cy = SIZE / 2 + 8;
+  symbolGlow(ctx, cx, cy, "rgba(232,183,63,ALPHA)", 0.42);
+  contactShadow(ctx, cx, cy + 66, 92);
   ctx.save();
   ctx.translate(cx, cy + 6);
-  // Top trapezoid face (3D bar)
-  const topGrad = ctx.createLinearGradient(-70, -30, 70, 20);
+  const topGrad = ctx.createLinearGradient(-88, -38, 88, 24);
   topGrad.addColorStop(0, "#8a6a1f");
   topGrad.addColorStop(0.5, "#f7dd8a");
   topGrad.addColorStop(1, "#a5801f");
   ctx.beginPath();
-  ctx.moveTo(-70, 10);
-  ctx.lineTo(-50, -22);
-  ctx.lineTo(50, -22);
-  ctx.lineTo(70, 10);
+  ctx.moveTo(-88, 12);
+  ctx.lineTo(-62, -28);
+  ctx.lineTo(62, -28);
+  ctx.lineTo(88, 12);
   ctx.closePath();
   ctx.fillStyle = topGrad;
   ctx.fill();
   ctx.strokeStyle = "rgba(0,0,0,0.35)";
   ctx.lineWidth = 2;
   ctx.stroke();
-  // Front face
-  const frontGrad = ctx.createLinearGradient(0, 10, 0, 56);
+  const frontGrad = ctx.createLinearGradient(0, 12, 0, 68);
   frontGrad.addColorStop(0, "#c99a2f");
   frontGrad.addColorStop(1, "#7a5c17");
   ctx.beginPath();
-  ctx.moveTo(-70, 10);
-  ctx.lineTo(70, 10);
-  ctx.lineTo(58, 50);
-  ctx.lineTo(-58, 50);
+  ctx.moveTo(-88, 12);
+  ctx.lineTo(88, 12);
+  ctx.lineTo(72, 62);
+  ctx.lineTo(-72, 62);
   ctx.closePath();
   ctx.fillStyle = frontGrad;
   ctx.fill();
   ctx.stroke();
-  // Emblem stamp
   ctx.save();
-  ctx.translate(0, 28);
+  ctx.translate(0, 36);
   ctx.beginPath();
-  ctx.arc(0, 0, 15, 0, Math.PI * 2);
+  ctx.arc(0, 0, 19, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(60,40,5,0.7)";
   ctx.lineWidth = 2;
   ctx.stroke();
-  glowText(ctx, "VL", 0, 2, 16, "#5c4713", "#fff3cf");
+  glowText(ctx, "VL", 0, 2, 20, "#5c4713", "#fff3cf");
   ctx.restore();
-  // Sheen sweep across top
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(-70, 10);
-  ctx.lineTo(-50, -22);
-  ctx.lineTo(50, -22);
-  ctx.lineTo(70, 10);
+  ctx.moveTo(-88, 12);
+  ctx.lineTo(-62, -28);
+  ctx.lineTo(62, -28);
+  ctx.lineTo(88, 12);
   ctx.closePath();
   ctx.clip();
-  const sheen = ctx.createLinearGradient(-70, -22, 20, 10);
+  const sheen = ctx.createLinearGradient(-88, -28, 30, 12);
   sheen.addColorStop(0, "rgba(255,255,255,0)");
-  sheen.addColorStop(0.5, "rgba(255,255,255,0.55)");
+  sheen.addColorStop(0.5, "rgba(255,255,255,0.6)");
   sheen.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = sheen;
-  ctx.fillRect(-70, -22, 140, 32);
+  ctx.fillRect(-88, -28, 176, 40);
   ctx.restore();
   ctx.restore();
 }
 
 function renderVaultlineEmblem(ctx: CanvasRenderingContext2D) {
-  const { cx, cy } = drawPlaque(ctx, "#4a2d0f", "#d4af37", "rgba(255,235,170,0.3)");
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
+  symbolGlow(ctx, cx, cy, "rgba(212,175,55,ALPHA)", 0.5);
+  contactShadow(ctx, cx, cy + 96, 84);
   ctx.save();
   ctx.translate(cx, cy);
-  // Radiant rays behind
   ctx.save();
-  ctx.globalAlpha = 0.35;
+  ctx.globalAlpha = 0.32;
   for (let i = 0; i < 12; i++) {
     ctx.rotate((Math.PI * 2) / 12);
     ctx.fillStyle = i % 2 === 0 ? "#f2d98a" : "#2dbfb0";
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(-6, -92);
-    ctx.lineTo(6, -92);
+    ctx.lineTo(-7, -108);
+    ctx.lineTo(7, -108);
     ctx.closePath();
     ctx.fill();
   }
   ctx.restore();
-  // Medallion
-  const medGrad = ctx.createRadialGradient(-10, -14, 6, 0, 0, 58);
+  const medGrad = ctx.createRadialGradient(-12, -16, 6, 0, 0, 70);
   medGrad.addColorStop(0, "#fff2c9");
   medGrad.addColorStop(0.4, "#e8c15a");
   medGrad.addColorStop(1, "#8a641f");
   ctx.beginPath();
-  ctx.arc(0, 0, 58, 0, Math.PI * 2);
+  ctx.arc(0, 0, 70, 0, Math.PI * 2);
   ctx.fillStyle = medGrad;
   ctx.fill();
   ctx.strokeStyle = "#2dbfb0";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3.5;
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(0, 0, 46, 0, Math.PI * 2);
+  ctx.arc(0, 0, 55, 0, Math.PI * 2);
   ctx.strokeStyle = "rgba(45,20,5,0.55)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  // Vault door bolts ring
   for (let i = 0; i < 8; i++) {
     const a = (Math.PI * 2 * i) / 8;
     ctx.beginPath();
-    ctx.arc(Math.cos(a) * 40, Math.sin(a) * 40, 3.4, 0, Math.PI * 2);
+    ctx.arc(Math.cos(a) * 48, Math.sin(a) * 48, 4, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(45,20,5,0.6)";
     ctx.fill();
   }
-  glowText(ctx, "VL", 0, 4, 44, "#5c4713", "#fff8e0");
+  glowText(ctx, "VL", 0, 4, 52, "#5c4713", "#fff8e0");
   ctx.restore();
 }
 
 function renderWild(ctx: CanvasRenderingContext2D) {
-  const { cx, cy } = drawPlaque(ctx, "#0f3b3a", "#2dbfb0", "rgba(160,255,240,0.28)");
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
+  symbolGlow(ctx, cx, cy, "rgba(45,191,176,ALPHA)", 0.5);
+  contactShadow(ctx, cx, cy + 96, 84);
   ctx.save();
   ctx.translate(cx, cy);
-  // Energy ring
   for (let i = 0; i < 3; i++) {
     ctx.beginPath();
-    ctx.arc(0, 0, 70 - i * 14, 0, Math.PI * 2);
+    ctx.arc(0, 0, 84 - i * 16, 0, Math.PI * 2);
     ctx.strokeStyle = `rgba(45,191,176,${0.5 - i * 0.12})`;
     ctx.lineWidth = 3;
     ctx.stroke();
   }
-  // Jagged energy burst behind text
   ctx.save();
-  ctx.globalAlpha = 0.75;
+  ctx.globalAlpha = 0.72;
   ctx.fillStyle = "#1ea89e";
   ctx.beginPath();
   const spikes = 10;
   for (let i = 0; i < spikes * 2; i++) {
     const a = (Math.PI * i) / spikes;
-    const r = i % 2 === 0 ? 78 : 46;
+    const r = i % 2 === 0 ? 92 : 54;
     const x = Math.cos(a) * r;
     const y = Math.sin(a) * r;
     if (i === 0) ctx.moveTo(x, y);
@@ -506,61 +477,60 @@ function renderWild(ctx: CanvasRenderingContext2D) {
   ctx.closePath();
   ctx.fill();
   ctx.restore();
-  glowText(ctx, "WILD", 0, 6, 40, "#003d38", "#e6fffb");
+  glowText(ctx, "WILD", 0, 6, 48, "#003d38", "#e6fffb");
   ctx.restore();
 }
 
 function renderScatter(ctx: CanvasRenderingContext2D) {
-  const { cx, cy } = drawPlaque(ctx, "#3a2a10", "#d4af37", "rgba(255,235,170,0.28)");
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
+  symbolGlow(ctx, cx, cy, "rgba(212,175,55,ALPHA)", 0.5);
+  contactShadow(ctx, cx, cy + 98, 90);
   ctx.save();
   ctx.translate(cx, cy);
-  // Outer vault ring
-  const ringGrad = ctx.createRadialGradient(-10, -14, 10, 0, 0, 76);
+  const ringGrad = ctx.createRadialGradient(-12, -16, 10, 0, 0, 90);
   ringGrad.addColorStop(0, "#f2d98a");
   ringGrad.addColorStop(0.55, "#b5862c");
   ringGrad.addColorStop(1, "#5c4415");
   ctx.beginPath();
-  ctx.arc(0, 0, 76, 0, Math.PI * 2);
+  ctx.arc(0, 0, 90, 0, Math.PI * 2);
   ctx.fillStyle = ringGrad;
   ctx.fill();
   ctx.strokeStyle = "#2dbfb0";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3.5;
   ctx.stroke();
 
-  // Bolt circle
   for (let i = 0; i < 10; i++) {
     const a = (Math.PI * 2 * i) / 10;
     ctx.beginPath();
-    ctx.arc(Math.cos(a) * 62, Math.sin(a) * 62, 4.2, 0, Math.PI * 2);
+    ctx.arc(Math.cos(a) * 74, Math.sin(a) * 74, 5, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(30,20,5,0.7)";
     ctx.fill();
   }
 
-  // Inner door face
   ctx.beginPath();
-  ctx.arc(0, 0, 48, 0, Math.PI * 2);
+  ctx.arc(0, 0, 57, 0, Math.PI * 2);
   ctx.fillStyle = "#3a2a10";
   ctx.fill();
   ctx.strokeStyle = "rgba(212,175,55,0.6)";
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Spinning wheel handle (spokes)
   ctx.save();
   ctx.rotate(0.35);
   for (let i = 0; i < 6; i++) {
     ctx.rotate(Math.PI / 3);
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(0, -40);
+    ctx.lineTo(0, -47);
     ctx.strokeStyle = "#e8c15a";
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 6;
     ctx.lineCap = "round";
     ctx.stroke();
   }
   ctx.beginPath();
-  ctx.arc(0, 0, 13, 0, Math.PI * 2);
-  const hubGrad = ctx.createRadialGradient(-3, -4, 1, 0, 0, 13);
+  ctx.arc(0, 0, 15, 0, Math.PI * 2);
+  const hubGrad = ctx.createRadialGradient(-3, -4, 1, 0, 0, 15);
   hubGrad.addColorStop(0, "#fff2c9");
   hubGrad.addColorStop(1, "#8a641f");
   ctx.fillStyle = hubGrad;

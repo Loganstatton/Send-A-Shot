@@ -3,7 +3,7 @@
 // The board runs in a fixed *virtual* coordinate space (VIRTUAL_WIDTH x
 // VIRTUAL_HEIGHT) regardless of how big the on-screen board is rendered —
 // the renderer just scales this space uniformly to fit the canvas. Keeping
-// physics tuning (gravity, restitution, steering force) independent of the
+// physics tuning (gravity, restitution, spawn jitter) independent of the
 // viewer's actual screen size means the constants below only ever need to
 // be tuned once.
 //
@@ -12,18 +12,45 @@
 // The browser must never let live physics chance decide a payout. Instead,
 // `simulateUntilMatch` runs the exact same Matter.js engine *headless*
 // (no rendering, stepped far faster than real time) over and over, each
-// time with small randomized spawn/velocity jitter and a small constant
-// "steering" force toward the target bucket's column, until one full run's
-// ball actually settles — physically, via real gravity/restitution/peg
-// collisions — in the correct bucket. That one real, physically-valid run
-// is recorded frame-by-frame and is exactly what gets played back in the
-// real-time renderer. Nothing is snapped or faked after the fact; we only
-// ever choose *which* valid physical outcome to show.
+// time with different randomized SPAWN conditions (starting x position,
+// initial horizontal velocity), until one full run's ball actually settles
+// — physically, via real gravity/restitution/peg collisions, completely
+// unassisted once released — in the correct bucket. That one real,
+// physically-valid run is recorded frame-by-frame and is exactly what gets
+// played back in the real-time renderer. Nothing is snapped or faked after
+// the fact; we only ever choose *which* valid physical outcome to show.
+//
+// SEARCH, DON'T STEER. A previous pass applied a small but continuous
+// corrective force to the ball every physics step during the fall
+// (`applyForce` inside the per-step loop, proportional to distance from the
+// target column). Product review correctly called this out: even a small
+// per-frame force is steering, and it's what made drops look like they
+// travelled a calculated path instead of actually ricocheting. This version
+// applies **zero force of any kind to the ball after it's released** for
+// every normal attempt — gravity, restitution and peg collisions run
+// completely untouched. The only thing that varies between attempts is
+// where and how the ball is dropped (spawn x jitter, spawn bias toward the
+// target column, initial horizontal velocity jitter) — never anything
+// during the fall itself. Because headless attempts are cheap (a few ms
+// each, no rendering), we can afford a large search budget — see the
+// staged `TIERS` below, which progressively widen the spawn jitter/bias the
+// longer a bucket takes to converge (fallback technique (a) from the product
+// brief) rather than ever reaching for force. The two "anti-softlock"
+// nudges deeper in `buildAndRunAttempt` are not steering: they fire only
+// when the solver detects a genuine numerical dead-lock (perfectly balanced
+// on a peg apex, or wedged in a V-notch — situations a real, imperfectly
+// round ball dropped with any jitter at all essentially never hits), and
+// when they do fire they nudge with a *random* direction/magnitude
+// unrelated to the target column, exactly like the tiny asymmetries
+// (a dust mote, imperfect roundness) that break a real ball's balance.
 //
 // Multi-ball groundwork: nothing here assumes a singleton ball — every
 // function takes/returns its own engine, world and ball body, so running
-// several independent simulations (or later, world instances) concurrently
-// is just calling these functions more than once.
+// several independent simulations (or several real-time bodies in one
+// shared world) concurrently is just calling these functions more than
+// once. PlinkoBoard.tsx runs one Matter.js *rendering* world that can hold
+// several real-time ball bodies at once, each configured (via
+// `collisionFilter.group`) to never collide with the others.
 
 import Matter from "matter-js";
 
@@ -32,12 +59,19 @@ export const VIRTUAL_HEIGHT = 400;
 
 // Layout regions as constant fractions of VIRTUAL_HEIGHT, independent of
 // row count — the renderer reuses these fractions to position the DOM
-// bucket row so it lines up with the canvas-drawn physics world exactly.
-export const PEG_TOP_FRAC = 0.1;
-export const PEG_BOTTOM_FRAC = 0.7;
-export const BUCKET_TOP_FRAC = 0.76;
-export const BUCKET_BOTTOM_FRAC = 0.94;
+// multiplier-label row so it lines up with the canvas-drawn physics world
+// exactly. PEG_BOTTOM_FRAC deliberately ends well above the floor now,
+// leaving an open "funnel" zone where the ball free-falls, unobstructed,
+// into the pocket mouth — that open beat is part of what makes the landing
+// read as the ball dropping *into* something rather than an instant snap.
+export const PEG_TOP_FRAC = 0.08;
+export const PEG_BOTTOM_FRAC = 0.6;
 export const FLOOR_FRAC = 0.9;
+// Kept for callers that only need "roughly where the bucket row starts" for
+// coarse layout (e.g. a CSS aspect calc) — the real, ball-scaled pocket
+// geometry lives on the computed PlinkoLayout (`bucketTop`/`bucketBottom`).
+export const BUCKET_TOP_FRAC = 0.86;
+export const BUCKET_BOTTOM_FRAC = 0.97;
 
 export interface PegSpec {
   row: number;
@@ -57,8 +91,11 @@ export interface PlinkoLayout {
   spacingX: number;
   pegRadius: number;
   ballRadius: number;
+  /** Top rim of the landing pockets — short, not a fraction of full board height. */
   bucketTop: number;
+  /** Bottom of the pocket band, a little below the physical floor (room for the label pill/rim). */
   bucketBottom: number;
+  /** The physical resting surface the ball's collision floor sits on. */
   floorY: number;
   leftWallX: number;
   rightWallX: number;
@@ -73,17 +110,28 @@ export interface PlinkoLayout {
 export function computePlinkoLayout(rows: number, width: number = VIRTUAL_WIDTH, height: number = VIRTUAL_HEIGHT): PlinkoLayout {
   const pegTopY = height * PEG_TOP_FRAC;
   const pegBottomY = height * PEG_BOTTOM_FRAC;
-  const bucketTop = height * BUCKET_TOP_FRAC;
-  const bucketBottom = height * BUCKET_BOTTOM_FRAC;
-  const floorY = height * FLOOR_FRAC;
   const centerX = width / 2;
 
   const rowSpacingY = rows > 1 ? (pegBottomY - pegTopY) / (rows - 1) : 0;
-  const usableSpan = width * 0.82;
+  const usableSpan = width * 0.86;
   const spacingX = usableSpan / Math.max(rows, 2);
 
-  const pegRadius = Math.max(2, spacingX * 0.095);
-  const ballRadius = Math.max(3.4, spacingX * 0.2);
+  // Pegs and ball both sized up from the previous pass — pegs "slightly"
+  // (product spec), the ball considerably more (rendered even larger still
+  // via a visual-only scale-up in PlinkoBoard's drawBall, on top of this
+  // physical bump, so the collision body doesn't get so big it breaks
+  // spacing at 16 rows).
+  const pegRadius = Math.max(2.6, spacingX * 0.108);
+  const ballRadius = Math.max(4.2, spacingX * 0.235);
+
+  // Landing pockets are sized off the ball itself (~1.3 ball-widths tall —
+  // within the product's "one to 1.5 ball widths" spec) rather than a fixed
+  // fraction of board height, so they can never balloon back into
+  // full-height bars regardless of row count.
+  const floorY = height * FLOOR_FRAC;
+  const pocketHeight = ballRadius * 2.6;
+  const bucketTop = floorY - pocketHeight;
+  const bucketBottom = floorY + ballRadius * 0.9;
 
   const pegs: PegSpec[] = [];
   for (let row = 0; row < rows; row++) {
@@ -169,11 +217,13 @@ export interface ConvergenceResult extends SimAttemptResult {
 
 interface AttemptOptions {
   rngSeed: number;
+  /** Random spread applied to the spawn x position, in px. */
   spawnJitterX: number;
+  /** 0..1 blend of the spawn x position from board-center toward the target bucket's column. Spawn condition only — never applied after release. */
   spawnBias: number;
+  /** Random spread applied to the spawn's initial horizontal velocity. */
   spawnJitterVX: number;
-  steerGain: number;
-  steerCap: number;
+  /** Absolute last-resort deterministic mode — see simulateUntilMatch. */
   disablePegCollisions?: boolean;
 }
 
@@ -192,14 +242,14 @@ function mulberry32(seed: number) {
 
 const FIXED_DT = 1000 / 60;
 const MAX_STEPS = 480; // generous headroom (~8s of simulated fall time)
-const SETTLE_SPEED = 0.05;
-const SETTLE_STREAK_NEEDED = 20;
+const SETTLE_SPEED = 0.09;
+const SETTLE_STREAK_NEEDED = 15;
 const TRAILING_PAD_FRAMES = 10; // a few resting frames after settle for a smooth stop
 
 function buildAndRunAttempt(rows: number, layout: PlinkoLayout, targetBucket: number, opts: AttemptOptions): SimAttemptResult {
   const rng = mulberry32(opts.rngSeed);
   const engine = Matter.Engine.create();
-  engine.gravity.y = 1;
+  engine.gravity.y = 1.15;
   engine.positionIterations = 10;
   engine.velocityIterations = 10;
   const world = engine.world;
@@ -213,10 +263,10 @@ function buildAndRunAttempt(rows: number, layout: PlinkoLayout, targetBucket: nu
 
   const ballGroup = opts.disablePegCollisions ? -1 : 0;
   const ball = Matter.Bodies.circle(spawnX, layout.spawnY, layout.ballRadius, {
-    restitution: 0.55,
+    restitution: 0.58,
     friction: 0.03,
     frictionStatic: 0.02,
-    frictionAir: 0.011,
+    frictionAir: 0.009,
     density: 0.02,
     label: "ball",
     collisionFilter: { group: ballGroup },
@@ -227,9 +277,9 @@ function buildAndRunAttempt(rows: number, layout: PlinkoLayout, targetBucket: nu
   const pegBodies = layout.pegs.map((p) =>
     Matter.Bodies.circle(p.x, p.y, layout.pegRadius, {
       isStatic: true,
-      restitution: 0.62,
-      friction: 0.12,
-      frictionStatic: 0.12,
+      restitution: 0.64,
+      friction: 0.1,
+      frictionStatic: 0.1,
       label: `peg:${p.row}:${p.index}`,
       collisionFilter: { group: ballGroup },
     })
@@ -255,16 +305,19 @@ function buildAndRunAttempt(rows: number, layout: PlinkoLayout, targetBucket: nu
     layout.floorY + 10,
     layout.rightWallX - layout.leftWallX + 20,
     20,
-    { isStatic: true, restitution: 0.12, friction: 0.75, label: "floor" }
+    { isStatic: true, restitution: 0.16, friction: 0.85, label: "floor" }
   );
-  // Low channeling stubs between buckets near the very bottom only — not
-  // full dividers through the peg field, just enough to keep a settled
-  // ball from casually rolling into the next column over.
+  // Real pocket dividers: short walls between adjacent buckets, tall enough
+  // to visibly catch/contain a ball (with a small lip above the pocket rim
+  // to guide it in) but nowhere near full board height — see bucketTop's
+  // ball-scaled geometry in computePlinkoLayout.
+  const dividerTopY = layout.bucketTop - (layout.floorY - layout.bucketTop) * 0.3;
+  const dividerThickness = Math.max(1.8, layout.spacingX * 0.07);
   const dividers = layout.bucketBoundaries.slice(1, -1).map((bx) =>
-    Matter.Bodies.rectangle(bx, (layout.bucketTop + layout.floorY) / 2, 3, layout.floorY - layout.bucketTop, {
+    Matter.Bodies.rectangle(bx, (dividerTopY + layout.floorY) / 2, dividerThickness, layout.floorY - dividerTopY + 6, {
       isStatic: true,
-      restitution: 0.25,
-      friction: 0.2,
+      restitution: 0.2,
+      friction: 0.35,
       label: "divider",
     })
   );
@@ -297,27 +350,20 @@ function buildAndRunAttempt(rows: number, layout: PlinkoLayout, targetBucket: nu
   let lastProgressY = layout.spawnY;
   let stepsSinceProgress = 0;
   for (currentStep = 0; currentStep < MAX_STEPS; currentStep++) {
-    const restingBeforeStep = ball.position.y > layout.floorY - layout.ballRadius - 3;
-    const dx = targetX - ball.position.x;
-    const steer = Matter.Common.clamp(dx * opts.steerGain, -opts.steerCap, opts.steerCap);
-    // A real ball can never balance perfectly on a peg's apex — some tiny
-    // asymmetry (a dust mote, a breath of air, imperfect roundness) always
-    // breaks that equilibrium in practice. Our solver has no such noise by
-    // default, so without this a symmetric drop can settle into an exact,
-    // physically-unrealistic zero-velocity balance on top of a peg and
-    // never reach the bucket floor. Only applied while still airborne/in
-    // the peg field — once genuinely resting on the floor we let it settle
-    // for real rather than keep perturbing it forever.
-    const noise = restingBeforeStep ? 0 : (rng() * 2 - 1) * layout.spacingX * 0.00004;
-    Matter.Body.applyForce(ball, ball.position, { x: (restingBeforeStep ? 0 : steer) * ball.mass + noise * ball.mass, y: 0 });
-
+    // No force of any kind is applied to the ball here — this loop only
+    // steps the engine forward and reads the result. Gravity, restitution
+    // and every peg/wall/divider collision run exactly as Matter.js's
+    // solver computes them; nothing nudges the ball toward `targetBucket`
+    // while it's in the air.
     Matter.Engine.update(engine, FIXED_DT);
 
     // Hard safety net: the ball must never leave the board's bounds (e.g.
     // tunneling through a thin wall at high speed in a single step). If it
     // somehow does, clamp it back in and kill the outward velocity — this
     // never fires in the normal case, it only guards against a solver
-    // edge case, and it never determines *which* bucket wins.
+    // edge case, and it never determines *which* bucket wins (it's a
+    // containment clamp, not a directional one — it kills outward velocity
+    // symmetrically regardless of where the target bucket is).
     const minX = layout.leftWallX + layout.ballRadius + 1;
     const maxX = layout.rightWallX - layout.ballRadius - 1;
     if (ball.position.x < minX || ball.position.x > maxX) {
@@ -335,12 +381,13 @@ function buildAndRunAttempt(rows: number, layout: PlinkoLayout, targetBucket: nu
 
     const resting = ball.position.y > layout.floorY - layout.ballRadius - 3;
 
-    // Guard against the ball reaching a static friction dead-lock (net
-    // applied force too small to overcome frictionStatic) somewhere above
-    // the floor — e.g. balanced on a peg. A real ball never truly locks up
-    // like that, so if we see a hard, motionless stall away from the floor
-    // for too many consecutive steps, give it one small dislodging kick
-    // (still just gravity + a nudge, not a teleport) and keep simulating.
+    // Guard against the ball reaching a static friction dead-lock (an
+    // exact, physically-unrealistic zero-velocity balance somewhere above
+    // the floor — e.g. dead-center on a peg's apex) — random direction,
+    // nothing to do with the target column, standing in for the tiny
+    // real-world asymmetries (a dust mote, imperfect roundness) that always
+    // break that equilibrium in practice and that our solver has no noise
+    // model for by default.
     if (!resting && speed < 1e-6) {
       deadStopStreak++;
       if (deadStopStreak > 15) {
@@ -351,22 +398,22 @@ function buildAndRunAttempt(rows: number, layout: PlinkoLayout, targetBucket: nu
       deadStopStreak = 0;
     }
 
-    // Similar guard for a wedge-jam between two adjacent pegs' V-notch: the
+    // Same idea for a wedge-jam between two adjacent pegs' V-notch: the
     // ball keeps twitching (nonzero speed) but makes no real downward
     // progress for a long stretch. Two circles of realistic relative size
     // essentially never lock a falling ball like this in the real world;
     // when the solver finds that artifact, give it one firm downward-biased
     // nudge — still ordinary velocity, still subject to gravity and every
-    // later peg collision, just enough to break the jam.
-    if (!resting && ball.position.y > lastProgressY + layout.ballRadius * 0.4) {
+    // later peg collision, and still random/untargeted horizontally.
+    if (!resting && ball.position.y > lastProgressY + layout.ballRadius * 0.3) {
       lastProgressY = ball.position.y;
       stepsSinceProgress = 0;
     } else if (!resting) {
       stepsSinceProgress++;
-      if (stepsSinceProgress > 18) {
+      if (stepsSinceProgress > 9) {
         Matter.Body.setVelocity(ball, {
-          x: (rng() * 2 - 1) * Math.min(layout.spacingX * 0.18, 3.5),
-          y: Math.min(layout.spacingX * 0.16, 3),
+          x: (rng() * 2 - 1) * Math.min(layout.spacingX * 0.3, 5),
+          y: Math.min(layout.spacingX * 0.3, 5),
         });
         stepsSinceProgress = 0;
         lastProgressY = ball.position.y;
@@ -391,60 +438,108 @@ function buildAndRunAttempt(rows: number, layout: PlinkoLayout, targetBucket: nu
   return { frames, pegHits, finalBucket, settled };
 }
 
-function attemptOptionsFor(layout: PlinkoLayout, attempt: number): AttemptOptions {
-  // Escalate steering strength (and slightly bias the spawn point) the
-  // longer we go without a match — most drops converge fast at low,
-  // barely-perceptible steering (so the ball still visibly "fights" the
-  // pegs), but the rarest edge buckets get progressively more help rather
-  // than looping forever.
-  const escalation = Math.floor(attempt / 25);
-  const forceScale = 1 + escalation * 0.6;
+// Staged search budget: each tier widens the spawn jitter range and raises
+// how strongly the spawn point may be biased toward the target column's x —
+// both are spawn conditions only, applied once before the ball is released,
+// never a force during the fall. This is fallback technique (a) from the
+// product brief ("widen the spawn jitter range progressively across
+// retries"). Early tiers barely bias the spawn at all, so the overwhelming
+// majority of drops (which land in a common, near-center bucket) still
+// spawn close to board-center and visibly fight their way through the full
+// peg field. Only rare edge buckets burn through the later, wider tiers.
+interface SpawnTier {
+  attempts: number;
+  jitterMul: number;
+  biasMax: number;
+  vxJitterMul: number;
+}
+const TIERS: SpawnTier[] = [
+  { attempts: 150, jitterMul: 0.55, biasMax: 0.3, vxJitterMul: 0.01 },
+  { attempts: 300, jitterMul: 0.95, biasMax: 0.55, vxJitterMul: 0.02 },
+  { attempts: 600, jitterMul: 1.45, biasMax: 0.75, vxJitterMul: 0.032 },
+  { attempts: 1200, jitterMul: 2.1, biasMax: 0.9, vxJitterMul: 0.048 },
+  { attempts: 2500, jitterMul: 3.0, biasMax: 0.97, vxJitterMul: 0.07 },
+];
+const SEARCH_BUDGET = TIERS.reduce((sum, t) => sum + t.attempts, 0);
+
+function attemptOptionsFor(layout: PlinkoLayout, attempt: number, roundSeed: number): AttemptOptions {
+  let idx = attempt;
+  let tier = TIERS[TIERS.length - 1];
+  for (const t of TIERS) {
+    if (idx < t.attempts) {
+      tier = t;
+      break;
+    }
+    idx -= t.attempts;
+  }
+  const withinTierT = tier.attempts > 1 ? idx / tier.attempts : 0;
   return {
-    rngSeed: attempt * 104729 + 17,
-    spawnJitterX: layout.spacingX * 0.5,
-    spawnBias: Math.min(0.55, 0.12 + escalation * 0.08),
-    spawnJitterVX: layout.spacingX * 0.012,
-    steerGain: 0.00075 * forceScale,
-    steerCap: layout.spacingX * 0.00075 * forceScale,
+    // Salted with a per-round seed (see simulateUntilMatch) so replaying the
+    // *same* target bucket on a later round — inevitable, there are only
+    // rows+1 buckets — does not replay the identical recorded trajectory
+    // every time. Without this, every drop into a given bucket would look
+    // pixel-for-pixel identical (same spawn point, same bounces), which is
+    // exactly the "most drops look like the same path" failure mode the
+    // product review is testing for.
+    rngSeed: (attempt * 104729 + 17) ^ roundSeed,
+    spawnJitterX: layout.spacingX * tier.jitterMul,
+    spawnBias: Math.min(tier.biasMax, 0.1 + withinTierT * tier.biasMax),
+    spawnJitterVX: layout.spacingX * tier.vxJitterMul,
   };
 }
-
-const HARD_FALLBACK_BUDGET = 500;
 
 /**
  * Runs the headless simulation repeatedly (fast — no rendering, engine
  * stepped directly) until a run's ball settles in `targetBucket`. Returns
  * that run's full recorded trajectory plus how many attempts it took.
+ * Every attempt applies zero force to the ball after release — only the
+ * spawn conditions (position/velocity) vary between attempts. See the
+ * module doc comment and the `TIERS` table above.
  *
  * Guarantee: this always returns a result whose `finalBucket === targetBucket`.
- * If normal attempts (with escalating-but-still-bounded steering) don't
- * converge within the budget — should essentially never happen once tuned —
- * a final deterministic fallback pass disables ball-peg collisions (the
- * ball still falls under real gravity/force/floor collision, it just can't
- * be knocked off column by a peg) and applies strong centering force, which
- * mathematically cannot land anywhere but the target column. It's still a
- * real physics run, just a less chaotic-looking one — never a silent
- * snap-to-bucket after the fact.
+ * If the staged spawn-jitter search (up to `SEARCH_BUDGET` ≈ 4750 attempts,
+ * profiled empirically to comfortably cover every row/bucket combination —
+ * see scripts/verify-plinko-convergence.ts) doesn't converge — should
+ * essentially never happen once tuned — a final deterministic fallback pass
+ * spawns the ball with zero jitter exactly above the target column, gives
+ * it zero initial velocity, and disables ball-peg collisions (the ball
+ * still falls under real gravity and lands on the real floor/dividers, it
+ * just can't be knocked off column by a peg on the way down). That
+ * mathematically cannot land anywhere but the target column *without ever
+ * applying any force at all*, spawn or mid-flight — a strictly stronger
+ * guarantee than the "tiny one-time spawn impulse" the product brief allows
+ * as a last resort. It's still a real physics run, just a less chaotic-
+ * looking one — never a silent snap-to-bucket after the fact.
+ *
+ * `roundSeed` salts which attempt in the search sequence ends up being the
+ * one that's shown — it has no bearing on correctness (every attempt is
+ * still checked against `targetBucket` before being accepted) or on the
+ * search's convergence properties, only on *which* of the many physically-
+ * valid runs that reach the target bucket gets picked for a given call.
+ * Callers should pass a fresh random value per round (the default already
+ * does) so two rounds that happen to land in the same bucket get visibly
+ * different recorded trajectories rather than an identical replay.
  */
-export function simulateUntilMatch(rows: number, targetBucket: number, layout: PlinkoLayout = computePlinkoLayout(rows)): ConvergenceResult {
-  for (let attempt = 0; attempt < HARD_FALLBACK_BUDGET; attempt++) {
-    const opts = attemptOptionsFor(layout, attempt);
+export function simulateUntilMatch(
+  rows: number,
+  targetBucket: number,
+  layout: PlinkoLayout = computePlinkoLayout(rows),
+  roundSeed: number = (Math.random() * 0xffffffff) >>> 0
+): ConvergenceResult {
+  for (let attempt = 0; attempt < SEARCH_BUDGET; attempt++) {
+    const opts = attemptOptionsFor(layout, attempt, roundSeed);
     const result = buildAndRunAttempt(rows, layout, targetBucket, opts);
     if (result.finalBucket === targetBucket) {
       return { ...result, attempts: attempt + 1, usedFallback: false };
     }
   }
 
-  // Deterministic guaranteed fallback: no peg collisions to be knocked off
-  // course by, strong centering force. This cannot miss the target column.
   const forced = buildAndRunAttempt(rows, layout, targetBucket, {
     rngSeed: 999983,
-    spawnJitterX: layout.spacingX * 0.15,
+    spawnJitterX: 0,
     spawnBias: 1,
     spawnJitterVX: 0,
-    steerGain: 0.02,
-    steerCap: layout.spacingX * 0.02,
     disablePegCollisions: true,
   });
-  return { ...forced, attempts: HARD_FALLBACK_BUDGET, usedFallback: true };
+  return { ...forced, attempts: SEARCH_BUDGET, usedFallback: true };
 }
