@@ -15,6 +15,11 @@ function canvas(w: number, h: number): HTMLCanvasElement {
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
+  roundRectSubpath(ctx, x, y, w, h, r);
+}
+
+/** Same shape as roundRect() but appends to whatever path is already open, instead of starting a new one — lets two rects share one path (e.g. an outer+inner pair clipped together with "evenodd" to punch a hollow window). */
+function roundRectSubpath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
   ctx.arcTo(x + w, y + h, x, y + h, r);
@@ -102,8 +107,9 @@ export function buildReelFrameTexture(w: number, h: number): Texture {
   const r = Math.max(14, w * 0.02);
 
   ctx.save();
-  roundRect(ctx, 0, 0, w, h, r);
-  roundRect(ctx, border, border, w - border * 2, h - border * 2, r * 0.6);
+  ctx.beginPath();
+  roundRectSubpath(ctx, 0, 0, w, h, r);
+  roundRectSubpath(ctx, border, border, w - border * 2, h - border * 2, r * 0.6);
   ctx.clip("evenodd");
 
   const grad = ctx.createLinearGradient(0, 0, w, h);

@@ -18,7 +18,7 @@ import { BetChipPicker } from "./ui/BetChipPicker";
 import { VaultBreakerInfoSheet } from "./ui/VaultBreakerInfoSheet";
 import { VaultBreakerLoading } from "./ui/VaultBreakerLoading";
 import { VolumeOff, VolumeOn, Info } from "@/components/ui/icons";
-import { cn } from "@/lib/utils";
+import { cn, formatCoins } from "@/lib/utils";
 import type { SlotFreeSpinsResult, SlotSpinResult } from "@/lib/types";
 
 // Presentation-only tiers — the backend has no concept of "big"/"mega"
@@ -74,7 +74,18 @@ export function VaultBreakerGame() {
   const rendererRef = useRef<SlotRenderer | null>(null);
   const [rendererReady, setRendererReady] = useState(false);
 
+  // Starts null (config isn't known yet) and is set to config.minBet the
+  // moment config resolves — resolved via `effectiveBet` below rather than
+  // an effect, so the reel mount div is present on the very same render
+  // config becomes available (an effect+extra-render gap here previously
+  // meant the Pixi mount effect's [config?.game] dependency fired one
+  // render too early, before the reel div existed, and never fired again).
   const [betAmount, setBetAmount] = useState<number | null>(null);
+  // The bet actually used for display/spinning: the player's explicit
+  // choice once made, otherwise config.minBet — computed inline (not via
+  // a setState effect) so it's correct on the very same render config
+  // resolves, with no extra render/effect round trip.
+  const effectiveBet = betAmount ?? config?.minBet ?? 0;
   const [phase, setPhase] = useState<Phase>("idle");
   const [betPickerOpen, setBetPickerOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -83,10 +94,6 @@ export function VaultBreakerGame() {
   const [freeSpinsHud, setFreeSpinsHud] = useState<FreeSpinHud | null>(null);
   const [errorFlash, setErrorFlash] = useState<string | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (config && betAmount === null) setBetAmount(config.minBet);
-  }, [config, betAmount]);
 
   // Surface the hook's error state as a transient banner without racing the
   // async spin() call's own return value (React batches the hook's
@@ -255,7 +262,8 @@ export function VaultBreakerGame() {
   );
 
   const handleSpin = useCallback(async () => {
-    if (!config || !rendererRef.current || phase !== "idle" || spinning || betAmount == null) return;
+    if (!config || !rendererRef.current || phase !== "idle" || spinning) return;
+    const bet = effectiveBet;
     slotAudio.ensureStarted();
     if (soundEnabled) slotAudio.buttonPress(soundVolume);
     vibrate(10);
@@ -266,7 +274,7 @@ export function VaultBreakerGame() {
     const stopLoop = soundEnabled ? slotAudio.spinLoop(soundVolume) : null;
     if (soundEnabled) slotAudio.spinStart(soundVolume);
 
-    const result = await spin(betAmount);
+    const result = await spin(bet);
     stopLoop?.();
 
     if (!result) {
@@ -274,18 +282,18 @@ export function VaultBreakerGame() {
       return;
     }
 
-    await runBaseSpin(result, betAmount);
+    await runBaseSpin(result, bet);
 
     if (result.bonusTriggered && result.freeSpins) {
-      await runFreeSpins(result.freeSpins, betAmount, result.winAmount, result.totalMultiplier);
+      await runFreeSpins(result.freeSpins, bet, result.winAmount, result.totalMultiplier);
     }
 
     setPhase("idle");
-  }, [config, phase, spinning, betAmount, soundEnabled, soundVolume, spin, runBaseSpin, runFreeSpins]);
+  }, [config, phase, spinning, effectiveBet, soundEnabled, soundVolume, spin, runBaseSpin, runFreeSpins]);
 
   const busy = phase !== "idle" || spinning;
 
-  if (loadingConfig || !config || betAmount == null) {
+  if (loadingConfig || !config) {
     return <VaultBreakerLoading progress={rendererReady ? 80 : 45} />;
   }
 
@@ -368,7 +376,7 @@ export function VaultBreakerGame() {
           className="flex flex-1 flex-col items-start rounded-xl border border-border bg-surface px-4 py-2.5 text-left transition-colors hover:border-accent-gc/40 disabled:opacity-50"
         >
           <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Bet</span>
-          <span className="font-mono text-sm font-bold text-text-primary">{formatGC(betAmount)} GC</span>
+          <span className="font-mono text-sm font-bold text-text-primary">{formatGC(effectiveBet)} GC</span>
         </button>
 
         <button
@@ -396,7 +404,7 @@ export function VaultBreakerGame() {
       <BetChipPicker
         open={betPickerOpen}
         onClose={() => setBetPickerOpen(false)}
-        value={betAmount}
+        value={effectiveBet}
         min={config.minBet}
         max={config.maxBet}
         disabled={busy}
@@ -407,11 +415,10 @@ export function VaultBreakerGame() {
   );
 }
 
-// GC balance is a plain decimal-dollar number from the API (e.g.
-// "3732.51"), NOT integer minor units — deliberately not using
-// formatCoins()/BalancePill here (they assume minor units and divide by
-// 100, which is a pre-existing mismatch against the real /wallet and spin
-// response shapes; see build report).
+// wallet-store.ts normalizes every balance to minor units on the way in
+// (from both GET /wallet and play-response updates), so this reads the
+// same store shape as BalancePill/CurrencySwitcher/the wallet page —
+// formatCoins() is the correct, consistent formatter here.
 function BalanceReadout() {
   const balance = useWalletStore((s) => s.balances?.gc.balance);
   const fetchBalances = useWalletStore((s) => s.fetchBalances);
@@ -420,7 +427,7 @@ function BalanceReadout() {
   }, [balance, fetchBalances]);
   return (
     <span className="font-mono text-sm font-bold text-accent-gc">
-      {balance !== undefined ? `${formatGC(balance)} GC` : "—"}
+      {balance !== undefined ? `${formatCoins(balance)} GC` : "—"}
     </span>
   );
 }
