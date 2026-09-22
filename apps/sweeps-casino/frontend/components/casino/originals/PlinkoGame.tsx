@@ -150,7 +150,11 @@ export function PlinkoGame() {
     // lg:flex-row-reverse puts the (DOM-second) controls in a narrow left
     // rail on desktop without shrinking the board's column.
     <div className="flex flex-col gap-4 lg:flex-row-reverse lg:items-start lg:gap-5">
-      <div className="flex-1">
+      {/* min-w-0 overrides the flexbox default (a flex item won't shrink
+          below its content's intrinsic min-width, e.g. RoundHistory's
+          horizontal strip) — without it this column refuses to shrink on
+          desktop and pushes the controls rail off-screen. */}
+      <div className="min-w-0 flex-1">
         {/* -mx-3 cancels the game page's own edge padding on mobile so the
             board itself runs almost full viewport width, per the product
             spec ("the board should occupy almost the entire available
