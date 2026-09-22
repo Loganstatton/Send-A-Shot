@@ -258,6 +258,103 @@ export interface JurisdictionStatus {
   featuresEnabled: string[];
 }
 
+// ---- Slots (Vault Breaker) ----
+// Matches backend SlotsService responses exactly (verified live against
+// GET/POST /casino/slots/vault-breaker/{config,spin} — see
+// backend/src/modules/casino/slots). Normalized into frontend-friendlier
+// shapes by lib/hooks/useSlotGame.ts, same split as OriginalConfig /
+// OriginalRoundResult above.
+
+export type SlotSymbolId =
+  | "TEN"
+  | "JACK"
+  | "QUEEN"
+  | "KING"
+  | "ACE"
+  | "COIN_STACK"
+  | "LASER_DEVICE"
+  | "VAULT_KEY"
+  | "DIAMOND"
+  | "GOLD_BAR"
+  | "VAULTLINE_EMBLEM"
+  | "WILD"
+  | "SCATTER";
+
+export interface SlotSymbolDef {
+  id: SlotSymbolId;
+  role: "PAYING" | "WILD" | "SCATTER";
+  name: string;
+}
+
+/** paytable[symbolId]["3" | "4" | "5"] = multiplier of total bet. */
+export type SlotPaytable = Record<string, Record<string, number>>;
+
+export interface SlotConfig {
+  game: string;
+  reels: number;
+  rows: number;
+  paylineCount: number;
+  minBet: number;
+  maxBet: number;
+  symbols: SlotSymbolDef[];
+  paytable: SlotPaytable;
+  freeSpins: { minScatterCount: number; spinsAwarded: Record<string, number> };
+  freeSpinsMultiplier: { startMultiplier: number; maxMultiplier: number };
+  serverSeedHash: string;
+  clientSeed: string;
+  nonce: number;
+}
+
+export interface SlotPosition {
+  row: number;
+  reel: number;
+}
+
+export interface SlotPaylineWin {
+  count: number;
+  symbolId: SlotSymbolId;
+  positions: SlotPosition[];
+  paylineIndex: number;
+  payoutMultiplier: number;
+}
+
+/** grid[reel][row] — reel 0-4 left to right, row 0-3 top to bottom. */
+export interface SlotSpinOutcome {
+  win: boolean;
+  grid: SlotSymbolId[][];
+  stops: number[];
+  scatter: { count: number; positions: SlotPosition[] };
+  paylineWins: SlotPaylineWin[];
+  rawWinMultiplier: number;
+  appliedMultiplier: number;
+  scatterPayoutMultiplier: number;
+}
+
+export interface SlotFreeSpinsResult {
+  spinsAwarded: number;
+  spins: SlotSpinOutcome[];
+  multiplierPerSpin: number[];
+  finalMultiplier: number;
+  totalMultiplier: number;
+}
+
+export interface SlotSpinResult {
+  roundId: string;
+  currency: Currency;
+  betAmount: number;
+  winAmount: number;
+  multiplier: number;
+  win: boolean;
+  base: SlotSpinOutcome;
+  freeSpins: SlotFreeSpinsResult | null;
+  bonusTriggered: boolean;
+  totalMultiplier: number;
+  balanceAfter: number;
+  serverSeedHash: string;
+  clientSeed: string;
+  nonce: number;
+}
+
 // ---- Admin ----
 // Matches backend AdminDashboardService.getMetrics() exactly — see
 // backend/src/modules/admin/admin-dashboard.service.ts.
