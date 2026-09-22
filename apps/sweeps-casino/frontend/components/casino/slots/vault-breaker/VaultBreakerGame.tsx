@@ -106,14 +106,21 @@ export function VaultBreakerGame() {
       rows: config.rows,
       width: Math.max(280, rect.width || 320),
       height: Math.max(280, rect.height || 320),
-    }).then((renderer) => {
-      if (cancelled) {
-        renderer.destroy();
-        return;
-      }
-      rendererRef.current = renderer;
-      setRendererReady(true);
-    });
+    })
+      .then((renderer) => {
+        if (cancelled) {
+          renderer.destroy();
+          return;
+        }
+        rendererRef.current = renderer;
+        setRendererReady(true);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        // eslint-disable-next-line no-console
+        console.error("Vault Breaker: failed to initialize the Pixi renderer", err);
+        setRendererError(err instanceof Error ? err.message : "Failed to initialize the game view.");
+      });
     return () => {
       cancelled = true;
       rendererRef.current?.destroy();
@@ -339,9 +346,14 @@ export function VaultBreakerGame() {
           </div>
         )}
 
-        {!rendererReady && (
+        {!rendererReady && !rendererError && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-sc border-t-transparent" />
+          </div>
+        )}
+        {rendererError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/70 p-6 text-center">
+            <p className="text-xs text-danger">{rendererError}</p>
           </div>
         )}
       </div>
