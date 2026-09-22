@@ -117,3 +117,12 @@ export const Cards = (p: IconProps) => (
 export const Chest = (p: IconProps) => (
   <svg {...base} {...p}><rect x="3" y="10" width="18" height="10" rx="2" /><path d="M3 10a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4" /><rect x="10" y="12" width="4" height="3" rx="0.5" fill="currentColor" /></svg>
 );
+export const VolumeOn = (p: IconProps) => (
+  <svg {...base} {...p}><path d="M11 5 6 9H3v6h3l5 4Z" /><path d="M16 8a5 5 0 0 1 0 8M19 5a9 9 0 0 1 0 14" /></svg>
+);
+export const VolumeOff = (p: IconProps) => (
+  <svg {...base} {...p}><path d="M11 5 6 9H3v6h3l5 4Z" /><path d="m17 9 5 6m0-6-5 6" /></svg>
+);
+export const Info = (p: IconProps) => (
+  <svg {...base} {...p}><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.01" /></svg>
+);

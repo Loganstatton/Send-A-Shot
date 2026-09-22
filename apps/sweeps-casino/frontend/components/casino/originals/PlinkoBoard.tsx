@@ -1,36 +1,36 @@
 "use client";
 
-// The Plinko board — the centerpiece of the game. The backend resolves a
-// round in one shot and hands back the exact deterministic path the ball
-// took (`resultDetail.path`, one 'L'/'R' per row) plus the landing
-// `bucket`, so there's no physics engine here: this walks that path to
-// build (x,y) waypoints across a triangular peg grid (standard Galton
-// board offset math — each 'L' shifts the ball half a peg-spacing left,
-// each 'R' half a peg-spacing right) and animates through them with
-// requestAnimationFrame, landing exactly in the real bucket.
+// The Plinko board — a real Matter.js physics simulation, not a scripted
+// animation. The backend has already decided the round's outcome before
+// any of this runs (`resultDetail.path` / `resultDetail.bucket`); this
+// component's job is to render a physically honest visualization of a
+// drop that actually lands there.
 //
-// Visual polish pass: pegs and the ball glow much brighter, buckets are
-// tiered by multiplier value, the ball hops between pegs with a small
-// bounce arc instead of a straight tween, and each row the ball crosses
-// fires a brief impact flash on the peg nearest the ball's x — all of
-// this is purely cosmetic and layered on top of the same waypoint math,
-// so the bucket the ball lands in still always matches `bucket` exactly.
-import { useEffect, useRef, useState } from "react";
+// How the honesty guarantee works (see plinkoPhysics.ts for the full
+// simulation): the moment a new result comes in, we run the headless
+// Matter.js simulation repeatedly (real gravity, real peg collisions, real
+// restitution — just stepped far faster than real time, with no
+// rendering) with small randomized jitter until one full run's ball
+// actually, physically settles in the correct bucket. We record that run's
+// exact trajectory (ball x/y/angle every physics step) and play back
+// *that* recording in real time here, driven entirely by
+// requestAnimationFrame reading the recorded physics state each frame —
+// never CSS keyframes, never a hand-authored path. Every drop replays a
+// genuinely different physical run (different jitter, different bounces),
+// so no two drops look the same, but the bucket the ball lands in always
+// matches the server's result, with zero exceptions.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-interface PegImpact {
-  id: number;
-  row: number;
-  peg: number;
-  x: number;
-  y: number;
-  fading: boolean;
-}
+import {
+  computePlinkoLayout,
+  simulateUntilMatch,
+  VIRTUAL_WIDTH,
+  VIRTUAL_HEIGHT,
+  BUCKET_TOP_FRAC,
+  type PlinkoLayout,
+  type TrajectoryFrame,
+  type PegHitEvent,
+} from "./plinkoPhysics";
 
 interface PlinkoBoardProps {
   rows: number;
@@ -41,103 +41,12 @@ interface PlinkoBoardProps {
   runId: number;
   onLanded: () => void;
   /**
-   * Sound-effect hook points — scaffolding for a future audio pass. There's
-   * no audio system in this codebase yet, so these are optional and default
-   * to uncalled no-ops; callers can leave them unset entirely.
+   * Sound/haptic-effect hook points — scaffolding for a future audio pass.
+   * There's no audio system in this codebase yet, so these are optional
+   * and default to uncalled no-ops; callers can leave them unset entirely.
    */
   onPegImpact?: () => void;
   onLandImpact?: () => void;
-}
-
-const PEG_TOP_PCT = 7;
-const PEG_BOTTOM_PCT = 76;
-const BOARD_SPAN_PCT = 74;
-
-function pegSpacingPct(rows: number) {
-  return BOARD_SPAN_PCT / (rows + 2);
-}
-
-function rowY(rowIdx: number, rows: number) {
-  return PEG_TOP_PCT + ((rowIdx + 1) / rows) * (PEG_BOTTOM_PCT - PEG_TOP_PCT);
-}
-
-function buildWaypoints(rows: number, bucket: number, path: ("L" | "R")[]): Point[] {
-  const spacing = pegSpacingPct(rows);
-  const points: Point[] = [{ x: 50, y: 3 }];
-  let offset = 0;
-  for (let i = 0; i < rows; i++) {
-    offset += path[i] === "R" ? 0.5 : -0.5;
-    points.push({ x: 50 + offset * spacing, y: rowY(i, rows) });
-  }
-  // Final drop into the actual bucket slot (snaps to the bucket's true
-  // center so the ball visibly lands inside the illuminated bucket even
-  // if float rounding nudged the offset math off by a hair).
-  const bucketCount = rows + 1;
-  const bucketCenterX = 3 + (94 / bucketCount) * (bucket + 0.5);
-  points.push({ x: bucketCenterX, y: 90 });
-  return points;
-}
-
-/** Which peg (row + index within that row) the ball's x nearest reflects — used only to place the impact flash, never to alter the real path. */
-function pegHitForRow(rowIdx: number, rows: number, ballX: number) {
-  const pegCount = rowIdx + 2;
-  const spacing = pegSpacingPct(rows);
-  const y = rowY(rowIdx, rows);
-  if (pegCount <= 1) return { peg: 0, x: 50, y };
-  const spanPct = spacing * (pegCount - 1);
-  const left = 50 - spanPct / 2;
-  const raw = Math.round((ballX - left) / spacing);
-  const peg = Math.max(0, Math.min(pegCount - 1, raw));
-  return { peg, x: left + peg * spacing, y };
-}
-
-// Row-to-row segment length shortens across the board — later rows fall
-// faster than earlier ones, like gravity accelerating the drop — while
-// keeping total animation time reasonable regardless of row count.
-function segmentDurationMs(rowIndex: number, totalRows: number) {
-  if (totalRows <= 1) return 240;
-  const t = rowIndex / (totalRows - 1);
-  return Math.round(300 - t * 150);
-}
-
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-const easeInCubic = (t: number) => t * t * t;
-
-/**
- * Tweens from -> to over `duration` ms, adding a small upward hop
- * (`arcHeight`, in % units) at the midpoint so each peg-to-peg step reads
- * as a physical bounce rather than a straight-line glide. The hop is
- * purely vertical and only ever runs between two real, already-known
- * waypoints, so it never implies the ball is heading anywhere but its
- * true next stop.
- */
-function animateArc(
-  from: Point,
-  to: Point,
-  duration: number,
-  arcHeight: number,
-  easing: (t: number) => number,
-  onFrame: (p: Point) => void,
-  rafRef: React.MutableRefObject<number | null>
-) {
-  return new Promise<void>((resolve) => {
-    const start = performance.now();
-    function frame(now: number) {
-      const raw = Math.min(1, (now - start) / duration);
-      const eased = easing(raw);
-      const hop = arcHeight > 0 ? Math.sin(Math.PI * raw) * arcHeight : 0;
-      onFrame({
-        x: from.x + (to.x - from.x) * eased,
-        y: from.y + (to.y - from.y) * eased - hop,
-      });
-      if (raw < 1) {
-        rafRef.current = requestAnimationFrame(frame);
-      } else {
-        resolve();
-      }
-    }
-    rafRef.current = requestAnimationFrame(frame);
-  });
 }
 
 type BucketTier = "cold" | "neutral" | "warm" | "hot";
@@ -166,6 +75,35 @@ const bucketTierShadow: Record<BucketTier, string | undefined> = {
   hot: "0 0 22px -2px rgb(var(--color-accent-gc) / 0.65)",
 };
 
+const FRAME_MS = 1000 / 60;
+const PEG_FLASH_MS = 260;
+const TRAIL_LENGTH = 5;
+const TRAIL_SPEED_THRESHOLD = 1.4;
+// How long the ball visibly sits settled in the bucket before the result
+// banner / balance animation takes over (product spec: ~300-500ms).
+const LAND_PAUSE_MS = 420;
+
+interface PegFlash {
+  startedAt: number;
+}
+
+interface DropState {
+  layout: PlinkoLayout;
+  frames: TrajectoryFrame[];
+  pegHits: PegHitEvent[];
+  bucket: number;
+  startedAt: number | null;
+  landedAt: number | null;
+  landedNotified: boolean;
+  nextHitIdx: number;
+  flashes: Map<string, PegFlash>;
+  trail: { x: number; y: number }[];
+}
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
+
 export function PlinkoBoard({
   rows,
   multiplierTable,
@@ -176,193 +114,178 @@ export function PlinkoBoard({
   onPegImpact,
   onLandImpact,
 }: PlinkoBoardProps) {
-  const [ballPos, setBallPos] = useState<Point>({ x: 50, y: 3 });
-  const [squashY, setSquashY] = useState(1);
-  const [visible, setVisible] = useState(false);
-  const [moving, setMoving] = useState(false);
-  const [litBucket, setLitBucket] = useState<number | null>(null);
-  const [trail, setTrail] = useState<Point[]>([]);
-  const [impacts, setImpacts] = useState<PegImpact[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  // Two stacked canvases: `canvasRef` (below the bucket DOM row) draws
+  // pegs, the motion trail and the ambient spotlight; `ballCanvasRef`
+  // (above the bucket row) draws only the ball. The ball needs its own,
+  // higher-stacked layer so it's still visible resting *inside* a bucket
+  // once it lands — the buckets are opaque DOM elements, so a ball drawn
+  // underneath them would be invisible right when the player most needs to
+  // see it settle.
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ballCanvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
-  const posRef = useRef<Point>({ x: 50, y: 3 });
-  const impactIdRef = useRef(0);
+  const dropRef = useRef<DropState | null>(null);
+  const [litBucket, setLitBucket] = useState<number | null>(null);
+  const [boardVisible, setBoardVisible] = useState(false);
 
+  const layout = useMemo(() => computePlinkoLayout(rows), [rows]);
+
+  // Keep both canvases' backing-store resolution matched to their actual
+  // on-screen size (times devicePixelRatio) so drawing stays crisp — the
+  // container's aspect ratio is CSS-locked to the same VIRTUAL_WIDTH /
+  // VIRTUAL_HEIGHT ratio the physics simulation uses, so the scale factor
+  // is uniform in x and y (no circle-distorting stretch).
   useEffect(() => {
-    if (!path || bucket == null || runId === 0) return;
-    const waypoints = buildWaypoints(rows, bucket, path);
-    let cancelled = false;
-    setLitBucket(null);
-    setVisible(true);
-    setMoving(true);
-    setBallPos(waypoints[0]);
-    posRef.current = waypoints[0];
-    setTrail([]);
-    setImpacts([]);
-    setSquashY(1);
+    const canvas = canvasRef.current;
+    const ballCanvas = ballCanvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !ballCanvas || !container) return;
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      const w = Math.max(1, container.clientWidth);
+      const h = Math.max(1, container.clientHeight);
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      ballCanvas.width = canvas.width;
+      ballCanvas.height = canvas.height;
+    };
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
-    const spacing = pegSpacingPct(rows);
-    const arcHeight = Math.min(2.4, spacing * 0.55);
+  // The single persistent render loop. It runs for the component's whole
+  // lifetime and just draws whatever `dropRef.current` says the physics
+  // state is *right now* — an idle board (pegs only) when there's no drop
+  // in flight, or the current frame of the recorded trajectory otherwise.
+  // This is the only place ball position ever comes from: real recorded
+  // physics state, read fresh every frame, never a CSS animation.
+  useEffect(() => {
+    function draw(now: number) {
+      rafRef.current = requestAnimationFrame(draw);
+      const canvas = canvasRef.current;
+      const ballCanvas = ballCanvasRef.current;
+      if (!canvas || !ballCanvas) return;
+      const ctx = canvas.getContext("2d");
+      const ballCtx = ballCanvas.getContext("2d");
+      if (!ctx || !ballCtx || canvas.width === 0 || canvas.height === 0) return;
 
-    async function run() {
-      for (let i = 1; i < waypoints.length; i++) {
-        if (cancelled) return;
-        const isFinalDrop = i === waypoints.length - 1;
-        const rowIdx = i - 1;
-        const duration = isFinalDrop ? 230 : segmentDurationMs(rowIdx, rows);
+      const scaleX = canvas.width / VIRTUAL_WIDTH;
+      const scaleY = canvas.height / VIRTUAL_HEIGHT;
+      ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+      ctx.clearRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+      ballCtx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+      ballCtx.clearRect(0, 0, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
 
-        await animateArc(
-          waypoints[i - 1],
-          waypoints[i],
-          duration,
-          isFinalDrop ? 0 : arcHeight,
-          isFinalDrop ? easeInCubic : easeOutCubic,
-          (p) => {
-            setTrail((prev) => [posRef.current, ...prev].slice(0, 3));
-            posRef.current = p;
-            setBallPos(p);
-          },
-          rafRef
-        );
-        if (cancelled) return;
+      const drop = dropRef.current;
+      const activeLayout = drop?.layout ?? layout;
 
-        setSquashY(0.6);
-        setTimeout(() => !cancelled && setSquashY(1), 110);
+      let ballFrame: TrajectoryFrame | null = null;
+      let ballSpeed = 0;
 
-        if (!isFinalDrop) {
-          const hit = pegHitForRow(rowIdx, rows, waypoints[i].x);
-          const id = impactIdRef.current++;
-          setImpacts((prev) => [...prev, { id, row: rowIdx, peg: hit.peg, x: hit.x, y: hit.y, fading: false }]);
-          setTimeout(() => !cancelled && setImpacts((prev) => prev.map((im) => (im.id === id ? { ...im, fading: true } : im))), 90);
-          setTimeout(() => !cancelled && setImpacts((prev) => prev.filter((im) => im.id !== id)), 420);
-          // Sound hook: a peg-impact tick. No audio system exists yet, so
-          // this is a no-op unless a caller supplies onPegImpact.
+      if (drop) {
+        if (drop.startedAt === null) drop.startedAt = now;
+        const virtualStep = (now - drop.startedAt) / FRAME_MS;
+        const lastIdx = drop.frames.length - 1;
+        const clampedStep = Math.min(virtualStep, lastIdx);
+        const i0 = Math.floor(clampedStep);
+        const i1 = Math.min(i0 + 1, lastIdx);
+        const t = clampedStep - i0;
+        const f0 = drop.frames[i0];
+        const f1 = drop.frames[i1];
+        ballFrame = { x: lerp(f0.x, f1.x, t), y: lerp(f0.y, f1.y, t), angle: lerp(f0.angle, f1.angle, t), speed: lerp(f0.speed, f1.speed, t) };
+        ballSpeed = ballFrame.speed;
+
+        // Fire peg-impact flashes as the playback crosses each recorded
+        // collision's step.
+        while (drop.nextHitIdx < drop.pegHits.length && drop.pegHits[drop.nextHitIdx].step <= clampedStep) {
+          const hit = drop.pegHits[drop.nextHitIdx];
+          drop.flashes.set(`${hit.row}:${hit.index}`, { startedAt: now });
           onPegImpact?.();
+          drop.nextHitIdx++;
+        }
+
+        // Motion trail while moving fast.
+        if (ballSpeed > TRAIL_SPEED_THRESHOLD) {
+          drop.trail.unshift({ x: ballFrame.x, y: ballFrame.y });
+          if (drop.trail.length > TRAIL_LENGTH) drop.trail.length = TRAIL_LENGTH;
+        } else {
+          drop.trail.length = 0;
+        }
+
+        // Reached the end of the recorded trajectory: the ball has
+        // settled. Light the bucket, then hold the visible "ball resting
+        // in the bucket" beat before notifying the parent so the result
+        // banner / balance animation appears after the player can actually
+        // see where it landed.
+        if (virtualStep >= lastIdx) {
+          if (drop.landedAt === null) {
+            drop.landedAt = now;
+            setLitBucket(drop.bucket);
+            onLandImpact?.();
+          } else if (!drop.landedNotified && now - drop.landedAt >= LAND_PAUSE_MS) {
+            drop.landedNotified = true;
+            onLanded();
+          }
         }
       }
-      if (cancelled) return;
-      setMoving(false);
-      setTrail([]);
-      setLitBucket(bucket);
-      // Sound hook: the landing thud/chime. No-op unless supplied.
-      onLandImpact?.();
-      onLanded();
-    }
-    run();
 
+      drawBackground(ctx, activeLayout, drop, ballFrame, ballSpeed, now);
+      if (ballFrame) drawBall(ballCtx, ballFrame, activeLayout.ballRadius, ballSpeed);
+    }
+
+    setBoardVisible(true);
+    rafRef.current = requestAnimationFrame(draw);
     return () => {
-      cancelled = true;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // layout is intentionally read fresh via dropRef/closure each frame —
+    // this loop is started once and lives for the component's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Kick off a new drop: run the fast headless simulation right away (a
+  // few milliseconds, synchronous) and hand its recorded trajectory to the
+  // render loop above.
+  useEffect(() => {
+    if (!path || bucket == null || runId === 0) return;
+    setLitBucket(null);
+    const sim = simulateUntilMatch(rows, bucket, layout);
+    dropRef.current = {
+      layout,
+      frames: sim.frames,
+      pegHits: sim.pegHits,
+      bucket,
+      startedAt: null,
+      landedAt: null,
+      landedNotified: false,
+      nextHitIdx: 0,
+      flashes: new Map(),
+      trail: [],
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
 
   const bucketCount = rows + 1;
-  const pegRows = Array.from({ length: rows }, (_, i) => i);
-  const spacing = pegSpacingPct(rows);
+  const leftPct = (layout.leftWallX / VIRTUAL_WIDTH) * 100;
+  const widthPct = ((layout.rightWallX - layout.leftWallX) / VIRTUAL_WIDTH) * 100;
 
   return (
-    <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl bg-casino-ambient bg-casino-vignette shadow-card-lift sm:aspect-square lg:aspect-[6/5]">
-      {/* Soft spotlight that tracks the ball while it's in motion — extra
-          depth layered on top of the board's static corner vignette. */}
-      {visible && (
-        <div
-          className="pointer-events-none absolute inset-0 z-0 transition-opacity duration-300"
-          style={{
-            opacity: moving ? 1 : 0.35,
-            background: `radial-gradient(38% 30% at ${ballPos.x}% ${ballPos.y}%, rgb(var(--color-accent-gc) / 0.10), transparent 70%)`,
-          }}
-        />
-      )}
+    <div
+      ref={containerRef}
+      className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl bg-casino-ambient bg-casino-vignette shadow-card-lift lg:mx-auto lg:max-w-[480px]"
+    >
+      <canvas
+        ref={canvasRef}
+        className={cn("absolute inset-0 z-0 h-full w-full transition-opacity duration-300", boardVisible ? "opacity-100" : "opacity-0")}
+      />
 
-      {pegRows.map((rowIdx) => {
-        const pegCount = rowIdx + 2;
-        const y = rowY(rowIdx, rows);
-        const spanPct = spacing * (pegCount - 1);
-        return (
-          <div
-            key={rowIdx}
-            className="absolute z-[1]"
-            style={{ top: `${y}%`, left: `${50 - spanPct / 2}%`, width: `${spanPct}%` }}
-          >
-            {Array.from({ length: pegCount }).map((_, p) => {
-              const hit = impacts.some((im) => !im.fading && im.row === rowIdx && im.peg === p);
-              return (
-                <span
-                  key={p}
-                  className={cn(
-                    "absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-150 ease-snappy sm:h-2.5 sm:w-2.5",
-                    hit ? "scale-150" : "scale-100"
-                  )}
-                  style={{
-                    left: pegCount > 1 ? `${(p / (pegCount - 1)) * 100}%` : "50%",
-                    top: 0,
-                    background: hit
-                      ? "radial-gradient(circle at 35% 30%, #fff, rgb(var(--color-accent-gc)) 60%)"
-                      : "radial-gradient(circle at 35% 30%, #fff 0%, rgb(var(--color-accent-sc) / 0.95) 55%, rgb(var(--color-accent-sc) / 0.7) 100%)",
-                    boxShadow: hit
-                      ? "0 0 14px 3px rgb(var(--color-accent-gc) / 0.9), 0 0 3px 1px rgb(255 255 255 / 0.9)"
-                      : "0 0 7px 1px rgb(var(--color-accent-sc) / 0.55), 0 0 2px 0 rgb(255 255 255 / 0.7)",
-                  }}
-                />
-              );
-            })}
-          </div>
-        );
-      })}
-
-      {/* Impact flashes: a brief gold burst on the peg the ball just hit,
-          layered above the peg's own scale-pulse (set via `hit` above). */}
-      {impacts.map((im) => (
-        <div
-          key={im.id}
-          className="pointer-events-none absolute z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 sm:h-5 sm:w-5"
-          style={{ left: `${im.x}%`, top: `${im.y}%` }}
-        >
-          <span
-            className={cn(
-              "block h-full w-full rounded-full transition-all duration-300 ease-snappy",
-              im.fading ? "scale-[2.4] opacity-0" : "scale-100 opacity-100"
-            )}
-            style={{
-              background:
-                "radial-gradient(circle, rgb(var(--color-accent-gc) / 0.9), rgb(var(--color-accent-gc) / 0.25) 55%, transparent 75%)",
-            }}
-          />
-        </div>
-      ))}
-
-      {/* Motion trail: a couple of fading echoes behind the ball, so fast
-          drops read as movement rather than a snapping dot. */}
-      {moving &&
-        trail.map((p, idx) => (
-          <div
-            key={idx}
-            className="pointer-events-none absolute z-[15] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full sm:h-3.5 sm:w-3.5"
-            style={{
-              left: `${p.x}%`,
-              top: `${p.y}%`,
-              opacity: 0.32 - idx * 0.1,
-              background: "radial-gradient(circle, rgb(var(--color-accent-gc) / 0.9), transparent 70%)",
-            }}
-          />
-        ))}
-
-      {visible && (
-        <div
-          className="absolute z-30 h-4 w-4 rounded-full sm:h-5 sm:w-5"
-          style={{
-            left: `${ballPos.x}%`,
-            top: `${ballPos.y}%`,
-            transform: `translate(-50%, -50%) scale(${2 - squashY}, ${squashY})`,
-            background: "radial-gradient(circle at 35% 28%, #fff 0%, rgb(var(--color-accent-gc)) 55%, rgb(var(--color-accent-gc)) 100%)",
-            boxShadow: moving
-              ? "0 0 6px 2px rgb(255 255 255 / 0.95), 0 0 22px 6px rgb(var(--color-accent-gc) / 0.6), 0 0 48px 16px rgb(var(--color-accent-gc) / 0.3)"
-              : "0 0 6px 2px rgb(255 255 255 / 0.9), 0 0 18px 4px rgb(var(--color-accent-gc) / 0.45)",
-          }}
-        />
-      )}
-
-      <div className="absolute inset-x-0 bottom-0 z-10 flex gap-[3px] px-[3%]" style={{ height: "19%" }}>
+      <div
+        className="pointer-events-none absolute z-10 flex gap-[3px]"
+        style={{ left: `${leftPct}%`, width: `${widthPct}%`, top: `${BUCKET_TOP_FRAC * 100}%`, bottom: "2%" }}
+      >
         {Array.from({ length: bucketCount }).map((_, i) => {
           const value = multiplierTable[i] ?? 0;
           const lit = litBucket === i;
@@ -381,6 +304,128 @@ export function PlinkoBoard({
           );
         })}
       </div>
+
+      {/* Ball layer sits above the (opaque) bucket row so the ball stays
+          visible while it's resting settled inside a bucket, not just
+          while it's still up in the peg field. */}
+      <canvas
+        ref={ballCanvasRef}
+        className={cn("pointer-events-none absolute inset-0 z-20 h-full w-full transition-opacity duration-300", boardVisible ? "opacity-100" : "opacity-0")}
+      />
     </div>
   );
+}
+
+function drawBackground(
+  ctx: CanvasRenderingContext2D,
+  layout: PlinkoLayout,
+  drop: DropState | null,
+  ball: TrajectoryFrame | null,
+  ballSpeed: number,
+  now: number
+) {
+  // Soft spotlight following the ball while it's in motion.
+  if (ball && ballSpeed > 0.3) {
+    const spot = ctx.createRadialGradient(ball.x, ball.y, 0, ball.x, ball.y, layout.width * 0.4);
+    spot.addColorStop(0, "rgba(230, 190, 80, 0.09)");
+    spot.addColorStop(1, "rgba(230, 190, 80, 0)");
+    ctx.save();
+    ctx.fillStyle = spot;
+    ctx.fillRect(0, 0, layout.width, layout.height);
+    ctx.restore();
+  }
+
+  // Pegs.
+  for (const peg of layout.pegs) {
+    const flash = drop?.flashes.get(`${peg.row}:${peg.index}`);
+    let intensity = 0;
+    if (flash) {
+      const age = now - flash.startedAt;
+      if (age < PEG_FLASH_MS) intensity = 1 - age / PEG_FLASH_MS;
+      else drop!.flashes.delete(`${peg.row}:${peg.index}`);
+    }
+    drawPeg(ctx, peg.x, peg.y, layout.pegRadius, intensity);
+  }
+
+  // Ball trail (motion blur echoes).
+  if (drop && drop.trail.length > 1) {
+    for (let i = drop.trail.length - 1; i >= 1; i--) {
+      const p = drop.trail[i];
+      const alpha = 0.22 * (1 - i / drop.trail.length);
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(230, 190, 80, ${alpha.toFixed(3)})`;
+      ctx.arc(p.x, p.y, layout.ballRadius * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawPeg(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, hitIntensity: number) {
+  // Soft ambient glow.
+  ctx.save();
+  ctx.shadowColor = hitIntensity > 0 ? "rgba(255, 200, 90, 0.9)" : "rgba(120, 220, 210, 0.55)";
+  ctx.shadowBlur = hitIntensity > 0 ? 10 + hitIntensity * 6 : 4;
+
+  const r = radius * (1 + hitIntensity * 0.45);
+  const grad = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, 0, x, y, r);
+  if (hitIntensity > 0) {
+    grad.addColorStop(0, "#ffffff");
+    grad.addColorStop(0.55, `rgba(255, ${Math.round(190 + hitIntensity * 40)}, 90, 1)`);
+    grad.addColorStop(1, "rgba(214, 158, 46, 0.95)");
+  } else {
+    grad.addColorStop(0, "#ffffff");
+    grad.addColorStop(0.55, "rgba(94, 210, 196, 0.95)");
+    grad.addColorStop(1, "rgba(45, 150, 140, 0.85)");
+  }
+  ctx.beginPath();
+  ctx.fillStyle = grad;
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBall(ctx: CanvasRenderingContext2D, frame: TrajectoryFrame, radius: number, speed: number) {
+  const { x, y, angle } = frame;
+
+  // Drop shadow for depth.
+  ctx.save();
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+  ctx.ellipse(x, y + radius * 0.55, radius * 0.9, radius * 0.32, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.shadowColor = "rgba(255, 210, 110, 0.75)";
+  ctx.shadowBlur = 10 + Math.min(10, speed * 2.2);
+
+  const grad = ctx.createRadialGradient(x - radius * 0.35, y - radius * 0.38, radius * 0.1, x, y, radius);
+  grad.addColorStop(0, "#fff9e8");
+  grad.addColorStop(0.35, "#f4d675");
+  grad.addColorStop(0.7, "#d4a92e");
+  grad.addColorStop(1, "#a97c1a");
+  ctx.beginPath();
+  ctx.fillStyle = grad;
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Spin indicator: a small darker fleck offset from center, rotating with
+  // the ball's real physics angle — this is what makes rotation actually
+  // visible rather than just simulated invisibly.
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(120, 84, 12, 0.55)";
+  ctx.arc(radius * 0.5, 0, radius * 0.22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Tight bright highlight (fixed relative to camera, not rotation — like
+  // a specular reflection).
+  ctx.beginPath();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+  ctx.arc(x - radius * 0.32, y - radius * 0.34, radius * 0.28, 0, Math.PI * 2);
+  ctx.fill();
 }

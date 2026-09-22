@@ -612,3 +612,17 @@ export function buildSymbolTextures(): Record<SlotSymbolId, Texture> {
   }
   return out;
 }
+
+/**
+ * Renders one symbol to a plain PNG data URL, for places that need the art
+ * as a regular <img> rather than a PIXI.Texture — e.g. the paytable sheet,
+ * which is DOM/React, not canvas. Reuses the exact same RENDERERS used by
+ * buildSymbolTextures, so the paytable art matches the in-game reels
+ * pixel-for-pixel.
+ */
+export function renderSymbolToDataURL(id: SlotSymbolId): string {
+  const canvas = makeCanvas();
+  const ctx = canvas.getContext("2d")!;
+  RENDERERS[id](ctx);
+  return canvas.toDataURL("image/png");
+}

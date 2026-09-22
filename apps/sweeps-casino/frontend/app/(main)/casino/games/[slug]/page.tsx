@@ -12,6 +12,12 @@ import { Button } from "@/components/ui/Button";
 import { Dice } from "@/components/ui/icons";
 
 const ORIGINALS_SLUGS = ["dice", "mines", "plinko"];
+// Real, built slots (today: just vault-breaker — lib/playable-games.ts)
+// live at their own fullscreen route, same reasoning as ORIGINALS_SLUGS
+// below. GameTile/FeaturedGameCard already link here directly; this
+// redirect is a safety net for anything that still links to the generic
+// detail page (an old bookmark, a stale link elsewhere).
+const PLAYABLE_SLOT_SLUGS = ["vault-breaker"];
 
 export default function GameDetailPage({ params }: { params: { slug: string } }) {
   const router = useRouter();
@@ -19,8 +25,11 @@ export default function GameDetailPage({ params }: { params: { slug: string } })
   const { data: game, loading } = useFetch(fetcher, [params.slug]);
 
   useEffect(() => {
-    if (game && ORIGINALS_SLUGS.includes(game.slug)) {
+    if (!game) return;
+    if (ORIGINALS_SLUGS.includes(game.slug)) {
       router.replace(`/casino/originals/${game.slug}`);
+    } else if (PLAYABLE_SLOT_SLUGS.includes(game.slug)) {
+      router.replace(`/casino/slots/${game.slug}`);
     }
   }, [game, router]);
 
@@ -40,7 +49,7 @@ export default function GameDetailPage({ params }: { params: { slug: string } })
     );
   }
 
-  if (ORIGINALS_SLUGS.includes(game.slug)) return null;
+  if (ORIGINALS_SLUGS.includes(game.slug) || PLAYABLE_SLOT_SLUGS.includes(game.slug)) return null;
 
   return (
     <div className="mx-auto max-w-2xl p-6">
