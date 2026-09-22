@@ -105,7 +105,7 @@ export default function OriginalGamePage({ params }: { params: { slug: string } 
       <GameHeader slug={slug} title={title} />
 
       {isKnownOriginal ? (
-        <main className="mx-auto w-full max-w-3xl flex-1 p-3 sm:p-6">
+        <main className="mx-auto w-full max-w-6xl flex-1 p-3 sm:p-6">
           {slug === "dice" && <DiceGame />}
           {slug === "mines" && <MinesGame />}
           {slug === "plinko" && <PlinkoGame />}

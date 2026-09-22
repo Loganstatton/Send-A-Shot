@@ -69,7 +69,7 @@ export function Topbar() {
         </div>
       </form>
 
-      <div className="flex flex-1 items-center justify-end gap-2 sm:gap-3">
+      <div className="flex flex-1 items-center justify-end gap-1.5 sm:gap-3">
         {/* The balance itself opens the wallet modal — the live number is
             always visible (sprint item 25: no separate icon button needed
             just to see or reach it), so there's no redundant circular

@@ -41,7 +41,7 @@ export function CurrencySwitcher() {
         aria-pressed={active === "GC"}
         title="Gold Coins — entertainment-only, no cash value"
         className={cn(
-          "relative flex items-center gap-1.5 overflow-hidden rounded-full px-3 py-1.5 text-xs font-bold transition-all",
+          "relative flex items-center gap-1 overflow-hidden rounded-full px-2 py-1.5 text-xs font-bold transition-all sm:gap-1.5 sm:px-3",
           active === "GC" ? "bg-accent-gc text-bg shadow-glow-gc-lg coin-shimmer" : "text-text-muted hover:text-accent-gc"
         )}
       >
@@ -54,7 +54,7 @@ export function CurrencySwitcher() {
         aria-pressed={active === "SC"}
         title="Sweeps Coins — promotional sweepstakes currency"
         className={cn(
-          "relative flex items-center gap-1.5 overflow-hidden rounded-full px-3 py-1.5 text-xs font-bold transition-all",
+          "relative flex items-center gap-1 overflow-hidden rounded-full px-2 py-1.5 text-xs font-bold transition-all sm:gap-1.5 sm:px-3",
           active === "SC" ? "bg-accent-sc text-bg shadow-glow-sc-lg coin-shimmer" : "text-text-muted hover:text-accent-sc"
         )}
       >

@@ -17,7 +17,7 @@ interface MinesGridProps {
 
 export function MinesGrid({ tiles, onToggle, disabled }: MinesGridProps) {
   return (
-    <div className="mx-auto grid max-w-md grid-cols-5 gap-2 sm:gap-2.5">
+    <div className="mx-auto grid max-w-md grid-cols-5 gap-2 sm:gap-2.5 lg:max-w-2xl lg:gap-3.5">
       {tiles.map((state, idx) => {
         const interactive = !disabled && (state === "default" || state === "selected");
         return (

@@ -119,7 +119,7 @@ export function PlinkoBoard({ rows, multiplierTable, path, bucket, runId, onLand
   const spacing = pegSpacingPct(rows);
 
   return (
-    <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl bg-casino-ambient sm:aspect-[6/5]">
+    <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl bg-casino-ambient sm:aspect-[6/5] lg:aspect-square">
       {pegRows.map((rowIdx) => {
         const pegCount = rowIdx + 2;
         const y = PEG_TOP_PCT + ((rowIdx + 1) / rows) * (PEG_BOTTOM_PCT - PEG_TOP_PCT);

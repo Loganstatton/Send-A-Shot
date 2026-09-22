@@ -102,7 +102,7 @@ export function DiceGame() {
     <div className="flex flex-col gap-6 lg:flex-row-reverse lg:items-start">
       <div
         className={cn(
-          "rounded-2xl bg-casino-ambient p-5 sm:p-6",
+          "flex-1 rounded-2xl bg-casino-ambient p-5 sm:p-6 lg:flex lg:min-h-[560px] lg:flex-col lg:justify-center",
           bigWin && phase === "settled" && "animate-pulse-glow"
         )}
       >
