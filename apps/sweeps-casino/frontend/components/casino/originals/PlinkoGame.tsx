@@ -97,6 +97,10 @@ export function PlinkoGame() {
     <div className="flex flex-col gap-5 lg:flex-row-reverse lg:items-start">
       <div className="flex-1">
         <div className={cn("relative rounded-2xl", bigWin && "animate-pulse-glow")}>
+          {/* PlinkoBoard also accepts optional onPegImpact / onLandImpact
+              sound-effect hooks (scaffolding for a future audio pass — see
+              PlinkoBoard.tsx). Left unset here since there's no audio
+              system yet; they're safe no-ops until one exists. */}
           <PlinkoBoard
             rows={rows}
             multiplierTable={multiplierTable}

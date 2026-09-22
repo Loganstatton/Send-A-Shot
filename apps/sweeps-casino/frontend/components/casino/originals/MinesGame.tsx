@@ -8,17 +8,11 @@ import { GameInfoSheet } from "@/components/casino/originals/GameInfoSheet";
 import { GameLoading } from "@/components/casino/originals/GameLoading";
 import { MinesGrid, type MinesTileState } from "@/components/casino/originals/MinesGrid";
 import { RoundHistory } from "@/components/casino/originals/RoundHistory";
-import { useOriginalGame } from "@/lib/hooks/useOriginalGame";
+import { useMinesRound } from "@/lib/hooks/useMinesRound";
 import { cn, formatCoins } from "@/lib/utils";
 
 const GRID_SIZE = 25;
 const BIG_WIN_MULTIPLIER = 5;
-const REVEAL_STEP_MS_MIN = 160;
-const REVEAL_STEP_MS_JITTER = 90;
-
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
 
 /** n choose k, safe for n,k <= 25 (well within double precision). */
 function combination(n: number, k: number): number {
@@ -31,128 +25,90 @@ function combination(n: number, k: number): number {
 }
 
 /**
- * Display-only mirror of the backend's fair-multiplier formula for Mines
- * (backend/src/modules/casino/originals/mines/mines.outcome.ts) — used to
- * show a live "potential payout" estimate while picking tiles. The
- * credited multiplier always comes from the real /play response.
+ * Display-only mirror of the backend's fair-multiplier formula
+ * (backend/src/modules/casino/originals/mines/mines.outcome.ts's
+ * computeMinesMultiplier) — used only for the pre-round "first safe pick
+ * pays ~Nx" hint. Every multiplier actually shown once a round is live
+ * comes straight from the /pick and /cashout responses.
  */
-function estimateMultiplier(picks: number, minesCount: number, houseEdge: number): number {
-  if (picks === 0) return 0;
-  const fair = combination(GRID_SIZE, picks) / combination(GRID_SIZE - minesCount, picks);
+function estimateFirstPickMultiplier(minesCount: number, houseEdge: number): number {
+  const fair = combination(GRID_SIZE, 1) / combination(GRID_SIZE - minesCount, 1);
   return Math.round(fair * (1 - houseEdge) * 10000) / 10000;
 }
 
-type Phase = "select" | "revealing" | "done";
-
-// The backend settles a Mines round as a single shot: all tile picks are
-// submitted together and the round resolves immediately (see
-// backend/src/modules/casino/originals/mines/mines.outcome.ts) rather than
-// an interactive reveal-with-mid-round-cashout flow. So this UI lets the
-// player select tiles, then "Reveal" submits the whole pick set in one
-// /play call — afterward, picks are stagger-revealed client-side (in the
-// order they were picked) to simulate an interactive feel, stopping the
-// instant a mine is uncovered. There is no real mid-round cashout, so
-// "Reveal" (not "Cash out") is always the real action.
+// Real casino Mines: choose a bet + mine count, start the round, then pick
+// tiles one at a time. Each safe pick raises the live multiplier and the
+// potential cash-out amount; a mine ends the round immediately and the
+// bet is lost. Cash Out unlocks after the first safe pick and credits the
+// current multiplier's payout on demand — this is what makes it Mines
+// rather than a single "submit picks, resolve everything at once" bet.
+// The server (see mines-round.service.ts) is authoritative for the mine
+// layout, every pick's outcome, and the payout; this component only
+// renders what the start/pick/cashout responses say.
 export function MinesGame() {
-  const { config, seed, onRotated, history, loadingConfig, loadingSeed, playing, lastError, play } =
-    useOriginalGame("mines");
+  const {
+    config,
+    seed,
+    onRotated,
+    history,
+    loadingConfig,
+    loadingSeed,
+    round,
+    starting,
+    pickingTile,
+    cashingOut,
+    lastError,
+    startRound,
+    pickTile,
+    cashOut,
+    resetRound,
+  } = useMinesRound();
 
   const [betAmount, setBetAmount] = useState(100);
   const [mineCount, setMineCount] = useState(3);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
 
-  const [phase, setPhase] = useState<Phase>("select");
-  const [pickOrder, setPickOrder] = useState<number[]>([]);
-  const [revealedCount, setRevealedCount] = useState(0);
-  const [minePositions, setMinePositions] = useState<number[]>([]);
-  const [hitMine, setHitMine] = useState(false);
-  const [stoppedEarly, setStoppedEarly] = useState(false);
-  const [outcome, setOutcome] = useState<{ win: boolean; multiplier: number; payoutMinor: number } | null>(null);
-
-  const potentialMultiplier = useMemo(
-    () => estimateMultiplier(selected.size, mineCount, config?.houseEdge ?? 0),
-    [selected.size, mineCount, config?.houseEdge]
+  const firstPickEstimate = useMemo(
+    () => estimateFirstPickMultiplier(mineCount, config?.houseEdge ?? 0),
+    [mineCount, config?.houseEdge]
   );
 
   const tiles: MinesTileState[] = useMemo(() => {
     const arr: MinesTileState[] = Array(GRID_SIZE).fill("default");
-    if (phase === "select") {
-      selected.forEach((i) => (arr[i] = "selected"));
-      return arr;
-    }
-    pickOrder.forEach((idx, i) => {
-      if (i < revealedCount) {
-        arr[idx] = minePositions.includes(idx) ? "mine" : "safe";
-      } else {
-        arr[idx] = stoppedEarly ? "skipped" : "selected";
-      }
+    if (!round) return arr;
+
+    round.picks.forEach((idx) => {
+      arr[idx] = "safe";
     });
+
+    if (round.phase === "busted" || round.phase === "cashed-out") {
+      (round.minePositions ?? []).forEach((idx) => {
+        arr[idx] = idx === round.hitTileIndex ? "mine-hit" : "mine";
+      });
+      for (let i = 0; i < GRID_SIZE; i++) {
+        if (arr[i] === "default") arr[i] = "skipped";
+      }
+    } else if (pickingTile !== null) {
+      arr[pickingTile] = "pending";
+    }
+
     return arr;
-  }, [phase, selected, pickOrder, revealedCount, minePositions, stoppedEarly]);
-
-  function toggleTile(idx: number) {
-    if (phase !== "select" || playing) return;
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else if (next.size < GRID_SIZE - mineCount) next.add(idx);
-      return next;
-    });
-  }
-
-  function newRound() {
-    setSelected(new Set());
-    setPickOrder([]);
-    setRevealedCount(0);
-    setMinePositions([]);
-    setHitMine(false);
-    setStoppedEarly(false);
-    setOutcome(null);
-    setPhase("select");
-  }
-
-  async function reveal() {
-    if (selected.size === 0 || phase !== "select") return;
-    const picks = Array.from(selected); // Set preserves insertion order == click order
-    setPickOrder(picks);
-    setRevealedCount(0);
-    setStoppedEarly(false);
-    setMinePositions([]);
-    setOutcome(null);
-    setPhase("revealing");
-
-    const result = await play({ betAmount, minesCount: mineCount, picks });
-    if (!result) {
-      setPhase("select");
-      return;
-    }
-    const mines = (result.resultDetail.minePositions as number[]) || [];
-    const hit = result.resultDetail.hitMine === true;
-    setMinePositions(mines);
-    setHitMine(hit);
-
-    for (let i = 0; i < picks.length; i++) {
-      await sleep(REVEAL_STEP_MS_MIN + Math.random() * REVEAL_STEP_MS_JITTER);
-      setRevealedCount(i + 1);
-      if (hit && mines.includes(picks[i])) {
-        setStoppedEarly(true);
-        break;
-      }
-    }
-
-    // result.payout is a plain dollar decimal (see useOriginalGame's
-    // fromPlayResponse), so *100 to get back to the minor-unit convention
-    // formatCoins() and BetAmountField expect.
-    setOutcome({ win: result.win, multiplier: result.multiplier, payoutMinor: result.win ? result.payout * 100 : 0 });
-    setPhase("done");
-  }
+  }, [round, pickingTile]);
 
   if (loadingConfig || !config) {
     return <GameLoading label="Mines" />;
   }
 
-  const busy = playing || phase === "revealing";
-  const bigWin = phase === "done" && !!outcome?.win && outcome.multiplier >= BIG_WIN_MULTIPLIER;
+  const phase = round?.phase ?? "idle";
+  const inSelect = phase === "idle";
+  const inActive = phase === "active";
+  const roundOver = phase === "busted" || phase === "cashed-out";
+  const gridBusy = !inActive || pickingTile !== null || cashingOut;
+  const canCashOut = inActive && (round?.picks.length ?? 0) > 0 && !cashingOut && pickingTile === null;
+  const bigWin = phase === "cashed-out" && round!.currentMultiplier >= BIG_WIN_MULTIPLIER;
+
+  async function handleStart() {
+    await startRound({ betAmount, minesCount: mineCount });
+  }
 
   return (
     // Same DOM-order + flex-row-reverse trick as Dice/Plinko: mobile
@@ -164,30 +120,54 @@ export function MinesGame() {
           className={cn(
             "rounded-2xl bg-casino-ambient p-5 sm:p-6",
             bigWin && "animate-pulse-glow",
-            phase === "done" && hitMine && "animate-shake"
+            phase === "busted" && "animate-shake"
           )}
         >
-          <MinesGrid tiles={tiles} onToggle={toggleTile} disabled={busy} />
+          {/* Live readout: current multiplier + potential win while a round is active. */}
+          <div className="mb-4 flex items-center justify-center gap-6 rounded-xl border border-border/60 bg-surface/60 px-4 py-3">
+            <div className="text-center">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Current multiplier</p>
+              <p className="font-mono text-xl font-bold text-text-primary">
+                {inActive || roundOver ? `${(round?.currentMultiplier ?? 0).toFixed(2)}x` : "1.00x"}
+              </p>
+            </div>
+            <div className="h-8 w-px bg-border/60" />
+            <div className="text-center">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Potential win</p>
+              <p className="font-mono text-xl font-bold text-accent-sc">
+                {inActive || roundOver
+                  ? formatCoins((round?.potentialPayout ?? 0) * 100)
+                  : formatCoins(betAmount)}
+              </p>
+            </div>
+          </div>
+
+          <MinesGrid tiles={tiles} onPick={pickTile} disabled={gridBusy} />
 
           <div className="mt-4 flex min-h-[28px] items-center justify-center">
-            {phase === "done" && hitMine && (
-              <p className="animate-win-enter text-sm font-bold text-danger">Boom — a mine was among your picks.</p>
+            {phase === "busted" && (
+              <p className="animate-win-enter text-sm font-bold text-danger">
+                Boom — that was a mine. -{formatCoins((round?.betAmount ?? 0) * 100)}
+              </p>
             )}
-            {phase === "done" && !hitMine && outcome && (
+            {phase === "cashed-out" && (
               <p
                 className={cn(
                   "animate-win-enter text-sm font-bold",
                   bigWin ? "text-accent-gc" : "text-success"
                 )}
               >
-                Cleared · +{formatCoins(outcome.payoutMinor)} · {outcome.multiplier.toFixed(2)}x
+                Cashed out · +{formatCoins((round?.finalPayout ?? 0) * 100)} · {(round?.currentMultiplier ?? 0).toFixed(2)}x
               </p>
             )}
-            {phase === "select" && selected.size > 0 && (
+            {inSelect && (
               <p className="text-xs text-text-muted">
-                Potential payout at {selected.size} pick{selected.size > 1 ? "s" : ""}:{" "}
-                <span className="font-mono font-semibold text-text-primary">{potentialMultiplier.toFixed(2)}x</span>
+                First safe pick pays ~<span className="font-mono font-semibold text-text-primary">{firstPickEstimate.toFixed(2)}x</span> at{" "}
+                {mineCount} mine{mineCount > 1 ? "s" : ""}
               </p>
+            )}
+            {inActive && (round?.picks.length ?? 0) === 0 && (
+              <p className="text-xs text-text-muted">Pick a tile — Cash Out unlocks after your first safe pick.</p>
             )}
           </div>
         </div>
@@ -203,21 +183,14 @@ export function MinesGame() {
           onChange={setBetAmount}
           minMinor={config.minBet}
           maxMinor={config.maxBet}
-          disabled={playing || phase !== "select"}
+          disabled={!inSelect}
         />
 
         <Select
           label="Mines"
           value={mineCount}
-          disabled={playing || phase !== "select"}
-          onChange={(e) => {
-            const next = parseInt(e.target.value, 10);
-            setMineCount(next);
-            setSelected((prev) => {
-              const capped = new Set(Array.from(prev).slice(0, GRID_SIZE - next));
-              return capped;
-            });
-          }}
+          disabled={!inSelect}
+          onChange={(e) => setMineCount(parseInt(e.target.value, 10))}
         >
           {[1, 3, 5, 10, 15, 24].map((n) => (
             <option key={n} value={n}>
@@ -226,22 +199,33 @@ export function MinesGame() {
           ))}
         </Select>
 
-        <p className="text-xs text-text-muted">
-          Pick up to {GRID_SIZE - mineCount} tiles, then reveal. Any mine among your picks busts the whole bet — there's
-          no mid-round cash-out, Reveal settles the round.
-        </p>
-
         {lastError && <p className="text-xs text-danger">{lastError}</p>}
 
-        {phase !== "done" ? (
-          <Button className="w-full" size="lg" variant="sc" onClick={reveal} loading={busy} disabled={selected.size === 0}>
-            Reveal ({selected.size} picked)
+        {inSelect && (
+          <Button className="w-full" size="lg" variant="sc" onClick={handleStart} loading={starting}>
+            Start game
           </Button>
-        ) : (
-          <Button className="w-full" size="lg" variant="secondary" onClick={newRound}>
+        )}
+
+        {inActive && (
+          <Button className="w-full" size="lg" variant="sc" onClick={cashOut} loading={cashingOut} disabled={!canCashOut}>
+            {canCashOut
+              ? `Cash out · ${formatCoins((round?.potentialPayout ?? 0) * 100)}`
+              : "Cash out (pick a tile first)"}
+          </Button>
+        )}
+
+        {roundOver && (
+          <Button className="w-full" size="lg" variant="secondary" onClick={resetRound}>
             New round
           </Button>
         )}
+
+        <p className="text-xs text-text-muted">
+          {inSelect
+            ? `Pick tiles one at a time. Any mine ends the round — cash out whenever you like once you've cleared at least one tile.`
+            : `${GRID_SIZE - mineCount - (round?.picks.length ?? 0)} safe tile${GRID_SIZE - mineCount - (round?.picks.length ?? 0) === 1 ? "" : "s"} left · ${mineCount} mine${mineCount > 1 ? "s" : ""} on the board.`}
+        </p>
 
         <GameInfoSheet seed={seed} loading={loadingSeed} onRotated={onRotated} />
       </div>

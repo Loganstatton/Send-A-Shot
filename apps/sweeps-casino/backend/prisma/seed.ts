@@ -281,6 +281,44 @@ async function seedDemoGameCatalog() {
 }
 
 /**
+ * Vault Breaker — the first genuinely playable slot (backed by the real
+ * math engine in src/modules/casino/slots), distinct from the 16 SLOTS
+ * entries in DEMO_GAMES above, which are catalog-only placeholders with no
+ * real game behind them. Same Vaultline Studios provider (legit in-house
+ * branding), but top sortWeight + EXCLUSIVE/NEW tags for featured lobby
+ * placement, per the "Vault Breaker should receive large FEATURED
+ * placement" requirement.
+ */
+async function seedVaultBreaker() {
+  console.log('Seeding Vault Breaker (first real slot)...');
+  const provider = await prisma.gameProvider.upsert({
+    where: { code: 'vaultline-studios' },
+    create: { code: 'vaultline-studios', name: 'Vaultline Studios', type: 'INTERNAL', status: 'ACTIVE' },
+    update: {},
+  });
+
+  await prisma.game.upsert({
+    where: { slug: 'vault-breaker' },
+    create: {
+      providerId: provider.id,
+      providerGameId: 'vault-breaker',
+      name: 'Vault Breaker',
+      slug: 'vault-breaker',
+      category: 'SLOTS',
+      tags: ['EXCLUSIVE', 'NEW'],
+      supportedCurrencies: ['GC'], // GC-first per the design spec — SC stays behind the existing feature flag.
+      demoAvailable: true,
+      rtpBps: 9600, // Design target — see slots/games/vault-breaker/simulate.ts for the actual simulated figure.
+      volatility: 'HIGH',
+      status: 'ACTIVE',
+      restrictedJurisdictions: [],
+      sortWeight: 200, // Above every Originals/demo entry — this is the lobby's real centerpiece.
+    },
+    update: {},
+  });
+}
+
+/**
  * Casino Visual Redesign sprint bumped these values to feel like a real
  * casino's daily-reward ladder. Day 7 is presented on the frontend as a
  * "Mystery Chest" reveal, but the credited amount is this fixed value —
@@ -573,6 +611,7 @@ async function main() {
   const vipLevels = await seedVipLevels();
   await seedCasinoCatalog();
   await seedDemoGameCatalog();
+  await seedVaultBreaker();
   await seedDailyBonusPromotion();
   await seedDemoUsers(vipLevels, adminRoles);
   console.log('--- Seed complete ---');
