@@ -324,7 +324,7 @@ export function VaultBreakerGame() {
         </div>
       </div>
 
-      <div className="relative aspect-[5/4.6] w-full overflow-hidden rounded-2xl border border-border/60 bg-black shadow-card-lift">
+      <div className="relative aspect-[5/6.5] w-full overflow-hidden rounded-2xl border border-border/60 bg-black shadow-card-lift lg:aspect-[5/4.6]">
         <div ref={mountRef} className="absolute inset-0" />
 
         {freeSpinsHud && (

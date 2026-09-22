@@ -89,7 +89,7 @@ export default function SlotGamePage({ params }: { params: { slug: string } }) {
       <SlotHeader slug={slug} title={title} />
 
       {isPlayableSlot(slug) ? (
-        <main className="bg-casino-ambient mx-auto w-full max-w-6xl flex-1 p-3 sm:p-6">
+        <main className="bg-casino-ambient mx-auto flex w-full max-w-6xl flex-1 flex-col items-center justify-center p-3 sm:p-6">
           <VaultBreakerGame />
         </main>
       ) : (
