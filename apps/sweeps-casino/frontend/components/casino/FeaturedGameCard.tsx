@@ -27,7 +27,7 @@ export function FeaturedGameCard({ game, tagline }: { game: Game; tagline?: stri
       className="group relative block h-[220px] w-full overflow-hidden rounded-2xl border border-border/60 shadow-card-lift transition-transform duration-300 ease-premium hover:-translate-y-0.5 sm:h-[280px]"
       style={isOriginal || usesCategoryArt ? undefined : { background: tileGradient(seed) }}
     >
-      <div className="absolute inset-0 scale-[1.15] transition-transform duration-500 ease-premium group-hover:scale-[1.22]">
+      <div className="absolute inset-0 transition-transform duration-500 ease-premium group-hover:scale-[1.06]">
         {hasCustomArt(game.slug) ? (
           <OriginalArt slug={game.slug} />
         ) : usesCategoryArt ? (

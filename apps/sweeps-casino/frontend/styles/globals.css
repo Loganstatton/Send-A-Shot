@@ -175,14 +175,18 @@ body {
    sits near per the redesign brief: teal for Originals, gold for the
    Jackpot banner, violet for Promotions. Deliberately weaker (lower alpha,
    tighter spread) than .bg-casino-ambient's page-level pair so stacking
-   them down a long scroll never reads as "painted across the whole page". */
+   them down a long scroll never reads as "painted across the whole page".
+   Insets are 0 on the left/right (only top/bottom bleed) — a pseudo-
+   element isn't a real DOM node, so per-element mobile-overflow checks
+   never catch it bleeding past the viewport; horizontal inset must stay
+   inside the wrapper's own box. */
 .bg-glow-originals {
   position: relative;
 }
 .bg-glow-originals::before {
   content: "";
   position: absolute;
-  inset: -10% -4% auto -4%;
+  inset: -10% 0 auto 0;
   height: 140%;
   z-index: -1;
   pointer-events: none;
@@ -194,7 +198,7 @@ body {
 .bg-glow-jackpot::before {
   content: "";
   position: absolute;
-  inset: -20% -6% -20% -6%;
+  inset: -20% 0 -20% 0;
   z-index: -1;
   pointer-events: none;
   background: radial-gradient(60% 70% at 50% 50%, rgb(var(--color-accent-gc) / 0.10), transparent 72%);
@@ -205,7 +209,7 @@ body {
 .bg-glow-promo::before {
   content: "";
   position: absolute;
-  inset: -10% -4% auto -4%;
+  inset: -10% 0 auto 0;
   height: 140%;
   z-index: -1;
   pointer-events: none;
