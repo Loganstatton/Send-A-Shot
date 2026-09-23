@@ -13,6 +13,11 @@ export function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
 }
 
+/** Steeper-tailed sibling of easeOutCubic — decelerates harder near the end, which is what actually reads as a reel "catching" rather than gliding to a stop. Used for a spinning reel's main deceleration phase. */
+export function easeOutQuint(t: number): number {
+  return 1 - Math.pow(1 - t, 5);
+}
+
 export function easeOutBack(t: number, overshoot = 1.7): number {
   const c1 = overshoot;
   const c3 = c1 + 1;
@@ -73,7 +78,10 @@ export function reelPositionCurve(t: number, accelFrac = 0.18, decelFrac = 0.4):
   if (t <= b) {
     return aPos + (bPos - aPos) * ((t - a) / (b - a));
   }
-  return bPos + (1 - bPos) * easeOutCubic((t - b) / (1 - b));
+  // easeOutQuint for the deceleration tail (ported from the reference demo)
+  // — a harder catch right at the very end reads more like a reel actually
+  // stopping under its own weight than easeOutCubic's more even glide.
+  return bPos + (1 - bPos) * easeOutQuint((t - b) / (1 - b));
 }
 
 /** Per-reel timing/feel — deliberately distinct per reel (spec point 7: "reels do not stop identically"). `duration` is the main spin tween length; total on-screen settle time is duration + bounceMs. accelMs/decelMs are literal-ms phase lengths (converted to fractions of `duration` by ReelStrip), so every reel's acceleration burst reads as ~140-160ms in real time no matter how long that reel spins overall. */
@@ -102,6 +110,35 @@ export const REEL_PERSONALITY: ReelPersonality[] = [
 /** Decaying-sine bounce used for the small overshoot after a reel lands. Returns a signed fraction of one cell. */
 export function bounceCurve(t: number): number {
   return Math.sin(t * Math.PI * 2.4) * Math.exp(-t * 5.5) * -1;
+}
+
+/**
+ * easeOutBack-driven settle: starts at 0, overshoots past 1, eases back to
+ * exactly 1 — ported from the reference demo's overshoot/settle feel
+ * (there, applied directly to reel position; here, applied to the small
+ * mechanical bounceLayer offset that plays after a reel lands, which is
+ * this engine's equivalent). `overshoot` controls how pronounced the
+ * spring-back reads.
+ */
+export function easeOutBackSettle(t: number, overshoot = 1.7): number {
+  return easeOutBack(t, overshoot) - 1;
+}
+
+/** Turbo mode: faster spin, shorter duration, and a visibly reduced (never fully removed — it's the one settle cue that sells "this reel just stopped") overshoot bounce. Applied uniformly to a per-reel ReelPersonality rather than baking a second turbo table. */
+export function scaleForTurbo(p: ReelPersonality, turbo: boolean): ReelPersonality {
+  if (!turbo) return p;
+  return {
+    duration: Math.round(p.duration * 0.5),
+    accelMs: Math.round(p.accelMs * 0.6),
+    decelMs: Math.round(p.decelMs * 0.55),
+    bounceMs: Math.round(p.bounceMs * 0.5),
+    bounceAmpPx: p.bounceAmpPx * 0.35,
+  };
+}
+
+/** Per-reel spin START delay (ms) — reels don't all begin moving in the same frame, ported from the reference demo's `startTime = now + i*(turbo?18:42)`. */
+export function reelStartDelayMs(reelIndex: number, turbo: boolean): number {
+  return reelIndex * (turbo ? 18 : 42);
 }
 
 export interface TweenHandle {

@@ -177,6 +177,33 @@ export class SlotsService {
       throw err;
     }
 
+    // Concurrency hardening: postEntries() takes a row lock on the wallet
+    // (SELECT ... FOR UPDATE) for the duration of its transaction, so two
+    // *genuinely concurrent* spin() calls sharing the same Idempotency-Key
+    // (a real retry racing the original request, not just a sequential
+    // replay — findReplayedRound() above only catches the sequential case)
+    // serialize there: whichever commits first "owns" the `:bet` ledger
+    // entry: idempotencyKey is a DB-unique (walletId, idempotencyKey) pair,
+    // so the second call's postEntries() finds that entry already exists
+    // and reuses it rather than inserting a duplicate — no double debit
+    // either way. But each call already created its OWN GameRound row
+    // before calling postEntries, so without this check the loser would
+    // still settle and return ITS OWN round — a different roundId than the
+    // winner, even though only one of them has any real ledger effect.
+    // Detect that here: if the bet entry we got back doesn't reference the
+    // round we just created, we lost the race — discard our round (it was
+    // never actually debited) and hand back the round that won, exactly
+    // like a replay.
+    const betEntry = postResult.entries[0];
+    if (betEntry.gameRoundId && betEntry.gameRoundId !== round.id) {
+      await this.prisma.gameRound.update({ where: { id: round.id }, data: { status: 'ROLLED_BACK' } });
+      const winningRound = await this.waitForSettledRound(betEntry.gameRoundId);
+      return {
+        ...this.toSpinResponse(config, winningRound, true),
+        wallet: { currency: dto.currency, balance: postResult.balanceAfter },
+      };
+    }
+
     const settled = await this.prisma.gameRound.update({
       where: { id: round.id },
       data: {
@@ -277,6 +304,27 @@ export class SlotsService {
       });
     }
     return row;
+  }
+
+  /**
+   * Polls for the round that won a genuine idempotency-key race (see the
+   * comment in settleRound()) to reach a terminal status. That round's own
+   * settleRound() call is already mid-flight — its postEntries() has
+   * already committed by the time we get here, and all that's left is one
+   * more `gameRound.update` plus the seed/recentlyPlayed bookkeeping, so
+   * this resolves in well under the timeout in every real case. Never
+   * derives RNG or touches the ledger itself — purely a read-and-wait.
+   */
+  private async waitForSettledRound(roundId: string, timeoutMs = 2000): Promise<GameRound> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const round = await this.prisma.gameRound.findUnique({ where: { id: roundId } });
+      if (round && (round.status === 'SETTLED' || round.status === 'ROLLED_BACK')) {
+        return round;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`Timed out waiting for concurrent spin round ${roundId} to settle.`);
   }
 
   private async findReplayedRound(walletId: string, idempotencyKey: string): Promise<GameRound | null> {
