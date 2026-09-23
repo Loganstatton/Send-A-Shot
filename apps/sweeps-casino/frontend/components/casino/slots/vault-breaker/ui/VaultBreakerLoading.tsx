@@ -1,14 +1,15 @@
 "use client";
 
-// Branded loading state, rebuilt for V2 — the previous version was "a
-// black box with a spinner", explicitly called out as unacceptable.
-// This is a small cinematic: dark vault artwork backdrop, an animated
-// vault wheel slowly turning, a 0-100% progress readout, ambient light —
-// and once the game is actually ready it never just cuts to the canvas.
-// Instead the vault doors slide open and reveal it underneath. If loading
-// was fast (assets already cached, <1s total), the full cinematic is
-// skipped in favor of a very short branded flash — never a jarring instant
-// swap, but also never an artificially slow reveal.
+// Branded loading state — REBUILD (V4). Keeps the V3 concept (a turning
+// vault wheel + a 0-100% progress readout, never a bare spinner on black)
+// but the visual flourish is simplified to match this pass's flat-
+// placeholder-art honesty (spec point 30): flat panel colors instead of
+// multi-stop "painted metal" gradients on the door leaves, no light-sweep
+// highlight trying to simulate a lit surface. Once the game is actually
+// ready it never just cuts to the canvas — the two flat door panels slide
+// apart. If loading was fast (assets already cached, <1s total), the full
+// transition is skipped in favor of a very short fade — never a jarring
+// instant swap, but also never an artificially slow reveal.
 import { useEffect, useRef, useState } from "react";
 import { VaultlineLogo } from "@/components/ui/VaultlineLogo";
 
@@ -55,47 +56,24 @@ export function VaultBreakerLoading({ progress, ready, onDone }: VaultBreakerLoa
         transition: flashing ? "opacity 220ms ease-out" : undefined,
       }}
     >
-      {/* Cinematic vault-chamber backdrop */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(circle at 50% 38%, rgba(45,191,176,0.22) 0%, rgba(212,175,55,0.1) 42%, transparent 72%), linear-gradient(180deg, #0a0e18 0%, #111726 45%, #070a12 100%)",
-        }}
-      />
-      <div
-        className="pointer-events-none absolute inset-0 opacity-40"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(90deg, rgba(212,175,55,0.05) 0px, rgba(212,175,55,0.05) 1px, transparent 1px, transparent 14%)",
-        }}
-      />
+      {/* Flat, calm backdrop — no painted/lit-surface simulation (spec point 30/policy). */}
+      <div className="pointer-events-none absolute inset-0 bg-[#0a0d14]" />
 
-      {/* Vault door leaves — slide apart on the exit transition */}
+      {/* Door leaves — flat single-tone panels, slide apart on the exit transition. No gradient trying to simulate painted metal. */}
       <div
-        className="absolute inset-y-0 left-0 w-1/2"
+        className="absolute inset-y-0 left-0 w-1/2 border-r border-accent-sc/30 bg-[#171b26]"
         style={{
-          background: "linear-gradient(90deg, #3a2a0f 0%, #c99a2f 55%, #7a5c17 100%)",
-          borderRight: "3px solid rgba(45,191,176,0.5)",
           transform: doorsOpening ? "translateX(-105%)" : "translateX(0)",
           transition: doorsOpening ? "transform 700ms cubic-bezier(0.22,0.68,0,1.01)" : undefined,
-          boxShadow: "inset -20px 0 40px rgba(0,0,0,0.4)",
         }}
-      >
-        <div className="absolute inset-0 opacity-25" style={{ background: "radial-gradient(circle at 90% 50%, rgba(255,255,255,0.5), transparent 60%)" }} />
-      </div>
+      />
       <div
-        className="absolute inset-y-0 right-0 w-1/2"
+        className="absolute inset-y-0 right-0 w-1/2 border-l border-accent-sc/30 bg-[#171b26]"
         style={{
-          background: "linear-gradient(270deg, #3a2a0f 0%, #c99a2f 55%, #7a5c17 100%)",
-          borderLeft: "3px solid rgba(45,191,176,0.5)",
           transform: doorsOpening ? "translateX(105%)" : "translateX(0)",
           transition: doorsOpening ? "transform 700ms cubic-bezier(0.22,0.68,0,1.01)" : undefined,
-          boxShadow: "inset 20px 0 40px rgba(0,0,0,0.4)",
         }}
-      >
-        <div className="absolute inset-0 opacity-25" style={{ background: "radial-gradient(circle at 10% 50%, rgba(255,255,255,0.5), transparent 60%)" }} />
-      </div>
+      />
 
       {/* Foreground content: logo, wheel, title, progress */}
       <div
@@ -130,7 +108,7 @@ export function VaultBreakerLoading({ progress, ready, onDone }: VaultBreakerLoa
   );
 }
 
-/** A slowly-turning mechanical vault wheel — pure inline SVG + CSS animation, no canvas dependency (this overlay must render before Pixi exists). */
+/** A slowly-turning mechanical vault wheel — pure inline SVG + CSS animation, flat fills only (no gradients simulating lit metal — matches this pass's flat-placeholder honesty). No canvas dependency (this overlay must render before Pixi exists). */
 function VaultWheel() {
   return (
     <div className="relative h-20 w-20">
@@ -139,14 +117,7 @@ function VaultWheel() {
         className="h-full w-full"
         style={{ animation: "vault-wheel-spin 5.5s linear infinite" }}
       >
-        <defs>
-          <radialGradient id="vwl-rim" cx="35%" cy="30%" r="70%">
-            <stop offset="0%" stopColor="#f2d98a" />
-            <stop offset="55%" stopColor="#b5862c" />
-            <stop offset="100%" stopColor="#5c4415" />
-          </radialGradient>
-        </defs>
-        <circle cx="50" cy="50" r="44" fill="url(#vwl-rim)" stroke="#2dbfb0" strokeWidth="2" />
+        <circle cx="50" cy="50" r="44" fill="#b5862c" stroke="#2dbfb0" strokeWidth="2" />
         {Array.from({ length: 10 }).map((_, i) => {
           const a = (Math.PI * 2 * i) / 10;
           return <circle key={i} cx={50 + Math.cos(a) * 37} cy={50 + Math.sin(a) * 37} r="2.2" fill="rgba(30,20,5,0.7)" />;
@@ -169,10 +140,6 @@ function VaultWheel() {
         })}
         <circle cx="50" cy="50" r="7" fill="#eafffb" stroke="#0f6b63" strokeWidth="1.5" />
       </svg>
-      <div
-        className="pointer-events-none absolute inset-0 rounded-full"
-        style={{ boxShadow: "0 0 24px rgba(212,175,55,0.35), 0 0 40px rgba(45,191,176,0.15)" }}
-      />
       <style jsx>{`
         @keyframes vault-wheel-spin {
           from {

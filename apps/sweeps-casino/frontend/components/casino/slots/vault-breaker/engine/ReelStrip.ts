@@ -3,19 +3,44 @@
 // lands exactly on a server-provided column. All motion is driven by a
 // single position value (fractional index into a synthetic "spin strip",
 // see animUtils.buildSpinStrip); rendering just maps that position onto
-// sprite x/y + texture each frame.
+// sprite x/y + texture each frame. This is the true-reel-strip contract
+// from the spec (point 4): the strip holds many more symbols than the
+// visible rows, symbols enter through the top and leave through the
+// bottom, and a long run of REAL symbols passes through the window during
+// a spin — never an abstract "spinning" placeholder.
+//
+// REBUILD (V4) vs the prior pass:
+//  - BlurFilter strength is capped far lower (max ~3, quality 1) so at full
+//    speed the player still perceives distinct symbol silhouettes moving —
+//    root cause #2 from the product owner's review ("teal blurry smear")
+//    was this filter tuned far too strong plus vertical stretch stacked on
+//    top; both are now conservative and motion is sold primarily by real
+//    symbol density + fast position updates, not the blur.
+//  - Every symbol source is now a uniform 1024x1024 canvas (see
+//    art/symbolAssets.ts), so the per-symbol aspect-fit below is a no-op in
+//    practice — but it stays generic/aspect-safe rather than hardcoding
+//    "square", so nothing breaks if a future real-art symbol isn't exactly
+//    square. FILL is raised so symbols read as "much larger" (spec point 8)
+//    while still leaving a hair of breathing room between rows so a fast
+//    column doesn't look like an edge-to-edge tiled texture.
+//  - Timing is driven by a per-reel `ReelPersonality` (see animUtils.ts) —
+//    accel/decel/bounce all vary slightly per reel index, so five reels
+//    never look like one curve copy-pasted five times (spec point 7).
 import { BlurFilter, Container, Graphics, Sprite, Texture } from "pixi.js";
 import type { SlotSymbolId } from "@/lib/types";
-import { bounceCurve, buildSpinStrip, easeOutCubic, reelPositionCurve, tween } from "./animUtils";
+import { bounceCurve, buildSpinStrip, easeOutCubic, reelPositionCurve, tween, type ReelPersonality } from "./animUtils";
 
 export interface ReelStripOptions {
   rows: number;
-  cellSize: number;
+  /** Reel column width in px — reels fill ~94-96% of the phone's width (spec point 8). */
+  cellWidth: number;
+  /** Per-row height in px — deliberately independent of cellWidth: the reel window fills the FULL available vertical space (never leaving dead space above/below — spec point 16), so on a narrow-tall phone rows are naturally taller than they are wide. Symbols stay visually square/uniform regardless (see FILL below, sized off min(cellWidth,cellHeight)) — never stretched to fill the taller cell. */
+  cellHeight: number;
   textures: Record<SlotSymbolId, Texture>;
 }
 
 export interface ReelSpinOptions {
-  duration: number;
+  personality: ReelPersonality;
   fillerCount: number;
   /** Extra hold time (ms) inserted right before the deceleration phase — used for scatter anticipation. */
   anticipationHoldMs?: number;
@@ -24,6 +49,19 @@ export interface ReelSpinOptions {
 }
 
 const BUFFER_ABOVE = 1;
+// Symbols fill this fraction of a cell's edge — raised from V3's 0.86 to
+// read as genuinely large on-screen (spec point 8), while the remaining
+// gap plus the reel-divider lines (drawn by SlotRenderer) are the ONLY
+// separation between symbols — never a bordered/boxed cell (spec point 1).
+const FILL = 0.93;
+// Motion-blur ceiling — deliberately conservative (V3 went up to 14 with
+// quality 2, which is exactly the "teal blurry smear" the product owner
+// called out). At this ceiling individual symbol silhouettes are still
+// perceivable at full speed; verified by scrubbing the recorded video
+// frame-by-frame during a spin (see build report).
+const MAX_BLUR = 2.6;
+const MAX_STRETCH_Y = 0.14;
+const MAX_STRETCH_X_SHRINK = 0.05;
 
 export class ReelStrip {
   readonly container: Container;
@@ -33,15 +71,20 @@ export class ReelStrip {
   private strip: SlotSymbolId[];
   private pos = 0;
   private rows: number;
-  private cellSize: number;
+  private cellWidth: number;
+  private cellHeight: number;
   private textures: Record<SlotSymbolId, Texture>;
   private blur: BlurFilter;
   private activeTween: { cancel: () => void } | null = null;
+  /** Per-visible-row idle "attention" scale multiplier (WILD/SCATTER breathing — spec points 19/27/28), applied ON TOP of the correct box-fit size inside render() below. NEVER set via `sprite.scale.set(...)` directly from outside — that clobbers the width/height-derived fit scale with an absolute value and balloons the symbol toward native texture size (a real bug this pass fixed: idle WILD/SCATTER pulsing was doing exactly that in an earlier draft). */
+  private idlePulse: number[];
 
   constructor(opts: ReelStripOptions) {
     this.rows = opts.rows;
-    this.cellSize = opts.cellSize;
+    this.cellWidth = opts.cellWidth;
+    this.cellHeight = opts.cellHeight;
     this.textures = opts.textures;
+    this.idlePulse = new Array(opts.rows).fill(1);
 
     this.container = new Container();
     this.bounceLayer = new Container();
@@ -49,20 +92,18 @@ export class ReelStrip {
     this.container.addChild(this.bounceLayer);
     this.bounceLayer.addChild(this.scrollLayer);
 
-    this.blur = new BlurFilter({ strengthX: 0, strengthY: 0, quality: 2 });
+    this.blur = new BlurFilter({ strengthX: 0, strengthY: 0, quality: 1 });
     this.scrollLayer.filters = [this.blur];
 
     const spriteCount = this.rows + BUFFER_ABOVE + 1;
     for (let i = 0; i < spriteCount; i++) {
       const sp = new Sprite(Texture.WHITE);
       sp.anchor.set(0.5);
-      sp.width = this.cellSize * 0.96;
-      sp.height = this.cellSize * 0.96;
       this.scrollLayer.addChild(sp);
       this.sprites.push(sp);
     }
 
-    const mask = new Graphics().rect(0, 0, this.cellSize, this.rows * this.cellSize).fill(0xffffff);
+    const mask = new Graphics().rect(0, 0, this.cellWidth, this.rows * this.cellHeight).fill(0xffffff);
     this.container.addChild(mask);
     this.container.mask = mask;
 
@@ -89,35 +130,31 @@ export class ReelStrip {
     this.render();
   }
 
-  resize(cellSize: number) {
-    this.cellSize = cellSize;
-    // Sprite width/height are recomputed aspect-correctly in render() below.
+  resize(cellWidth: number, cellHeight: number) {
+    this.cellWidth = cellWidth;
+    this.cellHeight = cellHeight;
     const mask = this.container.mask as Graphics;
-    mask.clear().rect(0, 0, this.cellSize, this.rows * this.cellSize).fill(0xffffff);
+    mask.clear().rect(0, 0, this.cellWidth, this.rows * this.cellHeight).fill(0xffffff);
     this.render();
   }
 
   private render() {
     const frac = this.pos - Math.floor(this.pos);
     const base = Math.floor(this.pos);
-    // Motion stretch: at full spin speed (tracked via the blur strength the
-    // caller drives — see spin()) each symbol elongates vertically and
-    // narrows slightly, like a real reel strip photographed with motion
-    // blur — "symbols stretch slightly at full speed" per the brief. This
-    // is an enhancement layered on top of still seeing real symbols pass
-    // through the window (via the per-frame texture swap below), never a
-    // replacement for the motion itself.
-    const speedFrac = Math.min(1, this.blur.strengthY / 14);
-    const stretchY = 1 + speedFrac * 0.22;
-    const stretchX = 1 - speedFrac * 0.08;
-    // The real art files are NOT all square (900x720, 900x782, 850x900 —
-    // see symbolTextures.ts) — forcing every sprite to a uniform
-    // cellSize x cellSize square distorts/stretches them. Instead each
-    // symbol is fit aspect-correctly within a box that's a fraction of the
-    // cell (FILL < 1 also leaves a small gap between adjacent symbols both
-    // ways, so tiles don't visually abut into a hard grid — "symbols are
-    // artwork floating over the reel background", not edge-to-edge tiles).
-    const FILL = 0.86;
+    // Subtle motion stretch on top of the (conservative) blur filter — each
+    // symbol elongates vertically and narrows slightly at speed, like a
+    // real reel strip under a touch of motion blur. Kept small deliberately
+    // (see MAX_STRETCH_*) so it enhances, never replaces, seeing real
+    // symbols pass through the window.
+    const speedFrac = Math.min(1, this.blur.strengthY / MAX_BLUR);
+    const stretchY = 1 + speedFrac * MAX_STRETCH_Y;
+    const stretchX = 1 - speedFrac * MAX_STRETCH_X_SHRINK;
+    // Symbols are always sized off the SMALLER of cellWidth/cellHeight, so
+    // they stay square/uniform (spec point 10) even when rows are taller
+    // than they are wide (which happens whenever the reel window fills the
+    // full available height on a narrow phone — see SlotRenderer's
+    // computeLayout) — never stretched to fill a non-square cell.
+    const baseBox = Math.min(this.cellWidth, this.cellHeight) * FILL;
     for (let i = 0; i < this.sprites.length; i++) {
       const stripIndex = base - BUFFER_ABOVE + i;
       const clamped = Math.max(0, Math.min(this.strip.length - 1, stripIndex));
@@ -126,15 +163,31 @@ export class ReelStrip {
       const tex = this.textures[id] ?? Texture.WHITE;
       sp.texture = tex;
       const aspect = tex.width > 0 && tex.height > 0 ? tex.width / tex.height : 1;
-      let boxW = this.cellSize * FILL;
-      let boxH = this.cellSize * FILL;
+      let boxW = baseBox;
+      let boxH = baseBox;
       if (aspect > 1) boxH = boxW / aspect;
       else boxW = boxH * aspect;
-      sp.x = this.cellSize / 2;
-      sp.y = (i - BUFFER_ABOVE) * this.cellSize + this.cellSize / 2 - frac * this.cellSize;
-      sp.width = boxW * stretchX;
-      sp.height = boxH * stretchY;
+      // Idle attention pulse (WILD/SCATTER breathing) is applied here, on
+      // top of the correct fit size — see the `idlePulse` field comment
+      // for why this must never be a raw `sprite.scale.set(...)` call.
+      const visibleRow = i - BUFFER_ABOVE;
+      const pulse = visibleRow >= 0 && visibleRow < this.rows ? this.idlePulse[visibleRow] : 1;
+      sp.x = this.cellWidth / 2;
+      sp.y = (i - BUFFER_ABOVE) * this.cellHeight + this.cellHeight / 2 - frac * this.cellHeight;
+      sp.width = boxW * stretchX * pulse;
+      sp.height = boxH * stretchY * pulse;
     }
+  }
+
+  /** Sets the idle "attention" scale multiplier for visible row `r` (0 = top) — see the `idlePulse` field comment. Call refresh() after a batch of these to actually repaint. */
+  setIdlePulse(r: number, factor: number) {
+    if (r < 0 || r >= this.rows) return;
+    this.idlePulse[r] = factor;
+  }
+
+  /** Repaints from current state (position/textures/idlePulse) without changing anything else — used by SlotRenderer's idle tick after calling setIdlePulse(). */
+  refresh() {
+    this.render();
   }
 
   /** Sprite currently showing visible row `r` (0 = top). Used by WinPresentation for glow/dim. */
@@ -143,13 +196,15 @@ export class ReelStrip {
   }
 
   get localWidth() {
-    return this.cellSize;
+    return this.cellWidth;
   }
 
   /**
    * Spins from the current on-screen column to `finalColumn`, landing
    * exactly on it, then plays a small settle bounce. Resolves once the
-   * bounce finishes.
+   * bounce finishes. Timing (accel/full-speed/decel/bounce) comes from
+   * `opts.personality` — see animUtils.REEL_PERSONALITY for why each reel
+   * gets slightly different numbers.
    */
   async spin(finalColumn: SlotSymbolId[], opts: ReelSpinOptions): Promise<void> {
     this.activeTween?.cancel();
@@ -159,8 +214,10 @@ export class ReelStrip {
     this.pos = 0;
     this.render();
 
+    const { duration: mainDuration, accelMs, decelMs, bounceMs, bounceAmpPx } = opts.personality;
+    const accelFrac = accelMs / mainDuration;
+    const decelFrac = decelMs / mainDuration;
     const holdMs = opts.anticipationHoldMs ?? 0;
-    const mainDuration = opts.duration;
 
     // Main accelerate/cycle/decelerate pass covers most of the distance,
     // leaving the final couple of symbols for a slow "hold" pass when
@@ -169,21 +226,23 @@ export class ReelStrip {
     const holdPortion = holdMs > 0 ? 2 / this.rows : 0;
     const preHoldTarget = targetPos * (1 - holdPortion);
 
-    const t1 = tween(
-      mainDuration,
-      (p) => {
-        this.pos = reelPositionCurve(p) * preHoldTarget;
-        this.blur.strengthY = Math.sin(Math.min(1, p / 0.6) * Math.PI) * 14;
-        this.render();
-      },
-      (t) => t
-    );
+    const t1 = tween(mainDuration, (p) => {
+      this.pos = reelPositionCurve(p, accelFrac, decelFrac) * preHoldTarget;
+      // Blur ramps in over the accel phase, holds near-max through full
+      // speed, and eases back out during the decel phase — envelope is
+      // shaped from the same accel/decel fractions driving position, so
+      // blur and visible speed always agree.
+      const rampIn = Math.min(1, p / Math.max(0.001, accelFrac * 0.8));
+      const rampOut = Math.max(0, Math.min(1, (1 - p) / Math.max(0.001, decelFrac * 0.9)));
+      this.blur.strengthY = Math.min(rampIn, rampOut) * MAX_BLUR;
+      this.render();
+    });
     this.activeTween = t1;
     await t1;
 
     if (holdMs > 0) {
       opts.onHoldStart?.();
-      this.blur.strengthY = 4;
+      this.blur.strengthY = MAX_BLUR * 0.35;
       const t2 = tween(holdMs, (p) => {
         this.pos = preHoldTarget + (targetPos - preHoldTarget) * easeOutCubic(Math.min(1, p * 1.15)) * 0.35;
         this.render();
@@ -196,7 +255,7 @@ export class ReelStrip {
     const t3 = tween(220, (p) => {
       const eased = easeOutCubic(p);
       this.pos = finalApproachStart + (targetPos - finalApproachStart) * eased;
-      this.blur.strengthY = (1 - p) * 3;
+      this.blur.strengthY = (1 - p) * MAX_BLUR * 0.3;
       this.render();
     });
     this.activeTween = t3;
@@ -207,16 +266,15 @@ export class ReelStrip {
     this.render();
     this.activeTween = null;
 
-    await this.playBounce();
+    await this.playBounce(bounceMs, bounceAmpPx);
   }
 
-  private async playBounce() {
-    // A real mechanical settle: small, near-constant 2-4px overshoot
-    // regardless of cell size — a proportional bounce (old: cellSize*0.1,
-    // 6-10px on a typical cell) reads as "wobbly", not "mechanical".
-    const amplitude = Math.max(2, Math.min(4, this.cellSize * 0.035));
-    const t = tween(150, (p) => {
-      this.bounceLayer.y = bounceCurve(p) * amplitude;
+  private async playBounce(durationMs: number, amplitudePx: number) {
+    // A real mechanical settle: small overshoot then spring back — distinct
+    // per reel via `amplitudePx`/`durationMs` (see REEL_PERSONALITY), never
+    // proportional-to-cellSize (that read as "wobbly" in V3).
+    const t = tween(durationMs, (p) => {
+      this.bounceLayer.y = bounceCurve(p) * amplitudePx;
     });
     this.activeTween = t;
     await t;

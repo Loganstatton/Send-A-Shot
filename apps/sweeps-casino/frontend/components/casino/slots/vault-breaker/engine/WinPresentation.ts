@@ -15,11 +15,11 @@
 // a soft additive glow blob behind the symbol (a blurred radial sprite, not
 // an outline), the per-symbol personality animation, particles, and the
 // payline trail — never a hard geometric ring/circle.
-import { Container, Graphics, Sprite } from "pixi.js";
+import { Container, Graphics, Sprite, Text } from "pixi.js";
 import type { SlotPaylineWin, SlotSymbolId } from "@/lib/types";
 import type { ReelStrip } from "./ReelStrip";
 import { tween, easeOutBack } from "./animUtils";
-import { getGlowTexture } from "../art/vaultBackdrop";
+import { getGlowTexture } from "../art/fx";
 
 export type WinTier = "normal" | "big" | "mega" | "epic";
 
@@ -61,9 +61,17 @@ export class WinPresentation {
   private raf = 0;
   private lastTs = 0;
   private activeSymbolAnims: SymbolAnim[] = [];
+  /** The NORMAL-tier win amount, rendered INSIDE the PixiJS canvas — never
+   * a DOM element overlapping the reel viewport (BIG+/MEGA/EPIC already had
+   * their own in-canvas banner; this closes the one remaining gap where a
+   * small win's amount used to be an absolutely-positioned HTML pill sitting
+   * on top of the canvas — exactly the "DOM element overlapping the reel
+   * viewport" bug the product owner's root-cause list called out). */
+  private amountText: Text;
 
   constructor(
-    private cellSize: number,
+    private cellWidth: number,
+    private cellHeight: number,
     private rows: number
   ) {
     this.fxLayer = new Container();
@@ -71,7 +79,21 @@ export class WinPresentation {
     this.flashRect = new Graphics();
     this.flashRect.alpha = 0;
     this.traceLine = new Graphics();
-    this.fxLayer.addChild(this.flashRect, this.traceLine);
+    this.amountText = new Text({
+      text: "",
+      style: {
+        fontFamily: "'Courier New', monospace",
+        fontWeight: "800",
+        fontSize: 15,
+        fill: 0x9af2e6,
+        stroke: { color: 0x03201d, width: 3 },
+        align: "center",
+      },
+    });
+    this.amountText.anchor.set(0.5, 1);
+    this.amountText.alpha = 0;
+    this.amountText.y = this.cellHeight * this.rows - 6;
+    this.fxLayer.addChild(this.flashRect, this.traceLine, this.amountText);
     for (let i = 0; i < PARTICLE_POOL_SIZE; i++) {
       const g = new Graphics();
       g.visible = false;
@@ -80,12 +102,25 @@ export class WinPresentation {
     }
   }
 
+  /** Shows/updates the always-on-during-a-win amount readout (NORMAL tier only — BIG+ uses the big-win banner instead). `windowWidth` is the reel window's pixel width, needed to center this text (WinPresentation only otherwise knows per-cell dimensions). */
+  setAmount(text: string, windowWidth: number) {
+    this.amountText.text = text;
+    this.amountText.x = windowWidth / 2;
+    this.amountText.alpha = 1;
+  }
+
+  hideAmount() {
+    this.amountText.alpha = 0;
+  }
+
   get layer(): Container {
     return this.fxLayer;
   }
 
-  resize(cellSize: number) {
-    this.cellSize = cellSize;
+  resize(cellWidth: number, cellHeight: number) {
+    this.cellWidth = cellWidth;
+    this.cellHeight = cellHeight;
+    this.amountText.y = this.cellHeight * this.rows - 6;
   }
 
   celebrate(reels: ReelStrip[], wins: SlotPaylineWin[], tier: WinTier) {
@@ -111,8 +146,8 @@ export class WinPresentation {
     wins.forEach((win, winIdx) => {
       this.tracePayline(win, color, weight.ringDuration, winIdx === 0);
       win.positions.forEach((pos) => {
-        const cx = pos.reel * this.cellSize + this.cellSize / 2;
-        const cy = pos.row * this.cellSize + this.cellSize / 2;
+        const cx = pos.reel * this.cellWidth + this.cellWidth / 2;
+        const cy = pos.row * this.cellHeight + this.cellHeight / 2;
 
         // Soft additive glow BEHIND the symbol — no stroked ring/circle.
         const glow = new Sprite(getGlowTexture());
@@ -122,7 +157,7 @@ export class WinPresentation {
         glow.x = cx;
         glow.y = cy;
         glow.alpha = 0;
-        const glowSize = this.cellSize * 1.5;
+        const glowSize = Math.min(this.cellWidth, this.cellHeight) * 1.7;
         glow.width = glowSize;
         glow.height = glowSize;
         this.fxLayer.addChildAt(glow, 0); // behind the trace/particles, and behind symbols since fxLayer sits above reels — kept subtle via alpha
@@ -152,8 +187,8 @@ export class WinPresentation {
   private tracePayline(win: SlotPaylineWin, color: number, duration: number, primary: boolean) {
     if (win.positions.length < 2) return;
     const pts = [...win.positions].sort((a, b) => a.reel - b.reel).map((p) => ({
-      x: p.reel * this.cellSize + this.cellSize / 2,
-      y: p.row * this.cellSize + this.cellSize / 2,
+      x: p.reel * this.cellWidth + this.cellWidth / 2,
+      y: p.row * this.cellHeight + this.cellHeight / 2,
     }));
     const g = new Graphics();
     g.alpha = 0;
@@ -219,7 +254,7 @@ export class WinPresentation {
         const baseY = sprite.y;
         const t = tween(750, (p) => {
           const bounce = Math.abs(Math.sin(p * Math.PI * 2.5)) * (1 - p);
-          sprite.y = baseY - bounce * this.cellSize * 0.14;
+          sprite.y = baseY - bounce * this.cellHeight * 0.14;
           const s = 1 + Math.sin(p * Math.PI) * (scaleBoost - 1) * 0.7;
           sprite.scale.set(baseScaleX * s, baseScaleY * s);
         });
@@ -281,6 +316,7 @@ export class WinPresentation {
     this.activeSymbolAnims = [];
     this.flashRect.alpha = 0;
     this.traceLine.clear();
+    this.amountText.alpha = 0;
   }
 
   private clearGlows() {

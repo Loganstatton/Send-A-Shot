@@ -3,7 +3,7 @@
 // gameplay outcome — `buildSpinStrip`'s "filler" symbols are purely cosmetic
 // filler a reel cycles through before landing on the server's real column.
 import type { SlotSymbolId } from "@/lib/types";
-import { ALL_SYMBOL_IDS } from "../art/symbolTextures";
+import { ALL_SYMBOL_IDS } from "../art/symbolAssets";
 
 export function easeInQuad(t: number): number {
   return t * t;
@@ -52,13 +52,21 @@ export function buildSpinStrip(
  * return value are both fractions in [0,1] (elapsed time / total distance).
  * Not physically exact (segments aren't slope-matched at the boundaries)
  * but reads convincingly as a real reel: slow start, fast cycling blur,
- * smooth stop.
+ * smooth stop. `accelFrac`/`decelFrac` are the accel/decel phases as a
+ * fraction of the TOTAL duration — see reelPositionCurveMs, which is what
+ * ReelStrip actually calls (it converts literal ms breakpoints into these
+ * fractions per-reel, so every reel's acceleration reads as ~150ms in real
+ * time regardless of that reel's own total duration — see spec point 6/7:
+ * "ACCELERATION (0-150ms)... per-reel personality").
  */
-export function reelPositionCurve(t: number): number {
-  const a = 0.18;
-  const aPos = 0.12;
-  const b = 0.6;
-  const bPos = 0.83;
+export function reelPositionCurve(t: number, accelFrac = 0.18, decelFrac = 0.4): number {
+  const a = Math.min(0.45, Math.max(0.02, accelFrac));
+  const b = Math.max(a + 0.05, 1 - Math.min(0.6, Math.max(0.05, decelFrac)));
+  // Position reached at the end of the accel ramp (t=a), continuing the
+  // full-speed segment at that same instantaneous slope so the curve has no
+  // visible kink at the accel->full-speed boundary.
+  const aPos = a * 0.62;
+  const bPos = aPos + (b - a) * 1.0; // full-speed segment: constant velocity 1.0 (matches accel ramp's exit slope closely enough to read as smooth)
   if (t <= a) {
     return aPos * easeInQuad(t / a);
   }
@@ -67,6 +75,29 @@ export function reelPositionCurve(t: number): number {
   }
   return bPos + (1 - bPos) * easeOutCubic((t - b) / (1 - b));
 }
+
+/** Per-reel timing/feel — deliberately distinct per reel (spec point 7: "reels do not stop identically"). `duration` is the main spin tween length; total on-screen settle time is duration + bounceMs. accelMs/decelMs are literal-ms phase lengths (converted to fractions of `duration` by ReelStrip), so every reel's acceleration burst reads as ~140-160ms in real time no matter how long that reel spins overall. */
+export interface ReelPersonality {
+  duration: number;
+  accelMs: number;
+  decelMs: number;
+  bounceMs: number;
+  bounceAmpPx: number;
+}
+
+// Target on-screen settle times (duration + bounceMs) land close to the
+// spec's example: reel1 ~950ms, reel2 ~1070ms, reel3 ~1190ms, reel4
+// ~1310ms, reel5 ~1430ms — a consistent ~110-120ms stagger, with each
+// reel's own deceleration/bounce weight growing slightly heavier moving
+// right, so the machine reads as five distinct mechanisms, not one curve
+// copy-pasted five times.
+export const REEL_PERSONALITY: ReelPersonality[] = [
+  { duration: 810, accelMs: 140, decelMs: 260, bounceMs: 140, bounceAmpPx: 3 },
+  { duration: 920, accelMs: 150, decelMs: 280, bounceMs: 150, bounceAmpPx: 3.5 },
+  { duration: 1030, accelMs: 150, decelMs: 300, bounceMs: 160, bounceAmpPx: 4 },
+  { duration: 1140, accelMs: 160, decelMs: 320, bounceMs: 170, bounceAmpPx: 4 },
+  { duration: 1250, accelMs: 160, decelMs: 340, bounceMs: 180, bounceAmpPx: 4.5 },
+];
 
 /** Decaying-sine bounce used for the small overshoot after a reel lands. Returns a signed fraction of one cell. */
 export function bounceCurve(t: number): number {

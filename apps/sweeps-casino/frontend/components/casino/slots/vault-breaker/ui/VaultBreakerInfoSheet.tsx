@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { ChevronRight, Shield } from "@/components/ui/icons";
-import { symbolArtUrl } from "../art/symbolTextures";
+import { symbolArtUrl } from "../art/symbolAssets";
 import { cn } from "@/lib/utils";
 import type { SlotConfig } from "@/lib/types";
 

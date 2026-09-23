@@ -60,19 +60,6 @@ function tierLabel(tier: WinTier): string {
   }
 }
 
-function tierTextClass(tier: WinTier): string {
-  switch (tier) {
-    case "epic":
-      return "text-transparent bg-clip-text bg-gradient-to-r from-accent-gc via-pink-300 to-accent-sc";
-    case "mega":
-      return "text-pink-300";
-    case "big":
-      return "text-accent-gc";
-    default:
-      return "text-accent-sc";
-  }
-}
-
 function formatGC(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -251,10 +238,14 @@ export function VaultBreakerGame() {
         const holdDuration = tier === "epic" ? 1600 : tier === "mega" ? 1200 : tier === "big" ? 900 : 550;
         // BIG/MEGA/EPIC: a real in-canvas PixiJS takeover (game pauses,
         // center presentation, gold particles, reels still dimly visible
-        // behind) — never a DOM dialog. NORMAL stays the small always-on
-        // bottom HUD only.
+        // behind). NORMAL: a small in-canvas amount readout at the bottom
+        // of the reel window (WinPresentation.setAmount) — both tiers
+        // render entirely inside the PixiJS canvas, never a DOM dialog or
+        // DOM pill overlapping the reel viewport.
         if (tier !== "normal") await renderer.showBigWinBanner(tierLabel(tier), tier);
-        await countUpTo(baseAmount, countDuration, tier !== "normal" ? (v) => renderer.setBigWinAmount(`${formatGC(v)} GC`) : undefined);
+        await countUpTo(baseAmount, countDuration, (v) =>
+          tier !== "normal" ? renderer.setBigWinAmount(`${formatGC(v)} GC`) : renderer.setNormalWinAmount(`${formatGC(v)} GC`)
+        );
         await sleepMs(holdDuration);
         renderer.clearWin();
         if (tier !== "normal") await renderer.hideBigWinBanner();
@@ -305,7 +296,9 @@ export function VaultBreakerGame() {
           setWinHud({ amount: amt, tier });
           setWinDisplayAmount(0);
           if (tier !== "normal") await renderer.showBigWinBanner(tierLabel(tier), tier);
-          await countUpTo(amt, 550, tier !== "normal" ? (v) => renderer.setBigWinAmount(`${formatGC(v)} GC`) : undefined);
+          await countUpTo(amt, 550, (v) =>
+            tier !== "normal" ? renderer.setBigWinAmount(`${formatGC(v)} GC`) : renderer.setNormalWinAmount(`${formatGC(v)} GC`)
+          );
           await sleepMs(420);
           renderer.clearWin();
           if (tier !== "normal") await renderer.hideBigWinBanner();
@@ -324,7 +317,9 @@ export function VaultBreakerGame() {
       if (soundEnabled) slotAudio.bigWin(soundVolume);
       vibrate([40, 60, 40, 60, 100]);
       if (tier !== "normal") await renderer.showBigWinBanner("TOTAL FREE SPINS WIN", tier);
-      await countUpTo(finalWinAmount, 1200, tier !== "normal" ? (v) => renderer.setBigWinAmount(`${formatGC(v)} GC`) : undefined);
+      await countUpTo(finalWinAmount, 1200, (v) =>
+        tier !== "normal" ? renderer.setBigWinAmount(`${formatGC(v)} GC`) : renderer.setNormalWinAmount(`${formatGC(v)} GC`)
+      );
       await sleepMs(2200);
       renderer.clearWin();
       if (tier !== "normal") await renderer.hideBigWinBanner();
@@ -407,25 +402,13 @@ export function VaultBreakerGame() {
         </button>
       </header>
 
-      {/* Cinematic slot game area — the PixiJS/WebGL canvas owns every pixel here. */}
+      {/* Cinematic slot game area — the PixiJS/WebGL canvas owns EVERY
+          pixel here, including win presentation (BIG+/MEGA/EPIC's banner
+          via showBigWinBanner, NORMAL's amount readout via
+          setNormalWinAmount) — no DOM element ever overlaps this viewport,
+          per the product owner's explicit root-cause callout. */}
       <div className="relative min-h-0 flex-1 bg-black">
         <div ref={mountRef} className="absolute inset-0" />
-
-        {/* BIG/MEGA/EPIC tiers render their own centered takeover inside
-            the PixiJS canvas (SlotRenderer.showBigWinBanner) — this small
-            floating DOM label is only for the NORMAL tier, so the two
-            presentations never show duplicated text on top of each
-            other. */}
-        {winHud && winHud.tier === "normal" && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-0.5 animate-fade-in-up">
-            <span className={cn("text-[11px] font-bold uppercase tracking-[0.2em]", tierTextClass(winHud.tier))}>
-              {winHud.label ?? tierLabel(winHud.tier)}
-            </span>
-            <span className="font-mono text-2xl font-extrabold text-white drop-shadow-lg sm:text-3xl">
-              {formatGC(winDisplayAmount)} <span className="text-sm text-white/60">GC</span>
-            </span>
-          </div>
-        )}
 
         {!rendererReady && !rendererError && !loadingOverlayVisible && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -453,12 +436,28 @@ export function VaultBreakerGame() {
         )}
       </div>
 
-      {/* Control deck: BET (left) | SPIN (center, large) | WIN + BALANCE (right, part of the machine). */}
+      {/* Control deck: BET (left) | SPIN (center, mounted into the deck) |
+          WIN + BALANCE (right) — one continuous panel, not scattered
+          floating labels (spec point 17). The spin button sits in a
+          recessed "socket" cut into the deck surface (a radial shadow
+          behind it) so it reads as physically built into the machine
+          rather than floating beneath it (spec point 18). */}
       <div
-        className="relative shrink-0 border-t border-white/10 bg-gradient-to-b from-[#11141c] to-[#05070a] px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-9"
+        className="relative shrink-0 border-t border-white/10 bg-gradient-to-b from-[#12151f] to-[#05070a] px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-3"
         style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)" }}
       >
-        <div className="flex items-center justify-between gap-3">
+        {/* Recessed socket the spin button sits inside — a dark radial
+            inset behind the button so the button reads as mounted into
+            this surface, not floating above it. */}
+        <div
+          className="pointer-events-none absolute left-1/2 top-0 h-[104px] w-[104px] -translate-x-1/2 rounded-full"
+          style={{
+            background: "radial-gradient(circle at 50% 42%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.28) 55%, transparent 78%)",
+            boxShadow: "inset 0 2px 6px rgba(0,0,0,0.6)",
+          }}
+        />
+
+        <div className="flex items-end justify-between gap-3">
           <button
             type="button"
             onClick={() => setBetPickerOpen(true)}
@@ -469,7 +468,7 @@ export function VaultBreakerGame() {
             <span className="font-mono text-sm font-bold text-white">{formatGC(effectiveBet)}</span>
           </button>
 
-          <div className="w-[78px] shrink-0" />
+          <SpinButton busy={busy} onPress={handleSpin} />
 
           <div className="flex min-w-[88px] flex-col items-end gap-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2">
             <span className="flex w-full items-baseline justify-between gap-2 text-[8px] font-semibold uppercase tracking-wider text-white/50">
@@ -483,8 +482,6 @@ export function VaultBreakerGame() {
             <BalanceReadout compact />
           </div>
         </div>
-
-        <SpinButton busy={busy} onPress={handleSpin} />
       </div>
 
       <BetChipPicker
@@ -522,11 +519,14 @@ export function VaultBreakerGame() {
 }
 
 /**
- * The redesigned spin control: a large premium circular button built
- * around the real spin-button art asset (ui/spin-button-idle.png), a metal
- * outer ring that rotates while spinning, a breathing glow while idle, and
- * a physical depress on press — not a small flat teal circle with a
- * generic refresh icon.
+ * The spin control: a large premium circular button (~78px — spec point 18's
+ * 72-84px range) built around the real spin-button art asset
+ * (ui/spin-button-idle.png), a metal outer ring that rotates while
+ * spinning, a breathing glow while idle, and a physical depress on press.
+ * Sits in normal flex flow inside the control deck (over the recessed
+ * "socket" the deck draws behind it), so it reads as mounted INTO the
+ * machine rather than floating beneath it (spec point 18) — no absolute
+ * positioning pulling it half outside the deck's own edge.
  */
 function SpinButton({ busy, onPress }: { busy: boolean; onPress: () => void }) {
   const [pressed, setPressed] = useState(false);
@@ -539,7 +539,7 @@ function SpinButton({ busy, onPress }: { busy: boolean; onPress: () => void }) {
       onPointerLeave={() => setPressed(false)}
       disabled={busy}
       aria-label="Spin"
-      className="absolute left-1/2 top-0 h-[78px] w-[78px] -translate-x-1/2 -translate-y-1/2 rounded-full outline-none disabled:cursor-default"
+      className="relative h-[78px] w-[78px] shrink-0 rounded-full outline-none disabled:cursor-default"
     >
       {/* rotating metal outer ring — a masked conic-gradient ring, not
           `border-image` (which ignores `border-radius` and renders as a
