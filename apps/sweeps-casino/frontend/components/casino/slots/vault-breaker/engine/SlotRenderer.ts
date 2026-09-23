@@ -41,7 +41,14 @@ import { Application, Assets, Container, FillGradient, Graphics, Sprite, Text, T
 import type { SlotPaylineWin, SlotSymbolId } from "@/lib/types";
 import { buildSymbolTextures } from "../art/symbolAssets";
 import { BACKGROUND_ART_URL, BACKGROUND_FOCAL_X, BACKGROUND_FOCAL_Y } from "../art/environmentAssets";
-import { buildVerticalGradientTexture, buildRadialVignetteTexture, getGlowTexture } from "../art/fx";
+import {
+  buildVerticalGradientTexture,
+  buildHorizontalGradientTexture,
+  reverseGradientStops,
+  buildRadialVignetteTexture,
+  buildBlurredCoverTexture,
+  getGlowTexture,
+} from "../art/fx";
 import { ReelStrip } from "./ReelStrip";
 import { WinPresentation, type WinTier } from "./WinPresentation";
 import { FreeSpinsTransition } from "./FreeSpinsTransition";
@@ -120,10 +127,18 @@ export class SlotRenderer {
 
   // ---- layer slots (see file header — each is a clearly-named drop-in
   // point a future real-art pass can swap Graphics/Sprite content for). ----
-  private backgroundLayer!: Sprite;
+  /** V7 atmospheric background rebuild (root cause #1: a landscape photo cover-fit into a tall portrait viewport was cropping down to a boring stretch of plain wall paneling, regardless of focal point — see file header). The background is now a LAYERED composite that reads as rich without depending on any one crop of `base-game.jpg` looking right: a vertical gradient base, a blurred/low-opacity photo "grain" sample (still using the real asset, just demoted to texture detail), a soft gold glow + faint concentric rings suggesting the vault-wheel silhouette behind the logo, 2-3 vertical teal light-streak sprites, and the pre-existing ambient glow blobs + vignette on top. */
+  private backgroundGradient!: Sprite;
+  private backgroundGrain!: Sprite;
   private backgroundTexture: Texture;
   private backgroundVignette!: Sprite;
-  /** Soft additive ambient glow sprites over the background photo — teal at the left/right edges, warm gold low in the frame (spec item 1). Built once in buildBackground(), repositioned on resize. */
+  /** Soft big additive gold glow suggesting the vault-wheel's own light, sitting behind the logo lockup (spec item 1). */
+  private wheelGlow!: Sprite;
+  /** Faint concentric ring strokes on top of wheelGlow — the cheap "there's a big circular door back there" cue, never a painted illustration. */
+  private wheelRings!: Graphics;
+  /** 2-3 soft vertical additive teal streak sprites (echoes base-game.jpg's own ceiling light strips, visible in the master reference too). */
+  private lightStreaks: Sprite[] = [];
+  /** Soft additive ambient glow sprites over the background — teal at the left/right edges, warm gold low in the frame (spec item 1). Built once in buildBackground(), repositioned on resize. */
   private ambientGlows: Sprite[] = [];
   private logoLockup!: Container;
   private logoTitle!: Text;
@@ -131,7 +146,6 @@ export class SlotRenderer {
   private logoSubtitleText!: Text;
   private logoTaglineLeft!: Text;
   private logoTaglineRight!: Text;
-  private logoDoorGlow!: Sprite;
   private taglinePlate!: Container;
   private taglinePlateBg!: Graphics;
   private taglinePlateText!: Text;
@@ -282,10 +296,23 @@ export class SlotRenderer {
     // gradient + a teal LED strip (spec item 3) while the reel window still
     // keeps ~94-96% of the WIDTH budget (sideW below is a width fraction,
     // unrelated to the vertical logoAreaH split above).
-    const topBeam = Math.max(30, machineBlockH * 0.115);
-    const bottomBase = Math.max(12, machineBlockH * 0.045);
+    // Root cause #2 fix: these were thin enough to read as a hairline outline
+    // (topBeam ~11.5% of the machine block, sideW ~3.2% of width) vs the
+    // locked reference's thick, riveted steel-and-gold housing (see
+    // design-ref/machine-frame-reference.jpg) — substantially thickened here
+    // (sideW near-tripled, topBeam/bottomBase roughly +30-65%) so there's
+    // real width for the multi-stop gradient, corner bolts, and bevel
+    // highlights below to actually read as physical material, not a line.
+    const topBeam = Math.max(46, machineBlockH * 0.17);
+    // bottomBase only carries a plain gradient trim strip (no bolts/header
+    // content like topBeam has), so growing it in step with topBeam left a
+    // large empty gap between the reels and the tagline plate below —
+    // found by screenshotting this exact build and comparing against the
+    // master reference. Kept close to its pre-thickening size; the visual
+    // "thicker frame" goal is carried by topBeam/sideW/bevel width instead.
+    const bottomBase = Math.max(14, machineBlockH * 0.05);
     const taglineH = Math.max(22, machineBlockH * 0.11);
-    const sideW = Math.max(9, width * 0.032);
+    const sideW = Math.max(26, width * 0.1);
     // Hairline outer margin so the background photo's own edges (and the
     // side glow sprites) stay visible framing the machine, never the frame
     // sitting flush against the canvas edge.
@@ -474,28 +501,72 @@ export class SlotRenderer {
   }
 
   /**
-   * Background: the real vault-chamber photo (cover-fit, anchored on the
-   * vault door per BACKGROUND_FOCAL_X/Y), a dark top/bottom vignette for
-   * text legibility, and a handful of soft additive glow sprites — teal at
-   * the left/right edges (echoing the reference's side-lit steel corridor),
-   * warm gold low in the frame (echoing its lower gold-bar lighting). This
-   * is the ONLY place BACKGROUND_ART_URL's texture is consumed.
+   * V7 layered atmospheric background (replaces the V6 single-photo
+   * cover-fit — see the class-level comment for the root cause: a wide
+   * landscape source cover-fit into a tall portrait viewport crops away
+   * most of its width, and NO anchor choice keeps both the vault-wheel door
+   * and the gold-bar piles in frame at once on a real phone aspect ratio —
+   * verified by rendering it, not assumed from the source file looking
+   * fine). Layer order, back to front:
+   *   1. backgroundGradient — dark teal-to-black vertical gradient base.
+   *   2. backgroundGrain — a heavily-cropped, blurred, low-opacity sample of
+   *      the real base-game.jpg photo, still using the real asset but
+   *      demoted to texture "grain" rather than the dominant element (spec
+   *      item 1: "you may still use base-game.jpg as one layer").
+   *   3. wheelGlow + wheelRings — a big soft warm-gold glow plus faint
+   *      concentric ring strokes suggesting the vault-wheel's silhouette,
+   *      positioned behind the logo lockup (where the reference shows the
+   *      door glow behind the logo).
+   *   4. lightStreaks — 2-3 soft vertical teal glow sprites, echoing the
+   *      ceiling light strips visible in both the reference and in
+   *      base-game.jpg itself.
+   *   5. ambientGlows — the pre-existing teal side-lighting + warm gold pool
+   *      low in the frame (kept, gold pool intensified — echoes the
+   *      reference's gold-bar-pile lighting).
+   *   6. backgroundVignette — dark top/bottom vignette for text legibility.
+   * This is the ONLY place BACKGROUND_ART_URL's texture is consumed.
    */
   private buildBackground(width: number, height: number) {
-    this.backgroundLayer = new Sprite(this.backgroundTexture);
-    this.backgroundLayer.eventMode = "none";
-    this.world.addChild(this.backgroundLayer);
+    this.backgroundGradient = new Sprite();
+    this.backgroundGradient.eventMode = "none";
+    this.world.addChild(this.backgroundGradient);
+
+    this.backgroundGrain = new Sprite();
+    this.backgroundGrain.eventMode = "none";
+    this.world.addChild(this.backgroundGrain);
+
+    this.wheelGlow = new Sprite(getGlowTexture());
+    this.wheelGlow.anchor.set(0.5);
+    this.wheelGlow.blendMode = "add";
+    this.wheelGlow.tint = 0xd4af37;
+    this.wheelGlow.alpha = 0.26;
+    this.wheelGlow.eventMode = "none";
+    this.world.addChild(this.wheelGlow);
+
+    this.wheelRings = new Graphics();
+    this.wheelRings.eventMode = "none";
+    this.world.addChild(this.wheelRings);
+
+    const streakCount = 3;
+    this.lightStreaks = Array.from({ length: streakCount }, () => {
+      const s = new Sprite(getGlowTexture());
+      s.anchor.set(0.5);
+      s.blendMode = "add";
+      s.tint = 0x2dbfb0;
+      s.eventMode = "none";
+      this.world.addChild(s);
+      return s;
+    });
 
     this.backgroundVignette = new Sprite(buildBackgroundVignetteTexture(width, height));
     this.backgroundVignette.eventMode = "none";
-    this.world.addChild(this.backgroundVignette);
 
     const glowSpecs: { tint: number; wRatio: number; hRatio: number; xRatio: number; yRatio: number; alpha: number }[] = [
       // Teal side-lighting, left + right — echoes the reference's teal LED-lit corridor walls.
-      { tint: 0x2dbfb0, wRatio: 0.55, hRatio: 0.7, xRatio: 0.02, yRatio: 0.3, alpha: 0.22 },
-      { tint: 0x2dbfb0, wRatio: 0.55, hRatio: 0.7, xRatio: 0.98, yRatio: 0.3, alpha: 0.22 },
-      // Warm gold glow low in the frame — echoes the reference's gold-bar-pile lighting.
-      { tint: 0xd4af37, wRatio: 0.95, hRatio: 0.42, xRatio: 0.5, yRatio: 0.92, alpha: 0.2 },
+      { tint: 0x2dbfb0, wRatio: 0.55, hRatio: 0.7, xRatio: 0.02, yRatio: 0.3, alpha: 0.14 },
+      { tint: 0x2dbfb0, wRatio: 0.55, hRatio: 0.7, xRatio: 0.98, yRatio: 0.3, alpha: 0.14 },
+      // Warm gold pool low in the frame — echoes the reference's gold-bar-pile lighting. Intensified vs V6 (0.2 -> 0.34 alpha) so it actually reads against the new darker gradient base.
+      { tint: 0xd4af37, wRatio: 1.05, hRatio: 0.5, xRatio: 0.5, yRatio: 0.94, alpha: 0.34 },
     ];
     this.ambientGlows = glowSpecs.map((spec) => {
       const s = new Sprite(getGlowTexture());
@@ -507,32 +578,103 @@ export class SlotRenderer {
       this.world.addChild(s);
       return s;
     });
+
+    // Vignette drawn last so it sits over every glow/streak/grain layer below it.
+    this.world.addChild(this.backgroundVignette);
+
     this.positionBackground(width, height);
   }
 
-  /** Sizes/positions the background photo (cover-fit + focal anchor), vignette, and ambient glow sprites — called on build and on every resize. */
+  /** Sizes/positions every background layer — called on build and on every resize. */
   private positionBackground(width: number, height: number) {
-    const photoAspect = this.backgroundTexture.width / this.backgroundTexture.height;
-    const canvasAspect = width / height;
-    let spriteW: number;
-    let spriteH: number;
-    if (photoAspect > canvasAspect) {
-      // Photo is relatively wider than the canvas — cover by matching
-      // height, letting width overflow (then cropped via focal-point x).
-      spriteH = height;
-      spriteW = height * photoAspect;
+    this.backgroundGradient.texture?.destroy(true);
+    this.backgroundGradient.texture = buildVerticalGradientTexture(height, [
+      // Darker/less-saturated than the first pass at every stop — that
+      // version's brighter teal top, combined with the additive gold
+      // wheelGlow sitting right on top of it, washed the whole upper canvas
+      // into a bright olive-green (teal + gold additive = green) instead of
+      // reading as a moody dark backdrop with a warm glow — verified by
+      // screenshotting both.
+      { offset: 0, color: "#0d2126" },
+      { offset: 0.3, color: "#0a1a1e" },
+      { offset: 0.6, color: "#0a161c" },
+      { offset: 0.85, color: "#050a0d" },
+      { offset: 1, color: "#010203" },
+    ]);
+    this.backgroundGradient.width = width;
+    this.backgroundGradient.height = height;
+
+    const grainTexture = buildBlurredCoverTexture(
+      // Pixi v8 TextureSource wraps the decoded image/bitmap as `.resource`
+      // — drawable by canvas 2D like any other CanvasImageSource. Falls back
+      // to no grain layer (gradient + glows still carry the scene) if this
+      // ever isn't available rather than throwing.
+      (this.backgroundTexture.source as unknown as { resource?: CanvasImageSource }).resource ?? null,
+      this.backgroundTexture.width,
+      this.backgroundTexture.height,
+      width,
+      height,
+      BACKGROUND_FOCAL_X,
+      BACKGROUND_FOCAL_Y,
+      { blurPx: 16, resScale: 0.28, extraZoom: 1.1 }
+    );
+    this.backgroundGrain.texture?.destroy(true);
+    if (grainTexture) {
+      this.backgroundGrain.texture = grainTexture;
+      this.backgroundGrain.width = width;
+      this.backgroundGrain.height = height;
+      this.backgroundGrain.alpha = 0.3;
     } else {
-      spriteW = width;
-      spriteH = width / photoAspect;
+      this.backgroundGrain.texture = Texture.EMPTY;
+      this.backgroundGrain.alpha = 0;
     }
-    this.backgroundLayer.width = spriteW;
-    this.backgroundLayer.height = spriteH;
-    this.backgroundLayer.x = width / 2 - spriteW * BACKGROUND_FOCAL_X;
-    this.backgroundLayer.y = height / 2 - spriteH * BACKGROUND_FOCAL_Y;
-    // Clamp so the photo always still fully covers the canvas even when the
-    // focal point sits near an edge.
-    this.backgroundLayer.x = Math.min(0, Math.max(width - spriteW, this.backgroundLayer.x));
-    this.backgroundLayer.y = Math.min(0, Math.max(height - spriteH, this.backgroundLayer.y));
+
+    // Vault-wheel glow + rings — centered behind the logo lockup, roughly
+    // where the reference shows the door glow (upper third of the canvas).
+    const wheelCx = width * 0.5;
+    const wheelCy = height * 0.3;
+    const wheelR = width * 0.62;
+    this.wheelGlow.x = wheelCx;
+    this.wheelGlow.y = wheelCy;
+    // Contained (V7.1 fix): the first pass's 2.4x diameter + 0.4 alpha
+    // additive-bloomed the ENTIRE top of the canvas into a washed-out
+    // yellow-green (teal base + gold additive = green), rather than reading
+    // as a glow suggestion sitting behind the logo — reined in to stay a
+    // local hot spot, verified by re-screenshotting.
+    this.wheelGlow.width = wheelR * 1.5;
+    this.wheelGlow.height = wheelR * 1.5;
+
+    this.wheelRings.clear();
+    const ringAlphas = [0.16, 0.11, 0.07];
+    ringAlphas.forEach((a, i) => {
+      const r = wheelR * (0.42 + i * 0.24);
+      this.wheelRings.circle(wheelCx, wheelCy, r).stroke({ width: Math.max(1, width * 0.006), color: 0xd4af37, alpha: a });
+    });
+    // A few faint spokes on the innermost ring only — just enough to read as machinery, not an illustration.
+    const spokeR = wheelR * 0.42;
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI / 4) * i;
+      this.wheelRings
+        .moveTo(wheelCx, wheelCy)
+        .lineTo(wheelCx + Math.cos(a) * spokeR, wheelCy + Math.sin(a) * spokeR)
+        .stroke({ width: Math.max(1, width * 0.003), color: 0xd4af37, alpha: 0.1 });
+    }
+
+    // 2-3 soft vertical teal light streaks near the top, like the ceiling
+    // light strips visible in base-game.jpg and the master reference.
+    const streakSpecs = [
+      { xRatio: 0.1, alpha: 0.16, wRatio: 0.09, hRatio: 0.62 },
+      { xRatio: 0.5, alpha: 0.08, wRatio: 0.07, hRatio: 0.5 },
+      { xRatio: 0.9, alpha: 0.16, wRatio: 0.09, hRatio: 0.62 },
+    ];
+    this.lightStreaks.forEach((s, i) => {
+      const spec = streakSpecs[i];
+      s.alpha = spec.alpha;
+      s.width = width * spec.wRatio;
+      s.height = height * spec.hRatio;
+      s.x = width * spec.xRatio;
+      s.y = height * spec.hRatio * 0.42;
+    });
 
     this.backgroundVignette.width = width;
     this.backgroundVignette.height = height;
@@ -540,7 +682,7 @@ export class SlotRenderer {
     const glowSpecs = [
       { wRatio: 0.55, hRatio: 0.7, xRatio: 0.02, yRatio: 0.3 },
       { wRatio: 0.55, hRatio: 0.7, xRatio: 0.98, yRatio: 0.3 },
-      { wRatio: 0.95, hRatio: 0.42, xRatio: 0.5, yRatio: 0.92 },
+      { wRatio: 1.05, hRatio: 0.5, xRatio: 0.5, yRatio: 0.94 },
     ];
     this.ambientGlows.forEach((s, i) => {
       const spec = glowSpecs[i];
@@ -566,16 +708,14 @@ export class SlotRenderer {
     this.logoLockup.eventMode = "none";
     this.world.addChild(this.logoLockup);
 
-    // A soft warm glow behind the title, suggesting the vault door's own
-    // glow sitting behind the lockup (spec item 1's "suggestion of the
-    // large circular vault door glow behind the logo area").
-    this.logoDoorGlow = new Sprite(getGlowTexture());
-    this.logoDoorGlow.anchor.set(0.5);
-    this.logoDoorGlow.blendMode = "add";
-    this.logoDoorGlow.tint = 0xd4af37;
-    this.logoDoorGlow.alpha = 0.3;
-    this.logoLockup.addChild(this.logoDoorGlow);
-
+    // V7: the "soft warm glow behind the title, suggesting the vault door"
+    // used to live here as its own sprite (logoDoorGlow) — now merged into
+    // buildBackground()'s wheelGlow/wheelRings (drawn earlier, behind
+    // everything), which serves the exact same purpose. Keeping both was
+    // literally the same additive gold bloom drawn twice in the same spot,
+    // which is what was washing this whole area into a bright olive-green
+    // against the new teal gradient base — caught by re-screenshotting, not
+    // assumed.
     this.logoTitle = new Text({
       text: "VAULT\nBREAKER",
       style: {
@@ -654,11 +794,6 @@ export class SlotRenderer {
     this.logoTitle.style.lineHeight = titleFontSize * 0.92;
     this.logoTitle.x = centerX;
     this.logoTitle.y = areaH * 0.16;
-
-    this.logoDoorGlow.x = centerX;
-    this.logoDoorGlow.y = areaH * 0.5;
-    this.logoDoorGlow.width = width * 1.15;
-    this.logoDoorGlow.height = width * 1.15;
 
     const subtitleFontSize = Math.max(9, width * 0.03);
     this.logoSubtitleText.style.fontSize = subtitleFontSize;
@@ -761,15 +896,20 @@ export class SlotRenderer {
     const metalLight = "#2c3340";
     const goldTrim = "#c79a3a";
 
-    // Steel-to-gold gradient (spec item 3): each bar reads mostly as dark
-    // brushed steel with a gold band right at the edge that faces the reel
-    // window/viewer, like a real cabinet's trim strip — not a flat tone.
+    // Steel-to-gold gradient (spec item 3, thickened for root cause #2):
+    // each bar reads mostly as dark brushed steel with a real gold BAND
+    // (not a hairline) right at the edge that faces the reel window/viewer,
+    // plus a bright highlight stop right at that inner edge and a lighter
+    // steel highlight at the very outer edge — a proper multi-stop
+    // gold/steel material, not a flat tone.
     this.frameTop.texture?.destroy(true);
     this.frameTop.texture = buildVerticalGradientTexture(layout.topBeam, [
-      { offset: 0, color: metalMid },
-      { offset: 0.62, color: metalDark },
-      { offset: 0.86, color: goldTrim },
-      { offset: 1, color: "#3a2a0f" },
+      { offset: 0, color: metalLight },
+      { offset: 0.16, color: metalMid },
+      { offset: 0.55, color: metalDark },
+      { offset: 0.78, color: goldTrim },
+      { offset: 0.92, color: "#f2d98a" },
+      { offset: 1, color: "#4a3413" },
     ]);
     this.frameTop.width = layout.machineWidth;
     this.frameTop.height = layout.topBeam;
@@ -777,19 +917,28 @@ export class SlotRenderer {
     this.frameTop.y = layout.machineY;
 
     const sideHeight = layout.topBeam + layout.reelWindowHeight + layout.bottomBase;
+    // Side columns: a HORIZONTAL (thickness-wise) gradient — outer edge
+    // (facing the canvas edge) dark steel, inner edge (facing the reel
+    // window) gold, mirrored for the two columns via reverseGradientStops
+    // — this is what actually reads as a gold TRIM running down each side,
+    // vs the old lengthwise (top-to-bottom) gradient which never put gold
+    // next to the reels at all.
+    const sideStopsOuterToInner = [
+      { offset: 0, color: metalDark },
+      { offset: 0.3, color: metalMid },
+      { offset: 0.62, color: metalLight },
+      { offset: 0.82, color: goldTrim },
+      { offset: 1, color: "#f2d98a" },
+    ];
     this.frameLeft.texture?.destroy(true);
-    this.frameLeft.texture = buildVerticalGradientTexture(sideHeight, [
-      { offset: 0, color: metalLight },
-      { offset: 0.5, color: metalMid },
-      { offset: 1, color: metalDark },
-    ]);
+    this.frameLeft.texture = buildHorizontalGradientTexture(layout.sideW, sideStopsOuterToInner);
     this.frameLeft.width = layout.sideW;
     this.frameLeft.height = sideHeight;
     this.frameLeft.x = layout.machineX;
     this.frameLeft.y = layout.machineY;
 
     this.frameRight.texture?.destroy(true);
-    this.frameRight.texture = this.frameLeft.texture;
+    this.frameRight.texture = buildHorizontalGradientTexture(layout.sideW, reverseGradientStops(sideStopsOuterToInner));
     this.frameRight.width = layout.sideW;
     this.frameRight.height = sideHeight;
     this.frameRight.x = layout.machineX + layout.machineWidth - layout.sideW;
@@ -797,9 +946,10 @@ export class SlotRenderer {
 
     this.frameBase.texture?.destroy(true);
     this.frameBase.texture = buildVerticalGradientTexture(Math.max(4, layout.bottomBase), [
-      { offset: 0, color: goldTrim },
-      { offset: 0.28, color: "#3a2a0f" },
-      { offset: 0.55, color: "#080a0f" },
+      { offset: 0, color: "#f2d98a" },
+      { offset: 0.18, color: goldTrim },
+      { offset: 0.42, color: "#3a2a0f" },
+      { offset: 0.68, color: "#080a0f" },
       { offset: 1, color: metalDark },
     ]);
     this.frameBase.width = layout.machineWidth;
@@ -807,13 +957,13 @@ export class SlotRenderer {
     this.frameBase.x = layout.machineX;
     this.frameBase.y = layout.machineY + layout.machineHeight - layout.bottomBase;
 
-    // Bezel ring: thick enough to visibly overlap the reel window's own
-    // edges (spec item 3: "the frame overlapping the reel edges slightly —
-    // not just a thin outline beside them") — a wide gold-toned outer
-    // stroke with a slim bright teal inner line on the same path, both
-    // centered on the reel window's boundary so they eat into the reel art
-    // by roughly half their width.
-    const bezelWidth = Math.max(5, Math.min(win.w, win.h) * 0.024);
+    // Bezel ring: thickened (root cause #2) so it visibly overlaps the reel
+    // window's own edges (spec item 3: "the frame overlapping the reel
+    // edges slightly — not just a thin outline beside them") — a wide
+    // gold-toned outer stroke with a slim bright teal inner line on the
+    // same path, both centered on the reel window's boundary so they eat
+    // into the reel art by roughly half their width.
+    const bezelWidth = Math.max(8, Math.min(win.w, win.h) * 0.04);
     this.frameBezel.clear();
     this.frameBezel
       .roundRect(win.x, win.y, win.w, win.h, Math.min(win.w, win.h) * 0.015)
@@ -839,50 +989,63 @@ export class SlotRenderer {
     // where the bar would catch light (its inner edge, facing the reel
     // window) and a faint dark line on its outer edge (in shadow). Plain
     // strokes only — no painted texture.
+    // Thickened vs V6 (root cause #2's "enough depth: inner bevel shadow,
+    // outer highlight edge") and offset proportionally to the now much
+    // thicker bars (sideW * ratio) instead of fixed 1-2.5px, so the bevel
+    // reads clearly against real material width instead of getting lost.
     this.frameHighlights.clear();
-    const hi = { width: 1.75, color: 0xe8c15a, alpha: 0.65 };
-    const lo = { width: 1.5, color: 0x000000, alpha: 0.45 };
+    const hi = { width: 2.5, color: 0xf2d98a, alpha: 0.7 };
+    const lo = { width: 2, color: 0x000000, alpha: 0.55 };
+    const bevelIn = Math.max(2, layout.sideW * 0.12);
+    const bevelOut = Math.max(1.5, layout.sideW * 0.06);
     // Top beam: bright edge just above the reel window, dark edge at the very top of the machine.
-    this.frameHighlights.moveTo(mx, my + layout.topBeam - 2.5).lineTo(mx + mw, my + layout.topBeam - 2.5).stroke(hi);
-    this.frameHighlights.moveTo(mx, my + 1).lineTo(mx + mw, my + 1).stroke(lo);
+    this.frameHighlights.moveTo(mx, my + layout.topBeam - bevelIn).lineTo(mx + mw, my + layout.topBeam - bevelIn).stroke(hi);
+    this.frameHighlights.moveTo(mx, my + bevelOut).lineTo(mx + mw, my + bevelOut).stroke(lo);
     // Side columns: bright edge on the inner (reel-facing) side, dark edge on the outer side.
     this.frameHighlights
-      .moveTo(mx + layout.sideW - 2, my + layout.topBeam)
-      .lineTo(mx + layout.sideW - 2, my + layout.topBeam + layout.reelWindowHeight)
-      .stroke(hi);
-    this.frameHighlights.moveTo(mx + 1, my + layout.topBeam).lineTo(mx + 1, my + layout.topBeam + layout.reelWindowHeight).stroke(lo);
-    this.frameHighlights
-      .moveTo(mx + mw - layout.sideW + 2, my + layout.topBeam)
-      .lineTo(mx + mw - layout.sideW + 2, my + layout.topBeam + layout.reelWindowHeight)
+      .moveTo(mx + layout.sideW - bevelIn, my + layout.topBeam)
+      .lineTo(mx + layout.sideW - bevelIn, my + layout.topBeam + layout.reelWindowHeight)
       .stroke(hi);
     this.frameHighlights
-      .moveTo(mx + mw - 1, my + layout.topBeam)
-      .lineTo(mx + mw - 1, my + layout.topBeam + layout.reelWindowHeight)
+      .moveTo(mx + bevelOut, my + layout.topBeam)
+      .lineTo(mx + bevelOut, my + layout.topBeam + layout.reelWindowHeight)
+      .stroke(lo);
+    this.frameHighlights
+      .moveTo(mx + mw - layout.sideW + bevelIn, my + layout.topBeam)
+      .lineTo(mx + mw - layout.sideW + bevelIn, my + layout.topBeam + layout.reelWindowHeight)
+      .stroke(hi);
+    this.frameHighlights
+      .moveTo(mx + mw - bevelOut, my + layout.topBeam)
+      .lineTo(mx + mw - bevelOut, my + layout.topBeam + layout.reelWindowHeight)
       .stroke(lo);
     // Base plate: bright edge just below the reel window, dark edge at the very bottom of the machine.
     this.frameHighlights
-      .moveTo(mx, my + mh - layout.bottomBase + 2)
-      .lineTo(mx + mw, my + mh - layout.bottomBase + 2)
+      .moveTo(mx, my + mh - layout.bottomBase + bevelIn)
+      .lineTo(mx + mw, my + mh - layout.bottomBase + bevelIn)
       .stroke(hi);
-    this.frameHighlights.moveTo(mx, my + mh - 1.5).lineTo(mx + mw, my + mh - 1.5).stroke(lo);
+    this.frameHighlights.moveTo(mx, my + mh - bevelOut).lineTo(mx + mw, my + mh - bevelOut).stroke(lo);
 
     this.drawFrameHardware(layout);
   }
 
   /**
-   * Corner bolts/rivets (spec item 3) drawn as small concentric-circle
-   * fixtures (dark outer ring, metal fill, offset highlight dot — a cheap
-   * but legible "real hardware" cue) at each of the machine's four outer
-   * corners, plus the teal LED accent strip Sprites positioned down the
-   * inner edge of each side column.
+   * Corner bolts/rivets (spec item 3, made bigger/more dimensional for root
+   * cause #2 — "give them actual highlight+shadow, not flat circles")
+   * drawn as a small layered fixture: a recessed-socket drop shadow, a dark
+   * outer rim, a metal base, a light/shadow bevel pair (simulating a
+   * top-left key light) inset into that base, a thin gold accent ring, and
+   * a bright specular highlight dot — all plain circle fills/strokes, still
+   * no painted texture, but with real dimensional shading now. Also
+   * positions the teal LED accent strip Sprites down the inner edge of each
+   * side column.
    */
   private drawFrameHardware(layout: ReturnType<typeof this.computeLayout>) {
     const mx = layout.machineX;
     const my = layout.machineY;
     const mw = layout.machineWidth;
     const mh = layout.machineHeight;
-    const boltR = Math.max(2.5, layout.sideW * 0.32);
-    const inset = boltR * 1.4;
+    const boltR = Math.max(5, layout.sideW * 0.36);
+    const inset = boltR * 1.5;
 
     this.frameHardware.clear();
     const corners: [number, number][] = [
@@ -892,13 +1055,23 @@ export class SlotRenderer {
       [mx + mw - inset, my + mh - inset],
     ];
     for (const [cx, cy] of corners) {
-      this.frameHardware.circle(cx, cy, boltR * 1.25).fill({ color: 0x05070a, alpha: 0.85 });
-      this.frameHardware.circle(cx, cy, boltR).fill({ color: 0x3a4152 });
-      this.frameHardware.circle(cx, cy, boltR).stroke({ width: Math.max(0.75, boltR * 0.18), color: 0x0a0c12, alpha: 0.7 });
-      this.frameHardware.circle(cx - boltR * 0.3, cy - boltR * 0.3, boltR * 0.32).fill({ color: 0xd4af37, alpha: 0.75 });
+      // Recessed-socket shadow the bolt sits in.
+      this.frameHardware.circle(cx, cy, boltR * 1.6).fill({ color: 0x000000, alpha: 0.3 });
+      // Dark outer rim.
+      this.frameHardware.circle(cx, cy, boltR * 1.22).fill({ color: 0x05070a, alpha: 0.9 });
+      // Metal base.
+      this.frameHardware.circle(cx, cy, boltR).fill({ color: 0x545f70 });
+      // Shadow bevel (bottom-right, away from the key light).
+      this.frameHardware.circle(cx + boltR * 0.2, cy + boltR * 0.2, boltR * 0.82).fill({ color: 0x11141c, alpha: 0.55 });
+      // Light bevel (top-left, catching the key light).
+      this.frameHardware.circle(cx - boltR * 0.2, cy - boltR * 0.2, boltR * 0.62).fill({ color: 0x8b96a8, alpha: 0.55 });
+      // Thin gold accent ring around the bolt head.
+      this.frameHardware.circle(cx, cy, boltR * 0.78).stroke({ width: Math.max(0.75, boltR * 0.14), color: 0xd4af37, alpha: 0.6 });
+      // Bright specular highlight — the actual "this is shiny metal" cue.
+      this.frameHardware.circle(cx - boltR * 0.32, cy - boltR * 0.32, boltR * 0.26).fill({ color: 0xfff6d9, alpha: 0.9 });
     }
 
-    const ledW = Math.max(2.5, layout.sideW * 0.16);
+    const ledW = Math.max(2.5, layout.sideW * 0.12);
     const ledH = layout.reelWindowHeight * 0.92;
     this.ledStripLeft.width = ledW;
     this.ledStripLeft.height = ledH;
@@ -1607,13 +1780,17 @@ export class SlotRenderer {
     this.reels.forEach((r) => r.destroy());
     this.win.destroy();
     this.bonus.destroy();
-    // Destroy only the per-instance-generated gradient textures (drawn
+    // Destroy only the per-instance-generated gradient/grain textures (drawn
     // fresh per mount/resize) — NOT `texture: true` on app.destroy(), which
     // would also tear down the shared, module-cached symbol/glow/background
     // textures (see symbolAssets.ts/fx.ts/environmentAssets.ts, all loaded
     // via PIXI.Assets and cached for reuse across remounts) that a future
-    // remount of this same game reuses. this.backgroundLayer's texture is
-    // one of those shared Assets-cached textures — NOT destroyed here.
+    // remount of this same game reuses. this.backgroundTexture (the raw
+    // decoded base-game.jpg, sampled by backgroundGrain) is one of those
+    // shared Assets-cached textures — NOT destroyed here; only the derived
+    // per-instance canvas textures built from it are.
+    this.backgroundGradient.texture?.destroy(true);
+    this.backgroundGrain.texture?.destroy(true);
     this.backgroundVignette.texture?.destroy(true);
     this.frameTop.texture?.destroy(true);
     this.frameLeft.texture?.destroy(true);

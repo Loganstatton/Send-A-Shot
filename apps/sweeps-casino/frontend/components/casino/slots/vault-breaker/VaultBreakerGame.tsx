@@ -13,7 +13,7 @@
 // area, control deck) — see app/(game)/casino/slots/[slug]/page.tsx, which
 // renders this with no surrounding chrome at all for the vault-breaker
 // slug specifically.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useSlotGame } from "@/lib/hooks/useSlotGame";
 import { useSoundStore } from "@/lib/stores/sound-store";
@@ -147,6 +147,26 @@ export function VaultBreakerGame() {
       writeTurboPreference(next);
       return next;
     });
+  }, []);
+
+  // Autoplay: no existing autoplay state/logic anywhere in the codebase
+  // (grepped the frontend before adding this) — a real toggle wired to a
+  // local boolean, per spec item 3. It never touches useSlotGame.ts
+  // internals: it just re-invokes handleSpin() (the SAME call site the
+  // physical SPIN button uses, defined below) on a short timer whenever the
+  // machine is idle and autoplay is on, so every autoplay spin gets the
+  // exact same presentation/sound/error handling as a manual one. Stops
+  // itself the moment an error surfaces (e.g. insufficient balance) so a
+  // rejected spin can't loop forever.
+  const [autoplay, setAutoplay] = useState(false);
+  const autoplayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toggleAutoplay = useCallback(() => {
+    setAutoplay((prev) => !prev);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (autoplayTimeoutRef.current) clearTimeout(autoplayTimeoutRef.current);
+    };
   }, []);
 
   // Surface the hook's error state as a transient banner without racing the
@@ -394,6 +414,25 @@ export function VaultBreakerGame() {
     setPhase("idle");
   }, [config, phase, spinning, effectiveBet, soundEnabled, soundVolume, spin, runBaseSpin, runFreeSpins]);
 
+  // Drives the autoplay loop: whenever autoplay is on and the machine has
+  // settled back to idle with no error showing, queue the next spin a beat
+  // later via the exact same handleSpin() the SPIN button calls — never a
+  // parallel spin implementation, never a direct interval-driven call into
+  // spin()/useSlotGame beyond what handleSpin already does.
+  useEffect(() => {
+    if (!autoplay || phase !== "idle" || spinning || !config) return;
+    if (errorFlash) {
+      setAutoplay(false);
+      return;
+    }
+    autoplayTimeoutRef.current = setTimeout(() => {
+      handleSpin();
+    }, 700);
+    return () => {
+      if (autoplayTimeoutRef.current) clearTimeout(autoplayTimeoutRef.current);
+    };
+  }, [autoplay, phase, spinning, config, errorFlash, handleSpin]);
+
   // BET plate's inline -/+ steppers (spec item 5: "matching the reference's
   // plate style") — steps through the same discrete preset ladder the full
   // BetChipPicker sheet already offers (never a raw +/-1 GC nudge that could
@@ -537,22 +576,6 @@ export function VaultBreakerGame() {
           }}
         />
 
-        {/* Turbo — a small icon button flanking the housing (spec item 5: "small icon buttons flanking the main deck, not full-width buttons"), not deleted, just relocated off the header. */}
-        <button
-          type="button"
-          onClick={toggleTurbo}
-          aria-label={turbo ? "Turn off turbo spin" : "Turn on turbo spin"}
-          aria-pressed={turbo}
-          className={cn(
-            "absolute left-3 top-4 z-10 flex h-7 w-7 items-center justify-center rounded-full border text-[9px] font-extrabold transition-colors active:scale-90",
-            turbo
-              ? "border-accent-sc bg-accent-sc/20 text-accent-sc shadow-[0_0_8px_rgba(45,191,176,0.5)]"
-              : "border-white/15 bg-black/40 text-white/55 hover:text-white/90"
-          )}
-        >
-          <BoltIcon className="h-3.5 w-3.5" />
-        </button>
-
         <div className="flex items-end justify-between gap-2.5">
           <BetPlate betAmount={effectiveBet} min={config.minBet} max={config.maxBet} busy={busy} onStep={stepBet} onOpenPicker={() => setBetPickerOpen(true)} />
 
@@ -564,6 +587,17 @@ export function VaultBreakerGame() {
               {formatGC(winHud ? winDisplayAmount : 0)}
             </span>
           </div>
+        </div>
+
+        {/* TURBO / AUTOPLAY — real labeled machine-mounted controls (spec
+            item 3), matching the master reference's bottom row exactly: two
+            plates in the same dark steel/gold material as BET/WIN above,
+            each with an icon + label, not the small unlabeled circular icon
+            the previous pass shipped (which came from reviewing a reference
+            crop that cut this row off). */}
+        <div className="mt-2.5 flex items-stretch gap-2.5">
+          <DeckToggleButton active={turbo} onClick={toggleTurbo} label="Turbo" icon={<BoltIcon className="h-3.5 w-3.5" />} />
+          <DeckToggleButton active={autoplay} onClick={toggleAutoplay} label="Autoplay" icon={<LoopIcon className="h-3.5 w-3.5" />} />
         </div>
       </div>
 
@@ -752,6 +786,56 @@ function BoltIcon({ className }: { className?: string }) {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function LoopIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M4 12a8 8 0 0 1 13.9-5.4M20 12a8 8 0 0 1-13.9 5.4"
+        stroke="currentColor"
+        strokeWidth={2.2}
+        strokeLinecap="round"
+      />
+      <path d="M18.2 3.2v4.6h-4.6M5.8 20.8v-4.6h4.6" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * TURBO / AUTOPLAY control-deck plate — a labeled, machine-mounted toggle
+ * matching BET/WIN's dark steel plate material (spec item 3), with an
+ * active state (teal accent glow, same language as the spin button's idle
+ * pulse and the BET/WIN plates' accent) so it's obvious at a glance whether
+ * turbo/autoplay is engaged.
+ */
+function DeckToggleButton({
+  active,
+  onClick,
+  label,
+  icon,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  icon: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex flex-1 items-center justify-center gap-1.5 rounded-xl border py-2.5 text-[10px] font-extrabold uppercase tracking-[0.16em] transition-colors active:scale-[0.97]",
+        active
+          ? "border-accent-sc bg-accent-sc/15 text-accent-sc shadow-[0_0_10px_rgba(45,191,176,0.4),inset_0_1px_0_rgba(255,255,255,0.08)]"
+          : "border-[#3a4152] bg-gradient-to-b from-[#161b26] to-[#0a0c13] text-white/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-2px_4px_rgba(0,0,0,0.5)]"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

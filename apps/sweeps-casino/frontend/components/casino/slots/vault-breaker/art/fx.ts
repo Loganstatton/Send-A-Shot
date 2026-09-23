@@ -81,3 +81,76 @@ export function buildRadialVignetteTexture(width: number, height: number, stops:
   ctx.fillRect(0, 0, w, h);
   return Texture.from(c);
 }
+
+/** Plain left-to-right linear gradient texture (the horizontal counterpart to buildVerticalGradientTexture) — used for the machine frame's side columns so their steel-to-gold trim varies across the column's THICKNESS (outer edge -> reel-facing inner edge), not along its length. */
+export function buildHorizontalGradientTexture(width: number, stops: GradientStop[]): Texture {
+  const w = Math.max(2, Math.round(width));
+  const c = canvas(w, 2);
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createLinearGradient(0, 0, w, 0);
+  for (const s of stops) g.addColorStop(s.offset, s.color);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, 2);
+  return Texture.from(c);
+}
+
+/** Mirrors a set of gradient stops (offset -> 1-offset, order reversed) — used to derive the right-hand frame column's gradient from the left-hand one's outer->inner stops without hand-authoring a second array that has to be kept in sync. */
+export function reverseGradientStops(stops: GradientStop[]): GradientStop[] {
+  return stops.map((s) => ({ offset: 1 - s.offset, color: s.color })).reverse();
+}
+
+/**
+ * A soft, heavily-cropped, blurred, low-resolution sample of a source image
+ * — background "grain"/texture detail, never the dominant visual element.
+ * Cover-fits `sourceW x sourceH` into `destW x destH` anchored at
+ * (focalX, focalY) exactly like a CSS `background: cover` + `object-position`
+ * would, zooms in a bit further (`extraZoom`) for a more abstract sample, and
+ * rasterizes at a fraction of the destination resolution (`resScale`) — the
+ * downscale-then-upscale is itself most of the softening; `ctx.filter` blur
+ * (best-effort, skipped where unsupported) adds the rest. Returns null if
+ * `source` isn't something canvas can draw (e.g. not yet decoded).
+ */
+export function buildBlurredCoverTexture(
+  source: CanvasImageSource | null | undefined,
+  sourceW: number,
+  sourceH: number,
+  destW: number,
+  destH: number,
+  focalX: number,
+  focalY: number,
+  opts: { blurPx?: number; resScale?: number; extraZoom?: number } = {}
+): Texture | null {
+  if (!source || !sourceW || !sourceH || !destW || !destH) return null;
+  const { blurPx = 12, resScale = 0.3, extraZoom = 1.15 } = opts;
+  const outW = Math.max(2, Math.round(destW * resScale));
+  const outH = Math.max(2, Math.round(destH * resScale));
+  const c = canvas(outW, outH);
+  const ctx = c.getContext("2d");
+  if (!ctx) return null;
+  const srcAspect = sourceW / sourceH;
+  const destAspect = destW / destH;
+  let drawW: number;
+  let drawH: number;
+  if (srcAspect > destAspect) {
+    drawH = sourceH;
+    drawW = sourceH * destAspect;
+  } else {
+    drawW = sourceW;
+    drawH = sourceW / destAspect;
+  }
+  drawW /= extraZoom;
+  drawH /= extraZoom;
+  const sx = Math.min(sourceW - drawW, Math.max(0, sourceW * focalX - drawW / 2));
+  const sy = Math.min(sourceH - drawH, Math.max(0, sourceH * focalY - drawH / 2));
+  try {
+    (ctx as CanvasRenderingContext2D & { filter?: string }).filter = `blur(${blurPx}px)`;
+  } catch {
+    // ctx.filter unsupported in this environment — the downscale/upscale softness alone still applies.
+  }
+  try {
+    ctx.drawImage(source, sx, sy, drawW, drawH, 0, 0, outW, outH);
+  } catch {
+    return null;
+  }
+  return Texture.from(c);
+}
