@@ -69,12 +69,28 @@ export function refreshSession(): Promise<string | null> {
 interface RequestOptions extends Omit<RequestInit, "body"> {
   body?: unknown;
   idempotent?: boolean;
+  /**
+   * Explicit Idempotency-Key to send instead of generating a fresh one.
+   * Callers that need to RETRY the same logical request (a spin whose
+   * response never arrived, a reconciliation on resume) pass the key they
+   * generated for the original attempt here — reusing it is the entire
+   * point: the backend's replay path only helps if the same key reaches it
+   * twice. Only used when `idempotent` is also true; ignored otherwise.
+   */
+  idempotencyKey?: string;
+  /**
+   * Aborts the request after this many ms, surfacing as a non-ApiError
+   * AbortError — same "not a definitive server answer" bucket as a raw
+   * network failure, so retry logic (see useSlotGame.ts) treats it the
+   * same way: retry with the same idempotencyKey, never assume failure.
+   */
+  timeoutMs?: number;
   skipAuth?: boolean;
   skipRefreshRetry?: boolean;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { body, idempotent, skipAuth, skipRefreshRetry, headers, ...rest } = options;
+  const { body, idempotent, idempotencyKey, timeoutMs, skipAuth, skipRefreshRetry, headers, ...rest } = options;
 
   const finalHeaders: Record<string, string> = {
     "Content-Type": "application/json",
@@ -86,17 +102,31 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   }
   if (idempotent) {
     finalHeaders["Idempotency-Key"] =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
+      idempotencyKey ??
+      (typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random()}`;
+        : `${Date.now()}-${Math.random()}`);
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...rest,
-    headers: finalHeaders,
-    credentials: "include",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  let controller: AbortController | undefined;
+  if (timeoutMs && typeof AbortController !== "undefined" && !rest.signal) {
+    controller = new AbortController();
+    timeoutHandle = setTimeout(() => controller!.abort(), timeoutMs);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...rest,
+      headers: finalHeaders,
+      credentials: "include",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller?.signal ?? rest.signal,
+    });
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
 
   if (res.status === 401 && !skipAuth && !skipRefreshRetry) {
     const newToken = await refreshSession();

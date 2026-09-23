@@ -28,7 +28,7 @@
 //    never look like one curve copy-pasted five times (spec point 7).
 import { BlurFilter, Container, Graphics, Sprite, Texture } from "pixi.js";
 import type { SlotSymbolId } from "@/lib/types";
-import { bounceCurve, buildSpinStrip, easeOutCubic, reelPositionCurve, tween, type ReelPersonality } from "./animUtils";
+import { buildSpinStrip, easeOutBackSettle, easeOutCubic, reelPositionCurve, tween, type ReelPersonality } from "./animUtils";
 
 export interface ReelStripOptions {
   rows: number;
@@ -46,6 +46,8 @@ export interface ReelSpinOptions {
   anticipationHoldMs?: number;
   /** Fired the instant the anticipation hold phase begins (caller uses this to cue sound/glow). */
   onHoldStart?: () => void;
+  /** Delay (ms) before this reel starts moving at all — the per-reel stagger, applied entirely inside spin() so the returned promise still only resolves once this reel has actually landed and settled. */
+  startDelayMs?: number;
 }
 
 const BUFFER_ABOVE = 1;
@@ -208,6 +210,23 @@ export class ReelStrip {
    */
   async spin(finalColumn: SlotSymbolId[], opts: ReelSpinOptions): Promise<void> {
     this.activeTween?.cancel();
+
+    if (opts.startDelayMs && opts.startDelayMs > 0) {
+      let cancelled = false;
+      let timeoutId: ReturnType<typeof setTimeout>;
+      const delay = new Promise<void>((resolve) => {
+        timeoutId = setTimeout(resolve, opts.startDelayMs);
+      });
+      this.activeTween = {
+        cancel: () => {
+          cancelled = true;
+          clearTimeout(timeoutId);
+        },
+      };
+      await delay;
+      if (cancelled) return;
+    }
+
     const leadIn = this.currentColumn();
     this.strip = buildSpinStrip(leadIn, finalColumn, opts.fillerCount);
     const targetPos = this.strip.length - this.rows;
@@ -226,15 +245,29 @@ export class ReelStrip {
     const holdPortion = holdMs > 0 ? 2 / this.rows : 0;
     const preHoldTarget = targetPos * (1 - holdPortion);
 
+    // Reference "full speed" rate for this reel, estimated analytically off
+    // the position curve's own mid-flight slope (sampled numerically) — NOT
+    // a hardcoded constant, so it self-calibrates to this reel's actual
+    // distance/duration. Instantaneous velocity below is measured every
+    // frame from the real position delta, then expressed as a fraction of
+    // this reference: motion blur genuinely tracks how fast the reel is
+    // moving right now, not a fixed ramp shape.
+    const midSlope =
+      (reelPositionCurve(0.51, accelFrac, decelFrac) - reelPositionCurve(0.49, accelFrac, decelFrac)) / 0.02;
+    const fullSpeedCellsPerMs = Math.max(1e-6, (midSlope * preHoldTarget) / mainDuration);
+    let lastPos = 0;
+    let lastFrameTime = performance.now();
+
     const t1 = tween(mainDuration, (p) => {
-      this.pos = reelPositionCurve(p, accelFrac, decelFrac) * preHoldTarget;
-      // Blur ramps in over the accel phase, holds near-max through full
-      // speed, and eases back out during the decel phase — envelope is
-      // shaped from the same accel/decel fractions driving position, so
-      // blur and visible speed always agree.
-      const rampIn = Math.min(1, p / Math.max(0.001, accelFrac * 0.8));
-      const rampOut = Math.max(0, Math.min(1, (1 - p) / Math.max(0.001, decelFrac * 0.9)));
-      this.blur.strengthY = Math.min(rampIn, rampOut) * MAX_BLUR;
+      const newPos = reelPositionCurve(p, accelFrac, decelFrac) * preHoldTarget;
+      const now = performance.now();
+      const dtMs = Math.max(1, now - lastFrameTime);
+      const instantCellsPerMs = Math.abs(newPos - lastPos) / dtMs;
+      lastPos = newPos;
+      lastFrameTime = now;
+      this.pos = newPos;
+      const speedFrac = Math.min(1.15, instantCellsPerMs / fullSpeedCellsPerMs);
+      this.blur.strengthY = Math.max(0, speedFrac) * MAX_BLUR;
       this.render();
     });
     this.activeTween = t1;
@@ -272,9 +305,18 @@ export class ReelStrip {
   private async playBounce(durationMs: number, amplitudePx: number) {
     // A real mechanical settle: small overshoot then spring back — distinct
     // per reel via `amplitudePx`/`durationMs` (see REEL_PERSONALITY), never
-    // proportional-to-cellSize (that read as "wobbly" in V3).
+    // proportional-to-cellSize (that read as "wobbly" in V3). Driven by
+    // easeOutBack itself (ported from the reference demo) rather than a
+    // decaying sine: the same curve family used everywhere else in this
+    // engine for a "pop then settle" (see SlotRenderer's big-win banner),
+    // so a reel's landing reads as the same mechanism, not a separate one.
+    if (durationMs <= 0 || amplitudePx === 0) {
+      this.bounceLayer.y = 0;
+      this.activeTween = null;
+      return;
+    }
     const t = tween(durationMs, (p) => {
-      this.bounceLayer.y = bounceCurve(p) * amplitudePx;
+      this.bounceLayer.y = easeOutBackSettle(p) * amplitudePx;
     });
     this.activeTween = t;
     await t;

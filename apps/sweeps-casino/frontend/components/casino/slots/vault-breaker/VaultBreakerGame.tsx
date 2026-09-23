@@ -76,6 +76,24 @@ function sleepMs(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+const TURBO_STORAGE_KEY = "vault-breaker:turbo";
+
+function readTurboPreference(): boolean {
+  try {
+    return localStorage.getItem(TURBO_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeTurboPreference(on: boolean) {
+  try {
+    localStorage.setItem(TURBO_STORAGE_KEY, on ? "1" : "0");
+  } catch {
+    // per-viewer convenience only — ignore if storage is unavailable/blocked.
+  }
+}
+
 type Phase = "idle" | "spinning" | "presenting" | "bonus-intro" | "bonus-spin" | "bonus-summary";
 
 interface WinHud {
@@ -86,7 +104,7 @@ interface WinHud {
 
 export function VaultBreakerGame() {
   const router = useRouter();
-  const { config, loadingConfig, spinning, lastError, spin } = useSlotGame("vault-breaker");
+  const { config, loadingConfig, spinning, reconciling, lastError, spin } = useSlotGame("vault-breaker");
   const soundEnabled = useSoundStore((s) => s.enabled);
   const soundVolume = useSoundStore((s) => s.volume);
   const toggleSound = useSoundStore((s) => s.toggle);
@@ -116,6 +134,20 @@ export function VaultBreakerGame() {
   const [winDisplayAmount, setWinDisplayAmount] = useState(0);
   const [errorFlash, setErrorFlash] = useState<string | null>(null);
   const [rendererError, setRendererError] = useState<string | null>(null);
+  // Turbo: faster spin, shorter stagger, reduced overshoot (see
+  // animUtils.scaleForTurbo) — a persisted per-device preference, read once
+  // on mount (avoids a hydration-mismatch flash) and written back on toggle.
+  const [turbo, setTurbo] = useState(false);
+  useEffect(() => {
+    setTurbo(readTurboPreference());
+  }, []);
+  const toggleTurbo = useCallback(() => {
+    setTurbo((prev) => {
+      const next = !prev;
+      writeTurboPreference(next);
+      return next;
+    });
+  }, []);
 
   // Surface the hook's error state as a transient banner without racing the
   // async spin() call's own return value (React batches the hook's
@@ -203,6 +235,7 @@ export function VaultBreakerGame() {
 
       await renderer.spinToResult(result.base.grid, {
         minScatterCount: config.freeSpins.minScatterCount,
+        turbo,
         onReelStop: (i) => {
           if (soundEnabled) slotAudio.reelStop(soundVolume, i);
           if (i === config.reels - 1) vibrate(15);
@@ -252,7 +285,7 @@ export function VaultBreakerGame() {
         setWinHud(null);
       }
     },
-    [config, soundEnabled, soundVolume, countUpTo]
+    [config, soundEnabled, soundVolume, countUpTo, turbo]
   );
 
   const runFreeSpins = useCallback(
@@ -282,6 +315,7 @@ export function VaultBreakerGame() {
         const outcome = freeSpins.spins[i];
         await renderer.spinToResult(outcome.grid, {
           minScatterCount: config.freeSpins.minScatterCount,
+          turbo,
           onReelStop: (idx) => {
             if (soundEnabled) slotAudio.reelStop(soundVolume, idx);
           },
@@ -327,7 +361,7 @@ export function VaultBreakerGame() {
       renderer.setFreeSpinsHud(null);
       await renderer.setFreeSpinsEnvironment(false);
     },
-    [config, soundEnabled, soundVolume, countUpTo]
+    [config, soundEnabled, soundVolume, countUpTo, turbo]
   );
 
   const handleSpin = useCallback(async () => {
@@ -386,6 +420,20 @@ export function VaultBreakerGame() {
         <BalanceReadout />
         <button
           type="button"
+          onClick={toggleTurbo}
+          aria-label={turbo ? "Turn off turbo spin" : "Turn on turbo spin"}
+          aria-pressed={turbo}
+          className={cn(
+            "flex h-8 shrink-0 items-center justify-center rounded-full border px-2.5 text-[10px] font-extrabold tracking-wide transition-colors active:scale-90",
+            turbo
+              ? "border-accent-sc bg-accent-sc/20 text-accent-sc"
+              : "border-white/15 text-white/60 hover:text-white/90"
+          )}
+        >
+          TURBO
+        </button>
+        <button
+          type="button"
           onClick={toggleSound}
           aria-label={soundEnabled ? "Mute sound" : "Unmute sound"}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:text-white active:scale-90"
@@ -432,6 +480,11 @@ export function VaultBreakerGame() {
         {errorFlash && (
           <p className="pointer-events-none absolute left-0 right-0 top-2 px-4 text-center text-xs font-medium text-danger drop-shadow">
             {errorFlash}
+          </p>
+        )}
+        {reconciling && !errorFlash && (
+          <p className="pointer-events-none absolute left-0 right-0 top-2 px-4 text-center text-xs font-medium text-white/80 drop-shadow">
+            Couldn&apos;t confirm your spin, checking…
           </p>
         )}
       </div>

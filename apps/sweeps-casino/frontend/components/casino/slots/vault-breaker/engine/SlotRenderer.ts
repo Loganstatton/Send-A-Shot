@@ -36,7 +36,7 @@ import { buildVerticalGradientTexture, buildRadialVignetteTexture, getGlowTextur
 import { ReelStrip } from "./ReelStrip";
 import { WinPresentation, type WinTier } from "./WinPresentation";
 import { FreeSpinsTransition } from "./FreeSpinsTransition";
-import { easeOutBack, tween, REEL_PERSONALITY } from "./animUtils";
+import { easeOutBack, reelStartDelayMs, scaleForTurbo, tween, REEL_PERSONALITY } from "./animUtils";
 
 const ANTICIPATION_HOLD_MS = 650;
 
@@ -44,6 +44,8 @@ export interface SpinPresentationOptions {
   minScatterCount: number;
   onReelStop?: (index: number) => void;
   onAnticipationStart?: (index: number) => void;
+  /** Turbo mode: faster spin, shorter stagger, reduced overshoot (see animUtils.scaleForTurbo/reelStartDelayMs). Defaults to false. */
+  turbo?: boolean;
 }
 
 export interface FreeSpinsHudInfo {
@@ -119,6 +121,10 @@ export class SlotRenderer {
 
   private anticipationGlows = new Map<number, Sprite>();
   private anticipationDim = 0;
+  /** Pulsing border around the whole reel viewport, drawn whenever 2+ scatters are already showing and at least one reel is still spinning (ported from the reference demo's anticipation border) — distinct from the per-reel gold glow above, which highlights the specific still-spinning column. */
+  private anticipationBorder!: Graphics;
+  private anticipationBorderActive = false;
+  private anticipationBorderElapsed = 0;
   private win!: WinPresentation;
   private bonus!: FreeSpinsTransition;
   private fsHud!: Container;
@@ -359,6 +365,15 @@ export class SlotRenderer {
     this.frameAccentTop = new Graphics();
     this.world.addChild(this.frameBezel, this.frameAccentTop);
 
+    // ---- 9. Anticipation border: hidden by default, drawn on top of
+    // everything else in the reel window's immediate area so its pulse
+    // reads clearly even against the reel backing/frame. ----
+    this.anticipationBorder = new Graphics();
+    this.anticipationBorder.visible = false;
+    this.anticipationBorder.eventMode = "none";
+    this.world.addChild(this.anticipationBorder);
+    this.drawAnticipationBorder();
+
     this.drawFrame(width, height, layout);
 
     this.buildFsHud(width, layout);
@@ -470,6 +485,30 @@ export class SlotRenderer {
       .lineTo(mx + mw, my + mh - layout.bottomBase + 2)
       .stroke(hi);
     this.frameHighlights.moveTo(mx, my + mh - 1.5).lineTo(mx + mw, my + mh - 1.5).stroke(lo);
+  }
+
+  /** (Re)draws the pulsing anticipation border's shape from the current winRect — alpha/visibility are driven separately by setAnticipationBorderActive()/tick(), this only handles geometry (called on build and resize). */
+  private drawAnticipationBorder() {
+    const win = this.winRect;
+    const pad = Math.max(4, Math.min(win.w, win.h) * 0.012);
+    this.anticipationBorder
+      .clear()
+      .roundRect(win.x - pad, win.y - pad, win.w + pad * 2, win.h + pad * 2, Math.min(win.w, win.h) * 0.02)
+      .stroke({ width: Math.max(2.5, Math.min(win.w, win.h) * 0.006), color: 0xff6634, alpha: 1 });
+  }
+
+  /**
+   * Toggles the reel-viewport anticipation border — a pulsing orange stroke
+   * shown whenever 2+ scatters are already showing and at least one reel is
+   * still spinning (ported from the reference demo). spinToResult() is the
+   * only caller: it flips this on right before kicking off the reel spins
+   * whenever this round has an anticipation reel, and off once every reel
+   * has landed.
+   */
+  private setAnticipationBorderActive(active: boolean) {
+    this.anticipationBorderActive = active;
+    this.anticipationBorder.visible = active;
+    if (!active) this.anticipationBorderElapsed = 0;
   }
 
   /** (Re)draws the reel backing panel + top/bottom shadow vignette + reel dividers from the current winRect. */
@@ -802,6 +841,7 @@ export class SlotRenderer {
     this.winRect = { x: layout.originX, y: layout.originY, w: layout.reelWindowWidth, h: layout.reelWindowHeight };
     this.drawFrame(width, height, layout);
     this.drawReelBacking();
+    this.drawAnticipationBorder();
 
     const fsm = this.fsHudMetrics(width);
     const gearSize = layout.topBeam * 0.6;
@@ -844,6 +884,11 @@ export class SlotRenderer {
 
   private tick(deltaMS: number) {
     const dt = deltaMS / 1000;
+
+    if (this.anticipationBorderActive) {
+      this.anticipationBorderElapsed += deltaMS;
+      this.anticipationBorder.alpha = 0.55 + 0.35 * Math.abs(Math.sin(this.anticipationBorderElapsed * 0.006));
+    }
 
     const targetDustAlpha = this.idle ? 0.5 : 0.16;
     for (let i = 0; i < this.dustSprites.length; i++) {
@@ -899,15 +944,19 @@ export class SlotRenderer {
       scatterReels.slice(2).forEach((i) => anticipationReels.add(i));
     }
 
+    const turbo = !!opts.turbo;
+    if (anticipationReels.size > 0) this.setAnticipationBorderActive(true);
+
     const promises = grid.map((col, i) => {
       const anticipation = anticipationReels.has(i);
-      const personality = REEL_PERSONALITY[i % REEL_PERSONALITY.length];
+      const personality = scaleForTurbo(REEL_PERSONALITY[i % REEL_PERSONALITY.length], turbo);
       const fillerCount = Math.round(12 * (personality.duration / REEL_PERSONALITY[0].duration));
       return this.reels[i]
         .spin(col, {
           personality,
           fillerCount,
-          anticipationHoldMs: anticipation ? ANTICIPATION_HOLD_MS : 0,
+          startDelayMs: reelStartDelayMs(i, turbo),
+          anticipationHoldMs: anticipation ? (turbo ? ANTICIPATION_HOLD_MS * 0.45 : ANTICIPATION_HOLD_MS) : 0,
           onHoldStart: anticipation
             ? () => {
                 opts.onAnticipationStart?.(i);
@@ -919,6 +968,7 @@ export class SlotRenderer {
     });
 
     await Promise.all(promises);
+    this.setAnticipationBorderActive(false);
   }
 
   private resetIdleScale() {
@@ -976,6 +1026,7 @@ export class SlotRenderer {
     this.anticipationGlows.clear();
     this.anticipationDim = 0;
     this.reels.forEach((reel) => (reel.container.alpha = 1));
+    this.setAnticipationBorderActive(false);
   }
 
   pulseScatterLand(count: number) {
