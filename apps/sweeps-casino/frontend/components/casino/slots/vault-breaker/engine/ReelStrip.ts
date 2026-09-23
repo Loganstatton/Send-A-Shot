@@ -91,10 +91,7 @@ export class ReelStrip {
 
   resize(cellSize: number) {
     this.cellSize = cellSize;
-    for (const sp of this.sprites) {
-      sp.width = this.cellSize * 0.96;
-      sp.height = this.cellSize * 0.96;
-    }
+    // Sprite width/height are recomputed aspect-correctly in render() below.
     const mask = this.container.mask as Graphics;
     mask.clear().rect(0, 0, this.cellSize, this.rows * this.cellSize).fill(0xffffff);
     this.render();
@@ -103,14 +100,40 @@ export class ReelStrip {
   private render() {
     const frac = this.pos - Math.floor(this.pos);
     const base = Math.floor(this.pos);
+    // Motion stretch: at full spin speed (tracked via the blur strength the
+    // caller drives — see spin()) each symbol elongates vertically and
+    // narrows slightly, like a real reel strip photographed with motion
+    // blur — "symbols stretch slightly at full speed" per the brief. This
+    // is an enhancement layered on top of still seeing real symbols pass
+    // through the window (via the per-frame texture swap below), never a
+    // replacement for the motion itself.
+    const speedFrac = Math.min(1, this.blur.strengthY / 14);
+    const stretchY = 1 + speedFrac * 0.22;
+    const stretchX = 1 - speedFrac * 0.08;
+    // The real art files are NOT all square (900x720, 900x782, 850x900 —
+    // see symbolTextures.ts) — forcing every sprite to a uniform
+    // cellSize x cellSize square distorts/stretches them. Instead each
+    // symbol is fit aspect-correctly within a box that's a fraction of the
+    // cell (FILL < 1 also leaves a small gap between adjacent symbols both
+    // ways, so tiles don't visually abut into a hard grid — "symbols are
+    // artwork floating over the reel background", not edge-to-edge tiles).
+    const FILL = 0.86;
     for (let i = 0; i < this.sprites.length; i++) {
       const stripIndex = base - BUFFER_ABOVE + i;
       const clamped = Math.max(0, Math.min(this.strip.length - 1, stripIndex));
       const id = this.strip[clamped];
       const sp = this.sprites[i];
-      sp.texture = this.textures[id] ?? Texture.WHITE;
+      const tex = this.textures[id] ?? Texture.WHITE;
+      sp.texture = tex;
+      const aspect = tex.width > 0 && tex.height > 0 ? tex.width / tex.height : 1;
+      let boxW = this.cellSize * FILL;
+      let boxH = this.cellSize * FILL;
+      if (aspect > 1) boxH = boxW / aspect;
+      else boxW = boxH * aspect;
       sp.x = this.cellSize / 2;
       sp.y = (i - BUFFER_ABOVE) * this.cellSize + this.cellSize / 2 - frac * this.cellSize;
+      sp.width = boxW * stretchX;
+      sp.height = boxH * stretchY;
     }
   }
 

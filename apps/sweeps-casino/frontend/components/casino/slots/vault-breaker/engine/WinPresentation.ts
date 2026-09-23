@@ -8,10 +8,18 @@
 // created/destroyed per celebration; per-symbol tweens reset sprites back
 // to neutral transform/tint when cleared so the pooled ReelStrip sprites
 // are never left in a rotated/tinted state for the next spin.
+//
+// V3: the stroked ring around every winning symbol is GONE — the product
+// owner explicitly called it out as "debug-looking circles" and demanded it
+// be removed entirely. Winners are now sold purely by: brightening (alpha),
+// a soft additive glow blob behind the symbol (a blurred radial sprite, not
+// an outline), the per-symbol personality animation, particles, and the
+// payline trail — never a hard geometric ring/circle.
 import { Container, Graphics, Sprite } from "pixi.js";
 import type { SlotPaylineWin, SlotSymbolId } from "@/lib/types";
 import type { ReelStrip } from "./ReelStrip";
 import { tween, easeOutBack } from "./animUtils";
+import { getGlowTexture } from "../art/vaultBackdrop";
 
 export type WinTier = "normal" | "big" | "mega" | "epic";
 
@@ -46,7 +54,7 @@ interface SymbolAnim {
 
 export class WinPresentation {
   private fxLayer: Container;
-  private glows: Graphics[] = [];
+  private glows: Container[] = [];
   private traceLine: Graphics;
   private flashRect: Graphics;
   private particles: Particle[] = [];
@@ -105,17 +113,26 @@ export class WinPresentation {
       win.positions.forEach((pos) => {
         const cx = pos.reel * this.cellSize + this.cellSize / 2;
         const cy = pos.row * this.cellSize + this.cellSize / 2;
-        const ring = new Graphics();
-        ring.circle(0, 0, this.cellSize * 0.46).stroke({ width: 4, color, alpha: 0.9 });
-        ring.x = cx;
-        ring.y = cy;
-        ring.alpha = 0;
-        this.fxLayer.addChild(ring);
-        this.glows.push(ring);
+
+        // Soft additive glow BEHIND the symbol — no stroked ring/circle.
+        const glow = new Sprite(getGlowTexture());
+        glow.anchor.set(0.5);
+        glow.tint = color;
+        glow.blendMode = "add";
+        glow.x = cx;
+        glow.y = cy;
+        glow.alpha = 0;
+        const glowSize = this.cellSize * 1.5;
+        glow.width = glowSize;
+        glow.height = glowSize;
+        this.fxLayer.addChildAt(glow, 0); // behind the trace/particles, and behind symbols since fxLayer sits above reels — kept subtle via alpha
+        this.glows.push(glow);
         tween(weight.ringDuration, (p) => {
-          ring.alpha = Math.sin(Math.min(1, p * 2) * Math.PI * 0.5) * (1 - p * 0.3);
-          ring.scale.set(1 + p * 0.3);
+          const pulse = Math.sin(Math.min(1, p * 1.6) * Math.PI * 0.5) * (1 - Math.max(0, p - 0.5) / 0.5);
+          glow.alpha = pulse * 0.55;
+          glow.scale.set(1 + p * 0.25);
         });
+
         this.spawnBurst(cx, cy, color, winIdx === 0 ? weight.particles : Math.round(weight.particles * 0.6));
         const sprite = reels[pos.reel]?.spriteForRow(pos.row);
         if (sprite) this.animatePersonality(sprite, win.symbolId, tier);

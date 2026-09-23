@@ -1,12 +1,20 @@
 "use client";
 
-// React owns the surrounding shell (bet/currency state, HUD, sheets) and
-// talks to the backend via useSlotGame; Pixi (SlotRenderer) owns every pixel
-// of reels/symbols/particles/win/bonus animation — this component is the
-// bridge between the two, plus the state machine that sequences a spin:
-// idle -> spinning -> (win presentation) -> (bonus transition -> N bonus
-// spins -> bonus summary) -> idle.
+// React owns the surrounding Vaultline application shell (bet/currency
+// state, header, bottom control deck, bottom sheets) and talks to the
+// backend via useSlotGame; Pixi (SlotRenderer) owns every pixel of
+// reels/symbols/particles/win/bonus animation inside the game viewport —
+// this component is the bridge between the two, plus the state machine
+// that sequences a spin: idle -> spinning -> (win presentation) -> (bonus
+// transition -> N bonus spins -> bonus summary) -> idle.
+//
+// V3: this is now a FULLSCREEN game screen, not a card embedded in the
+// normal page flow. It owns the entire viewport (header, cinematic game
+// area, control deck) — see app/(game)/casino/slots/[slug]/page.tsx, which
+// renders this with no surrounding chrome at all for the vault-breaker
+// slug specifically.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSlotGame } from "@/lib/hooks/useSlotGame";
 import { useSoundStore } from "@/lib/stores/sound-store";
 import { useWalletStore } from "@/lib/stores/wallet-store";
@@ -17,7 +25,7 @@ import { slotAudio } from "./audio/SlotAudio";
 import { BetChipPicker } from "./ui/BetChipPicker";
 import { VaultBreakerInfoSheet } from "./ui/VaultBreakerInfoSheet";
 import { VaultBreakerLoading } from "./ui/VaultBreakerLoading";
-import { VolumeOff, VolumeOn, Info, RefreshCw } from "@/components/ui/icons";
+import { VolumeOff, VolumeOn, Menu, ChevronLeft } from "@/components/ui/icons";
 import { cn, formatCoins } from "@/lib/utils";
 import type { SlotFreeSpinsResult, SlotSpinResult } from "@/lib/types";
 
@@ -90,6 +98,7 @@ interface WinHud {
 }
 
 export function VaultBreakerGame() {
+  const router = useRouter();
   const { config, loadingConfig, spinning, lastError, spin } = useSlotGame("vault-breaker");
   const soundEnabled = useSoundStore((s) => s.enabled);
   const soundVolume = useSoundStore((s) => s.volume);
@@ -138,7 +147,7 @@ export function VaultBreakerGame() {
       reels: config.reels,
       rows: config.rows,
       width: Math.max(280, rect.width || 320),
-      height: Math.max(280, rect.height || 320),
+      height: Math.max(280, rect.height || 480),
     })
       .then((renderer) => {
         if (cancelled) {
@@ -176,10 +185,26 @@ export function VaultBreakerGame() {
     return () => ro.disconnect();
   }, [rendererReady]);
 
-  const countUpTo = useCallback((target: number, duration = 900) => {
+  // Idle ambience: the machine stays visibly alive (drifting particles,
+  // gentle WILD pulse, a slow backdrop breathe) whenever nobody is mid-spin
+  // — never a fully frozen screen.
+  useEffect(() => {
+    rendererRef.current?.setIdle(rendererReady && phase === "idle" && !spinning);
+  }, [rendererReady, phase, spinning]);
+
+  // `onTick`, when given, also pushes the live value into the in-canvas
+  // BIG/MEGA/EPIC win banner (SlotRenderer.setBigWinAmount) — the same
+  // count-up drives both the small always-on WIN pill (React state) and,
+  // for big+ tiers, the large PixiJS-rendered number, never a duplicated
+  // separate DOM "dialog" number for the big-win case.
+  const countUpTo = useCallback((target: number, duration = 900, onTick?: (v: number) => void) => {
     return tween(
       duration,
-      (p) => setWinDisplayAmount(target * p),
+      (p) => {
+        const v = target * p;
+        setWinDisplayAmount(v);
+        onTick?.(v);
+      },
       (t) => 1 - Math.pow(1 - t, 3)
     );
   }, []);
@@ -200,7 +225,10 @@ export function VaultBreakerGame() {
         },
       });
 
-      if (result.base.scatter.count > 0 && soundEnabled) slotAudio.scatterLand(soundVolume);
+      if (result.base.scatter.count > 0) {
+        renderer.pulseScatterLand(result.base.scatter.count);
+        if (soundEnabled) slotAudio.scatterLand(soundVolume);
+      }
 
       if (result.base.win && result.base.paylineWins.length > 0) {
         setPhase("presenting");
@@ -221,9 +249,15 @@ export function VaultBreakerGame() {
         setWinDisplayAmount(0);
         const countDuration = tier === "epic" ? 1700 : tier === "mega" ? 1400 : tier === "big" ? 1100 : 700;
         const holdDuration = tier === "epic" ? 1600 : tier === "mega" ? 1200 : tier === "big" ? 900 : 550;
-        await countUpTo(baseAmount, countDuration);
+        // BIG/MEGA/EPIC: a real in-canvas PixiJS takeover (game pauses,
+        // center presentation, gold particles, reels still dimly visible
+        // behind) — never a DOM dialog. NORMAL stays the small always-on
+        // bottom HUD only.
+        if (tier !== "normal") await renderer.showBigWinBanner(tierLabel(tier), tier);
+        await countUpTo(baseAmount, countDuration, tier !== "normal" ? (v) => renderer.setBigWinAmount(`${formatGC(v)} GC`) : undefined);
         await sleepMs(holdDuration);
         renderer.clearWin();
+        if (tier !== "normal") await renderer.hideBigWinBanner();
         setWinHud(null);
       }
     },
@@ -270,9 +304,11 @@ export function VaultBreakerGame() {
           if (soundEnabled) slotAudio.symbolWin(soundVolume, outcome.paylineWins[0]?.count ?? 3);
           setWinHud({ amount: amt, tier });
           setWinDisplayAmount(0);
-          await countUpTo(amt, 550);
+          if (tier !== "normal") await renderer.showBigWinBanner(tierLabel(tier), tier);
+          await countUpTo(amt, 550, tier !== "normal" ? (v) => renderer.setBigWinAmount(`${formatGC(v)} GC`) : undefined);
           await sleepMs(420);
           renderer.clearWin();
+          if (tier !== "normal") await renderer.hideBigWinBanner();
           setWinHud(null);
         } else {
           await sleepMs(200);
@@ -287,9 +323,11 @@ export function VaultBreakerGame() {
       setWinDisplayAmount(0);
       if (soundEnabled) slotAudio.bigWin(soundVolume);
       vibrate([40, 60, 40, 60, 100]);
-      await countUpTo(finalWinAmount, 1200);
+      if (tier !== "normal") await renderer.showBigWinBanner("TOTAL FREE SPINS WIN", tier);
+      await countUpTo(finalWinAmount, 1200, tier !== "normal" ? (v) => renderer.setBigWinAmount(`${formatGC(v)} GC`) : undefined);
       await sleepMs(2200);
       renderer.clearWin();
+      if (tier !== "normal") await renderer.hideBigWinBanner();
       setWinHud(null);
       renderer.setFreeSpinsHud(null);
       await renderer.setFreeSpinsEnvironment(false);
@@ -331,44 +369,55 @@ export function VaultBreakerGame() {
 
   if (loadingConfig || !config) {
     return (
-      <div className="relative mx-auto flex min-h-[70vh] w-full max-w-[560px] flex-col overflow-hidden rounded-2xl">
+      <div className="fixed inset-0 z-40 flex h-[100dvh] w-full flex-col overflow-hidden bg-black">
         <VaultBreakerLoading progress={45} ready={false} onDone={() => {}} />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[560px] flex-col gap-3 lg:max-w-[640px]">
-      <div className="flex items-center justify-between px-1">
-        <div>
-          <p className="text-base font-extrabold tracking-wide text-text-primary">VAULT BREAKER</p>
-          <p className="text-[10px] uppercase tracking-[0.25em] text-accent-sc/70">Vaultline Studios</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setInfoOpen(true)}
-            aria-label="Paytable and game info"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-text-muted transition-colors hover:text-text-primary"
-          >
-            <Info className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={toggleSound}
-            aria-label={soundEnabled ? "Mute sound" : "Unmute sound"}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-border text-text-muted transition-colors hover:text-text-primary"
-          >
-            {soundEnabled ? <VolumeOn className="h-4 w-4" /> : <VolumeOff className="h-4 w-4" />}
-          </button>
-        </div>
-      </div>
+    <div className="fixed inset-0 z-40 flex h-[100dvh] w-full select-none flex-col overflow-hidden bg-black">
+      {/* [Back | Vault Breaker | Balance | Sound | Menu] */}
+      <header className="flex h-12 shrink-0 items-center gap-1.5 border-b border-white/10 bg-black/70 px-2 backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          aria-label="Back"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/80 transition-colors hover:text-white active:scale-90"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <p className="min-w-0 flex-1 truncate text-[13px] font-extrabold tracking-wide text-white">VAULT BREAKER</p>
+        <BalanceReadout />
+        <button
+          type="button"
+          onClick={toggleSound}
+          aria-label={soundEnabled ? "Mute sound" : "Unmute sound"}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:text-white active:scale-90"
+        >
+          {soundEnabled ? <VolumeOn className="h-4 w-4" /> : <VolumeOff className="h-4 w-4" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => setInfoOpen(true)}
+          aria-label="Menu and paytable"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:text-white active:scale-90"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+      </header>
 
-      <div className="relative aspect-[11/10] w-full overflow-hidden rounded-2xl bg-black shadow-card-lift">
+      {/* Cinematic slot game area — the PixiJS/WebGL canvas owns every pixel here. */}
+      <div className="relative min-h-0 flex-1 bg-black">
         <div ref={mountRef} className="absolute inset-0" />
 
-        {winHud && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-0.5 p-4 animate-fade-in-up">
+        {/* BIG/MEGA/EPIC tiers render their own centered takeover inside
+            the PixiJS canvas (SlotRenderer.showBigWinBanner) — this small
+            floating DOM label is only for the NORMAL tier, so the two
+            presentations never show duplicated text on top of each
+            other. */}
+        {winHud && winHud.tier === "normal" && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-0.5 animate-fade-in-up">
             <span className={cn("text-[11px] font-bold uppercase tracking-[0.2em]", tierTextClass(winHud.tier))}>
               {winHud.label ?? tierLabel(winHud.tier)}
             </span>
@@ -396,50 +445,46 @@ export function VaultBreakerGame() {
             onDone={() => setLoadingOverlayVisible(false)}
           />
         )}
+
+        {errorFlash && (
+          <p className="pointer-events-none absolute left-0 right-0 top-2 px-4 text-center text-xs font-medium text-danger drop-shadow">
+            {errorFlash}
+          </p>
+        )}
       </div>
 
-      {errorFlash && <p className="px-1 text-center text-xs text-danger">{errorFlash}</p>}
+      {/* Control deck: BET (left) | SPIN (center, large) | WIN + BALANCE (right, part of the machine). */}
+      <div
+        className="relative shrink-0 border-t border-white/10 bg-gradient-to-b from-[#11141c] to-[#05070a] px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-9"
+        style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)" }}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setBetPickerOpen(true)}
+            disabled={busy}
+            className="flex min-w-[76px] flex-col items-start gap-0.5 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-left transition-opacity active:scale-95 disabled:opacity-50"
+          >
+            <span className="text-[8px] font-semibold uppercase tracking-wider text-white/50">Bet</span>
+            <span className="font-mono text-sm font-bold text-white">{formatGC(effectiveBet)}</span>
+          </button>
 
-      {/* Clean bottom HUD: one translucent bar, text segments (no per-item bordered cards), with the spin button floating prominent and centered. */}
-      <div className="relative flex items-center gap-2 rounded-2xl bg-surface-raised/80 px-3 py-3 backdrop-blur">
-        <button
-          type="button"
-          onClick={() => setBetPickerOpen(true)}
-          disabled={busy}
-          className="flex flex-1 flex-col items-start gap-0.5 py-1 text-left transition-opacity disabled:opacity-50"
-        >
-          <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Bet</span>
-          <span className="font-mono text-sm font-bold text-text-primary">{formatGC(effectiveBet)} GC</span>
-        </button>
+          <div className="w-[78px] shrink-0" />
 
-        <div className="mx-1 h-8 w-px shrink-0 bg-border/60" />
-
-        <div className="flex flex-1 flex-col items-center gap-0.5 py-1">
-          <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Win</span>
-          <span className="font-mono text-sm font-bold text-accent-sc">
-            {formatGC(winHud ? winDisplayAmount : 0)} GC
-          </span>
+          <div className="flex min-w-[88px] flex-col items-end gap-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2">
+            <span className="flex w-full items-baseline justify-between gap-2 text-[8px] font-semibold uppercase tracking-wider text-white/50">
+              Win
+            </span>
+            <span className="font-mono text-sm font-bold text-accent-sc">{formatGC(winHud ? winDisplayAmount : 0)}</span>
+            <div className="h-px w-full bg-white/10" />
+            <span className="flex w-full items-baseline justify-between gap-2 text-[8px] font-semibold uppercase tracking-wider text-white/50">
+              Balance
+            </span>
+            <BalanceReadout compact />
+          </div>
         </div>
 
-        <div className="mx-1 h-8 w-px shrink-0 bg-border/60" />
-
-        <div className="flex flex-1 flex-col items-end gap-0.5 py-1">
-          <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">Balance</span>
-          <BalanceReadout />
-        </div>
-
-        <button
-          type="button"
-          onClick={handleSpin}
-          disabled={busy}
-          aria-label="Spin"
-          className={cn(
-            "absolute left-1/2 top-0 flex h-[72px] w-[72px] shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-bg bg-gradient-to-b from-accent-sc to-accent-sc/70 text-bg shadow-glow-sc transition-transform duration-150 ease-snappy active:scale-90 disabled:opacity-70 disabled:active:scale-100",
-            !busy && "animate-[vb-idle-pulse_2.4s_ease-in-out_infinite]"
-          )}
-        >
-          <RefreshCw className={cn("h-7 w-7", busy && "animate-spin")} />
-        </button>
+        <SpinButton busy={busy} onPress={handleSpin} />
       </div>
 
       <BetChipPicker
@@ -457,10 +502,18 @@ export function VaultBreakerGame() {
         @keyframes vb-idle-pulse {
           0%,
           100% {
-            box-shadow: 0 0 0 0 rgba(45, 191, 176, 0.45);
+            box-shadow: 0 0 0 0 rgba(45, 191, 176, 0.5), 0 0 18px 2px rgba(45, 191, 176, 0.25);
           }
           50% {
-            box-shadow: 0 0 0 8px rgba(45, 191, 176, 0);
+            box-shadow: 0 0 0 10px rgba(45, 191, 176, 0), 0 0 26px 6px rgba(212, 175, 55, 0.35);
+          }
+        }
+        @keyframes vb-ring-spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
           }
         }
       `}</style>
@@ -468,19 +521,78 @@ export function VaultBreakerGame() {
   );
 }
 
+/**
+ * The redesigned spin control: a large premium circular button built
+ * around the real spin-button art asset (ui/spin-button-idle.png), a metal
+ * outer ring that rotates while spinning, a breathing glow while idle, and
+ * a physical depress on press — not a small flat teal circle with a
+ * generic refresh icon.
+ */
+function SpinButton({ busy, onPress }: { busy: boolean; onPress: () => void }) {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onPress}
+      onPointerDown={() => setPressed(true)}
+      onPointerUp={() => setPressed(false)}
+      onPointerLeave={() => setPressed(false)}
+      disabled={busy}
+      aria-label="Spin"
+      className="absolute left-1/2 top-0 h-[78px] w-[78px] -translate-x-1/2 -translate-y-1/2 rounded-full outline-none disabled:cursor-default"
+    >
+      {/* rotating metal outer ring — a masked conic-gradient ring, not
+          `border-image` (which ignores `border-radius` and renders as a
+          square in every browser — the exact "square ring" bug this
+          replaced). The radial-gradient mask punches a transparent hole in
+          the middle, so it reads as a true ring regardless of what's
+          behind it. */}
+      <span
+        className={cn("absolute -inset-[7px] rounded-full", busy && "animate-[vb-ring-spin_0.85s_linear_infinite]")}
+        style={{
+          background: "conic-gradient(from 0deg, #d4af37, #f6e7ae, #8a641f, #d4af37, #f6e7ae, #8a641f, #d4af37)",
+          WebkitMask: "radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px))",
+          mask: "radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px))",
+        }}
+      />
+      {/* breathing glow when idle */}
+      <span
+        className={cn("absolute inset-0 rounded-full transition-shadow duration-300", !busy && "animate-[vb-idle-pulse_2.6s_ease-in-out_infinite]")}
+      />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/games/vault-breaker/ui/spin-button-idle.png"
+        alt=""
+        draggable={false}
+        className={cn(
+          "relative h-full w-full rounded-full object-contain shadow-[0_8px_22px_rgba(0,0,0,0.6)] transition-transform duration-100",
+          pressed && !busy && "scale-[0.93] brightness-90",
+          busy && "brightness-95"
+        )}
+      />
+      {busy && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />
+        </span>
+      )}
+    </button>
+  );
+}
+
 // wallet-store.ts normalizes every balance to minor units on the way in
 // (from both GET /wallet and play-response updates), so this reads the
 // same store shape as BalancePill/CurrencySwitcher/the wallet page —
 // formatCoins() is the correct, consistent formatter here.
-function BalanceReadout() {
+function BalanceReadout({ compact }: { compact?: boolean }) {
   const balance = useWalletStore((s) => s.balances?.gc.balance);
   const fetchBalances = useWalletStore((s) => s.fetchBalances);
   useEffect(() => {
     if (balance === undefined) fetchBalances();
   }, [balance, fetchBalances]);
   return (
-    <span className="font-mono text-sm font-bold text-accent-gc">
-      {balance !== undefined ? `${formatCoins(balance)} GC` : "—"}
+    <span className={cn("shrink-0 font-mono font-bold text-accent-gc", compact ? "text-sm" : "mr-1 text-xs")}>
+      {balance !== undefined ? formatCoins(balance) : "—"}
+      {!compact && " GC"}
     </span>
   );
 }

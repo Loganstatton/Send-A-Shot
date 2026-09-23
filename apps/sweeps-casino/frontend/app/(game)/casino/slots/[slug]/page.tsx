@@ -8,6 +8,15 @@
 // resolves here (a direct URL, not a lobby tap — lobby cards are gated on
 // GameTile itself) shows an honest "not available" state, never a dead
 // blank page.
+//
+// V3: a playable slot (today: only vault-breaker) renders with ZERO
+// surrounding chrome — no SlotHeader, no <main> padding/max-width — so the
+// game genuinely occupies the entire phone screen while playing, per the
+// product owner's explicit "Vault Breaker should occupy the entire phone
+// screen while playing" requirement. VaultBreakerGame owns its own
+// fullscreen header (back/title/balance/sound/menu), game viewport and
+// control deck. The non-playable fallback below still uses the older
+// SlotHeader-wrapped layout, since it's just an informational empty state.
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -84,35 +93,29 @@ export default function SlotGamePage({ params }: { params: { slug: string } }) {
   const { slug } = params;
   const title = slug === "vault-breaker" ? "Vault Breaker" : slug.charAt(0).toUpperCase() + slug.slice(1);
 
+  // Playable slot: VaultBreakerGame is a self-contained fullscreen screen
+  // (fixed inset-0) — it renders its own header/back button, so nothing
+  // else should wrap it here.
+  if (isPlayableSlot(slug)) {
+    return <VaultBreakerGame />;
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       <SlotHeader slug={slug} title={title} />
-
-      {isPlayableSlot(slug) ? (
-        // Top-aligned, not vertically centered: on a tall phone viewport,
-        // centering the (intentionally compact) game card left equal dead
-        // space above AND below it — the single most visible instance of
-        // the "too much dead space" problem. Anchoring to the top instead
-        // means any leftover space collects below the fold, not as a black
-        // band bracketing the reels.
-        <main className="bg-casino-ambient mx-auto flex w-full max-w-6xl flex-1 flex-col items-center p-3 pt-4 sm:p-6">
-          <VaultBreakerGame />
-        </main>
-      ) : (
-        <main className="mx-auto flex w-full max-w-2xl flex-1 items-center p-6">
-          <EmptyState
-            icon={<Reels className="h-10 w-10" />}
-            title={`${title} isn't playable yet`}
-            description="This slot is part of the growing Vaultline catalog, but only Vault Breaker has a real game engine behind it today."
-            phase="P2"
-            action={
-              <Link href="/casino/slots/vault-breaker">
-                <Button variant="sc">Play Vault Breaker instead</Button>
-              </Link>
-            }
-          />
-        </main>
-      )}
+      <main className="mx-auto flex w-full max-w-2xl flex-1 items-center p-6">
+        <EmptyState
+          icon={<Reels className="h-10 w-10" />}
+          title={`${title} isn't playable yet`}
+          description="This slot is part of the growing Vaultline catalog, but only Vault Breaker has a real game engine behind it today."
+          phase="P2"
+          action={
+            <Link href="/casino/slots/vault-breaker">
+              <Button variant="sc">Play Vault Breaker instead</Button>
+            </Link>
+          }
+        />
+      </main>
     </div>
   );
 }

@@ -8,13 +8,13 @@
 // Fair Play here is a restrained, read-only display of the real seed state
 // already returned by the config endpoint, plus a link to verify a past
 // round, instead of a second bespoke rotate UI.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { BottomSheet } from "@/components/ui/BottomSheet";
 import { ChevronRight, Shield } from "@/components/ui/icons";
-import { renderSymbolToDataURL } from "../art/symbolTextures";
+import { symbolArtUrl } from "../art/symbolTextures";
 import { cn } from "@/lib/utils";
-import type { SlotConfig, SlotSymbolId } from "@/lib/types";
+import type { SlotConfig } from "@/lib/types";
 
 function formatGC(n: number): string {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -32,17 +32,6 @@ export function VaultBreakerInfoSheet({
   config: SlotConfig;
 }) {
   const [tab, setTab] = useState<Tab>("paytable");
-  const [art, setArt] = useState<Partial<Record<SlotSymbolId, string>>>({});
-
-  // Symbol art needs `document` (canvas), so it's built lazily client-side
-  // the first time the sheet opens rather than at module load.
-  useEffect(() => {
-    if (!open || Object.keys(art).length > 0) return;
-    const next: Partial<Record<SlotSymbolId, string>> = {};
-    for (const s of config.symbols) next[s.id] = renderSymbolToDataURL(s.id);
-    setArt(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
   const payingSymbols = useMemo(
     () =>
@@ -79,12 +68,8 @@ export function VaultBreakerInfoSheet({
             const row = config.paytable[s.id] ?? {};
             return (
               <div key={s.id} className="flex items-center gap-3 rounded-xl bg-surface-raised px-3 py-2">
-                {art[s.id] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={art[s.id]} alt={s.name} className="h-11 w-11 shrink-0 rounded-lg" />
-                ) : (
-                  <div className="h-11 w-11 shrink-0 animate-pulse rounded-lg bg-border/50" />
-                )}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={symbolArtUrl(s.id)} alt={s.name} className="h-11 w-11 shrink-0 rounded-lg object-contain" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-text-primary">{s.name}</p>
                   <div className="mt-0.5 flex gap-3 font-mono text-[11px] text-text-muted">
@@ -108,10 +93,10 @@ export function VaultBreakerInfoSheet({
 
       {tab === "rules" && (
         <div className="space-y-4 text-sm text-text-secondary">
-          {wild && art[wild.id] && (
+          {wild && (
             <div className="flex gap-3 rounded-xl bg-surface-raised p-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={art[wild.id]} alt="Wild" className="h-12 w-12 shrink-0 rounded-lg" />
+              <img src={symbolArtUrl(wild.id)} alt="Wild" className="h-12 w-12 shrink-0 rounded-lg object-contain" />
               <div>
                 <p className="font-semibold text-text-primary">Wild — {wild.name}</p>
                 <p className="mt-0.5 text-xs text-text-muted">
@@ -120,10 +105,10 @@ export function VaultBreakerInfoSheet({
               </div>
             </div>
           )}
-          {scatter && art[scatter.id] && (
+          {scatter && (
             <div className="flex gap-3 rounded-xl bg-surface-raised p-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={art[scatter.id]} alt="Scatter" className="h-12 w-12 shrink-0 rounded-lg" />
+              <img src={symbolArtUrl(scatter.id)} alt="Scatter" className="h-12 w-12 shrink-0 rounded-lg object-contain" />
               <div>
                 <p className="font-semibold text-text-primary">Scatter — {scatter.name}</p>
                 <p className="mt-0.5 text-xs text-text-muted">

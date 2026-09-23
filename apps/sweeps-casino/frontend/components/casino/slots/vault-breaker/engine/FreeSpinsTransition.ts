@@ -2,22 +2,26 @@
 // stopped on a 3rd+ scatter (a purely presentational sequence over an
 // already-determined server result — see SlotRenderer.spinToResult).
 //
-// V2 sequence (per the product owner's explicit beat list): reels stopped
-// -> environment darkens -> lights flicker red -> a brief camera shake ->
-// a vault wheel behind the reels begins rotating -> mechanical locks
-// release -> the huge vault door leaves slam open -> gold/teal light
-// spills through the seam with real particles -> "VAULT BREACH / N FREE
-// SPINS / START" text -> fade out, handing control back to the reels.
-// The old giant striped/starburst background is gone entirely, replaced by
-// animated environmental lighting (a soft radial light-spill burst, not a
-// pinwheel of colored triangles).
-import { Container, Graphics, Sprite, Text } from "pixi.js";
+// V3 sequence (per the product owner's explicit beat list, strengthened
+// from V2): reels stopped -> environment darkens -> lights flicker red ->
+// a brief camera shake -> a vault wheel behind the reels begins rotating
+// -> mechanical locks release -> the huge vault door leaves slam open,
+// revealing the REAL vault-breach photo (gold light bursting through the
+// gap) crossfaded in behind them -> gold/teal light spills through the
+// seam with real particles -> a small camera push-in toward the opening
+// -> "VAULT BREACH / N FREE SPINS / START" text -> fade out, handing
+// control back to the reels. Procedural elements (wheel, locks, door
+// leaves, light burst) provide the motion the single static breach photo
+// can't; the photo itself supplies the real art direction behind them.
+import { Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import { buildVaultDoorLeafTexture, buildVaultWheelTexture } from "../art/vaultBackdrop";
 import { easeOutBack, easeOutCubic, sleep, tween } from "./animUtils";
 
 export interface FreeSpinsTransitionOptions {
-  /** Called for a brief camera shake — SlotRenderer wires this to jitter the stage. */
+  /** Called for a brief camera shake — SlotRenderer wires this to jitter the world container. */
   onShake?: (durationMs: number, amplitudePx: number) => Promise<void> | void;
+  /** Called for the "camera pushes toward the opening" beat — SlotRenderer wires this to a small scale-up on the world container. */
+  onPush?: (durationMs: number, amount: number) => Promise<void> | void;
   /** Called the instant the vault doors begin sliding open — used to time the door/impact sound. */
   onDoorsOpen?: () => void;
   /** Called the instant the mechanical locks release, just before the doors open — used to time the unlock sound. */
@@ -35,10 +39,22 @@ interface Dust {
   active: boolean;
 }
 
+/** Cover-fits a sprite's texture into a w x h box, centered — local copy (SlotRenderer's isn't exported) so this class stays self-contained. */
+function coverFit(sprite: Sprite, w: number, h: number) {
+  const tex = sprite.texture;
+  if (!tex || !tex.width || !tex.height) return;
+  const scale = Math.max(w / tex.width, h / tex.height);
+  sprite.width = tex.width * scale;
+  sprite.height = tex.height * scale;
+  sprite.x = (w - sprite.width) / 2;
+  sprite.y = (h - sprite.height) / 2;
+}
+
 export class FreeSpinsTransition {
   readonly container: Container;
   private darken: Graphics;
   private redFlicker: Graphics;
+  private breachPhoto: Sprite;
   private wheel: Sprite;
   private locks: Graphics[] = [];
   private leftLeaf: Sprite;
@@ -53,7 +69,7 @@ export class FreeSpinsTransition {
   private height: number;
   private opts: FreeSpinsTransitionOptions;
 
-  constructor(width: number, height: number, opts: FreeSpinsTransitionOptions = {}) {
+  constructor(width: number, height: number, breachTexture: Texture, opts: FreeSpinsTransitionOptions = {}) {
     this.width = width;
     this.height = height;
     this.opts = opts;
@@ -63,6 +79,14 @@ export class FreeSpinsTransition {
 
     this.darken = new Graphics().rect(0, 0, width, height).fill(0x000000);
     this.darken.alpha = 0;
+
+    // The real provided art: a vault door mid-opening with a burst of gold
+    // light through the gap. Sits behind the procedural door leaves/wheel
+    // and crossfades in as they pull apart, so the cinematic's climax is
+    // the actual supplied photo, not just code-drawn shapes.
+    this.breachPhoto = new Sprite(breachTexture);
+    coverFit(this.breachPhoto, width, height);
+    this.breachPhoto.alpha = 0;
 
     this.redFlicker = new Graphics().rect(0, 0, width, height).fill(0x7a1a10);
     this.redFlicker.alpha = 0;
@@ -162,6 +186,7 @@ export class FreeSpinsTransition {
 
     this.container.addChild(
       this.darken,
+      this.breachPhoto,
       this.redFlicker,
       this.wheel,
       ...this.locks,
@@ -184,6 +209,7 @@ export class FreeSpinsTransition {
     this.width = width;
     this.height = height;
     this.darken.clear().rect(0, 0, width, height).fill(0x000000);
+    coverFit(this.breachPhoto, width, height);
     this.redFlicker.clear().rect(0, 0, width, height).fill(0x7a1a10);
     this.wheel.x = width / 2;
     this.wheel.y = height / 2;
@@ -271,6 +297,7 @@ export class FreeSpinsTransition {
   /** Plays the full breach cinematic. Resolves once it's fully faded out and reels should resume. */
   async play(spinsAwarded: number): Promise<void> {
     this.container.visible = true;
+    this.breachPhoto.alpha = 0;
     this.leftLeaf.x = 0;
     this.leftLeaf.alpha = 1;
     this.rightLeaf.x = this.width / 2 - 4;
@@ -322,9 +349,12 @@ export class FreeSpinsTransition {
       });
     });
 
-    // 5. The huge vault door opens; gold/teal light spills through with particles.
+    // 5. The huge vault door opens; the real breach photo crossfades in
+    // behind the parting leaves, gold/teal light spills through with
+    // particles, and the camera pushes gently toward the opening.
     this.opts.onDoorsOpen?.();
     this.spawnDust(28);
+    const pushResult = this.opts.onPush?.(700, 0.05);
     const doorOpen = tween(640, (p) => {
       const eased = easeOutCubic(p);
       this.leftLeaf.x = -eased * (this.width / 2 + 30);
@@ -332,8 +362,10 @@ export class FreeSpinsTransition {
       this.drawLightBurst(eased);
       this.lightBurst.alpha = eased;
       this.wheel.alpha = Math.max(0, 0.85 - eased * 0.5);
+      this.breachPhoto.alpha = eased * 0.92;
     });
     await doorOpen;
+    if (pushResult instanceof Promise) await pushResult;
     this.spawnDust(20);
 
     // 6. Title sequence.
@@ -371,12 +403,14 @@ export class FreeSpinsTransition {
       this.leftLeaf.alpha = fade;
       this.rightLeaf.alpha = fade;
       this.wheel.alpha = fade * 0.4;
+      this.breachPhoto.alpha = fade * 0.92;
       this.darken.alpha = 0.6 * fade;
     });
 
     this.container.visible = false;
     this.leftLeaf.alpha = 1;
     this.rightLeaf.alpha = 1;
+    this.breachPhoto.alpha = 0;
     this.darken.alpha = 0;
     this.redFlicker.alpha = 0;
   }
