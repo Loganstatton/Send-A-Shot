@@ -73,9 +73,9 @@ export default function TransactionsPage() {
                 <div className="text-right">
                   <p className={cn("font-mono font-semibold", tx.amount >= 0 ? "text-success" : "text-danger")}>
                     {tx.amount >= 0 ? "+" : ""}
-                    {formatCoins(tx.amount)} {tx.currency}
+                    {formatCoins(Math.round(tx.amount * 100))} {tx.currency}
                   </p>
-                  <p className="text-[11px] text-text-muted">Bal. {formatCoins(tx.balanceAfter)}</p>
+                  <p className="text-[11px] text-text-muted">Bal. {formatCoins(Math.round(tx.balanceAfter * 100))}</p>
                 </div>
               </div>
             ))}
