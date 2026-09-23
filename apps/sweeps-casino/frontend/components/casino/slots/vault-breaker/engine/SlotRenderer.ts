@@ -220,11 +220,13 @@ export class SlotRenderer {
     // NEVER actually visible — a real bug this pass found: V4's frame sat
     // flush against the canvas edges, so the "restore the machine
     // environment" background work would have had zero visible effect.
-    // This margin is deliberately tiny (not the ~40% dead space the
-    // product owner rejected in V3) — just enough that the radial
-    // vignette's teal-tinted corners read as "the cabinet sits in a room"
-    // around the whole machine.
-    const outerMargin = Math.max(3, Math.min(width, height) * 0.012);
+    // This margin is deliberately a hairline (not the ~40% dead space the
+    // product owner rejected in V3, and thin enough to leave the reel
+    // window's own width ratio — see below — inside spec) — just enough
+    // that the radial vignette's teal-tinted corners read as "the cabinet
+    // sits in a room" around the whole machine, without eating into the
+    // width budget the thicker frame chrome below already spends.
+    const outerMargin = Math.max(1.5, Math.min(width, height) * 0.004);
     const availW = Math.max(1, width - outerMargin * 2 - sideW * 2);
     const availH = Math.max(1, height - outerMargin * 2 - topBeam - bottomBase);
     const cellWidth = availW / this.reelsCount;
