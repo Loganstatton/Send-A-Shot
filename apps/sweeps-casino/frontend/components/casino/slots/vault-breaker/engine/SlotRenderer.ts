@@ -1,25 +1,30 @@
 "use client";
 
-// Top-level Pixi orchestrator — REBUILD (V4). Owns the Application/stage
-// lifecycle and layers the whole game surface as ONE continuous PixiJS
-// scene (spec point 3/4): BACKGROUND -> MACHINE FRAME (behind) -> REEL
-// BACKGROUND -> SYMBOL SPRITES -> REEL DIVIDERS -> WIN FX -> FOREGROUND
-// GLASS -> MACHINE FRAME (bezel, in front, creating depth) -> HUD/overlays.
-// React never touches Pixi objects directly — this class is the only
-// bridge (VaultBreakerGame.tsx drives it through this small imperative
-// API: spinToResult, celebrateWin, playBonusTransition, etc).
+// Top-level Pixi orchestrator — REBUILD (V4), real-art + environment depth
+// pass (V5). Owns the Application/stage lifecycle and layers the whole game
+// surface as ONE continuous PixiJS scene (spec point 3/4): BACKGROUND ->
+// MACHINE FRAME (behind) -> REEL BACKGROUND -> SYMBOL SPRITES -> REEL
+// DIVIDERS -> WIN FX -> FOREGROUND GLASS -> MACHINE FRAME (bezel, in front,
+// creating depth) -> HUD/overlays. React never touches Pixi objects
+// directly — this class is the only bridge (VaultBreakerGame.tsx drives it
+// through this small imperative API: spinToResult, celebrateWin,
+// playBonusTransition, etc).
 //
-// REBUILD NOTES (read alongside the product owner's root-cause list):
-//  - No backdrop PHOTO and no "painted machine" canvas art. This pass has
-//    no real background/frame art (see the placeholder policy) — the
-//    background is a plain flat/gradient dark backdrop (buildBackground),
-//    and the frame is thin flat metal-toned Graphics/gradient bars
-//    (buildFrame), never bolts/lights/reflections. Nothing here tries to
-//    *simulate* finished art with clever canvas work.
+// V5 NOTES (real symbol art now wired in via symbolAssets.ts — see that
+// file; nothing in THIS file changed for that swap, which is the point):
+//  - Still no backdrop PHOTO and no "painted machine" canvas art — no real
+//    background/frame art exists yet (see art/environmentAssets.ts for the
+//    named future paths). The background is a richer radial vignette
+//    (buildBackground, using buildRadialVignetteTexture) and the frame is
+//    thicker flat metal-toned Graphics/gradient bars with a thin
+//    bevel/highlight stroke (buildFrame) — still never bolts/lights/
+//    reflections/painted metal texture. This is "not bare black", not
+//    "final art".
 //  - Every layer below is its own Container/Sprite in a clearly-named slot
 //    (this.backgroundLayer, this.frameTop, this.frameLeft, ...) specifically
-//    so real art (PNG layers) can later replace a Graphics/gradient fill in
-//    that same slot with ZERO changes to layout/z-order/animation code.
+//    so real art (PNG/JPG layers, see environmentAssets.ts) can later
+//    replace a Graphics/gradient fill in that same slot with ZERO changes
+//    to layout/z-order/animation code.
 //  - The reel VIEWPORT is one continuous surface: a single dark backing
 //    panel + subtle vertical gradient behind all 5 reels, with only faint
 //    1px dividers between reels — never 20 bordered/boxed cells (spec
@@ -27,7 +32,7 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
 import type { SlotPaylineWin, SlotSymbolId } from "@/lib/types";
 import { buildSymbolTextures } from "../art/symbolAssets";
-import { buildVerticalGradientTexture, getGlowTexture } from "../art/fx";
+import { buildVerticalGradientTexture, buildRadialVignetteTexture, getGlowTexture } from "../art/fx";
 import { ReelStrip } from "./ReelStrip";
 import { WinPresentation, type WinTier } from "./WinPresentation";
 import { FreeSpinsTransition } from "./FreeSpinsTransition";
@@ -57,6 +62,20 @@ interface Rect {
   y: number;
   w: number;
   h: number;
+}
+
+/**
+ * The background layer's procedural fill (see art/environmentAssets.ts for
+ * the real-art swap point) — a warm-dark radial vignette with a hint of the
+ * vault-teal accent bleeding in at the corners. Depth shading only: three
+ * gradient stops, no illustrated detail.
+ */
+function buildBackgroundTexture(width: number, height: number): Texture {
+  return buildRadialVignetteTexture(width, height, [
+    { offset: 0, color: "#181119" },
+    { offset: 0.55, color: "#0a0c13" },
+    { offset: 1, color: "#050f0e" },
+  ]);
 }
 
 /** Draws a small flat mechanical gear/wheel directly with Graphics (rim + spokes + hub, flat colors only — no gradients/bolts/lights) so it can be rotated in place without regenerating a texture. Reused by the free-spins HUD dial. */
@@ -95,6 +114,8 @@ export class SlotRenderer {
   private frameBase!: Sprite;
   private frameBezel!: Graphics;
   private frameAccentTop!: Graphics;
+  /** Thin bevel highlight/shadow strokes drawn ON TOP of the four frame bar sprites (still behind the reel window) — the cheap "real metal" cue: a bright edge catching light + a dark edge in shadow, never a painted texture. */
+  private frameHighlights!: Graphics;
 
   private anticipationGlows = new Map<number, Sprite>();
   private anticipationDim = 0;
@@ -188,18 +209,49 @@ export class SlotRenderer {
    * stretches artwork to fill the taller cell.
    */
   private computeLayout(width: number, height: number) {
-    const topBeam = Math.max(28, height * 0.052);
-    const bottomBase = Math.max(6, height * 0.01);
-    const sideW = Math.max(4, width * 0.018);
-    const availW = Math.max(1, width - sideW * 2);
-    const availH = Math.max(1, height - topBeam - bottomBase);
+    // Frame chrome sized to read as a real mounted bezel (product owner:
+    // V4's near-zero frame "went too far") while keeping the reel window at
+    // ~94-96% of width (spec point 8) — sideW below keeps that ratio.
+    const topBeam = Math.max(30, height * 0.065);
+    const bottomBase = Math.max(14, height * 0.028);
+    const sideW = Math.max(8, width * 0.026);
+    // Without this, the frame bars + reel window tile the canvas 100% edge
+    // to edge and the background layer (however richly it's built) is
+    // NEVER actually visible — a real bug this pass found: V4's frame sat
+    // flush against the canvas edges, so the "restore the machine
+    // environment" background work would have had zero visible effect.
+    // This margin is deliberately tiny (not the ~40% dead space the
+    // product owner rejected in V3) — just enough that the radial
+    // vignette's teal-tinted corners read as "the cabinet sits in a room"
+    // around the whole machine.
+    const outerMargin = Math.max(3, Math.min(width, height) * 0.012);
+    const availW = Math.max(1, width - outerMargin * 2 - sideW * 2);
+    const availH = Math.max(1, height - outerMargin * 2 - topBeam - bottomBase);
     const cellWidth = availW / this.reelsCount;
     const cellHeight = availH / this.rows;
     const reelWindowWidth = cellWidth * this.reelsCount;
     const reelWindowHeight = cellHeight * this.rows;
-    const originX = (width - reelWindowWidth) / 2;
-    const originY = topBeam;
-    return { cellWidth, cellHeight, originX, originY, reelWindowWidth, reelWindowHeight, topBeam, bottomBase, sideW };
+    const machineWidth = sideW * 2 + reelWindowWidth;
+    const machineHeight = topBeam + reelWindowHeight + bottomBase;
+    const machineX = (width - machineWidth) / 2;
+    const machineY = outerMargin;
+    const originX = machineX + sideW;
+    const originY = machineY + topBeam;
+    return {
+      cellWidth,
+      cellHeight,
+      originX,
+      originY,
+      reelWindowWidth,
+      reelWindowHeight,
+      topBeam,
+      bottomBase,
+      sideW,
+      machineX,
+      machineY,
+      machineWidth,
+      machineHeight,
+    };
   }
 
   private buildScene(width: number, height: number) {
@@ -211,16 +263,11 @@ export class SlotRenderer {
     this.world.position.set(width / 2, height / 2);
     this.app.stage.addChild(this.world);
 
-    // ---- 1. BACKGROUND: plain, calm, dark flat/gradient backdrop. No
-    // photo, no illustration — see art/fx.ts's header for why. This is
+    // ---- 1. BACKGROUND: a calm, dark radial vignette with a hint of the
+    // vault-teal accent at the edges — depth shading, not a painted scene
+    // (see art/environmentAssets.ts for the real-art swap point). Still
     // deliberately the LEAST visually important layer (spec point 15). ----
-    this.backgroundLayer = new Sprite(
-      buildVerticalGradientTexture(height, [
-        { offset: 0, color: "#0c0f18" },
-        { offset: 0.5, color: "#0a0d14" },
-        { offset: 1, color: "#05070b" },
-      ])
-    );
+    this.backgroundLayer = new Sprite(buildBackgroundTexture(width, height));
     this.backgroundLayer.width = width;
     this.backgroundLayer.height = height;
     this.world.addChild(this.backgroundLayer);
@@ -258,7 +305,8 @@ export class SlotRenderer {
     this.frameLeft = new Sprite();
     this.frameRight = new Sprite();
     this.frameBase = new Sprite();
-    this.world.addChild(this.frameTop, this.frameLeft, this.frameRight, this.frameBase);
+    this.frameHighlights = new Graphics();
+    this.world.addChild(this.frameTop, this.frameLeft, this.frameRight, this.frameBase, this.frameHighlights);
 
     // ---- 3. REEL BACKGROUND: one continuous dark panel + vertical
     // gradient behind all 5 reels (spec point 13) — never per-symbol
@@ -335,10 +383,10 @@ export class SlotRenderer {
       { offset: 0.85, color: metalDark },
       { offset: 1, color: "#080a0f" },
     ]);
-    this.frameTop.width = width;
+    this.frameTop.width = layout.machineWidth;
     this.frameTop.height = layout.topBeam;
-    this.frameTop.x = 0;
-    this.frameTop.y = 0;
+    this.frameTop.x = layout.machineX;
+    this.frameTop.y = layout.machineY;
 
     const sideHeight = layout.topBeam + layout.reelWindowHeight + layout.bottomBase;
     this.frameLeft.texture?.destroy(true);
@@ -349,25 +397,25 @@ export class SlotRenderer {
     ]);
     this.frameLeft.width = layout.sideW;
     this.frameLeft.height = sideHeight;
-    this.frameLeft.x = 0;
-    this.frameLeft.y = 0;
+    this.frameLeft.x = layout.machineX;
+    this.frameLeft.y = layout.machineY;
 
     this.frameRight.texture?.destroy(true);
     this.frameRight.texture = this.frameLeft.texture;
     this.frameRight.width = layout.sideW;
     this.frameRight.height = sideHeight;
-    this.frameRight.x = width - layout.sideW;
-    this.frameRight.y = 0;
+    this.frameRight.x = layout.machineX + layout.machineWidth - layout.sideW;
+    this.frameRight.y = layout.machineY;
 
     this.frameBase.texture?.destroy(true);
     this.frameBase.texture = buildVerticalGradientTexture(Math.max(4, layout.bottomBase), [
       { offset: 0, color: "#080a0f" },
       { offset: 1, color: metalDark },
     ]);
-    this.frameBase.width = width;
+    this.frameBase.width = layout.machineWidth;
     this.frameBase.height = Math.max(4, layout.bottomBase);
-    this.frameBase.x = 0;
-    this.frameBase.y = height - layout.bottomBase;
+    this.frameBase.x = layout.machineX;
+    this.frameBase.y = layout.machineY + layout.machineHeight - layout.bottomBase;
 
     // Thin bezel trim hugging the reel window — the only "line art" on the
     // frame, a single-color stroke, never a multi-bolt border.
@@ -379,11 +427,47 @@ export class SlotRenderer {
     // A faint gold accent rule under the top beam — the "machine indicator
     // light" this pass can afford: a plain line whose alpha breathes
     // slowly in tick() (spec point 19: "machine indicator lights breathe").
+    const mx = layout.machineX;
+    const my = layout.machineY;
+    const mw = layout.machineWidth;
+    const mh = layout.machineHeight;
     this.frameAccentTop.clear();
     this.frameAccentTop
-      .moveTo(layout.sideW, layout.topBeam - 1)
-      .lineTo(width - layout.sideW, layout.topBeam - 1)
+      .moveTo(mx + layout.sideW, my + layout.topBeam - 1)
+      .lineTo(mx + mw - layout.sideW, my + layout.topBeam - 1)
       .stroke({ width: 1.5, color: 0xd4af37, alpha: 0.4 });
+
+    // Bevel highlight/shadow on each frame bar — the modest "real metal"
+    // cue the product owner asked to restore: a bright 1-2px line where the
+    // bar would catch light (its inner edge, facing the reel window) and a
+    // faint dark line on its outer edge (in shadow). Plain strokes only —
+    // no painted texture, no bolts/reflections.
+    this.frameHighlights.clear();
+    const hi = { width: 1.5, color: 0x4a5568, alpha: 0.55 };
+    const lo = { width: 1.5, color: 0x000000, alpha: 0.4 };
+    // Top beam: bright edge just above the reel window, dark edge at the very top of the machine.
+    this.frameHighlights.moveTo(mx, my + layout.topBeam - 2.5).lineTo(mx + mw, my + layout.topBeam - 2.5).stroke(hi);
+    this.frameHighlights.moveTo(mx, my + 1).lineTo(mx + mw, my + 1).stroke(lo);
+    // Side columns: bright edge on the inner (reel-facing) side, dark edge on the outer side.
+    this.frameHighlights
+      .moveTo(mx + layout.sideW - 2, my + layout.topBeam)
+      .lineTo(mx + layout.sideW - 2, my + layout.topBeam + layout.reelWindowHeight)
+      .stroke(hi);
+    this.frameHighlights.moveTo(mx + 1, my + layout.topBeam).lineTo(mx + 1, my + layout.topBeam + layout.reelWindowHeight).stroke(lo);
+    this.frameHighlights
+      .moveTo(mx + mw - layout.sideW + 2, my + layout.topBeam)
+      .lineTo(mx + mw - layout.sideW + 2, my + layout.topBeam + layout.reelWindowHeight)
+      .stroke(hi);
+    this.frameHighlights
+      .moveTo(mx + mw - 1, my + layout.topBeam)
+      .lineTo(mx + mw - 1, my + layout.topBeam + layout.reelWindowHeight)
+      .stroke(lo);
+    // Base plate: bright edge just below the reel window, dark edge at the very bottom of the machine.
+    this.frameHighlights
+      .moveTo(mx, my + mh - layout.bottomBase + 2)
+      .lineTo(mx + mw, my + mh - layout.bottomBase + 2)
+      .stroke(hi);
+    this.frameHighlights.moveTo(mx, my + mh - 1.5).lineTo(mx + mw, my + mh - 1.5).stroke(lo);
   }
 
   /** (Re)draws the reel backing panel + top/bottom shadow vignette + reel dividers from the current winRect. */
@@ -626,7 +710,7 @@ export class SlotRenderer {
   private buildFsHud(width: number, layout: ReturnType<typeof this.computeLayout>) {
     this.fsHud = new Container();
     this.fsHud.visible = false;
-    this.fsHud.y = layout.topBeam * 0.5;
+    this.fsHud.y = layout.machineY + layout.topBeam * 0.5;
 
     this.fsHudPlate = new Graphics();
     this.fsHud.addChild(this.fsHudPlate);
@@ -694,11 +778,7 @@ export class SlotRenderer {
     this.world.position.set(width / 2, height / 2);
 
     this.backgroundLayer.texture.destroy(true);
-    this.backgroundLayer.texture = buildVerticalGradientTexture(height, [
-      { offset: 0, color: "#0c0f18" },
-      { offset: 0.5, color: "#0a0d14" },
-      { offset: 1, color: "#05070b" },
-    ]);
+    this.backgroundLayer.texture = buildBackgroundTexture(width, height);
     this.backgroundLayer.width = width;
     this.backgroundLayer.height = height;
 
@@ -723,7 +803,7 @@ export class SlotRenderer {
 
     const fsm = this.fsHudMetrics(width);
     const gearSize = layout.topBeam * 0.6;
-    this.fsHud.y = layout.topBeam * 0.5;
+    this.fsHud.y = layout.machineY + layout.topBeam * 0.5;
     drawGear(this.fsHudGear, Math.max(8, gearSize / 2));
     this.fsHudGear.x = fsm.multX + gearSize * 0.62;
     this.fsHudMultText.x = fsm.multX + gearSize * 1.15;

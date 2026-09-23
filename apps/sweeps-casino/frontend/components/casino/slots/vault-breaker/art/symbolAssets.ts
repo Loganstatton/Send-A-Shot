@@ -1,19 +1,22 @@
-// Vault Breaker symbol art loader — REBUILD (V4).
+// Vault Breaker symbol art loader — REBUILD (V4), real-art swap (V5).
 //
 // ART CONTRACT (read this before touching this file): every symbol maps to
-// exactly one texture URL, resolved in this ONE place. Swapping placeholder
-// art for real production art later means changing `SYMBOL_ART_BASE` (and/or
-// the per-symbol filename in `symbolArtUrl`) — nothing in the renderer
-// (ReelStrip/SlotRenderer) ever hardcodes a path, so that swap requires zero
-// renderer code changes.
+// exactly one texture URL, resolved in this ONE place. Swapping art later
+// means changing an entry in `SYMBOL_ART_URLS` below — nothing in the
+// renderer (ReelStrip/SlotRenderer) ever hardcodes a path, so that swap
+// requires zero renderer code changes.
 //
-// THIS PASS uses genuinely flat, honestly-placeholder art committed at
-// public/games/vault-breaker/placeholder/symbols/<ID>.png — 13 files, one
-// per backend symbol ID (see backend/.../vault-breaker/symbols.ts), each a
-// 1024x1024 canvas, single flat color, TRUE alpha transparency (verified:
-// corner pixel alpha === 0), simple distinct silhouette. Do not add
-// gradients/bevels/lighting to these files or generate new ones — see the
-// build report for why (product owner is generating real art separately).
+// CURRENT STATE: 11 of the 13 backend symbol IDs (see
+// backend/.../vault-breaker/symbols.ts) now use real production art —
+// alpha-verified, mostly-transparent 1024x1024 renders — committed at
+// public/games/vault-breaker/real/symbols/<ID>.webp. `LASER_DEVICE` has no
+// real art yet (a real gap, already flagged) and stays on its flat
+// placeholder at public/games/vault-breaker/placeholder/symbols/LASER_DEVICE.png
+// until that asset is supplied — do not invent art for it here.
+//
+// Known art note: WILD.webp has a soft-edged dark teal badge/card shape
+// baked into ~70% of its canvas (a feathered vignette, not a hard box) —
+// used as provided; do not crop/mask it programmatically.
 import { Assets, Texture } from "pixi.js";
 import type { SlotSymbolId } from "@/lib/types";
 
@@ -33,12 +36,35 @@ export const ALL_SYMBOL_IDS: SlotSymbolId[] = [
   "SCATTER",
 ];
 
-/** Change this one constant (and/or the per-id override below) to swap in real production art — nothing else in the engine needs to change. */
-const SYMBOL_ART_BASE = "/games/vault-breaker/placeholder/symbols";
+const REAL_SYMBOL_BASE = "/games/vault-breaker/real/symbols";
+const PLACEHOLDER_SYMBOL_BASE = "/games/vault-breaker/placeholder/symbols";
+
+/**
+ * One clean symbolId -> URL mapping, in one place. Every ID here is real
+ * production art except LASER_DEVICE, which has no real asset yet and stays
+ * on its placeholder. Swapping in LASER_DEVICE's real art later is a
+ * one-line change to this map — nothing else in the engine changes.
+ */
+const SYMBOL_ART_URLS: Record<SlotSymbolId, string> = {
+  TEN: `${REAL_SYMBOL_BASE}/TEN.webp`,
+  JACK: `${REAL_SYMBOL_BASE}/JACK.webp`,
+  QUEEN: `${REAL_SYMBOL_BASE}/QUEEN.webp`,
+  KING: `${REAL_SYMBOL_BASE}/KING.webp`,
+  ACE: `${REAL_SYMBOL_BASE}/ACE.webp`,
+  GOLD_BAR: `${REAL_SYMBOL_BASE}/GOLD_BAR.webp`,
+  DIAMOND: `${REAL_SYMBOL_BASE}/DIAMOND.webp`,
+  VAULT_KEY: `${REAL_SYMBOL_BASE}/VAULT_KEY.webp`,
+  COIN_STACK: `${REAL_SYMBOL_BASE}/COIN_STACK.webp`,
+  VAULTLINE_EMBLEM: `${REAL_SYMBOL_BASE}/VAULTLINE_EMBLEM.webp`,
+  WILD: `${REAL_SYMBOL_BASE}/WILD.webp`,
+  SCATTER: `${REAL_SYMBOL_BASE}/SCATTER.webp`,
+  // No real art supplied for this symbol yet — keep the honest placeholder.
+  LASER_DEVICE: `${PLACEHOLDER_SYMBOL_BASE}/LASER_DEVICE.png`,
+};
 
 /** Public path for a symbol's art file — also used directly as an <img src> (paytable sheet, etc). */
 export function symbolArtUrl(id: SlotSymbolId): string {
-  return `${SYMBOL_ART_BASE}/${id}.png`;
+  return SYMBOL_ART_URLS[id];
 }
 
 let cached: Record<SlotSymbolId, Texture> | null = null;
