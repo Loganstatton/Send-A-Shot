@@ -1,37 +1,46 @@
 "use client";
 
 // Top-level Pixi orchestrator — REBUILD (V4), real-art + environment depth
-// pass (V5). Owns the Application/stage lifecycle and layers the whole game
-// surface as ONE continuous PixiJS scene (spec point 3/4): BACKGROUND ->
-// MACHINE FRAME (behind) -> REEL BACKGROUND -> SYMBOL SPRITES -> REEL
-// DIVIDERS -> WIN FX -> FOREGROUND GLASS -> MACHINE FRAME (bezel, in front,
-// creating depth) -> HUD/overlays. React never touches Pixi objects
+// pass (V5), LOCKED MASTER COMPOSITION pass (V6). Owns the Application/
+// stage lifecycle and layers the whole game surface as ONE continuous
+// PixiJS scene: BACKGROUND -> ambient glows -> LOGO LOCKUP -> MACHINE FRAME
+// (behind) -> REEL BACKGROUND -> SYMBOL SPRITES -> REEL DIVIDERS -> WIN FX
+// -> FOREGROUND GLASS -> MACHINE FRAME (bolts/LED/bezel, in front, creating
+// depth) -> TAGLINE PLATE -> HUD/overlays. React never touches Pixi objects
 // directly — this class is the only bridge (VaultBreakerGame.tsx drives it
 // through this small imperative API: spinToResult, celebrateWin,
 // playBonusTransition, etc).
 //
-// V5 NOTES (real symbol art now wired in via symbolAssets.ts — see that
-// file; nothing in THIS file changed for that swap, which is the point):
-//  - Still no backdrop PHOTO and no "painted machine" canvas art — no real
-//    background/frame art exists yet (see art/environmentAssets.ts for the
-//    named future paths). The background is a richer radial vignette
-//    (buildBackground, using buildRadialVignetteTexture) and the frame is
-//    thicker flat metal-toned Graphics/gradient bars with a thin
-//    bevel/highlight stroke (buildFrame) — still never bolts/lights/
-//    reflections/painted metal texture. This is "not bare black", not
-//    "final art".
-//  - Every layer below is its own Container/Sprite in a clearly-named slot
-//    (this.backgroundLayer, this.frameTop, this.frameLeft, ...) specifically
-//    so real art (PNG/JPG layers, see environmentAssets.ts) can later
-//    replace a Graphics/gradient fill in that same slot with ZERO changes
-//    to layout/z-order/animation code.
-//  - The reel VIEWPORT is one continuous surface: a single dark backing
-//    panel + subtle vertical gradient behind all 5 reels, with only faint
-//    1px dividers between reels — never 20 bordered/boxed cells (spec
-//    point 1).
-import { Application, Container, Graphics, Sprite, Text, Texture } from "pixi.js";
+// V6 NOTES — this pass's brief was narrow and literal: reproduce
+// design-ref/master-v1.png (a locked, full-screen composition the product
+// owner mocked up after five rounds of prose-only art direction produced
+// five different guesses instead of convergence), not to invent a new
+// interpretation. Concretely, vs V5:
+//  - The background is now the REAL illustrated vault-chamber photo at
+//    public/games/vault-breaker/backgrounds/base-game.jpg (it existed all
+//    along — V5's file-header comment claiming "no real background art
+//    exists yet" was simply wrong), cover-fit and anchored on the vault
+//    door via BACKGROUND_FOCAL_X/Y, with a few soft additive glow sprites
+//    (teal side light, warm gold lower glow) and a dark top/bottom vignette
+//    layered on top for legibility — see buildBackground().
+//  - computeLayout() now reserves a real LOGO AREA above the machine
+//    (~35% of this canvas's height, matching the reference's logo:machine
+//    ratio) instead of letting the reel window eat ~90% of the vertical
+//    budget — see buildLogoLockup(). The frame is thicker, with gold-trim
+//    gradient stops, drawn corner bolts, and teal LED accent strips (see
+//    drawFrame()), and a tagline plate now sits between the reel window and
+//    this canvas's bottom edge (see buildTaglinePlate()) — the control deck
+//    itself is DOM (VaultBreakerGame.tsx), immediately below this canvas.
+//  - Every layer is still its own Container/Sprite/Graphics in a clearly-
+//    named slot, so a future real-art frame PNG can replace a Graphics fill
+//    in that same slot with zero changes to layout/z-order/animation code.
+//  - The reel VIEWPORT is still one continuous surface: a single dark
+//    backing panel + subtle vertical gradient behind all 5 reels, with only
+//    faint 1px dividers between reels — never 20 bordered/boxed cells.
+import { Application, Assets, Container, FillGradient, Graphics, Sprite, Text, Texture } from "pixi.js";
 import type { SlotPaylineWin, SlotSymbolId } from "@/lib/types";
 import { buildSymbolTextures } from "../art/symbolAssets";
+import { BACKGROUND_ART_URL, BACKGROUND_FOCAL_X, BACKGROUND_FOCAL_Y } from "../art/environmentAssets";
 import { buildVerticalGradientTexture, buildRadialVignetteTexture, getGlowTexture } from "../art/fx";
 import { ReelStrip } from "./ReelStrip";
 import { WinPresentation, type WinTier } from "./WinPresentation";
@@ -67,17 +76,24 @@ interface Rect {
 }
 
 /**
- * The background layer's procedural fill (see art/environmentAssets.ts for
- * the real-art swap point) — a warm-dark radial vignette with a hint of the
- * vault-teal accent bleeding in at the corners. Depth shading only: three
- * gradient stops, no illustrated detail.
+ * A dark top/bottom vignette drawn OVER the real background photo — keeps
+ * the logo lockup and the machine frame's top/bottom edges legible against
+ * whatever brightness the photo happens to have at that point, without
+ * hiding the vault-chamber environment underneath it (depth shading, not a
+ * cover-up: alpha stays modest at the very top/bottom and is fully
+ * transparent through the middle third).
  */
-function buildBackgroundTexture(width: number, height: number): Texture {
-  return buildRadialVignetteTexture(width, height, [
-    { offset: 0, color: "#181119" },
-    { offset: 0.55, color: "#0a0c13" },
-    { offset: 1, color: "#050f0e" },
-  ]);
+function buildBackgroundVignetteTexture(width: number, height: number): Texture {
+  return buildRadialVignetteTexture(
+    width,
+    height,
+    [
+      { offset: 0, color: "rgba(5,7,12,0)" },
+      { offset: 0.62, color: "rgba(5,7,12,0.1)" },
+      { offset: 1, color: "rgba(3,5,9,0.55)" },
+    ],
+    0.5
+  );
 }
 
 /** Draws a small flat mechanical gear/wheel directly with Graphics (rim + spokes + hub, flat colors only — no gradients/bolts/lights) so it can be rotated in place without regenerating a texture. Reused by the free-spins HUD dial. */
@@ -105,6 +121,20 @@ export class SlotRenderer {
   // ---- layer slots (see file header — each is a clearly-named drop-in
   // point a future real-art pass can swap Graphics/Sprite content for). ----
   private backgroundLayer!: Sprite;
+  private backgroundTexture: Texture;
+  private backgroundVignette!: Sprite;
+  /** Soft additive ambient glow sprites over the background photo — teal at the left/right edges, warm gold low in the frame (spec item 1). Built once in buildBackground(), repositioned on resize. */
+  private ambientGlows: Sprite[] = [];
+  private logoLockup!: Container;
+  private logoTitle!: Text;
+  private logoSubtitlePlate!: Graphics;
+  private logoSubtitleText!: Text;
+  private logoTaglineLeft!: Text;
+  private logoTaglineRight!: Text;
+  private logoDoorGlow!: Sprite;
+  private taglinePlate!: Container;
+  private taglinePlateBg!: Graphics;
+  private taglinePlateText!: Text;
   private reelBacking!: Sprite;
   private topShadow!: Sprite;
   private bottomShadow!: Sprite;
@@ -118,6 +148,11 @@ export class SlotRenderer {
   private frameAccentTop!: Graphics;
   /** Thin bevel highlight/shadow strokes drawn ON TOP of the four frame bar sprites (still behind the reel window) — the cheap "real metal" cue: a bright edge catching light + a dark edge in shadow, never a painted texture. */
   private frameHighlights!: Graphics;
+  /** Corner bolts drawn on top of the frame bars (spec item 3) — a separate Graphics layer so it can be redrawn independently on resize without touching the bevel highlights above. */
+  private frameHardware!: Graphics;
+  /** Teal LED accent strips running down the inner edge of each side column (spec item 3) — additive glow Sprites (not part of frameHardware) so their alpha can breathe independently in tick(). */
+  private ledStripLeft!: Sprite;
+  private ledStripRight!: Sprite;
 
   private anticipationGlows = new Map<number, Sprite>();
   private anticipationDim = 0;
@@ -142,25 +177,37 @@ export class SlotRenderer {
   private cellHeight = 0;
   private bigWin!: Container;
   private bigWinScrim!: Graphics;
+  private bigWinBloom!: Sprite;
   private bigWinLabel!: Text;
   private bigWinAmount!: Text;
   private bigWinParticles: { g: Sprite; vx: number; vy: number; life: number; maxLife: number; active: boolean }[] = [];
   private bigWinRaf = 0;
+  /** The label's continuous scale/glow "breathe" while a BIG/MEGA/EPIC banner is held on screen (spec item 8: "animated typography... not a static banner sprite") — started in showBigWinBanner, cancelled in hideBigWinBanner. */
+  private bigWinPulse: { cancel: () => void } | null = null;
   private winRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private freeSpinsActive = false;
 
   // ---- idle ambience ----
   private idle = false;
   private idleElapsed = 0;
+  /** Always-advancing (not idle-gated) seconds counter driving the teal LED strips' breathing (spec item 3/19: machine indicator lights stay alive even mid-spin). */
+  private ambientElapsed = 0;
   private dustSprites: Sprite[] = [];
   private dustState: { vx: number; vy: number; phase: number }[] = [];
   private tickerFn: ((ticker: { deltaMS: number }) => void) | null = null;
 
-  private constructor(app: Application, reelsCount: number, rows: number, textures: Record<SlotSymbolId, Texture>) {
+  private constructor(
+    app: Application,
+    reelsCount: number,
+    rows: number,
+    textures: Record<SlotSymbolId, Texture>,
+    backgroundTexture: Texture
+  ) {
     this.app = app;
     this.reelsCount = reelsCount;
     this.rows = rows;
     this.textures = textures;
+    this.backgroundTexture = backgroundTexture;
   }
 
   static async create(
@@ -189,60 +236,72 @@ export class SlotRenderer {
     (app.canvas as HTMLCanvasElement).style.height = "100%";
     parent.appendChild(app.canvas as HTMLCanvasElement);
 
-    // Real symbol textures — the ONLY image assets this renderer loads.
-    // Background/frame/reel-backing are all generated Graphics/gradients
-    // (see buildBackground/buildFrame/buildReelBacking below), per this
-    // pass's placeholder policy (no real background/frame art exists yet).
-    const textures = await buildSymbolTextures();
+    // Real symbol textures, plus the real background vault-chamber photo
+    // (see art/environmentAssets.ts) — the two image-asset sources this
+    // renderer loads. Frame/reel-backing chrome is still generated
+    // Graphics/gradients (see drawFrame/drawReelBacking below); no
+    // dedicated frame PNGs exist yet.
+    Assets.add({ alias: "vb-background", src: BACKGROUND_ART_URL });
+    const [textures, backgroundTexture] = await Promise.all([
+      buildSymbolTextures(),
+      Assets.load<Texture>("vb-background"),
+    ]);
 
-    const renderer = new SlotRenderer(app, opts.reels, opts.rows, textures);
+    const renderer = new SlotRenderer(app, opts.reels, opts.rows, textures, backgroundTexture);
     renderer.buildScene(opts.width, opts.height);
     renderer.startTicker();
     return renderer;
   }
 
   /**
-   * The reel window fills the FULL available width AND height budget —
-   * never just the width, leaving blank canvas above/below (that exact
-   * "too much dead space" was one of the product owner's explicit V3
-   * complaints). Cells are therefore NOT forced square: cellWidth =
-   * availW/reels (reels fill ~94-96% of phone width, spec point 8),
-   * cellHeight = availH/rows independently. On a narrow-tall phone with a
-   * 5-wide x 4-tall grid this makes rows taller than they are wide — a
-   * normal shape for a portrait mobile slot. Symbols themselves stay
-   * square/uniform regardless (ReelStrip sizes them off
-   * min(cellWidth,cellHeight) — see FILL in ReelStrip.ts), so this never
-   * stretches artwork to fill the taller cell.
+   * V6: matches the locked master reference's vertical proportions instead
+   * of letting the reel window eat the full canvas height. This PixiJS
+   * canvas IS the reference's "logo lockup" (~24% of the full phone
+   * screen) + "machine" (~40%) bands combined — the topbar (~5%) is DOM
+   * above it and the control deck (~15%) is DOM below it (see
+   * VaultBreakerGame.tsx) — so within this canvas alone those two bands are
+   * ~24:40, i.e. logo ≈ 37.5% of THIS canvas's height, machine ≈ the rest.
+   * LOGO_AREA_FRACTION below is that ratio, clamped so it never crowds out
+   * the reel window on an unusually short viewport.
+   *
+   * The reel window still fills ~94-96% of the available WIDTH (never just
+   * a slice), and cells are NOT forced square: cellWidth = availW/reels,
+   * cellHeight = availH/rows independently — on a portrait phone this
+   * still makes rows a bit taller than wide, matching the reference's own
+   * cell proportions far more closely than V5's near-full-height reel
+   * window did (which is the actual root cause V5 mis-solved: symbols
+   * looked small/adrift not because FILL was too low, but because the
+   * cells themselves were far taller than the reference's).
    */
   private computeLayout(width: number, height: number) {
-    // Frame chrome sized to read as a real mounted bezel (product owner:
-    // V4's near-zero frame "went too far") while keeping the reel window at
-    // ~94-96% of width (spec point 8) — sideW below keeps that ratio.
-    const topBeam = Math.max(30, height * 0.065);
-    const bottomBase = Math.max(14, height * 0.028);
-    const sideW = Math.max(8, width * 0.026);
-    // Without this, the frame bars + reel window tile the canvas 100% edge
-    // to edge and the background layer (however richly it's built) is
-    // NEVER actually visible — a real bug this pass found: V4's frame sat
-    // flush against the canvas edges, so the "restore the machine
-    // environment" background work would have had zero visible effect.
-    // This margin is deliberately a hairline (not the ~40% dead space the
-    // product owner rejected in V3, and thin enough to leave the reel
-    // window's own width ratio — see below — inside spec) — just enough
-    // that the radial vignette's teal-tinted corners read as "the cabinet
-    // sits in a room" around the whole machine, without eating into the
-    // width budget the thicker frame chrome below already spends.
+    const LOGO_AREA_FRACTION = 0.36;
+    const logoAreaH = Math.max(height * 0.24, Math.min(height * 0.46, height * LOGO_AREA_FRACTION));
+    const machineBlockH = Math.max(1, height - logoAreaH);
+
+    // Frame chrome thick enough to carry corner bolts + a visible gold-trim
+    // gradient + a teal LED strip (spec item 3) while the reel window still
+    // keeps ~94-96% of the WIDTH budget (sideW below is a width fraction,
+    // unrelated to the vertical logoAreaH split above).
+    const topBeam = Math.max(30, machineBlockH * 0.115);
+    const bottomBase = Math.max(12, machineBlockH * 0.045);
+    const taglineH = Math.max(22, machineBlockH * 0.11);
+    const sideW = Math.max(9, width * 0.032);
+    // Hairline outer margin so the background photo's own edges (and the
+    // side glow sprites) stay visible framing the machine, never the frame
+    // sitting flush against the canvas edge.
     const outerMargin = Math.max(1.5, Math.min(width, height) * 0.004);
+
     const availW = Math.max(1, width - outerMargin * 2 - sideW * 2);
-    const availH = Math.max(1, height - outerMargin * 2 - topBeam - bottomBase);
+    const reelWindowHeight = Math.max(1, machineBlockH - topBeam - bottomBase - taglineH);
     const cellWidth = availW / this.reelsCount;
-    const cellHeight = availH / this.rows;
+    const cellHeight = reelWindowHeight / this.rows;
     const reelWindowWidth = cellWidth * this.reelsCount;
-    const reelWindowHeight = cellHeight * this.rows;
     const machineWidth = sideW * 2 + reelWindowWidth;
-    const machineHeight = topBeam + reelWindowHeight + bottomBase;
+    const machineHeight = topBeam + reelWindowHeight + bottomBase + taglineH;
     const machineX = (width - machineWidth) / 2;
-    const machineY = outerMargin;
+    // Bottom-anchored: the machine's own bottom edge (tagline plate) sits
+    // right where this canvas hands off to the DOM control deck below it.
+    const machineY = height - machineHeight;
     const originX = machineX + sideW;
     const originY = machineY + topBeam;
     return {
@@ -254,11 +313,13 @@ export class SlotRenderer {
       reelWindowHeight,
       topBeam,
       bottomBase,
+      taglineH,
       sideW,
       machineX,
       machineY,
       machineWidth,
       machineHeight,
+      logoAreaH,
     };
   }
 
@@ -271,14 +332,11 @@ export class SlotRenderer {
     this.world.position.set(width / 2, height / 2);
     this.app.stage.addChild(this.world);
 
-    // ---- 1. BACKGROUND: a calm, dark radial vignette with a hint of the
-    // vault-teal accent at the edges — depth shading, not a painted scene
-    // (see art/environmentAssets.ts for the real-art swap point). Still
-    // deliberately the LEAST visually important layer (spec point 15). ----
-    this.backgroundLayer = new Sprite(buildBackgroundTexture(width, height));
-    this.backgroundLayer.width = width;
-    this.backgroundLayer.height = height;
-    this.world.addChild(this.backgroundLayer);
+    // ---- 1. BACKGROUND: the real illustrated vault-chamber photo
+    // (cover-fit, anchored on the vault door), a dark top/bottom vignette
+    // for legibility, and a few soft additive ambient glow sprites (teal
+    // side-lighting, warm gold lower glow) — see buildBackground(). ----
+    this.buildBackground(width, height);
 
     // Ambient dust — always present, subtly brighter/faster once idle (see startTicker/tick).
     const dustLayer = new Container();
@@ -304,17 +362,41 @@ export class SlotRenderer {
     this.cellHeight = layout.cellHeight;
     this.winRect = { x: layout.originX, y: layout.originY, w: layout.reelWindowWidth, h: layout.reelWindowHeight };
 
+    // ---- LOGO LOCKUP: title treatment + subtitle + side taglines, filling
+    // the area above the machine (spec item 2) — see buildLogoLockup(). ----
+    this.buildLogoLockup(width, layout);
+
     // ---- 2. MACHINE FRAME (behind): top beam / side columns / base as
-    // flat gradient bars — drawn first so the reel backing + reels sit
-    // visually "inside" them; the thin bezel stroke drawn LATER (after
+    // gold-trimmed gradient bars — drawn first so the reel backing + reels
+    // sit visually "inside" them; the thin bezel stroke drawn LATER (after
     // symbols/win-fx/glass) is what actually overlaps the reel edges and
-    // reads as "reels sit behind this art" (spec point 12). ----
+    // reads as "reels sit behind this art" (spec point 12). frameHardware
+    // (corner bolts + teal LED strips, spec item 3) is a separate Graphics
+    // drawn on top of the bars but still behind the reel window. ----
     this.frameTop = new Sprite();
     this.frameLeft = new Sprite();
     this.frameRight = new Sprite();
     this.frameBase = new Sprite();
     this.frameHighlights = new Graphics();
-    this.world.addChild(this.frameTop, this.frameLeft, this.frameRight, this.frameBase, this.frameHighlights);
+    this.frameHardware = new Graphics();
+    this.ledStripLeft = new Sprite(getGlowTexture());
+    this.ledStripRight = new Sprite(getGlowTexture());
+    this.ledStripLeft.anchor.set(0.5);
+    this.ledStripRight.anchor.set(0.5);
+    this.ledStripLeft.blendMode = "add";
+    this.ledStripRight.blendMode = "add";
+    this.ledStripLeft.tint = 0x2dbfb0;
+    this.ledStripRight.tint = 0x2dbfb0;
+    this.world.addChild(
+      this.frameTop,
+      this.frameLeft,
+      this.frameRight,
+      this.frameBase,
+      this.frameHighlights,
+      this.frameHardware,
+      this.ledStripLeft,
+      this.ledStripRight
+    );
 
     // ---- 3. REEL BACKGROUND: one continuous dark panel + vertical
     // gradient behind all 5 reels (spec point 13) — never per-symbol
@@ -376,6 +458,10 @@ export class SlotRenderer {
 
     this.drawFrame(width, height, layout);
 
+    // ---- TAGLINE PLATE: mounted directly beneath the reel window, part of
+    // the machine housing (spec item 4) — see buildTaglinePlate(). ----
+    this.buildTaglinePlate(width, layout);
+
     this.buildFsHud(width, layout);
 
     this.bonus = new FreeSpinsTransition(width, height, {
@@ -387,18 +473,303 @@ export class SlotRenderer {
     this.buildBigWinBanner(width, height);
   }
 
-  /** (Re)draws every Graphics/gradient-Sprite frame/backing piece from the current layout — called on build and on every resize. Each piece is a simple flat fill or 2-3 stop gradient, never bolts/lights/reflections (see file header). */
+  /**
+   * Background: the real vault-chamber photo (cover-fit, anchored on the
+   * vault door per BACKGROUND_FOCAL_X/Y), a dark top/bottom vignette for
+   * text legibility, and a handful of soft additive glow sprites — teal at
+   * the left/right edges (echoing the reference's side-lit steel corridor),
+   * warm gold low in the frame (echoing its lower gold-bar lighting). This
+   * is the ONLY place BACKGROUND_ART_URL's texture is consumed.
+   */
+  private buildBackground(width: number, height: number) {
+    this.backgroundLayer = new Sprite(this.backgroundTexture);
+    this.backgroundLayer.eventMode = "none";
+    this.world.addChild(this.backgroundLayer);
+
+    this.backgroundVignette = new Sprite(buildBackgroundVignetteTexture(width, height));
+    this.backgroundVignette.eventMode = "none";
+    this.world.addChild(this.backgroundVignette);
+
+    const glowSpecs: { tint: number; wRatio: number; hRatio: number; xRatio: number; yRatio: number; alpha: number }[] = [
+      // Teal side-lighting, left + right — echoes the reference's teal LED-lit corridor walls.
+      { tint: 0x2dbfb0, wRatio: 0.55, hRatio: 0.7, xRatio: 0.02, yRatio: 0.3, alpha: 0.22 },
+      { tint: 0x2dbfb0, wRatio: 0.55, hRatio: 0.7, xRatio: 0.98, yRatio: 0.3, alpha: 0.22 },
+      // Warm gold glow low in the frame — echoes the reference's gold-bar-pile lighting.
+      { tint: 0xd4af37, wRatio: 0.95, hRatio: 0.42, xRatio: 0.5, yRatio: 0.92, alpha: 0.2 },
+    ];
+    this.ambientGlows = glowSpecs.map((spec) => {
+      const s = new Sprite(getGlowTexture());
+      s.anchor.set(0.5);
+      s.blendMode = "add";
+      s.tint = spec.tint;
+      s.alpha = spec.alpha;
+      s.eventMode = "none";
+      this.world.addChild(s);
+      return s;
+    });
+    this.positionBackground(width, height);
+  }
+
+  /** Sizes/positions the background photo (cover-fit + focal anchor), vignette, and ambient glow sprites — called on build and on every resize. */
+  private positionBackground(width: number, height: number) {
+    const photoAspect = this.backgroundTexture.width / this.backgroundTexture.height;
+    const canvasAspect = width / height;
+    let spriteW: number;
+    let spriteH: number;
+    if (photoAspect > canvasAspect) {
+      // Photo is relatively wider than the canvas — cover by matching
+      // height, letting width overflow (then cropped via focal-point x).
+      spriteH = height;
+      spriteW = height * photoAspect;
+    } else {
+      spriteW = width;
+      spriteH = width / photoAspect;
+    }
+    this.backgroundLayer.width = spriteW;
+    this.backgroundLayer.height = spriteH;
+    this.backgroundLayer.x = width / 2 - spriteW * BACKGROUND_FOCAL_X;
+    this.backgroundLayer.y = height / 2 - spriteH * BACKGROUND_FOCAL_Y;
+    // Clamp so the photo always still fully covers the canvas even when the
+    // focal point sits near an edge.
+    this.backgroundLayer.x = Math.min(0, Math.max(width - spriteW, this.backgroundLayer.x));
+    this.backgroundLayer.y = Math.min(0, Math.max(height - spriteH, this.backgroundLayer.y));
+
+    this.backgroundVignette.width = width;
+    this.backgroundVignette.height = height;
+
+    const glowSpecs = [
+      { wRatio: 0.55, hRatio: 0.7, xRatio: 0.02, yRatio: 0.3 },
+      { wRatio: 0.55, hRatio: 0.7, xRatio: 0.98, yRatio: 0.3 },
+      { wRatio: 0.95, hRatio: 0.42, xRatio: 0.5, yRatio: 0.92 },
+    ];
+    this.ambientGlows.forEach((s, i) => {
+      const spec = glowSpecs[i];
+      s.width = width * spec.wRatio;
+      s.height = height * spec.hRatio;
+      s.x = width * spec.xRatio;
+      s.y = height * spec.yRatio;
+    });
+  }
+
+  /**
+   * The "VAULT BREAKER" title lockup + "UNLOCK BIGGER WINS" subtitle plate
+   * + side taglines ("BIGGER VAULTS BIGGER WINS" / "FORTUNE FAVORS THE
+   * BOLD") over the vault-chamber background, above the machine (spec item
+   * 2). Built as PIXI Text with a gradient fill (gold upper -> teal lower,
+   * matching the reference's VAULT/BREAKER two-tone treatment) plus a
+   * stroke + drop shadow for a beveled, branded read rather than plain
+   * text. Wording matches the locked master reference verbatim (see
+   * design-ref/master-v1.png) — nothing invented.
+   */
+  private buildLogoLockup(width: number, layout: ReturnType<typeof this.computeLayout>) {
+    this.logoLockup = new Container();
+    this.logoLockup.eventMode = "none";
+    this.world.addChild(this.logoLockup);
+
+    // A soft warm glow behind the title, suggesting the vault door's own
+    // glow sitting behind the lockup (spec item 1's "suggestion of the
+    // large circular vault door glow behind the logo area").
+    this.logoDoorGlow = new Sprite(getGlowTexture());
+    this.logoDoorGlow.anchor.set(0.5);
+    this.logoDoorGlow.blendMode = "add";
+    this.logoDoorGlow.tint = 0xd4af37;
+    this.logoDoorGlow.alpha = 0.3;
+    this.logoLockup.addChild(this.logoDoorGlow);
+
+    this.logoTitle = new Text({
+      text: "VAULT\nBREAKER",
+      style: {
+        fontFamily: "Georgia, 'Times New Roman', serif",
+        fontWeight: "900",
+        fontSize: 10,
+        lineHeight: 10,
+        align: "center",
+        letterSpacing: 1,
+        fill: new FillGradient({
+          type: "linear",
+          start: { x: 0, y: 0 },
+          end: { x: 0, y: 1 },
+          textureSpace: "local",
+          colorStops: [
+            { offset: 0, color: "#fff6d9" },
+            { offset: 0.22, color: "#f0cf6a" },
+            { offset: 0.46, color: "#d4af37" },
+            { offset: 0.56, color: "#8ef2e6" },
+            { offset: 0.78, color: "#2dbfb0" },
+            { offset: 1, color: "#0d7168" },
+          ],
+        }),
+        stroke: { color: 0x0a0f14, width: 6 },
+        dropShadow: { color: 0xd4af37, blur: 14, distance: 0, alpha: 0.55 },
+      },
+    });
+    this.logoTitle.anchor.set(0.5, 0);
+    this.logoLockup.addChild(this.logoTitle);
+
+    this.logoSubtitlePlate = new Graphics();
+    this.logoLockup.addChild(this.logoSubtitlePlate);
+
+    this.logoSubtitleText = new Text({
+      text: "UNLOCK BIGGER WINS",
+      style: {
+        fontFamily: "system-ui, sans-serif",
+        fontWeight: "800",
+        fontSize: 10,
+        letterSpacing: 2,
+        fill: 0xf6e7ae,
+      },
+    });
+    this.logoSubtitleText.anchor.set(0.5);
+    this.logoLockup.addChild(this.logoSubtitleText);
+
+    const taglineStyle = {
+      fontFamily: "system-ui, sans-serif",
+      fontWeight: "700" as const,
+      fontSize: 10,
+      letterSpacing: 1,
+      align: "center" as const,
+      fill: 0x9fb2c8,
+    };
+    this.logoTaglineLeft = new Text({ text: "BIGGER\nVAULTS\nBIGGER\nWINS", style: { ...taglineStyle } });
+    this.logoTaglineLeft.anchor.set(0.5);
+    this.logoTaglineLeft.alpha = 0.4;
+    this.logoLockup.addChild(this.logoTaglineLeft);
+
+    this.logoTaglineRight = new Text({ text: "FORTUNE\nFAVORS\nTHE BOLD", style: { ...taglineStyle } });
+    this.logoTaglineRight.anchor.set(0.5);
+    this.logoTaglineRight.alpha = 0.4;
+    this.logoLockup.addChild(this.logoTaglineRight);
+
+    this.positionLogoLockup(width, layout);
+  }
+
+  private positionLogoLockup(width: number, layout: ReturnType<typeof this.computeLayout>) {
+    const centerX = width / 2;
+    const areaH = layout.logoAreaH;
+    // The title sits in the lower ~70% of the logo area (reference has
+    // generous headroom above it for the vault-door art peeking over the
+    // topbar) and the subtitle plate sits just above the machine's top beam.
+    const titleFontSize = Math.max(26, width * 0.145);
+    this.logoTitle.style.fontSize = titleFontSize;
+    this.logoTitle.style.lineHeight = titleFontSize * 0.92;
+    this.logoTitle.x = centerX;
+    this.logoTitle.y = areaH * 0.16;
+
+    this.logoDoorGlow.x = centerX;
+    this.logoDoorGlow.y = areaH * 0.5;
+    this.logoDoorGlow.width = width * 1.15;
+    this.logoDoorGlow.height = width * 1.15;
+
+    const subtitleFontSize = Math.max(9, width * 0.03);
+    this.logoSubtitleText.style.fontSize = subtitleFontSize;
+    const subtitleY = areaH * 0.93;
+    this.logoSubtitleText.x = centerX;
+    this.logoSubtitleText.y = subtitleY;
+    const plateW = this.logoSubtitleText.width + width * 0.14;
+    const plateH = subtitleFontSize + width * 0.045;
+    this.logoSubtitlePlate
+      .clear()
+      .roundRect(centerX - plateW / 2, subtitleY - plateH / 2, plateW, plateH, plateH * 0.3)
+      .fill({ color: 0x080b12, alpha: 0.65 })
+      .roundRect(centerX - plateW / 2, subtitleY - plateH / 2, plateW, plateH, plateH * 0.3)
+      .stroke({ width: 1.5, color: 0xd4af37, alpha: 0.6 });
+
+    // Font size clamped so four stacked words at 1 letter-spacing never
+    // overflow past the canvas edge — measured against the longest word
+    // ("BIGGER"/"FORTUNE") rather than a flat width fraction, since a fixed
+    // fraction clipped at very narrow phone widths.
+    const taglineMargin = Math.max(width * 0.16, layout.sideW * 2.2);
+    let taglineFontSize = Math.max(7, width * 0.023);
+    this.logoTaglineLeft.style.fontSize = taglineFontSize;
+    this.logoTaglineLeft.style.lineHeight = taglineFontSize * 1.25;
+    this.logoTaglineRight.style.fontSize = taglineFontSize;
+    this.logoTaglineRight.style.lineHeight = taglineFontSize * 1.25;
+    const maxTaglineWidth = taglineMargin * 1.7;
+    while (
+      (this.logoTaglineLeft.width > maxTaglineWidth || this.logoTaglineRight.width > maxTaglineWidth) &&
+      taglineFontSize > 5.5
+    ) {
+      taglineFontSize -= 0.4;
+      this.logoTaglineLeft.style.fontSize = taglineFontSize;
+      this.logoTaglineLeft.style.lineHeight = taglineFontSize * 1.25;
+      this.logoTaglineRight.style.fontSize = taglineFontSize;
+      this.logoTaglineRight.style.lineHeight = taglineFontSize * 1.25;
+    }
+    this.logoTaglineLeft.x = taglineMargin;
+    this.logoTaglineLeft.y = areaH * 0.42;
+    this.logoTaglineRight.x = width - taglineMargin;
+    this.logoTaglineRight.y = areaH * 0.42;
+  }
+
+  /**
+   * Mounted plate directly beneath the reel window reading "CRACK THE
+   * VAULT. CLAIM YOUR FORTUNE." — part of the machine housing, not a
+   * floating HTML caption (spec item 4). Wording matches the locked master
+   * reference verbatim.
+   */
+  private buildTaglinePlate(width: number, layout: ReturnType<typeof this.computeLayout>) {
+    this.taglinePlate = new Container();
+    this.taglinePlate.eventMode = "none";
+    this.world.addChild(this.taglinePlate);
+
+    this.taglinePlateBg = new Graphics();
+    this.taglinePlate.addChild(this.taglinePlateBg);
+
+    this.taglinePlateText = new Text({
+      text: "CRACK THE VAULT. CLAIM YOUR FORTUNE.",
+      style: {
+        fontFamily: "system-ui, sans-serif",
+        fontWeight: "800",
+        fontSize: 10,
+        letterSpacing: 1.2,
+        fill: 0xf0cf6a,
+      },
+    });
+    this.taglinePlateText.anchor.set(0.5);
+    this.taglinePlate.addChild(this.taglinePlateText);
+
+    this.positionTaglinePlate(width, layout);
+  }
+
+  private positionTaglinePlate(width: number, layout: ReturnType<typeof this.computeLayout>) {
+    const plateY = layout.machineY + layout.topBeam + layout.reelWindowHeight + layout.bottomBase + layout.taglineH / 2;
+    const plateW = layout.machineWidth - layout.sideW * 0.6;
+    const plateH = layout.taglineH * 0.66;
+    const fontSize = Math.max(8, Math.min(layout.taglineH * 0.34, width * 0.028));
+    this.taglinePlateText.style.fontSize = fontSize;
+    // Shrink letter-spacing/font on very narrow screens so the full line
+    // never clips the plate — still one line, never wrapped mid-word.
+    while (this.taglinePlateText.width > plateW * 0.92 && this.taglinePlateText.style.fontSize > 6) {
+      this.taglinePlateText.style.fontSize -= 0.5;
+    }
+    this.taglinePlateText.x = width / 2;
+    this.taglinePlateText.y = plateY;
+
+    this.taglinePlateBg
+      .clear()
+      .roundRect(width / 2 - plateW / 2, plateY - plateH / 2, plateW, plateH, plateH * 0.25)
+      .fill({ color: 0x080a10, alpha: 0.72 })
+      .roundRect(width / 2 - plateW / 2, plateY - plateH / 2, plateW, plateH, plateH * 0.25)
+      .stroke({ width: 1.25, color: 0xd4af37, alpha: 0.5 });
+  }
+
+  /** (Re)draws every Graphics/gradient-Sprite frame/backing piece from the current layout — called on build and on every resize. Bars are gold-trimmed gradients (spec item 3); bolts/LED strips are drawn by drawFrameHardware() at the end of this method. */
   private drawFrame(width: number, height: number, layout: ReturnType<typeof this.computeLayout>) {
     const win = this.winRect;
     const metalDark = "#0e1118";
     const metalMid = "#1b202b";
-    const metalLight = "#262d3a";
+    const metalLight = "#2c3340";
+    const goldTrim = "#c79a3a";
 
+    // Steel-to-gold gradient (spec item 3): each bar reads mostly as dark
+    // brushed steel with a gold band right at the edge that faces the reel
+    // window/viewer, like a real cabinet's trim strip — not a flat tone.
     this.frameTop.texture?.destroy(true);
     this.frameTop.texture = buildVerticalGradientTexture(layout.topBeam, [
       { offset: 0, color: metalMid },
-      { offset: 0.85, color: metalDark },
-      { offset: 1, color: "#080a0f" },
+      { offset: 0.62, color: metalDark },
+      { offset: 0.86, color: goldTrim },
+      { offset: 1, color: "#3a2a0f" },
     ]);
     this.frameTop.width = layout.machineWidth;
     this.frameTop.height = layout.topBeam;
@@ -426,7 +797,9 @@ export class SlotRenderer {
 
     this.frameBase.texture?.destroy(true);
     this.frameBase.texture = buildVerticalGradientTexture(Math.max(4, layout.bottomBase), [
-      { offset: 0, color: "#080a0f" },
+      { offset: 0, color: goldTrim },
+      { offset: 0.28, color: "#3a2a0f" },
+      { offset: 0.55, color: "#080a0f" },
       { offset: 1, color: metalDark },
     ]);
     this.frameBase.width = layout.machineWidth;
@@ -434,12 +807,20 @@ export class SlotRenderer {
     this.frameBase.x = layout.machineX;
     this.frameBase.y = layout.machineY + layout.machineHeight - layout.bottomBase;
 
-    // Thin bezel trim hugging the reel window — the only "line art" on the
-    // frame, a single-color stroke, never a multi-bolt border.
+    // Bezel ring: thick enough to visibly overlap the reel window's own
+    // edges (spec item 3: "the frame overlapping the reel edges slightly —
+    // not just a thin outline beside them") — a wide gold-toned outer
+    // stroke with a slim bright teal inner line on the same path, both
+    // centered on the reel window's boundary so they eat into the reel art
+    // by roughly half their width.
+    const bezelWidth = Math.max(5, Math.min(win.w, win.h) * 0.024);
     this.frameBezel.clear();
     this.frameBezel
       .roundRect(win.x, win.y, win.w, win.h, Math.min(win.w, win.h) * 0.015)
-      .stroke({ width: Math.max(1.5, Math.min(width, height) * 0.003), color: 0x2dbfb0, alpha: 0.35 });
+      .stroke({ width: bezelWidth, color: 0xc79a3a, alpha: 0.6 });
+    this.frameBezel
+      .roundRect(win.x, win.y, win.w, win.h, Math.min(win.w, win.h) * 0.015)
+      .stroke({ width: Math.max(1.5, bezelWidth * 0.32), color: 0x2dbfb0, alpha: 0.55 });
 
     // A faint gold accent rule under the top beam — the "machine indicator
     // light" this pass can afford: a plain line whose alpha breathes
@@ -454,14 +835,13 @@ export class SlotRenderer {
       .lineTo(mx + mw - layout.sideW, my + layout.topBeam - 1)
       .stroke({ width: 1.5, color: 0xd4af37, alpha: 0.4 });
 
-    // Bevel highlight/shadow on each frame bar — the modest "real metal"
-    // cue the product owner asked to restore: a bright 1-2px line where the
-    // bar would catch light (its inner edge, facing the reel window) and a
-    // faint dark line on its outer edge (in shadow). Plain strokes only —
-    // no painted texture, no bolts/reflections.
+    // Bevel highlight/shadow on each frame bar — a bright gold-toned line
+    // where the bar would catch light (its inner edge, facing the reel
+    // window) and a faint dark line on its outer edge (in shadow). Plain
+    // strokes only — no painted texture.
     this.frameHighlights.clear();
-    const hi = { width: 1.5, color: 0x4a5568, alpha: 0.55 };
-    const lo = { width: 1.5, color: 0x000000, alpha: 0.4 };
+    const hi = { width: 1.75, color: 0xe8c15a, alpha: 0.65 };
+    const lo = { width: 1.5, color: 0x000000, alpha: 0.45 };
     // Top beam: bright edge just above the reel window, dark edge at the very top of the machine.
     this.frameHighlights.moveTo(mx, my + layout.topBeam - 2.5).lineTo(mx + mw, my + layout.topBeam - 2.5).stroke(hi);
     this.frameHighlights.moveTo(mx, my + 1).lineTo(mx + mw, my + 1).stroke(lo);
@@ -485,6 +865,49 @@ export class SlotRenderer {
       .lineTo(mx + mw, my + mh - layout.bottomBase + 2)
       .stroke(hi);
     this.frameHighlights.moveTo(mx, my + mh - 1.5).lineTo(mx + mw, my + mh - 1.5).stroke(lo);
+
+    this.drawFrameHardware(layout);
+  }
+
+  /**
+   * Corner bolts/rivets (spec item 3) drawn as small concentric-circle
+   * fixtures (dark outer ring, metal fill, offset highlight dot — a cheap
+   * but legible "real hardware" cue) at each of the machine's four outer
+   * corners, plus the teal LED accent strip Sprites positioned down the
+   * inner edge of each side column.
+   */
+  private drawFrameHardware(layout: ReturnType<typeof this.computeLayout>) {
+    const mx = layout.machineX;
+    const my = layout.machineY;
+    const mw = layout.machineWidth;
+    const mh = layout.machineHeight;
+    const boltR = Math.max(2.5, layout.sideW * 0.32);
+    const inset = boltR * 1.4;
+
+    this.frameHardware.clear();
+    const corners: [number, number][] = [
+      [mx + inset, my + inset],
+      [mx + mw - inset, my + inset],
+      [mx + inset, my + mh - inset],
+      [mx + mw - inset, my + mh - inset],
+    ];
+    for (const [cx, cy] of corners) {
+      this.frameHardware.circle(cx, cy, boltR * 1.25).fill({ color: 0x05070a, alpha: 0.85 });
+      this.frameHardware.circle(cx, cy, boltR).fill({ color: 0x3a4152 });
+      this.frameHardware.circle(cx, cy, boltR).stroke({ width: Math.max(0.75, boltR * 0.18), color: 0x0a0c12, alpha: 0.7 });
+      this.frameHardware.circle(cx - boltR * 0.3, cy - boltR * 0.3, boltR * 0.32).fill({ color: 0xd4af37, alpha: 0.75 });
+    }
+
+    const ledW = Math.max(2.5, layout.sideW * 0.16);
+    const ledH = layout.reelWindowHeight * 0.92;
+    this.ledStripLeft.width = ledW;
+    this.ledStripLeft.height = ledH;
+    this.ledStripLeft.x = mx + layout.sideW * 0.78;
+    this.ledStripLeft.y = my + layout.topBeam + layout.reelWindowHeight / 2;
+    this.ledStripRight.width = ledW;
+    this.ledStripRight.height = ledH;
+    this.ledStripRight.x = mx + mw - layout.sideW * 0.78;
+    this.ledStripRight.y = my + layout.topBeam + layout.reelWindowHeight / 2;
   }
 
   /** (Re)draws the pulsing anticipation border's shape from the current winRect — alpha/visibility are driven separately by setAnticipationBorderActive()/tick(), this only handles geometry (called on build and resize). */
@@ -511,16 +934,16 @@ export class SlotRenderer {
     if (!active) this.anticipationBorderElapsed = 0;
   }
 
-  /** (Re)draws the reel backing panel + top/bottom shadow vignette + reel dividers from the current winRect. */
+  /** (Re)draws the reel backing panel + top/bottom shadow vignette + reel dividers from the current winRect. Deep blue-graphite glass (spec item 6), not neutral gray. */
   private drawReelBacking() {
     const win = this.winRect;
     this.reelBacking.texture?.destroy(true);
     this.reelBacking.texture = buildVerticalGradientTexture(win.h, [
-      { offset: 0, color: "#04050a" },
-      { offset: 0.12, color: "#12151f" },
-      { offset: 0.5, color: "#171b26" },
-      { offset: 0.88, color: "#12151f" },
-      { offset: 1, color: "#04050a" },
+      { offset: 0, color: "#03040a" },
+      { offset: 0.12, color: "#0d1626" },
+      { offset: 0.5, color: "#132038" },
+      { offset: 0.88, color: "#0d1626" },
+      { offset: 1, color: "#03040a" },
     ]);
     this.reelBacking.width = win.w;
     this.reelBacking.height = win.h;
@@ -581,6 +1004,15 @@ export class SlotRenderer {
     this.bigWinScrim = new Graphics();
     this.bigWin.addChild(this.bigWinScrim);
 
+    // Warm bloom blooming from center (spec item 8) — additive, sits behind
+    // the label/amount text but in front of the dimming scrim so it reads
+    // as light, not a flat shape.
+    this.bigWinBloom = new Sprite(getGlowTexture());
+    this.bigWinBloom.anchor.set(0.5);
+    this.bigWinBloom.blendMode = "add";
+    this.bigWinBloom.alpha = 0;
+    this.bigWin.addChild(this.bigWinBloom);
+
     this.bigWinLabel = new Text({
       text: "BIG WIN",
       style: {
@@ -625,6 +1057,10 @@ export class SlotRenderer {
 
   private positionBigWinBanner(width: number, height: number) {
     this.bigWinScrim.clear().rect(0, 0, width, height).fill({ color: 0x03050a, alpha: 1 });
+    this.bigWinBloom.x = width / 2;
+    this.bigWinBloom.y = height * 0.42;
+    this.bigWinBloom.width = width * 1.3;
+    this.bigWinBloom.height = width * 1.3;
     this.bigWinLabel.style.fontSize = Math.max(30, width * 0.135);
     this.bigWinLabel.x = width / 2;
     this.bigWinLabel.y = height * 0.42;
@@ -639,20 +1075,33 @@ export class SlotRenderer {
 
   async showBigWinBanner(label: string, tier: "big" | "mega" | "epic"): Promise<void> {
     const color = this.bigWinTierColor(tier);
+    this.bigWinPulse?.cancel();
+    this.bigWinPulse = null;
     this.bigWinLabel.text = label;
     this.bigWinLabel.style.fill = color;
+    this.bigWinLabel.style.letterSpacing = 2;
     this.bigWinLabel.scale.set(0.6);
     this.bigWinLabel.alpha = 0;
     this.bigWinAmount.alpha = 0;
+    this.bigWinBloom.tint = color;
+    this.bigWinBloom.alpha = 0;
+    this.bigWinBloom.scale.set(0.5);
     this.bigWin.visible = true;
     this.bigWin.alpha = 1;
 
-    this.spawnBigWinBurst(color, tier === "epic" ? 28 : tier === "mega" ? 22 : 16);
+    // Reels dim slightly (spec item 8) — a touch deeper than V5's 0.55 so
+    // the takeover reads as a real event, while the scrim itself never
+    // fully hides the winning symbols behind it.
+    this.spawnBigWinBurst(color, tier === "epic" ? 34 : tier === "mega" ? 26 : 18);
     if (!this.bigWinRaf) this.startBigWinParticleLoop();
 
     await Promise.all([
       tween(260, (p) => {
-        this.bigWinScrim.alpha = p * 0.55;
+        this.bigWinScrim.alpha = p * 0.62;
+      }),
+      tween(520, (p) => {
+        this.bigWinBloom.alpha = Math.min(1, p * 1.3) * 0.65;
+        this.bigWinBloom.scale.set(0.5 + p * 0.7);
       }),
       tween(420, (p) => {
         const e = easeOutBack(Math.min(1, p * 1.15));
@@ -663,6 +1112,33 @@ export class SlotRenderer {
     await tween(220, (p) => {
       this.bigWinAmount.alpha = Math.min(1, p * 1.4);
     });
+
+    // Continuous gentle scale/glow "breathe" while the banner is held —
+    // real animated typography rather than a static sprite sitting still
+    // until it's dismissed.
+    this.startBigWinPulse();
+  }
+
+  private startBigWinPulse() {
+    let elapsed = 0;
+    let last = performance.now();
+    const baseBloomScale = 1.2;
+    const step = () => {
+      if (!this.bigWin.visible) {
+        this.bigWinPulse = null;
+        return;
+      }
+      const now = performance.now();
+      elapsed += now - last;
+      last = now;
+      const s = 1 + Math.sin(elapsed * 0.0022) * 0.035;
+      this.bigWinLabel.scale.set(s);
+      this.bigWinBloom.scale.set(baseBloomScale + Math.sin(elapsed * 0.0022) * 0.08);
+      this.bigWinBloom.alpha = 0.55 + Math.sin(elapsed * 0.0022) * 0.1;
+      const raf = requestAnimationFrame(step);
+      this.bigWinPulse = { cancel: () => cancelAnimationFrame(raf) };
+    };
+    step();
   }
 
   setBigWinAmount(text: string) {
@@ -680,9 +1156,13 @@ export class SlotRenderer {
 
   async hideBigWinBanner(): Promise<void> {
     if (!this.bigWin.visible) return;
+    this.bigWinPulse?.cancel();
+    this.bigWinPulse = null;
+    const bloomStartAlpha = this.bigWinBloom.alpha;
     await tween(320, (p) => {
       const fade = 1 - p;
-      this.bigWinScrim.alpha = 0.55 * fade;
+      this.bigWinScrim.alpha = 0.62 * fade;
+      this.bigWinBloom.alpha = bloomStartAlpha * fade;
       this.bigWinLabel.alpha = fade;
       this.bigWinAmount.alpha = fade;
     });
@@ -818,14 +1298,15 @@ export class SlotRenderer {
     this.world.pivot.set(width / 2, height / 2);
     this.world.position.set(width / 2, height / 2);
 
-    this.backgroundLayer.texture.destroy(true);
-    this.backgroundLayer.texture = buildBackgroundTexture(width, height);
-    this.backgroundLayer.width = width;
-    this.backgroundLayer.height = height;
+    this.backgroundVignette.texture.destroy(true);
+    this.backgroundVignette.texture = buildBackgroundVignetteTexture(width, height);
+    this.positionBackground(width, height);
 
     const layout = this.computeLayout(width, height);
     this.cellWidth = layout.cellWidth;
     this.cellHeight = layout.cellHeight;
+
+    this.positionLogoLockup(width, layout);
 
     this.reelsContainer.x = layout.originX;
     this.reelsContainer.y = layout.originY;
@@ -842,6 +1323,7 @@ export class SlotRenderer {
     this.drawFrame(width, height, layout);
     this.drawReelBacking();
     this.drawAnticipationBorder();
+    this.positionTaglinePlate(width, layout);
 
     const fsm = this.fsHudMetrics(width);
     const gearSize = layout.topBeam * 0.6;
@@ -884,6 +1366,12 @@ export class SlotRenderer {
 
   private tick(deltaMS: number) {
     const dt = deltaMS / 1000;
+
+    this.ambientElapsed += dt;
+    const ledA = 0.55 + Math.sin(this.ambientElapsed * 1.1) * 0.28;
+    const ledB = 0.55 + Math.sin(this.ambientElapsed * 1.1 + Math.PI * 0.7) * 0.28;
+    this.ledStripLeft.alpha = ledA;
+    this.ledStripRight.alpha = ledB;
 
     if (this.anticipationBorderActive) {
       this.anticipationBorderElapsed += deltaMS;
@@ -1121,10 +1609,12 @@ export class SlotRenderer {
     this.bonus.destroy();
     // Destroy only the per-instance-generated gradient textures (drawn
     // fresh per mount/resize) — NOT `texture: true` on app.destroy(), which
-    // would also tear down the shared, module-cached symbol/glow textures
-    // (see symbolAssets.ts/fx.ts) that a future remount of this same game
-    // reuses.
-    this.backgroundLayer.texture.destroy(true);
+    // would also tear down the shared, module-cached symbol/glow/background
+    // textures (see symbolAssets.ts/fx.ts/environmentAssets.ts, all loaded
+    // via PIXI.Assets and cached for reuse across remounts) that a future
+    // remount of this same game reuses. this.backgroundLayer's texture is
+    // one of those shared Assets-cached textures — NOT destroyed here.
+    this.backgroundVignette.texture?.destroy(true);
     this.frameTop.texture?.destroy(true);
     this.frameLeft.texture?.destroy(true);
     this.frameBase.texture?.destroy(true);

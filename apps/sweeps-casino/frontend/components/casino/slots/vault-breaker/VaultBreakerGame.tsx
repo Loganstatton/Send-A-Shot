@@ -22,10 +22,10 @@ import { SlotRenderer } from "./engine/SlotRenderer";
 import type { WinTier } from "./engine/WinPresentation";
 import { tween } from "./engine/animUtils";
 import { slotAudio } from "./audio/SlotAudio";
-import { BetChipPicker } from "./ui/BetChipPicker";
+import { BetChipPicker, buildBetPresets } from "./ui/BetChipPicker";
 import { VaultBreakerInfoSheet } from "./ui/VaultBreakerInfoSheet";
 import { VaultBreakerLoading } from "./ui/VaultBreakerLoading";
-import { VolumeOff, VolumeOn, Menu, ChevronLeft } from "@/components/ui/icons";
+import { VolumeOff, VolumeOn, Menu, ChevronLeft, Plus } from "@/components/ui/icons";
 import { cn, formatCoins } from "@/lib/utils";
 import type { SlotFreeSpinsResult, SlotSpinResult } from "@/lib/types";
 
@@ -394,6 +394,24 @@ export function VaultBreakerGame() {
     setPhase("idle");
   }, [config, phase, spinning, effectiveBet, soundEnabled, soundVolume, spin, runBaseSpin, runFreeSpins]);
 
+  // BET plate's inline -/+ steppers (spec item 5: "matching the reference's
+  // plate style") — steps through the same discrete preset ladder the full
+  // BetChipPicker sheet already offers (never a raw +/-1 GC nudge that could
+  // land off-ladder), clamped at the ends. Purely a UI convenience on top of
+  // the existing setBetAmount/effectiveBet state — no new bet-validation
+  // logic, since the backend is the actual authority on bet bounds.
+  const stepBet = useCallback(
+    (direction: 1 | -1) => {
+      if (!config) return;
+      const presets = buildBetPresets(config.minBet, config.maxBet);
+      const currentIndex = presets.findIndex((p) => Math.abs(p - effectiveBet) < 0.001);
+      const fromIndex = currentIndex === -1 ? 0 : currentIndex;
+      const nextIndex = Math.max(0, Math.min(presets.length - 1, fromIndex + direction));
+      setBetAmount(presets[nextIndex]);
+    },
+    [config, effectiveBet]
+  );
+
   const busy = phase !== "idle" || spinning;
 
   if (loadingConfig || !config) {
@@ -418,20 +436,6 @@ export function VaultBreakerGame() {
         </button>
         <p className="min-w-0 flex-1 truncate text-[13px] font-extrabold tracking-wide text-white">VAULT BREAKER</p>
         <BalanceReadout />
-        <button
-          type="button"
-          onClick={toggleTurbo}
-          aria-label={turbo ? "Turn off turbo spin" : "Turn on turbo spin"}
-          aria-pressed={turbo}
-          className={cn(
-            "flex h-8 shrink-0 items-center justify-center rounded-full border px-2.5 text-[10px] font-extrabold tracking-wide transition-colors active:scale-90",
-            turbo
-              ? "border-accent-sc bg-accent-sc/20 text-accent-sc"
-              : "border-white/15 text-white/60 hover:text-white/90"
-          )}
-        >
-          TURBO
-        </button>
         <button
           type="button"
           onClick={toggleSound}
@@ -489,50 +493,76 @@ export function VaultBreakerGame() {
         )}
       </div>
 
-      {/* Control deck: BET (left) | SPIN (center, mounted into the deck) |
-          WIN + BALANCE (right) — one continuous panel, not scattered
-          floating labels (spec point 17). The spin button sits in a
-          recessed "socket" cut into the deck surface (a radial shadow
-          behind it) so it reads as physically built into the machine
-          rather than floating beneath it (spec point 18). */}
+      {/* Control deck: ONE integrated machine housing (spec item 5) — BET
+          (left, with -/+ steppers) | SPIN (center, large dual-ring button
+          mounted into a recessed socket) | WIN (right), with the turbo
+          toggle as a small icon flanking the housing rather than a
+          full-width control, continuing the same steel/gold cabinet
+          material as the Pixi-rendered machine frame above it instead of
+          reading as separate floating boxes. Balance lives in the header
+          HUD only (out of scope, unchanged). */}
       <div
-        className="relative shrink-0 border-t border-white/10 bg-gradient-to-b from-[#12151f] to-[#05070a] px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-3"
-        style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)" }}
+        className="relative shrink-0 px-4 pb-[max(10px,env(safe-area-inset-bottom))] pt-4"
+        style={{
+          background: "linear-gradient(180deg, #1c2029 0%, #12151d 24%, #0a0c12 70%, #050609 100%)",
+          borderTop: "2px solid #7a5c22",
+          boxShadow: "inset 0 2px 0 rgba(212,175,55,0.35), inset 0 1px 0 rgba(255,255,255,0.06), 0 -6px 18px rgba(0,0,0,0.5)",
+        }}
       >
+        {/* Corner rivets — the deck reads as the same bolted steel housing as the machine frame above it. */}
+        {[
+          "left-2 top-2",
+          "right-2 top-2",
+          "left-2 bottom-2",
+          "right-2 bottom-2",
+        ].map((pos) => (
+          <span
+            key={pos}
+            className={cn("pointer-events-none absolute h-[7px] w-[7px] rounded-full", pos)}
+            style={{
+              background: "radial-gradient(circle at 35% 30%, #f0d98a 0%, #b5862c 45%, #3a2a10 100%)",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.7)",
+            }}
+          />
+        ))}
+
         {/* Recessed socket the spin button sits inside — a dark radial
             inset behind the button so the button reads as mounted into
             this surface, not floating above it. */}
         <div
-          className="pointer-events-none absolute left-1/2 top-0 h-[104px] w-[104px] -translate-x-1/2 rounded-full"
+          className="pointer-events-none absolute left-1/2 top-0 h-[128px] w-[128px] -translate-x-1/2 rounded-full"
           style={{
-            background: "radial-gradient(circle at 50% 42%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.28) 55%, transparent 78%)",
-            boxShadow: "inset 0 2px 6px rgba(0,0,0,0.6)",
+            background: "radial-gradient(circle at 50% 40%, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.3) 55%, transparent 78%)",
+            boxShadow: "inset 0 2px 8px rgba(0,0,0,0.65)",
           }}
         />
 
-        <div className="flex items-end justify-between gap-3">
-          <button
-            type="button"
-            onClick={() => setBetPickerOpen(true)}
-            disabled={busy}
-            className="flex min-w-[76px] flex-col items-start gap-0.5 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-left transition-opacity active:scale-95 disabled:opacity-50"
-          >
-            <span className="text-[8px] font-semibold uppercase tracking-wider text-white/50">Bet</span>
-            <span className="font-mono text-sm font-bold text-white">{formatGC(effectiveBet)}</span>
-          </button>
+        {/* Turbo — a small icon button flanking the housing (spec item 5: "small icon buttons flanking the main deck, not full-width buttons"), not deleted, just relocated off the header. */}
+        <button
+          type="button"
+          onClick={toggleTurbo}
+          aria-label={turbo ? "Turn off turbo spin" : "Turn on turbo spin"}
+          aria-pressed={turbo}
+          className={cn(
+            "absolute left-3 top-4 z-10 flex h-7 w-7 items-center justify-center rounded-full border text-[9px] font-extrabold transition-colors active:scale-90",
+            turbo
+              ? "border-accent-sc bg-accent-sc/20 text-accent-sc shadow-[0_0_8px_rgba(45,191,176,0.5)]"
+              : "border-white/15 bg-black/40 text-white/55 hover:text-white/90"
+          )}
+        >
+          <BoltIcon className="h-3.5 w-3.5" />
+        </button>
+
+        <div className="flex items-end justify-between gap-2.5">
+          <BetPlate betAmount={effectiveBet} min={config.minBet} max={config.maxBet} busy={busy} onStep={stepBet} onOpenPicker={() => setBetPickerOpen(true)} />
 
           <SpinButton busy={busy} onPress={handleSpin} />
 
-          <div className="flex min-w-[88px] flex-col items-end gap-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2">
-            <span className="flex w-full items-baseline justify-between gap-2 text-[8px] font-semibold uppercase tracking-wider text-white/50">
-              Win
+          <div className="flex min-w-[92px] flex-1 flex-col items-center gap-0.5 rounded-2xl border border-[#3a4152] bg-gradient-to-b from-[#141924] to-[#0a0c13] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-2px_4px_rgba(0,0,0,0.5)]">
+            <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-white/45">Win</span>
+            <span className="font-mono text-base font-extrabold text-accent-sc drop-shadow-[0_0_6px_rgba(45,191,176,0.35)]">
+              {formatGC(winHud ? winDisplayAmount : 0)}
             </span>
-            <span className="font-mono text-sm font-bold text-accent-sc">{formatGC(winHud ? winDisplayAmount : 0)}</span>
-            <div className="h-px w-full bg-white/10" />
-            <span className="flex w-full items-baseline justify-between gap-2 text-[8px] font-semibold uppercase tracking-wider text-white/50">
-              Balance
-            </span>
-            <BalanceReadout compact />
           </div>
         </div>
       </div>
@@ -572,14 +602,17 @@ export function VaultBreakerGame() {
 }
 
 /**
- * The spin control: a large premium circular button (~78px — spec point 18's
- * 72-84px range) built around the real spin-button art asset
- * (ui/spin-button-idle.png), a metal outer ring that rotates while
- * spinning, a breathing glow while idle, and a physical depress on press.
- * Sits in normal flex flow inside the control deck (over the recessed
- * "socket" the deck draws behind it), so it reads as mounted INTO the
- * machine rather than floating beneath it (spec point 18) — no absolute
- * positioning pulling it half outside the deck's own edge.
+ * The spin control: a large premium circular button (~92px, up from V5's
+ * 78px — spec item 5: "bigger and more substantial than the current one,
+ * matching the reference's proportions") built around the real spin-button
+ * art asset (ui/spin-button-idle.png), with the reference's dual-ring
+ * treatment — a thick gold outer ring (rotating while spinning) plus a
+ * static teal inner glow ring sitting just behind the artwork — a breathing
+ * glow while idle, and a physical depress on press. Sits in normal flex
+ * flow inside the control deck (over the recessed "socket" the deck draws
+ * behind it), so it reads as mounted INTO the machine rather than floating
+ * beneath it — no absolute positioning pulling it half outside the deck's
+ * own edge.
  */
 function SpinButton({ busy, onPress }: { busy: boolean; onPress: () => void }) {
   const [pressed, setPressed] = useState(false);
@@ -592,20 +625,29 @@ function SpinButton({ busy, onPress }: { busy: boolean; onPress: () => void }) {
       onPointerLeave={() => setPressed(false)}
       disabled={busy}
       aria-label="Spin"
-      className="relative h-[78px] w-[78px] shrink-0 rounded-full outline-none disabled:cursor-default"
+      className="relative h-[92px] w-[92px] shrink-0 rounded-full outline-none disabled:cursor-default"
     >
+      {/* Static teal inner glow ring — the reference's "thick gold outer
+          ring, teal inner glow" pairing, sitting just behind the gold ring
+          and the button art. */}
+      <span
+        className="absolute -inset-[13px] rounded-full blur-[2px]"
+        style={{
+          background: "radial-gradient(circle, transparent 62%, rgba(45,191,176,0.55) 74%, rgba(45,191,176,0.15) 86%, transparent 100%)",
+        }}
+      />
       {/* rotating metal outer ring — a masked conic-gradient ring, not
           `border-image` (which ignores `border-radius` and renders as a
           square in every browser — the exact "square ring" bug this
           replaced). The radial-gradient mask punches a transparent hole in
           the middle, so it reads as a true ring regardless of what's
-          behind it. */}
+          behind it. Thicker than V5 (10px vs 7px) to read as substantial. */}
       <span
-        className={cn("absolute -inset-[7px] rounded-full", busy && "animate-[vb-ring-spin_0.85s_linear_infinite]")}
+        className={cn("absolute -inset-[10px] rounded-full", busy && "animate-[vb-ring-spin_0.85s_linear_infinite]")}
         style={{
           background: "conic-gradient(from 0deg, #d4af37, #f6e7ae, #8a641f, #d4af37, #f6e7ae, #8a641f, #d4af37)",
-          WebkitMask: "radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px))",
-          mask: "radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px))",
+          WebkitMask: "radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px))",
+          mask: "radial-gradient(farthest-side, transparent calc(100% - 6px), #000 calc(100% - 6px))",
         }}
       />
       {/* breathing glow when idle */}
@@ -625,10 +667,91 @@ function SpinButton({ busy, onPress }: { busy: boolean; onPress: () => void }) {
       />
       {busy && (
         <span className="absolute inset-0 flex items-center justify-center">
-          <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />
         </span>
       )}
     </button>
+  );
+}
+
+/**
+ * BET plate — label + amount + inline -/+ steppers, matching the
+ * reference's plate style (spec item 5). Tapping the amount itself still
+ * opens the full BetChipPicker sheet for the complete preset list; -/+ step
+ * through the same ladder one preset at a time for quick adjustment without
+ * leaving the deck.
+ */
+function BetPlate({
+  betAmount,
+  min,
+  max,
+  busy,
+  onStep,
+  onOpenPicker,
+}: {
+  betAmount: number;
+  min: number;
+  max: number;
+  busy: boolean;
+  onStep: (direction: 1 | -1) => void;
+  onOpenPicker: () => void;
+}) {
+  const atMin = betAmount <= min + 0.001;
+  const atMax = betAmount >= max - 0.001;
+  return (
+    <div className="flex min-w-[104px] flex-1 flex-col items-center gap-1 rounded-2xl border border-[#3a4152] bg-gradient-to-b from-[#141924] to-[#0a0c13] px-2 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),inset_0_-2px_4px_rgba(0,0,0,0.5)]">
+      <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-white/45">Bet</span>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onStep(-1)}
+          disabled={busy || atMin}
+          aria-label="Decrease bet"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#4a5568] bg-[#1b202b] text-white/80 transition-transform active:scale-90 disabled:opacity-35"
+        >
+          <MinusIcon className="h-2.5 w-2.5" />
+        </button>
+        <button
+          type="button"
+          onClick={onOpenPicker}
+          disabled={busy}
+          className="font-mono text-[15px] font-extrabold text-white transition-opacity disabled:opacity-60"
+        >
+          {formatGC(betAmount)}
+        </button>
+        <button
+          type="button"
+          onClick={() => onStep(1)}
+          disabled={busy || atMax}
+          aria-label="Increase bet"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#4a5568] bg-[#1b202b] text-white/80 transition-transform active:scale-90 disabled:opacity-35"
+        >
+          <Plus className="h-2.5 w-2.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MinusIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path d="M5 12h14" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BoltIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth={1}
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

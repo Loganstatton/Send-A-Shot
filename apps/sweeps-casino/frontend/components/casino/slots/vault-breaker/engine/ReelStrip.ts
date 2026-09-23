@@ -51,11 +51,18 @@ export interface ReelSpinOptions {
 }
 
 const BUFFER_ABOVE = 1;
-// Symbols fill this fraction of a cell's edge — raised from V3's 0.86 to
-// read as genuinely large on-screen (spec point 8), while the remaining
-// gap plus the reel-divider lines (drawn by SlotRenderer) are the ONLY
-// separation between symbols — never a bordered/boxed cell (spec point 1).
-const FILL = 0.93;
+// Symbols fill this fraction of a cell's edge — raised again for the
+// master-composition pass (V6, spec item 6: "75-85% of their cell... larger
+// than the current build") from V4/V5's 0.93. The real symbol renders carry
+// their own internal transparent padding (see symbolAssets.ts's "alpha-
+// verified, mostly-transparent 1024x1024" note), so the APPARENT artwork
+// fill is meaningfully lower than this box fraction — 0.97 here is what it
+// takes for the illustrated symbol itself (not its bounding box) to read as
+// large/confident rather than swimming in its cell, while the remaining
+// sliver plus the reel-divider hairlines (drawn by SlotRenderer) stay the
+// ONLY separation between symbols — never a bordered/boxed cell (spec
+// point 1). Pure sizing constant — does not touch spin timing/easing.
+const FILL = 0.97;
 // Motion-blur ceiling — deliberately conservative (V3 went up to 14 with
 // quality 2, which is exactly the "teal blurry smear" the product owner
 // called out). At this ceiling individual symbol silhouettes are still
