@@ -1,0 +1,241 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Near-black cinematic charcoal (Casino Visual Redesign sprint — default
+     & only theme in Phase 1, structured for a future light mode). Deeper
+     than the original graphite base so elevated surfaces read as distinct
+     "lit" layers rather than flat panels. */
+  --color-bg: 8 9 11;
+  --color-surface: 15 17 21;
+  --color-surface-raised: 21 24 30;
+  --color-border: 38 43 52;
+  --color-text-primary: 240 242 246;
+  --color-text-muted: 150 157 171;
+
+  /* Accent duo: rich gold for Gold Coins, saturated teal for Sweeps Coins.
+     Deliberately not the exact hue of any specific real-money-casino brand.
+     "-soft" variants back translucent glows/ambient washes. */
+  --color-accent-gc: 234 176 62;
+  --color-accent-gc-soft: 234 176 62;
+  --color-accent-sc: 32 201 184;
+  --color-accent-sc-soft: 32 201 184;
+
+  /* VIP tier metals (Starter -> Elite). Each is a base/highlight pair used
+     by bg-gradient-to-br for a believable metallic sheen. */
+  --color-tier-starter: 60 66 78;
+  --color-tier-starter-hi: 90 98 112;
+  --color-tier-bronze: 140 84 44;
+  --color-tier-bronze-hi: 196 130 76;
+  --color-tier-silver: 148 156 168;
+  --color-tier-silver-hi: 214 220 228;
+  --color-tier-gold: 180 132 40;
+  --color-tier-gold-hi: 244 200 100;
+  --color-tier-platinum: 90 128 158;
+  --color-tier-platinum-hi: 206 226 238;
+  --color-tier-diamond: 24 140 150;
+  --color-tier-diamond-hi: 130 232 224;
+  --color-tier-elite: 20 20 24;
+  --color-tier-elite-hi: 224 176 70;
+
+  --color-success: 74 201 122;
+  --color-danger: 235 92 92;
+}
+
+:root[data-theme="light"] {
+  --color-bg: 246 247 249;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 255 255 255;
+  --color-border: 224 227 232;
+  --color-text-primary: 20 23 28;
+  --color-text-muted: 96 103 115;
+  --color-accent-gc: 189 128 30;
+  --color-accent-gc-soft: 189 128 30;
+  --color-accent-sc: 12 133 122;
+  --color-accent-sc-soft: 12 133 122;
+  --color-success: 39 138 82;
+  --color-danger: 197 55 55;
+}
+
+* {
+  border-color: rgb(var(--color-border));
+}
+
+html,
+body {
+  background-color: rgb(var(--color-bg));
+  color: rgb(var(--color-text-primary));
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border));
+  border-radius: 999px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ---- Casino Visual Redesign: shared atmosphere primitives ----
+   Kept as plain CSS (rather than only Tailwind utilities) because several
+   of these are multi-stop radial gradients that read poorly as arbitrary
+   Tailwind values. Every consumer across the redesign should reuse these
+   instead of inventing new ambient-lighting treatments per component. */
+
+/* A page-level (or large-section-level) ambient wash: two soft radial
+   glows in the brand colors plus a very subtle top-down vignette. Apply to
+   a positioned ancestor and layer content above it — it never captures
+   pointer events. */
+.bg-casino-ambient {
+  position: relative;
+  isolation: isolate;
+}
+.bg-casino-ambient::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 50% at 15% 0%, rgb(var(--color-accent-sc) / 0.12), transparent 65%),
+    radial-gradient(55% 45% at 90% 15%, rgb(var(--color-accent-gc) / 0.10), transparent 65%),
+    linear-gradient(180deg, rgb(var(--color-bg)) 0%, rgb(var(--color-bg)) 100%);
+}
+
+/* Faint corner vignette + grain-free depth cue for hero/banner surfaces. */
+.bg-casino-vignette {
+  position: relative;
+}
+.bg-casino-vignette::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 100% at 50% 0%, transparent 45%, rgb(0 0 0 / 0.55) 100%);
+}
+
+/* Metallic tier surfaces for VIP (Starter -> Elite). Pass the tier's two
+   CSS vars via a `--tier` / `--tier-hi` custom-property pair set inline,
+   e.g. style={{ '--tier': 'var(--color-tier-gold)', '--tier-hi': 'var(--color-tier-gold-hi)' }}. */
+.bg-tier-metal {
+  background: linear-gradient(135deg, rgb(var(--tier, var(--color-tier-starter))) 0%, rgb(var(--tier-hi, var(--color-tier-starter-hi))) 50%, rgb(var(--tier, var(--color-tier-starter))) 100%);
+}
+
+/* Soft glowing number treatment for jackpot/reward totals. */
+.text-glow-gold {
+  color: rgb(var(--color-accent-gc));
+  text-shadow: 0 0 18px rgb(var(--color-accent-gc) / 0.55), 0 0 42px rgb(var(--color-accent-gc) / 0.25);
+}
+.text-glow-teal {
+  color: rgb(var(--color-accent-sc));
+  text-shadow: 0 0 18px rgb(var(--color-accent-sc) / 0.5), 0 0 42px rgb(var(--color-accent-sc) / 0.22);
+}
+
+/* Coin-shimmer sweep for currency pills / reward chips — a slow, subtle
+   diagonal highlight pass, not a loud attention-grabber. */
+.coin-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.coin-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 40%, rgb(255 255 255 / 0.16) 50%, transparent 60%);
+  transform: translateX(-120%);
+  animation: coin-shimmer-sweep 3.2s ease-in-out infinite;
+}
+@keyframes coin-shimmer-sweep {
+  0%, 30% { transform: translateX(-120%); }
+  60%, 100% { transform: translateX(120%); }
+}
+
+/* ---- Casino Visual Redesign: section-scoped ambient glows ----
+   Extremely subtle single-radial washes meant to sit behind ONE section
+   (not the whole page — that's .bg-casino-ambient above). Positioned
+   absolute on a `relative` wrapper, painted behind content (z-index -1)
+   and never intercepting pointer events. Each is themed to the section it
+   sits near per the redesign brief: teal for Originals, gold for the
+   Jackpot banner, violet for Promotions. Deliberately weaker (lower alpha,
+   tighter spread) than .bg-casino-ambient's page-level pair so stacking
+   them down a long scroll never reads as "painted across the whole page".
+   Insets are 0 on the left/right (only top/bottom bleed) — a pseudo-
+   element isn't a real DOM node, so per-element mobile-overflow checks
+   never catch it bleeding past the viewport; horizontal inset must stay
+   inside the wrapper's own box. */
+.bg-glow-originals {
+  position: relative;
+}
+.bg-glow-originals::before {
+  content: "";
+  position: absolute;
+  inset: -10% 0 auto 0;
+  height: 140%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(50% 60% at 50% 0%, rgb(var(--color-accent-sc) / 0.07), transparent 70%);
+}
+.bg-glow-jackpot {
+  position: relative;
+}
+.bg-glow-jackpot::before {
+  content: "";
+  position: absolute;
+  inset: -20% 0 -20% 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(60% 70% at 50% 50%, rgb(var(--color-accent-gc) / 0.10), transparent 72%);
+}
+.bg-glow-promo {
+  position: relative;
+}
+.bg-glow-promo::before {
+  content: "";
+  position: absolute;
+  inset: -10% 0 auto 0;
+  height: 140%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(55% 60% at 50% 0%, rgb(107 91 214 / 0.08), transparent 70%);
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: rgb(var(--color-surface-raised));
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(var(--color-border) / 0.5),
+    transparent
+  );
+  animation: shimmer-sweep 1.6s infinite;
+}
+@keyframes shimmer-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}

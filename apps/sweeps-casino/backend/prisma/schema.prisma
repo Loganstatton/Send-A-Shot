@@ -1,0 +1,1095 @@
+// Sweeps Casino Platform — Prisma schema
+// Source of truth for the ERD described in docs/02-database-schema.md.
+// Every financial table follows the append-only ledger rules documented there.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────
+
+enum Currency {
+  GC
+  SC
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  SELF_EXCLUDED
+  CLOSED
+}
+
+enum KycStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+  REVIEW_REQUIRED
+  SUSPENDED
+}
+
+enum KycLevel {
+  NONE
+  BASIC
+  FULL
+}
+
+enum LoginResult {
+  SUCCESS
+  FAILED_PASSWORD
+  FAILED_2FA
+  BLOCKED_JURISDICTION
+  BLOCKED_RISK
+}
+
+enum LedgerEntryType {
+  BET
+  WIN
+  REFUND
+  ROLLBACK
+  BONUS
+  PROMO_GRANT
+  DAILY_BONUS
+  PURCHASE
+  REDEMPTION_HOLD
+  REDEMPTION_PAYOUT
+  REDEMPTION_REVERSAL
+  ADMIN_ADJUSTMENT
+  VIP_REWARD
+}
+
+enum LedgerSource {
+  GAME
+  PROMOTION
+  PAYMENT
+  REDEMPTION
+  ADMIN
+  VIP
+  SYSTEM
+}
+
+enum GameRoundStatus {
+  OPEN
+  SETTLED
+  REFUNDED
+  ROLLED_BACK
+}
+
+enum GameProviderType {
+  INTERNAL
+  AGGREGATOR
+  LIVE_DEALER
+}
+
+enum GameProviderStatus {
+  ACTIVE
+  MAINTENANCE
+  DISABLED
+}
+
+enum GameCategory {
+  ORIGINALS
+  SLOTS
+  LIVE_CASINO
+  TABLE_GAMES
+  GAME_SHOWS
+}
+
+enum GameStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+enum Volatility {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum PromotionType {
+  SIGNUP
+  DAILY
+  WEEKLY
+  MONTHLY
+  LEADERBOARD
+  RAFFLE
+  CHALLENGE
+  GAME_SPECIFIC
+  PROVIDER
+  PROMO_CODE
+  PURCHASE
+  SOCIAL
+  MANUAL
+}
+
+enum PromotionStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum PromotionCurrency {
+  GC
+  SC
+  BOTH
+}
+
+enum PromotionClaimStatus {
+  GRANTED
+  IN_PROGRESS
+  COMPLETED
+  EXPIRED
+  REVOKED
+}
+
+enum AmoeMethod {
+  MAIL_IN
+  WEB_FORM
+  OTHER
+}
+
+enum AmoeStatus {
+  RECEIVED
+  UNDER_REVIEW
+  DUPLICATE
+  APPROVED
+  REJECTED
+}
+
+enum VipRewardType {
+  RANK_UP
+  WEEKLY
+  MONTHLY
+  RAKEBACK
+  RELOAD
+  MANUAL
+}
+
+enum PaymentMethodType {
+  CARD
+  ACH
+  PAYPAL
+  OTHER
+}
+
+enum PaymentMethodStatus {
+  ACTIVE
+  REMOVED
+}
+
+enum PaymentType {
+  PURCHASE
+  REFUND
+  CHARGEBACK
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  DISPUTED
+}
+
+enum RedemptionStatus {
+  DRAFT
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  PROCESSING
+  PAID
+  REJECTED
+  CANCELLED
+}
+
+enum RiskOutcome {
+  PASS
+  REVIEW
+  LIMIT
+  BLOCK
+}
+
+enum JurisdictionStatus {
+  ALLOWED
+  GC_ONLY
+  SC_DISABLED
+  REGISTRATION_DISABLED
+  REDEMPTION_DISABLED
+  BLOCKED
+}
+
+enum AdminRoleKey {
+  SUPER_ADMIN
+  COMPLIANCE
+  FINANCE
+  SUPPORT
+  VIP_MANAGER
+  FRAUD_ANALYST
+  CONTENT_MANAGER
+  GAME_MANAGER
+  MODERATOR
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+  SUPPRESSED_OPT_OUT
+}
+
+enum SupportTicketStatus {
+  OPEN
+  PENDING_USER
+  PENDING_SUPPORT
+  RESOLVED
+  CLOSED
+}
+
+enum ChatMessageStatus {
+  VISIBLE
+  DELETED_BY_MOD
+  FLAGGED
+}
+
+enum ChatModerationAction {
+  MUTE
+  BAN
+  SLOW_MODE
+  WARN
+}
+
+enum LeaderboardPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+  PROMOTIONAL
+}
+
+enum KycDocumentType {
+  ID_FRONT
+  ID_BACK
+  SELFIE
+  PROOF_OF_ADDRESS
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Identity
+// ─────────────────────────────────────────────────────────────────────────
+
+model User {
+  id                 String     @id @default(uuid())
+  email              String     @unique
+  emailVerifiedAt    DateTime?  @map("email_verified_at")
+  passwordHash       String     @map("password_hash")
+  username           String     @unique
+  displayNameMasked  Boolean    @default(false) @map("display_name_masked")
+  dateOfBirth        DateTime   @map("date_of_birth") @db.Date
+  stateOfRecord      String?    @map("state_of_record") @db.Char(2)
+  status             UserStatus @default(ACTIVE)
+  totpSecretEnc      String?    @map("totp_secret_enc")
+  totpEnabled        Boolean    @default(false) @map("totp_enabled")
+  backupCodesEnc     String[]   @map("backup_codes_enc")
+  kycStatus          KycStatus  @default(UNVERIFIED) @map("kyc_status")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+
+  profile                  Profile?
+  sessions                 Session[]
+  devices                  Device[]
+  loginEvents              LoginEvent[]
+  wallets                  Wallet[]
+  kycRecords               KycRecord[]
+  responsiblePlayControls  ResponsiblePlayControls?
+  favorites                Favorite[]
+  recentlyPlayed           RecentlyPlayed[]
+  gameRounds               GameRound[]
+  provablyFairSeeds        ProvablyFairSeed[]
+  promotionClaims          PromotionClaim[]
+  amoeRequests             AmoeRequest[]
+  vipProgress              VipProgress?
+  vipRewards               VipReward[]
+  paymentMethods           PaymentMethod[]
+  payments                 Payment[]
+  redemptions              Redemption[]
+  riskEvents               RiskEvent[]
+  supportTickets           SupportTicket[]
+  notifications            Notification[]
+  notificationPreferences  NotificationPreferences?
+  chatMessages             ChatMessage[]
+  analyticsEvents          AnalyticsEvent[]
+  adminUser                AdminUser?
+
+  @@map("users")
+}
+
+model Profile {
+  userId            String  @id @map("user_id")
+  avatarUrl         String? @map("avatar_url")
+  country           String?
+  timezone          String?
+  marketingOptIn    Boolean @default(false) @map("marketing_opt_in")
+  chatDisplayName   String? @map("chat_display_name")
+  chatAnonymized    Boolean @default(false) @map("chat_anonymized")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Session {
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  refreshTokenHash  String    @map("refresh_token_hash")
+  userAgent         String?   @map("user_agent")
+  ip                String?
+  deviceId          String?   @map("device_id")
+  expiresAt         DateTime  @map("expires_at")
+  revokedAt         DateTime? @map("revoked_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id])
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Device {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  fingerprintHash  String   @map("fingerprint_hash")
+  firstSeenAt      DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt       DateTime @default(now()) @map("last_seen_at")
+  trusted          Boolean  @default(false)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@index([userId])
+  @@index([fingerprintHash])
+  @@map("devices")
+}
+
+model LoginEvent {
+  id        String      @id @default(uuid())
+  userId    String      @map("user_id")
+  deviceId  String?     @map("device_id")
+  ip        String?
+  geoState  String?     @map("geo_state") @db.Char(2)
+  result    LoginResult
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("login_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Wallet / ledger — the mission-critical core
+// ─────────────────────────────────────────────────────────────────────────
+
+model Wallet {
+  id                 String    @id @default(uuid())
+  userId             String    @map("user_id")
+  currency           Currency
+  balance            Decimal   @default(0) @db.Decimal(18, 2)
+  balanceVerifiedAt  DateTime? @map("balance_verified_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries LedgerEntry[]
+
+  @@unique([userId, currency])
+  @@map("wallets")
+}
+
+model LedgerEntry {
+  id                 String          @id @default(uuid())
+  walletId           String          @map("wallet_id")
+  currency           Currency
+  type               LedgerEntryType
+  amount             Decimal         @db.Decimal(18, 2)
+  balanceBefore      Decimal         @map("balance_before") @db.Decimal(18, 2)
+  balanceAfter       Decimal         @map("balance_after") @db.Decimal(18, 2)
+  source             LedgerSource
+  idempotencyKey     String          @map("idempotency_key")
+  gameRoundId        String?         @map("game_round_id")
+  paymentId          String?         @map("payment_id")
+  redemptionId       String?         @map("redemption_id")
+  promotionClaimId   String?         @map("promotion_claim_id")
+  adminActorId       String?         @map("admin_actor_id")
+  metadata           Json?
+  createdAt          DateTime        @default(now()) @map("created_at")
+
+  wallet          Wallet           @relation(fields: [walletId], references: [id])
+  gameRound       GameRound?       @relation(fields: [gameRoundId], references: [id])
+  payment         Payment?         @relation(fields: [paymentId], references: [id])
+  redemption      Redemption?      @relation(fields: [redemptionId], references: [id])
+  promotionClaim  PromotionClaim?  @relation(fields: [promotionClaimId], references: [id])
+  adminActor      AdminUser?       @relation(fields: [adminActorId], references: [id])
+
+  @@unique([walletId, idempotencyKey])
+  @@index([walletId, createdAt])
+  @@map("ledger_entries")
+}
+
+model GameRound {
+  id                    String          @id @default(uuid())
+  userId                String          @map("user_id")
+  gameId                String          @map("game_id")
+  currency              Currency
+  status                GameRoundStatus @default(OPEN)
+  betAmount             Decimal         @map("bet_amount") @db.Decimal(18, 2)
+  winAmount             Decimal?        @map("win_amount") @db.Decimal(18, 2)
+  multiplier             Decimal?        @db.Decimal(10, 4)
+  serverSeedHash        String          @map("server_seed_hash")
+  serverSeedRevealed    String?         @map("server_seed_revealed")
+  clientSeed            String          @map("client_seed")
+  nonce                 BigInt
+  resultPayload         Json            @map("result_payload")
+  providerId             String?         @map("provider_id")
+  providerRoundRef       String?         @map("provider_round_ref")
+  createdAt              DateTime        @default(now()) @map("created_at")
+  settledAt               DateTime?       @map("settled_at")
+
+  user     User           @relation(fields: [userId], references: [id])
+  game     Game           @relation(fields: [gameId], references: [id])
+  provider GameProvider?  @relation(fields: [providerId], references: [id])
+  entries  LedgerEntry[]
+
+  @@unique([providerId, providerRoundRef])
+  @@index([userId, createdAt])
+  @@index([gameId])
+  @@map("game_rounds")
+}
+
+model ProvablyFairSeed {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  serverSeed    String    @map("server_seed")
+  serverSeedHash String   @map("server_seed_hash")
+  clientSeed    String    @map("client_seed")
+  nonceCounter  BigInt    @default(0) @map("nonce_counter")
+  active        Boolean   @default(true)
+  revealedAt    DateTime? @map("revealed_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+  @@map("provably_fair_seeds")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Casino catalog
+// ─────────────────────────────────────────────────────────────────────────
+
+model GameProvider {
+  id     String              @id @default(uuid())
+  code   String              @unique
+  name   String
+  type   GameProviderType
+  status GameProviderStatus  @default(ACTIVE)
+  config Json?
+
+  games      Game[]
+  gameRounds GameRound[]
+
+  @@map("game_providers")
+}
+
+model Game {
+  id                       String        @id @default(uuid())
+  providerId               String        @map("provider_id")
+  providerGameId           String        @map("provider_game_id")
+  name                     String
+  slug                     String        @unique
+  category                 GameCategory
+  tags                     String[]
+  imageUrl                 String?       @map("image_url")
+  supportedCurrencies      Currency[]    @map("supported_currencies")
+  demoAvailable            Boolean       @default(false) @map("demo_available")
+  rtpBps                   Int?          @map("rtp_bps")
+  volatility               Volatility?
+  status                   GameStatus    @default(ACTIVE)
+  restrictedJurisdictions  String[]      @map("restricted_jurisdictions")
+  sortWeight               Int           @default(0) @map("sort_weight")
+  createdAt                DateTime      @default(now()) @map("created_at")
+  updatedAt                DateTime      @updatedAt @map("updated_at")
+
+  provider        GameProvider      @relation(fields: [providerId], references: [id])
+  rounds          GameRound[]
+  favorites       Favorite[]
+  recentlyPlayed  RecentlyPlayed[]
+
+  @@index([category])
+  @@index([status])
+  @@map("games")
+}
+
+model Favorite {
+  userId    String   @map("user_id")
+  gameId    String   @map("game_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@id([userId, gameId])
+  @@map("favorites")
+}
+
+model RecentlyPlayed {
+  userId       String   @map("user_id")
+  gameId       String   @map("game_id")
+  lastPlayedAt DateTime @default(now()) @map("last_played_at")
+  playCount    Int      @default(1) @map("play_count")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@id([userId, gameId])
+  @@map("recently_played")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Promotions / VIP
+// ─────────────────────────────────────────────────────────────────────────
+
+model Promotion {
+  id                       String             @id @default(uuid())
+  type                     PromotionType
+  name                     String
+  description              String?
+  termsUrl                 String?            @map("terms_url")
+  status                   PromotionStatus    @default(DRAFT)
+  startsAt                 DateTime?          @map("starts_at")
+  endsAt                   DateTime?          @map("ends_at")
+  jurisdictionAllowlist    String[]           @map("jurisdiction_allowlist")
+  minAccountAgeDays        Int?               @map("min_account_age_days")
+  requiresKyc              Boolean            @default(false) @map("requires_kyc")
+  minVipLevelId            String?            @map("min_vip_level_id")
+  eligibleGameIds          String[]           @map("eligible_game_ids")
+  eligibleCurrency         PromotionCurrency  @default(BOTH) @map("eligible_currency")
+  rewardConfig             Json               @map("reward_config")
+  playthroughRequirement   Json?              @map("playthrough_requirement")
+  claimLimitPerUser        Int?               @map("claim_limit_per_user")
+  maxParticipants          Int?               @map("max_participants")
+  createdBy                String?            @map("created_by")
+  createdAt                DateTime           @default(now()) @map("created_at")
+  updatedAt                DateTime           @updatedAt @map("updated_at")
+
+  minVipLevel VipLevel?         @relation(fields: [minVipLevelId], references: [id])
+  creator     AdminUser?        @relation(fields: [createdBy], references: [id])
+  claims      PromotionClaim[]
+  amoeRequests AmoeRequest[]
+
+  @@index([type, status])
+  @@map("promotions")
+}
+
+model PromotionClaim {
+  id                  String                @id @default(uuid())
+  promotionId         String                @map("promotion_id")
+  userId              String                @map("user_id")
+  claimSequence       Int                   @default(1) @map("claim_sequence")
+  status              PromotionClaimStatus  @default(GRANTED)
+  grantedAmount       Decimal?              @map("granted_amount") @db.Decimal(18, 2)
+  currency            Currency?
+  playthroughProgress Json?                 @map("playthrough_progress")
+  claimedAt           DateTime              @default(now()) @map("claimed_at")
+  completedAt         DateTime?             @map("completed_at")
+
+  promotion    Promotion      @relation(fields: [promotionId], references: [id])
+  user         User           @relation(fields: [userId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  @@unique([promotionId, userId, claimSequence])
+  @@map("promotion_claims")
+}
+
+model AmoeRequest {
+  id             String      @id @default(uuid())
+  promotionId    String?     @map("promotion_id")
+  userId         String      @map("user_id")
+  method         AmoeMethod
+  submissionRef  String?     @map("submission_ref")
+  status         AmoeStatus  @default(RECEIVED)
+  reviewedBy     String?     @map("reviewed_by")
+  reason         String?
+  scAwarded      Decimal?    @map("sc_awarded") @db.Decimal(18, 2)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  decidedAt      DateTime?   @map("decided_at")
+
+  promotion Promotion? @relation(fields: [promotionId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+  reviewer  AdminUser? @relation(fields: [reviewedBy], references: [id])
+
+  @@map("amoe_requests")
+}
+
+model VipLevel {
+  id                  String   @id @default(uuid())
+  rankOrder           Int      @unique @map("rank_order")
+  name                String
+  minPoints           Decimal  @map("min_points") @db.Decimal(18, 2)
+  gcPointsMultiplier  Decimal  @default(1) @map("gc_points_multiplier") @db.Decimal(10, 4)
+  scPointsMultiplier  Decimal  @default(1) @map("sc_points_multiplier") @db.Decimal(10, 4)
+  benefits            Json?
+  rankUpReward        Json?    @map("rank_up_reward")
+  weeklyReward        Json?    @map("weekly_reward")
+  monthlyReward       Json?    @map("monthly_reward")
+  rakebackBps         Int?     @map("rakeback_bps")
+
+  progress   VipProgress[]
+  promotions Promotion[]
+
+  @@map("vip_levels")
+}
+
+model VipProgress {
+  userId          String   @id @map("user_id")
+  currentLevelId  String   @map("current_level_id")
+  lifetimePoints  Decimal  @default(0) @map("lifetime_points") @db.Decimal(18, 2)
+  periodPoints    Decimal  @default(0) @map("period_points") @db.Decimal(18, 2)
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentLevel VipLevel @relation(fields: [currentLevelId], references: [id])
+
+  @@map("vip_progress")
+}
+
+model VipReward {
+  id            String        @id @default(uuid())
+  userId        String        @map("user_id")
+  vipLevelId    String        @map("vip_level_id")
+  type          VipRewardType
+  amount        Decimal       @db.Decimal(18, 2)
+  currency      Currency
+  ledgerEntryId String?       @map("ledger_entry_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("vip_rewards")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Payments / Redemptions (flagged off, schema present)
+// ─────────────────────────────────────────────────────────────────────────
+
+model PaymentMethod {
+  id          String              @id @default(uuid())
+  userId      String              @map("user_id")
+  type        PaymentMethodType
+  providerRef String              @map("provider_ref")
+  status      PaymentMethodStatus @default(ACTIVE)
+  createdAt   DateTime            @default(now()) @map("created_at")
+
+  user        User          @relation(fields: [userId], references: [id])
+  payments    Payment[]
+  redemptions Redemption[]
+
+  @@map("payment_methods")
+}
+
+model GcPackage {
+  id              String   @id @default(uuid())
+  name            String
+  gcAmount        Decimal  @map("gc_amount") @db.Decimal(18, 2)
+  bonusScPromoId  String?  @map("bonus_sc_promo_id")
+  priceUsd        Decimal  @map("price_usd") @db.Decimal(10, 2)
+  active          Boolean  @default(true)
+
+  payments Payment[]
+
+  @@map("gc_packages")
+}
+
+model Payment {
+  id                  String        @id @default(uuid())
+  userId              String        @map("user_id")
+  paymentMethodId     String?       @map("payment_method_id")
+  providerId          String        @map("provider_id")
+  providerPaymentRef  String        @map("provider_payment_ref")
+  type                PaymentType
+  gcPackageId         String?       @map("gc_package_id")
+  amountUsd           Decimal       @map("amount_usd") @db.Decimal(10, 2)
+  status              PaymentStatus @default(PENDING)
+  riskSignals         Json?         @map("risk_signals")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  settledAt           DateTime?     @map("settled_at")
+
+  user          User           @relation(fields: [userId], references: [id])
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  gcPackage     GcPackage?     @relation(fields: [gcPackageId], references: [id])
+  ledgerEntries LedgerEntry[]
+
+  @@unique([providerId, providerPaymentRef])
+  @@map("payments")
+}
+
+model Redemption {
+  id                   String            @id @default(uuid())
+  userId               String            @map("user_id")
+  status               RedemptionStatus  @default(DRAFT)
+  scAmount             Decimal           @map("sc_amount") @db.Decimal(18, 2)
+  payoutMethodId       String?           @map("payout_method_id")
+  eligibilitySnapshot  Json              @map("eligibility_snapshot")
+  riskReview           Json?             @map("risk_review")
+  decidedBy            String?           @map("decided_by")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  decidedAt            DateTime?         @map("decided_at")
+  paidAt               DateTime?         @map("paid_at")
+
+  user          User               @relation(fields: [userId], references: [id])
+  payoutMethod  PaymentMethod?     @relation(fields: [payoutMethodId], references: [id])
+  decider       AdminUser?         @relation(fields: [decidedBy], references: [id])
+  auditTrail    RedemptionAudit[]
+  ledgerEntries LedgerEntry[]
+
+  @@map("redemptions")
+}
+
+model RedemptionAudit {
+  id           String   @id @default(uuid())
+  redemptionId String   @map("redemption_id")
+  fromStatus   String   @map("from_status")
+  toStatus     String   @map("to_status")
+  actorId      String?  @map("actor_id")
+  reason       String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  redemption Redemption @relation(fields: [redemptionId], references: [id])
+
+  @@map("redemption_audit")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// KYC
+// ─────────────────────────────────────────────────────────────────────────
+
+model KycRecord {
+  id                  String    @id @default(uuid())
+  userId              String    @map("user_id")
+  status              KycStatus @default(UNVERIFIED)
+  provider            String?
+  providerSessionRef  String?   @map("provider_session_ref")
+  level               KycLevel  @default(NONE)
+  reviewedBy          String?   @map("reviewed_by")
+  rejectionReason     String?   @map("rejection_reason")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  user      User          @relation(fields: [userId], references: [id])
+  reviewer  AdminUser?    @relation(fields: [reviewedBy], references: [id])
+  documents KycDocument[]
+
+  @@map("kyc_records")
+}
+
+model KycDocument {
+  id           String          @id @default(uuid())
+  kycRecordId  String          @map("kyc_record_id")
+  type         KycDocumentType
+  storageKey   String          @map("storage_key")
+  uploadedAt   DateTime        @default(now()) @map("uploaded_at")
+
+  kycRecord KycRecord @relation(fields: [kycRecordId], references: [id], onDelete: Cascade)
+
+  @@map("kyc_documents")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Risk
+// ─────────────────────────────────────────────────────────────────────────
+
+model RiskRule {
+  id         String   @id @default(uuid())
+  name       String
+  signalType String   @map("signal_type")
+  condition  Json
+  action     RiskOutcome
+  active     Boolean  @default(true)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  events RiskEvent[]
+
+  @@map("risk_rules")
+}
+
+model RiskEvent {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  ruleId      String?      @map("rule_id")
+  signalType  String       @map("signal_type")
+  severity    String
+  outcome     RiskOutcome
+  details     Json?
+  resolvedBy  String?      @map("resolved_by")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  resolvedAt  DateTime?    @map("resolved_at")
+
+  user     User       @relation(fields: [userId], references: [id])
+  rule     RiskRule?  @relation(fields: [ruleId], references: [id])
+  resolver AdminUser? @relation(fields: [resolvedBy], references: [id])
+
+  @@map("risk_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Compliance
+// ─────────────────────────────────────────────────────────────────────────
+
+model Jurisdiction {
+  state      String              @id @db.Char(2)
+  status     JurisdictionStatus  @default(REGISTRATION_DISABLED)
+  minAge     Int                 @default(21) @map("min_age")
+  updatedBy  String?             @map("updated_by")
+  updatedAt  DateTime            @updatedAt @map("updated_at")
+
+  updater AdminUser? @relation(fields: [updatedBy], references: [id])
+
+  @@map("jurisdictions")
+}
+
+model ComplianceConfigVersion {
+  id            String   @id @default(uuid())
+  configKey     String   @map("config_key")
+  value         Json
+  version       Int
+  changedBy     String?  @map("changed_by")
+  changeReason  String?  @map("change_reason")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  changer AdminUser? @relation(fields: [changedBy], references: [id])
+
+  @@unique([configKey, version])
+  @@map("compliance_config_versions")
+}
+
+model FeatureFlag {
+  key         String   @id
+  enabled     Boolean  @default(false)
+  rolloutMeta Json?    @map("rollout_meta")
+  updatedBy   String?  @map("updated_by")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  updater AdminUser? @relation(fields: [updatedBy], references: [id])
+
+  @@map("feature_flags")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Responsible play
+// ─────────────────────────────────────────────────────────────────────────
+
+model ResponsiblePlayControls {
+  userId                  String    @id @map("user_id")
+  depositLimitDaily       Decimal?  @map("deposit_limit_daily") @db.Decimal(18, 2)
+  depositLimitWeekly      Decimal?  @map("deposit_limit_weekly") @db.Decimal(18, 2)
+  depositLimitMonthly     Decimal?  @map("deposit_limit_monthly") @db.Decimal(18, 2)
+  sessionReminderMinutes  Int?      @map("session_reminder_minutes")
+  coolingOffUntil         DateTime? @map("cooling_off_until")
+  selfExclusionUntil      DateTime? @map("self_exclusion_until")
+  selfExclusionPermanent  Boolean   @default(false) @map("self_exclusion_permanent")
+  selfExcludedAt          DateTime? @map("self_excluded_at")
+  marketingOptOut         Boolean   @default(false) @map("marketing_opt_out")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("responsible_play_controls")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Social
+// ─────────────────────────────────────────────────────────────────────────
+
+model ChatMessage {
+  id        String            @id @default(uuid())
+  room      String
+  userId    String            @map("user_id")
+  body      String
+  status    ChatMessageStatus @default(VISIBLE)
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([room, createdAt])
+  @@map("chat_messages")
+}
+
+model ChatModerationLog {
+  id              String                @id @default(uuid())
+  moderatorId     String                @map("moderator_id")
+  targetUserId    String                @map("target_user_id")
+  action          ChatModerationAction
+  durationMinutes Int?                  @map("duration_minutes")
+  reason          String?
+  createdAt       DateTime              @default(now()) @map("created_at")
+
+  moderator AdminUser @relation(fields: [moderatorId], references: [id])
+
+  @@map("chat_moderation_actions")
+}
+
+model LeaderboardSnapshot {
+  id          String            @id @default(uuid())
+  promotionId String?           @map("promotion_id")
+  period      LeaderboardPeriod
+  metric      String
+  rankings    Json
+  computedAt  DateTime          @default(now()) @map("computed_at")
+
+  @@map("leaderboard_snapshots")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Admin / audit
+// ─────────────────────────────────────────────────────────────────────────
+
+model AdminRole {
+  id          String        @id @default(uuid())
+  key         AdminRoleKey  @unique
+  permissions Json
+
+  admins AdminUser[]
+
+  @@map("admin_roles")
+}
+
+model AdminUser {
+  id        String   @id @default(uuid())
+  userId    String?  @unique @map("user_id")
+  roleId    String   @map("role_id")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User?      @relation(fields: [userId], references: [id])
+  role   AdminRole  @relation(fields: [roleId], references: [id])
+
+  auditLogs              AuditLog[]
+  ledgerEntries          LedgerEntry[]
+  createdPromotions      Promotion[]
+  amoeReviews            AmoeRequest[]
+  kycReviews             KycRecord[]
+  riskResolutions        RiskEvent[]
+  jurisdictionUpdates    Jurisdiction[]
+  complianceVersions     ComplianceConfigVersion[]
+  featureFlagUpdates     FeatureFlag[]
+  redemptionDecisions    Redemption[]
+  chatModerationActions  ChatModerationLog[]
+
+  @@map("admin_users")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String   @map("admin_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  oldState   Json?    @map("old_state")
+  newState   Json?    @map("new_state")
+  reason     String?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  admin AdminUser @relation(fields: [adminId], references: [id])
+
+  @@index([targetType, targetId])
+  @@index([adminId, createdAt])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Notifications / Support / Analytics
+// ─────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String              @map("user_id")
+  channel   NotificationChannel
+  event     String
+  payload   Json?
+  status    NotificationStatus  @default(QUEUED)
+  createdAt DateTime            @default(now()) @map("created_at")
+  sentAt    DateTime?           @map("sent_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model NotificationPreferences {
+  userId      String @id @map("user_id")
+  preferences Json
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+model SupportTicket {
+  id               String               @id @default(uuid())
+  userId           String               @map("user_id")
+  subject          String
+  status           SupportTicketStatus  @default(OPEN)
+  assignedAdminId  String?              @map("assigned_admin_id")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  user     User             @relation(fields: [userId], references: [id])
+  messages SupportMessage[]
+
+  @@map("support_tickets")
+}
+
+model SupportMessage {
+  id            String   @id @default(uuid())
+  ticketId      String   @map("ticket_id")
+  authorUserId  String?  @map("author_user_id")
+  authorAdminId String?  @map("author_admin_id")
+  body          String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("support_messages")
+}
+
+model AnalyticsEvent {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  eventName  String   @map("event_name")
+  properties Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([eventName, createdAt])
+  @@map("analytics_events")
+}
