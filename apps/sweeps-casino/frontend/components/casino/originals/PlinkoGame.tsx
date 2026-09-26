@@ -1,16 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/Button";
-import { Select } from "@/components/ui/Select";
 import { BetAmountField } from "@/components/casino/originals/BetAmountField";
-import { GameInfoSheet } from "@/components/casino/originals/GameInfoSheet";
+import { BottomSheet } from "@/components/ui/BottomSheet";
+import { ProvablyFairPanel } from "@/components/casino/originals/ProvablyFairPanel";
 import { GameLoading } from "@/components/casino/originals/GameLoading";
 import { PlinkoBoard, type PlinkoDropRequest } from "@/components/casino/originals/PlinkoBoard";
 import { RoundHistory } from "@/components/casino/originals/RoundHistory";
 import { plinkoAudio } from "@/components/casino/originals/plinkoAudio";
+import { Menu } from "@/components/ui/icons";
 import { useOriginalGame } from "@/lib/hooks/useOriginalGame";
 import { cn, formatCoins } from "@/lib/utils";
+
+// The in-game header (rendered by the shared (game) route shell,
+// app/(game)/casino/originals/[slug]/page.tsx) reserves an empty slot with
+// this id for a per-game "Menu" affordance — see that file's GameHeader.
+// Plinko is the only game wired up to it this pass (product spec items
+// 27-29): Provably Fair verification moves out of the always-visible
+// control deck and into that header Menu button instead, so nothing about
+// verifying fairness is shown during normal gameplay any more.
+const HEADER_MENU_SLOT_ID = "game-header-actions";
 
 type Risk = "low" | "medium" | "high";
 
@@ -71,6 +82,12 @@ export function PlinkoGame() {
   const [rows, setRows] = useState(12);
   const [risk, setRisk] = useState<Risk>("medium");
   const [posting, setPosting] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setMenuSlot(document.getElementById(HEADER_MENU_SLOT_ID));
+  }, []);
 
   const [activeBalls, setActiveBalls] = useState<ActiveBall[]>([]);
   const activeBallsRef = useRef<ActiveBall[]>([]);
@@ -194,46 +211,78 @@ export function PlinkoGame() {
         </div>
       </div>
 
-      <div className="space-y-4 lg:w-[240px] lg:shrink-0">
+      {/* Compact integrated control deck (product spec items 10-16, 27-29):
+          bet stepper, rows, risk and the drop button in the smallest
+          vertical footprint that stays comfortably tappable — the board
+          above needs to dominate the screen, not this. Rows + risk share
+          one row instead of two stacked full-width blocks. */}
+      <div className="space-y-2.5 lg:w-[240px] lg:shrink-0">
         <BetAmountField valueMinor={betAmount} onChange={setBetAmount} minMinor={config.minBet} maxMinor={config.maxBet} />
 
-        <Select
-          label="Rows"
-          value={rows}
-          disabled={anyInFlight}
-          onChange={(e) => setRows(parseInt(e.target.value, 10))}
-        >
-          {[8, 10, 12, 14, 16].map((n) => (
-            <option key={n} value={n}>
-              {n} rows
-            </option>
-          ))}
-        </Select>
-
-        <div className="grid grid-cols-3 gap-2">
-          {(["low", "medium", "high"] as Risk[]).map((r) => (
-            <Button
-              key={r}
-              type="button"
-              variant={risk === r ? "sc" : "secondary"}
-              onClick={() => setRisk(r)}
+        <div className="flex items-stretch gap-2">
+          <div className="w-[84px] shrink-0">
+            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-text-muted">Rows</label>
+            <select
+              value={rows}
               disabled={anyInFlight}
-              className="capitalize"
-              size="sm"
+              onChange={(e) => setRows(parseInt(e.target.value, 10))}
+              className="w-full rounded-lg border border-border bg-surface-raised px-2 py-2 text-xs font-semibold text-text-primary outline-none transition-colors focus:border-accent-sc disabled:opacity-50"
             >
-              {r}
-            </Button>
-          ))}
+              {[8, 10, 12, 14, 16].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1">
+            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-text-muted">Risk</label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(["low", "medium", "high"] as Risk[]).map((r) => (
+                <Button
+                  key={r}
+                  type="button"
+                  variant={risk === r ? "sc" : "secondary"}
+                  onClick={() => setRisk(r)}
+                  disabled={anyInFlight}
+                  className="min-h-[2.25rem] px-1 capitalize"
+                  size="sm"
+                >
+                  {r}
+                </Button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {lastError && <p className="text-xs text-danger">{lastError}</p>}
 
-        <Button className="w-full" size="lg" variant="sc" onClick={onDrop} loading={posting} disabled={dropDisabled}>
-          {inFlightCount > 0 ? `Drop ball (${inFlightCount} in flight)` : "Drop ball"}
+        <Button className="w-full tracking-wide" size="lg" variant="sc" onClick={onDrop} loading={posting} disabled={dropDisabled}>
+          {inFlightCount > 0 ? `DROP BALL (${inFlightCount} IN FLIGHT)` : "DROP BALL"}
         </Button>
-
-        <GameInfoSheet seed={seed} loading={loadingSeed} onRotated={onRotated} />
       </div>
+
+      {/* Provably Fair now lives behind the header's Menu button, not in
+          the always-visible control deck (product spec items 27-29:
+          "Provably Fair link/details move into a Menu, not shown during
+          gameplay"). Portaled into the (game) shell's GameHeader slot so it
+          renders in the thin top bar rather than down here. */}
+      {menuSlot &&
+        createPortal(
+          <button
+            type="button"
+            onClick={() => setInfoOpen(true)}
+            aria-label="Game menu — Provably Fair"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border text-text-muted transition-colors hover:text-text-primary"
+          >
+            <Menu className="h-4 w-4" />
+          </button>,
+          menuSlot
+        )}
+      <BottomSheet open={infoOpen} onClose={() => setInfoOpen(false)} title="Provably Fair">
+        <ProvablyFairPanel seed={seed} loading={loadingSeed} onRotated={onRotated} />
+      </BottomSheet>
     </div>
   );
 }

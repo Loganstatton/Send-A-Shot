@@ -9,7 +9,6 @@ import { PlinkoGame } from "@/components/casino/originals/PlinkoGame";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/Button";
 import { BalancePill } from "@/components/wallet/BalancePill";
-import { CurrencySwitcher } from "@/components/wallet/CurrencySwitcher";
 import { VaultlineLogo } from "@/components/ui/VaultlineLogo";
 import { Dice, ChevronLeft, Star, StarFilled } from "@/components/ui/icons";
 import { useFetch } from "@/lib/hooks/useFetch";
@@ -53,7 +52,12 @@ function GameHeader({ slug, title }: { slug: string; title: string }) {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-bg/95 px-3 backdrop-blur sm:px-4">
+    // Thin, consistent header — Back / Name / Balance / Favorite / Menu
+    // (product spec items 27-29). The standalone CurrencySwitcher was
+    // dropped: BalancePill already shows the active currency's label right
+    // next to the amount (e.g. "550.77 GC"), so a second currency control
+    // here was redundant clutter competing with the game itself for room.
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-2.5 border-b border-border bg-bg/95 px-3 backdrop-blur sm:gap-3 sm:px-4">
       <button
         onClick={() => router.back()}
         aria-label="Back"
@@ -70,13 +74,6 @@ function GameHeader({ slug, title }: { slug: string; title: string }) {
         <p className="truncate text-sm font-bold text-text-primary">{title}</p>
       </div>
 
-      <div className="hidden sm:block">
-        <CurrencySwitcher />
-      </div>
-      {/* BalancePill already shows the active currency's label next to the
-          amount, so this one compact pill covers both the "Balance" and
-          "Currency" requirements on narrow phones where the full
-          two-button CurrencySwitcher wouldn't fit this header. */}
       <BalancePill alwaysVisible />
 
       {game && (
@@ -91,6 +88,11 @@ function GameHeader({ slug, title }: { slug: string; title: string }) {
           </span>
         </button>
       )}
+
+      {/* Empty by default — a game can portal a Menu button into this slot
+          (see PlinkoGame.tsx) rather than every game needing its own copy
+          of this header. Renders as nothing for games that don't use it. */}
+      <div id="game-header-actions" className="contents" />
     </header>
   );
 }

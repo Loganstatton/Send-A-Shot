@@ -22,3 +22,19 @@ export function isPlayableSlot(slug: string): boolean {
 export function isPlayableGame(game: { slug: string; category: string }): boolean {
   return game.category !== "SLOTS" || isPlayableSlot(game.slug);
 }
+
+// Product direction (full design-pass review, current priority: Plinko /
+// Mines / Dice only — custom slot development, including Vault Breaker, is
+// PAUSED): even a *technically playable* slot must not be promoted in the
+// curated "hero" rails (Continue Playing / Vaultline Originals / Popular /
+// Trending / New Games) any more. Vault Breaker's own dedicated page and
+// the Slots category browse page are untouched by this — a player who goes
+// looking for it can still find and play it; it's only pulled out of the
+// rails that imply "this is a current, featured game", which is a stronger
+// promise than "not fake-looking, technically works" (isPlayableGame's job
+// above). Keeping this a plain category check (not a slug allowlist) means
+// it automatically also keeps out any future not-yet-launched SLOTS entry
+// without needing an edit here every time.
+export function isFeaturableInHomeRails(game: { category: string }): boolean {
+  return game.category !== "SLOTS";
+}

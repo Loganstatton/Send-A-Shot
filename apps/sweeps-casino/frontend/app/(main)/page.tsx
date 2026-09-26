@@ -14,6 +14,7 @@ import { PromoCard } from "@/components/casino/PromoCard";
 import { GameRow } from "@/components/casino/GameRow";
 import { useFetch } from "@/lib/hooks/useFetch";
 import { api } from "@/lib/api-client";
+import { isFeaturableInHomeRails } from "@/lib/playable-games";
 import type { Game, LobbySection, Promotion } from "@/lib/types";
 
 /**
@@ -68,7 +69,11 @@ const TAIL_RAILS: RailSlot[] = [{ key: "favorites", title: "Favorites", seeAllHr
  * top-ranked Popular/Originals/Trending pick. Never fabricated data: this
  * only re-orders games the backend already returned. */
 function pickFeatured(byKey: Map<string, LobbySection>): Game | undefined {
-  const pools = ["popular", "originals", "trending"].map((k) => byKey.get(k)?.games ?? []);
+  // Never feature a paused/unfinished slot (Vault Breaker included) in the
+  // one big landscape promo slot — see isFeaturableInHomeRails.
+  const pools = ["popular", "originals", "trending"].map((k) =>
+    (byKey.get(k)?.games ?? []).filter(isFeaturableInHomeRails)
+  );
   for (const pool of pools) {
     const exclusive = pool.find((g) => g.tags?.includes("EXCLUSIVE"));
     if (exclusive) return exclusive;
@@ -113,10 +118,20 @@ export default function CasinoHomePage() {
       );
     }
     const section = byKey.get(slot.key);
-    if (!section || section.games.length === 0) return null;
+    if (!section) return null;
+    // Continue Playing / Popular / Trending / New Games must never feature
+    // a paused/unfinished slot with a live "Play" affordance (product spec
+    // item 9) — Originals is unaffected (it's always dice/mines/plinko) and
+    // Favorites is left alone (a player's own deliberate pick, and still
+    // genuinely playable either way).
+    const games =
+      slot.key === "favorites" || slot.key === "originals"
+        ? section.games
+        : section.games.filter(isFeaturableInHomeRails);
+    if (games.length === 0) return null;
     return (
       <div key={slot.key} className="animate-fade-in-up">
-        <GameRow title={slot.title} games={section.games} seeAllHref={slot.seeAllHref} />
+        <GameRow title={slot.title} games={games} seeAllHref={slot.seeAllHref} />
       </div>
     );
   }

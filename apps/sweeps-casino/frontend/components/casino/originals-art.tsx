@@ -243,16 +243,34 @@ export function MinesArt() {
 }
 
 // ---- Plinko --------------------------------------------------------------
+//
+// Card art rebuild (design pass — #1-priority game): the old version read
+// as scattered dots on a flat gradient. This one is built the same way the
+// real board is (see PlinkoBoard.tsx) — a dark physical cabinet with a
+// metal frame, a triangular peg field in forced perspective (tight/small up
+// top, wide/large at the bottom, like looking slightly up at a tall
+// machine), a big glowing gold ball caught mid-drop, and a real-looking
+// pocket rail at the bottom — a "game poster", not an icon.
 
-function plinkoPegs(): { x: number; y: number }[] {
+// Perspective peg triangle: 6 rows, narrow at the top, splayed wide at the
+// bottom, with peg radius growing toward camera (bottom) for a forced-depth
+// read at a glance.
+function plinkoPegs(): { x: number; y: number; row: number; r: number }[] {
   const rows = 6;
-  const pegs: { x: number; y: number }[] = [];
+  const pegs: { x: number; y: number; row: number; r: number }[] = [];
+  const topY = 34;
+  const bottomY = 108;
   for (let r = 0; r < rows; r++) {
-    const count = r + 2;
-    const y = 28 + r * 17;
-    const spacing = (VB_W - 20) / (count + 1);
+    const t = rows > 1 ? r / (rows - 1) : 0;
+    const count = r + 3;
+    const y = topY + t * (bottomY - topY);
+    // Ease the horizontal spread outward (perspective: wide fan near
+    // camera) rather than a plain linear triangle.
+    const halfSpan = (VB_W * 0.5 - 10) * (0.32 + 0.68 * t * t);
+    const spacing = (halfSpan * 2) / (count + 1);
+    const rPeg = 1.7 + t * 1.6;
     for (let i = 1; i <= count; i++) {
-      pegs.push({ x: 10 + i * spacing, y });
+      pegs.push({ x: VB_W / 2 - halfSpan + i * spacing, y, row: r, r: rPeg });
     }
   }
   return pegs;
@@ -260,58 +278,129 @@ function plinkoPegs(): { x: number; y: number }[] {
 
 const PLINKO_PEGS = plinkoPegs();
 
-// Multiplier slots along the bottom rail — a low-in-the-middle, high-on-
-// the-edges curve (as in the real payout table) rendered as colored bars
-// of varying height rather than literal digits, which would be illegible
-// at tile size.
+// Multiplier pockets along the bottom rail — a low-in-the-middle,
+// high-on-the-edges curve (as in the real payout table), drawn as real
+// physical pockets (divider walls + a lit floor) rather than a bare bar
+// chart, echoing the real board's pocket shelf.
 const SLOT_COUNT = 9;
-const SLOT_HEIGHTS = [0.9, 0.65, 0.45, 0.3, 0.22, 0.3, 0.45, 0.65, 0.9];
-function slotColor(h: number): string {
-  if (h >= 0.8) return "rgba(214,85,107,0.85)";
-  if (h >= 0.5) return "rgba(232,168,66,0.85)";
-  return "rgba(45,191,176,0.75)";
+const SLOT_HEIGHTS = [0.55, 0.36, 0.22, 0.14, 0.1, 0.14, 0.22, 0.36, 0.55];
+function slotColor(h: number): [string, string] {
+  if (h >= 0.5) return ["#e8748c", "#a23349"];
+  if (h >= 0.3) return ["#f3c467", "#b9812a"];
+  return ["#5fe0cf", "#1f8d80"];
 }
 
 export function PlinkoArt() {
-  const slotAreaY = VB_H - 22;
-  const slotW = (VB_W - 8) / SLOT_COUNT;
+  const railTop = 118;
+  const railBottom = 140;
+  const slotW = (VB_W - 12) / SLOT_COUNT;
+  const ballX = VB_W * 0.42;
+  const ballY = 64;
 
   return (
-    <div
-      className="absolute inset-0"
-      style={{ background: "linear-gradient(160deg, #0a1220 0%, #16233a 40%, #1c2430 68%, #3a6bd6 150%)" }}
-    >
-      <svg
-        className="absolute inset-0 h-full w-full"
-        viewBox={`0 0 ${VB_W} ${VB_H}`}
-        preserveAspectRatio="xMidYMid slice"
-        aria-hidden
-      >
+    <div className="absolute inset-0" style={{ background: "linear-gradient(170deg, #0d1420 0%, #141c2c 45%, #0c1118 100%)" }}>
+      {/* Teal ambient glow washing the peg field, gold pool low behind the
+          pockets — the same two-tone environmental lighting language as the
+          real board. */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(60% 55% at 50% 45%, rgba(45,191,176,0.22), transparent 68%), radial-gradient(55% 40% at 50% 92%, rgba(232,168,66,0.16), transparent 70%)",
+        }}
+      />
+      <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${VB_W} ${VB_H}`} preserveAspectRatio="xMidYMid slice" aria-hidden>
+        <defs>
+          <radialGradient id="plinko-ball-grad" cx="35%" cy="32%" r="70%">
+            <stop offset="0%" stopColor="#fffdf3" />
+            <stop offset="35%" stopColor="#f8e08a" />
+            <stop offset="70%" stopColor="#dcae35" />
+            <stop offset="100%" stopColor="#8f680f" />
+          </radialGradient>
+          <filter id="plinko-glow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="3" result="b" />
+            <feMerge>
+              <feMergeNode in="b" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <linearGradient id="plinko-rail" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(150,168,178,0.9)" />
+            <stop offset="50%" stopColor="rgba(70,82,92,0.9)" />
+            <stop offset="100%" stopColor="rgba(30,36,42,0.9)" />
+          </linearGradient>
+        </defs>
+
+        {/* Metal cabinet frame, giving the whole poster a physical machine
+            edge rather than art bleeding straight to the tile border. */}
+        <rect
+          x={2.5}
+          y={2.5}
+          width={VB_W - 5}
+          height={VB_H - 5}
+          rx={9}
+          fill="none"
+          stroke="url(#plinko-rail)"
+          strokeWidth={2.5}
+          opacity={0.8}
+        />
+
+        {/* Drop chute at the top, aligned above the ball. */}
+        <rect x={ballX - 3} y={8} width={6} height={16} rx={2} fill="rgba(120,220,208,0.28)" />
+
+        {/* Pegs, in perspective, small+dim near the top and large+lit near
+            the bottom — teal illuminated rim + tiny specular dot, same
+            recipe as the real board's drawPeg(). */}
         {PLINKO_PEGS.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={2.4} fill="rgba(255,255,255,0.4)" />
+          <g key={i}>
+            <circle cx={p.x} cy={p.y + p.r * 0.35} r={p.r * 0.9} fill="rgba(0,0,0,0.35)" />
+            <circle cx={p.x} cy={p.y} r={p.r} fill="#3a434c" />
+            <circle cx={p.x} cy={p.y} r={p.r * 0.88} fill="none" stroke="rgba(100,220,205,0.75)" strokeWidth={p.r * 0.22} filter="url(#plinko-glow)" />
+            <circle cx={p.x - p.r * 0.3} cy={p.y - p.r * 0.3} r={Math.max(0.4, p.r * 0.22)} fill="rgba(255,255,255,0.85)" />
+          </g>
         ))}
-        {/* Ball drop trail + ball */}
-        <line x1={60} y1={4} x2={60} y2={18} stroke="rgba(232,168,66,0.4)" strokeWidth={3} strokeLinecap="round" />
-        <circle cx={60} cy={18} r={5.5} fill="rgba(232,168,66,0.95)" />
-        <circle cx={60} cy={18} r={9} fill="rgba(232,168,66,0.25)" />
-        {/* Multiplier slot rail */}
+
+        {/* Motion trail arcing behind the ball, selling "mid-drop" motion. */}
+        <path
+          d={`M${ballX - 26} ${ballY - 22} Q ${ballX - 10} ${ballY - 8} ${ballX} ${ballY}`}
+          fill="none"
+          stroke="rgba(240,200,100,0.35)"
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeDasharray="0.5 5"
+        />
+
+        {/* The ball — the strongest focal point on the card, bright gold
+            with bloom, exactly like the real board's drawBall(). */}
+        <circle cx={ballX} cy={ballY} r={13} fill="rgba(240,195,90,0.22)" />
+        <circle cx={ballX} cy={ballY} r={8.5} fill="url(#plinko-ball-grad)" filter="url(#plinko-glow)" />
+        <circle cx={ballX - 2.6} cy={ballY - 2.8} r={2.3} fill="rgba(255,255,255,0.95)" />
+
+        {/* Pocket rail: real dividers + a lit shelf, not a bar chart. */}
+        <rect x={4} y={railTop} width={VB_W - 8} height={railBottom - railTop} rx={3} fill="rgba(0,0,0,0.28)" />
+        <line x1={4} y1={railTop} x2={VB_W - 4} y2={railTop} stroke="rgba(120,225,210,0.4)" strokeWidth={1} />
         {SLOT_HEIGHTS.map((h, i) => {
-          const x = 4 + i * slotW;
-          const barH = h * 18;
+          const x = 6 + i * slotW;
+          const [top, bottom] = slotColor(h);
+          const litH = 2 + h * (railBottom - railTop - 4);
           return (
-            <rect
-              key={i}
-              x={x + 1.5}
-              y={slotAreaY - barH}
-              width={slotW - 3}
-              height={barH}
-              rx={1.5}
-              fill={slotColor(h)}
-              opacity={0.85}
-            />
+            <g key={i}>
+              <rect x={x + 1} y={railBottom - litH - 2} width={slotW - 2} height={litH} rx={1.5} fill={top} opacity={0.85} />
+              <rect x={x + 1} y={railBottom - 2} width={slotW - 2} height={2} fill={bottom} opacity={0.9} />
+            </g>
           );
         })}
-        <line x1={2} y1={slotAreaY + 2} x2={VB_W - 2} y2={slotAreaY + 2} stroke="rgba(255,255,255,0.18)" strokeWidth={1} />
+        {Array.from({ length: SLOT_COUNT + 1 }).map((_, i) => (
+          <line
+            key={i}
+            x1={4 + i * slotW}
+            y1={railTop + 2}
+            x2={4 + i * slotW}
+            y2={railBottom}
+            stroke="rgba(200,212,218,0.22)"
+            strokeWidth={1}
+          />
+        ))}
       </svg>
     </div>
   );

@@ -386,50 +386,66 @@ export function PlinkoBoard({ rows, multiplierTable, drops, onLanded, bigWinMult
   const labelsBottomPct = 100 - (layout.bucketBottom / VIRTUAL_HEIGHT) * 100;
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full overflow-hidden rounded-2xl bg-[#0b0d10] shadow-card-lift lg:mx-auto lg:max-w-[480px]"
-      style={{ aspectRatio: `${VIRTUAL_WIDTH} / ${VIRTUAL_HEIGHT}` }}
-    >
-      <canvas
-        ref={canvasRef}
-        className={cn("absolute inset-0 z-0 h-full w-full transition-opacity duration-300", boardVisible ? "opacity-100" : "opacity-0")}
-      />
-
-      {/* Compact landing-pocket labels — short pills anchored at the very
-          bottom of each pocket, not tall bars filling the board. The
-          pockets themselves (dividers, floor, rim lighting) are drawn on
-          the canvas below so their visuals stay pixel-locked to the real
-          Matter.js divider bodies. */}
+    // Outer wrapper: a soft teal ambient glow sitting behind the whole
+    // cabinet (product spec: "environmental lighting... teal ambient glow
+    // behind Plinko"), so the machine reads as a lit object sitting in a
+    // dark room rather than a card pasted on the page background.
+    <div className="relative w-full lg:mx-auto lg:max-w-[480px]">
       <div
-        className="pointer-events-none absolute z-10 flex items-end gap-[2px]"
-        style={{ left: `${leftPct}%`, width: `${widthPct}%`, top: `${labelsTopPct}%`, bottom: `${labelsBottomPct}%` }}
-      >
-        {Array.from({ length: bucketCount }).map((_, i) => {
-          const value = multiplierTable[i] ?? 0;
-          const lit = litBuckets.some((l) => l.bucket === i);
-          const tier = bucketTier(value);
-          return (
-            <div key={i} className="flex flex-1 items-end justify-center pb-[3%]">
-              <span
-                className={cn(
-                  "rounded-full px-1 py-0.5 text-center text-[8px] font-extrabold leading-none transition-all duration-200 ease-snappy sm:px-1.5 sm:py-1 sm:text-[11px]",
-                  lit ? "-translate-y-1 scale-125 bg-accent-sc text-bg shadow-glow-sc-lg" : bucketTierClasses[tier]
-                )}
-              >
-                {value.toFixed(1)}x
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Ball layer sits above the pocket labels so balls stay visible
-          while resting settled inside a pocket, not just while airborne. */}
-      <canvas
-        ref={ballCanvasRef}
-        className={cn("pointer-events-none absolute inset-0 z-20 h-full w-full transition-opacity duration-300", boardVisible ? "opacity-100" : "opacity-0")}
+        className="pointer-events-none absolute -inset-3 -z-10 rounded-[28px] opacity-70 blur-2xl sm:-inset-6"
+        style={{ background: "radial-gradient(60% 65% at 50% 38%, rgba(45,191,176,0.28), transparent 72%)" }}
+        aria-hidden
       />
+      {/* Metal bezel: a physical machine casing (brushed-steel gradient)
+          wrapping the actual playfield, matching the metallic side rails
+          drawn on the canvas just inside it. */}
+      <div className="relative rounded-2xl bg-gradient-to-b from-[#4a545e] via-[#23292f] to-[#101316] p-[3px] shadow-card-lift">
+        <div
+          ref={containerRef}
+          className="relative w-full overflow-hidden rounded-[14px] bg-[#0b0d10]"
+          style={{ aspectRatio: `${VIRTUAL_WIDTH} / ${VIRTUAL_HEIGHT}` }}
+        >
+          <canvas
+            ref={canvasRef}
+            className={cn("absolute inset-0 z-0 h-full w-full transition-opacity duration-300", boardVisible ? "opacity-100" : "opacity-0")}
+          />
+
+          {/* Compact landing-pocket labels — short pills anchored at the very
+              bottom of each pocket, not tall bars filling the board. The
+              pockets themselves (dividers, floor, rim lighting) are drawn on
+              the canvas below so their visuals stay pixel-locked to the real
+              Matter.js divider bodies. */}
+          <div
+            className="pointer-events-none absolute z-10 flex items-end gap-[2px]"
+            style={{ left: `${leftPct}%`, width: `${widthPct}%`, top: `${labelsTopPct}%`, bottom: `${labelsBottomPct}%` }}
+          >
+            {Array.from({ length: bucketCount }).map((_, i) => {
+              const value = multiplierTable[i] ?? 0;
+              const lit = litBuckets.some((l) => l.bucket === i);
+              const tier = bucketTier(value);
+              return (
+                <div key={i} className="flex flex-1 items-end justify-center pb-[3%]">
+                  <span
+                    className={cn(
+                      "rounded-full px-1 py-0.5 text-center text-[8px] font-extrabold leading-none transition-all duration-200 ease-snappy sm:px-1.5 sm:py-1 sm:text-[11px]",
+                      lit ? "-translate-y-1 scale-125 bg-accent-sc text-bg shadow-glow-sc-lg" : bucketTierClasses[tier]
+                    )}
+                  >
+                    {value.toFixed(1)}x
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Ball layer sits above the pocket labels so balls stay visible
+              while resting settled inside a pocket, not just while airborne. */}
+          <canvas
+            ref={ballCanvasRef}
+            className={cn("pointer-events-none absolute inset-0 z-20 h-full w-full transition-opacity duration-300", boardVisible ? "opacity-100" : "opacity-0")}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -467,6 +483,38 @@ function drawBackground(
     ctx.arc(ringCx, ringCy, r, 0, Math.PI * 2);
     ctx.stroke();
   }
+  ctx.restore();
+
+  // Faint brushed-metal texture behind the peg field — a set of thin
+  // diagonal hairlines, barely-there, giving the dark backing plate a
+  // physical machined-panel quality rather than a flat CSS gradient.
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  ctx.strokeStyle = "#cfe4e0";
+  ctx.lineWidth = 1;
+  const brushTop = layout.pegTopY - 14;
+  const brushBottom = layout.floorY;
+  for (let bx = -height; bx < width + height; bx += 7) {
+    ctx.beginPath();
+    ctx.moveTo(bx, brushTop);
+    ctx.lineTo(bx + (brushBottom - brushTop), brushBottom);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Subtle recessed geometry: a soft inner-shadow rectangle around the peg
+  // field, as if it sits in a machined recess of the cabinet rather than
+  // floating flush with the panel.
+  ctx.save();
+  const recessInset = width * 0.03;
+  ctx.strokeStyle = "rgba(0,0,0,0.5)";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(
+    layout.leftWallX - recessInset,
+    layout.pegTopY - 16,
+    layout.rightWallX - layout.leftWallX + recessInset * 2,
+    layout.floorY - layout.pegTopY + 16
+  );
   ctx.restore();
 
   // Teal ambient glow washing the peg field.
@@ -539,10 +587,14 @@ function drawBackground(
     ctx.fillStyle = grad;
     ctx.fillRect(bx - dividerThickness / 2, shelfTop, dividerThickness, layout.floorY - shelfTop);
   }
-  // Outer walls.
-  ctx.fillStyle = "rgba(60,68,76,0.85)";
-  ctx.fillRect(layout.leftWallX - 2.5, layout.pegTopY - 4, 2.5, layout.floorY - layout.pegTopY + 4);
-  ctx.fillRect(layout.rightWallX, layout.pegTopY - 4, 2.5, layout.floorY - layout.pegTopY + 4);
+  // Outer walls: real metallic physical rails (not a hairline) — a
+  // brushed-steel vertical gradient with a bright teal-lit inner edge,
+  // matching the metal bezel wrapped around the whole cabinet.
+  const railW = Math.max(4, layout.spacingX * 0.14);
+  const railTop = layout.pegTopY - 4;
+  const railH = layout.floorY - layout.pegTopY + 4;
+  drawRail(ctx, layout.leftWallX - railW, railW, railTop, railH, "left");
+  drawRail(ctx, layout.rightWallX, railW, railTop, railH, "right");
 
   // Pegs — physical depth: dark metallic center, teal illuminated rim, a
   // tiny specular reflection. A struck peg flashes brighter/warmer and
@@ -571,6 +623,30 @@ function drawBackground(
       ctx.fill();
     }
   }
+}
+
+/** A physical metallic side rail: brushed-steel gradient across its width
+ * plus a bright, teal-lit edge on the side that faces the playfield. */
+function drawRail(ctx: CanvasRenderingContext2D, x: number, w: number, y: number, h: number, side: "left" | "right") {
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, "rgba(30,35,40,0.95)");
+  grad.addColorStop(0.4, "rgba(120,134,144,0.95)");
+  grad.addColorStop(0.55, "rgba(180,196,204,0.98)");
+  grad.addColorStop(1, "rgba(28,33,38,0.95)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(x, y, w, h);
+
+  const edgeX = side === "left" ? x + w - 1.1 : x + 1.1;
+  ctx.save();
+  ctx.shadowColor = "rgba(100,225,208,0.65)";
+  ctx.shadowBlur = 6;
+  ctx.strokeStyle = "rgba(120,230,213,0.7)";
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.moveTo(edgeX, y);
+  ctx.lineTo(edgeX, y + h);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawPeg(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, hitIntensity: number) {

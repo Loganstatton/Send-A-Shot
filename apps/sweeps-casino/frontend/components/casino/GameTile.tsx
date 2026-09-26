@@ -84,11 +84,15 @@ export function GameTile({ game, href, index }: { game: Game; href?: string; ind
     <>
       <div
         className={cn(
-          "relative aspect-[3/4] w-full overflow-hidden rounded-lg border border-border transition-all duration-200 ease-premium group-hover:-translate-y-1 group-hover:scale-[1.03] group-active:scale-95",
-          // Originals keep their signature teal glow on hover; the wider
-          // catalog gets the neutral ambient "lift" shadow so the card
-          // reads as physically raised rather than tinted a color.
-          isOriginal ? "group-hover:shadow-glow-sc" : "group-hover:shadow-card-lift"
+          "relative aspect-[3/4] w-full overflow-hidden rounded-xl border transition-all duration-200 ease-premium group-hover:-translate-y-1 group-hover:scale-[1.03] group-active:scale-95",
+          // Originals read as a "poster", not a generic catalog tile: a
+          // faint permanent teal edge even at rest, blooming into the full
+          // glow on hover. The wider catalog gets a neutral border and the
+          // ambient "lift" shadow so it reads as physically raised rather
+          // than tinted a color.
+          isOriginal
+            ? "border-accent-sc/25 group-hover:border-accent-sc/60 group-hover:shadow-glow-sc"
+            : "border-border group-hover:shadow-card-lift"
         )}
         style={isOriginal || usesCategoryArt ? undefined : { background: tileGradient(seed) }}
       >
@@ -131,7 +135,17 @@ export function GameTile({ game, href, index }: { game: Game; href?: string; ind
 
         <div className="absolute inset-x-0 bottom-0 p-2.5">
           <p className="truncate text-sm font-bold leading-tight text-white drop-shadow">{game.name}</p>
-          <p className="truncate text-[10px] uppercase tracking-wide text-white/55">{game.provider}</p>
+          {/* Originals show the house label, never the RTP/provider text a
+              generic catalog card would — spec item 6: "name + Vaultline
+              Original + optional badge", nothing else. */}
+          <p
+            className={cn(
+              "truncate text-[10px] uppercase tracking-wide",
+              isOriginal ? "font-semibold text-accent-sc/85" : "text-white/55"
+            )}
+          >
+            {isOriginal ? "Vaultline Original" : game.provider}
+          </p>
         </div>
 
         {playable ? (
