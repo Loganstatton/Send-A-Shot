@@ -489,7 +489,7 @@ function drawBackground(
   // diagonal hairlines, barely-there, giving the dark backing plate a
   // physical machined-panel quality rather than a flat CSS gradient.
   ctx.save();
-  ctx.globalAlpha = 0.04;
+  ctx.globalAlpha = 0.1;
   ctx.strokeStyle = "#cfe4e0";
   ctx.lineWidth = 1;
   const brushTop = layout.pegTopY - 14;
@@ -578,7 +578,7 @@ function drawBackground(
 
   // Pocket dividers — short physical walls between adjacent buckets,
   // matching the real Matter.js divider bodies used in the simulation.
-  const dividerThickness = Math.max(1.8, layout.spacingX * 0.07);
+  const dividerThickness = Math.max(2.6, layout.spacingX * 0.11);
   for (const bx of layout.bucketBoundaries.slice(1, -1)) {
     const grad = ctx.createLinearGradient(bx - dividerThickness, 0, bx + dividerThickness, 0);
     grad.addColorStop(0, "rgba(70,80,90,0.9)");
@@ -590,7 +590,7 @@ function drawBackground(
   // Outer walls: real metallic physical rails (not a hairline) — a
   // brushed-steel vertical gradient with a bright teal-lit inner edge,
   // matching the metal bezel wrapped around the whole cabinet.
-  const railW = Math.max(4, layout.spacingX * 0.14);
+  const railW = Math.max(6, layout.spacingX * 0.24);
   const railTop = layout.pegTopY - 4;
   const railH = layout.floorY - layout.pegTopY + 4;
   drawRail(ctx, layout.leftWallX - railW, railW, railTop, railH, "left");
@@ -636,12 +636,12 @@ function drawRail(ctx: CanvasRenderingContext2D, x: number, w: number, y: number
   ctx.fillStyle = grad;
   ctx.fillRect(x, y, w, h);
 
-  const edgeX = side === "left" ? x + w - 1.1 : x + 1.1;
+  const edgeX = side === "left" ? x + w - 1.4 : x + 1.4;
   ctx.save();
-  ctx.shadowColor = "rgba(100,225,208,0.65)";
-  ctx.shadowBlur = 6;
-  ctx.strokeStyle = "rgba(120,230,213,0.7)";
-  ctx.lineWidth = 1.1;
+  ctx.shadowColor = "rgba(100,225,208,0.85)";
+  ctx.shadowBlur = 9;
+  ctx.strokeStyle = "rgba(140,240,222,0.9)";
+  ctx.lineWidth = 1.8;
   ctx.beginPath();
   ctx.moveTo(edgeX, y);
   ctx.lineTo(edgeX, y + h);

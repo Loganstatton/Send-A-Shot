@@ -121,7 +121,7 @@ export function computePlinkoLayout(rows: number, width: number = VIRTUAL_WIDTH,
   // via a visual-only scale-up in PlinkoBoard's drawBall, on top of this
   // physical bump, so the collision body doesn't get so big it breaks
   // spacing at 16 rows).
-  const pegRadius = Math.max(2.6, spacingX * 0.108);
+  const pegRadius = Math.max(3.2, spacingX * 0.13);
   const ballRadius = Math.max(4.2, spacingX * 0.235);
 
   // Landing pockets are sized off the ball itself (~1.3 ball-widths tall —
