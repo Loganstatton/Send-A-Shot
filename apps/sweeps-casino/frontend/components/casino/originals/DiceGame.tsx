@@ -128,23 +128,48 @@ export function DiceGame() {
           disabled={busy}
         />
 
-        <div className="grid grid-cols-2 gap-2">
-          <Button
+        {/* Mode selector, not a pair of form buttons: a single pill track
+            whose solid teal fill slides to whichever side is active, so
+            "under" vs "over" reads as one toggle with two states rather
+            than two independent controls (product spec point 26). */}
+        <div
+          role="radiogroup"
+          aria-label="Roll direction"
+          className="relative grid grid-cols-2 rounded-full bg-surface-raised p-1"
+        >
+          <div
+            aria-hidden
+            className={cn(
+              "absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-full bg-accent-sc shadow-glow-sc transition-transform duration-200 ease-snappy",
+              direction === "over" && "translate-x-[calc(100%+8px)]"
+            )}
+          />
+          <button
             type="button"
-            variant={direction === "under" ? "sc" : "secondary"}
+            role="radio"
+            aria-checked={direction === "under"}
             onClick={() => setDirection("under")}
             disabled={busy}
+            className={cn(
+              "relative z-10 rounded-full py-2.5 text-sm font-bold uppercase tracking-wide transition-colors duration-150 disabled:cursor-not-allowed",
+              direction === "under" ? "text-bg" : "text-text-muted hover:text-text-primary"
+            )}
           >
             Roll Under
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            variant={direction === "over" ? "sc" : "secondary"}
+            role="radio"
+            aria-checked={direction === "over"}
             onClick={() => setDirection("over")}
             disabled={busy}
+            className={cn(
+              "relative z-10 rounded-full py-2.5 text-sm font-bold uppercase tracking-wide transition-colors duration-150 disabled:cursor-not-allowed",
+              direction === "over" ? "text-bg" : "text-text-muted hover:text-text-primary"
+            )}
           >
             Roll Over
-          </Button>
+          </button>
         </div>
 
         <div className="grid grid-cols-2 gap-3 rounded-xl bg-surface-raised p-3 text-center text-xs">

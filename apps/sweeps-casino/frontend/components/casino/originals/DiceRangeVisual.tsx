@@ -119,7 +119,9 @@ export function DiceRangeVisual({
 
   const eyebrow =
     phase === "idle"
-      ? "Set Your Target"
+      ? direction === "over"
+        ? "Roll Over"
+        : "Roll Under"
       : phase === "rolling"
         ? "Rolling…"
         : win
@@ -127,6 +129,11 @@ export function DiceRangeVisual({
             ? "Big Win"
             : "Win"
           : "Loss";
+
+  // Shown under the number whenever we're not displaying a settled win's
+  // payout — frames the target as a live win condition (idle + mid-roll +
+  // settled-loss all share this), per product spec point 23.
+  const winConditionLabel = direction === "over" ? "Win Above This Value" : "Win Below This Value";
 
   const bigNumberText =
     phase === "idle" ? target.toFixed(2) : displayRoll != null ? displayRoll.toFixed(2) : "--.--";
@@ -211,12 +218,10 @@ export function DiceRangeVisual({
             "relative animate-fade-in font-mono text-sm font-semibold sm:text-base",
             phase === "settled" && win
               ? cn("text-lg font-bold sm:text-xl", bigWin ? "text-accent-gc" : "text-success")
-              : "text-text-muted"
+              : "uppercase tracking-wide text-text-muted"
           )}
         >
-          {phase === "settled" && win
-            ? `+${formatCoins(animatedPayout)}`
-            : `ROLL ${direction.toUpperCase()} ${target.toFixed(2)}`}
+          {phase === "settled" && win ? `+${formatCoins(animatedPayout)}` : winConditionLabel}
         </p>
       </div>
 
