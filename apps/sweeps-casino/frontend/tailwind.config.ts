@@ -134,6 +134,22 @@ const config: Config = {
           "85%": { opacity: "1" },
           "100%": { transform: "translateY(-22px)", opacity: "0" },
         },
+        // Mines safe-panel reveal: the vault door physically depresses
+        // then springs back — a mechanical "unlatch" rather than a plain
+        // scale-in pop.
+        "tile-open": {
+          "0%": { transform: "scale(1)" },
+          "30%": { transform: "scale(0.88)" },
+          "65%": { transform: "scale(1.06)" },
+          "100%": { transform: "scale(1)" },
+        },
+        // Mines: the OTHER (non-hit) mines the server discloses after a
+        // round ends — a calm, dim fade-in, deliberately less energetic
+        // than tile-open/shake so the hit tile keeps all the drama.
+        "mine-reveal": {
+          "0%": { opacity: "0", transform: "scale(0.92)" },
+          "100%": { opacity: "0.6", transform: "scale(1)" },
+        },
       },
       animation: {
         shimmer: "shimmer 1.6s linear infinite",
@@ -149,6 +165,8 @@ const config: Config = {
         "ambient-drift": "ambient-drift 18s ease-in-out infinite",
         "win-enter": "win-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
         "particle-float": "particle-float 4.5s ease-in-out infinite",
+        "tile-open": "tile-open 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "mine-reveal": "mine-reveal 0.5s ease-out",
       },
     },
   },

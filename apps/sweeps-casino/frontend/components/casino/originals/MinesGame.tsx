@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { BetAmountField } from "@/components/casino/originals/BetAmountField";
@@ -36,6 +36,65 @@ function estimateFirstPickMultiplier(minesCount: number, houseEdge: number): num
   return Math.round(fair * (1 - houseEdge) * 10000) / 10000;
 }
 
+/**
+ * Smoothly interpolates a displayed number toward `target` over `duration`ms
+ * (ease-out) instead of snapping, and reports a brief `flash` window on each
+ * change — the "current multiplier ticks up with a small glow" cue from the
+ * design spec. Purely a display-layer animation: `target` always comes from
+ * real round state (see useMinesRound), this hook never invents a value.
+ */
+function useAnimatedNumber(target: number, duration = 450) {
+  const [display, setDisplay] = useState(target);
+  const [flash, setFlash] = useState(false);
+  const displayRef = useRef(target);
+  const prevTargetRef = useRef(target);
+  const rafRef = useRef<number | null>(null);
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    displayRef.current = display;
+  }, [display]);
+
+  useEffect(() => {
+    if (target === prevTargetRef.current) return;
+    const from = displayRef.current;
+    const to = target;
+    prevTargetRef.current = target;
+    const start = performance.now();
+
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    if (flashTimeoutRef.current !== null) clearTimeout(flashTimeoutRef.current);
+    setFlash(true);
+
+    function tick(now: number) {
+      const elapsed = now - start;
+      const t = Math.min(1, elapsed / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const next = from + (to - from) * eased;
+      setDisplay(next);
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        rafRef.current = null;
+        flashTimeoutRef.current = setTimeout(() => setFlash(false), 220);
+      }
+    }
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [target, duration]);
+
+  useEffect(() => {
+    return () => {
+      if (flashTimeoutRef.current !== null) clearTimeout(flashTimeoutRef.current);
+    };
+  }, []);
+
+  return { display, flash };
+}
+
 // Real casino Mines: choose a bet + mine count, start the round, then pick
 // tiles one at a time. Each safe pick raises the live multiplier and the
 // potential cash-out amount; a mine ends the round immediately and the
@@ -53,6 +112,7 @@ export function MinesGame() {
     history,
     loadingConfig,
     loadingSeed,
+    currency,
     round,
     starting,
     pickingTile,
@@ -94,6 +154,18 @@ export function MinesGame() {
     return arr;
   }, [round, pickingTile]);
 
+  // Live readout count-up: the multiplier and cash-out value roll toward
+  // their real values instead of snapping whenever a safe pick lands.
+  const multiplierAnim = useAnimatedNumber(round?.currentMultiplier ?? 0);
+  const payoutAnim = useAnimatedNumber((round?.potentialPayout ?? 0) * 100);
+  // Separate, slightly slower count-up just for the "Cashed out" result
+  // line's payout figure, so it visibly counts up as part of the ~1-2s
+  // cash-out reveal beat rather than appearing pre-settled.
+  const finalPayoutAnim = useAnimatedNumber(
+    round?.phase === "cashed-out" ? (round?.finalPayout ?? 0) * 100 : 0,
+    900
+  );
+
   if (loadingConfig || !config) {
     return <GameLoading label="Mines" />;
   }
@@ -105,6 +177,13 @@ export function MinesGame() {
   const gridBusy = !inActive || pickingTile !== null || cashingOut;
   const canCashOut = inActive && (round?.picks.length ?? 0) > 0 && !cashingOut && pickingTile === null;
   const bigWin = phase === "cashed-out" && round!.currentMultiplier >= BIG_WIN_MULTIPLIER;
+  const displayCurrency = round?.currency ?? currency;
+  // Cash Out's gold presence grows with the stakes on the table: a small
+  // baseline glow the moment it's available, climbing toward a ~10x
+  // multiplier and clamped so it never looks broken at extreme mine counts.
+  const cashOutGlow = canCashOut
+    ? Math.min(1, Math.max(0.18, ((round?.currentMultiplier ?? 1) - 1) / 9))
+    : 0;
 
   async function handleStart() {
     await startRound({ betAmount, minesCount: mineCount });
@@ -123,21 +202,33 @@ export function MinesGame() {
             phase === "busted" && "animate-shake"
           )}
         >
-          {/* Live readout: current multiplier + potential win while a round is active. */}
+          {/* Live readout: current multiplier + cash-out value while a round
+              is active. Both numbers roll/count up (via useAnimatedNumber)
+              instead of snapping, with a brief glow flash on every tick —
+              made to feel like a real ticking meter, not a UI label update. */}
           <div className="mb-4 flex items-center justify-center gap-6 rounded-xl border border-border/60 bg-surface/60 px-4 py-3">
             <div className="text-center">
               <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Current multiplier</p>
-              <p className="font-mono text-xl font-bold text-text-primary">
-                {inActive || roundOver ? `${(round?.currentMultiplier ?? 0).toFixed(2)}x` : "1.00x"}
+              <p
+                className={cn(
+                  "font-mono text-xl font-bold text-text-primary transition-[text-shadow] duration-300",
+                  multiplierAnim.flash && (inActive || roundOver) && "text-glow-teal"
+                )}
+              >
+                {inActive || roundOver ? `${multiplierAnim.display.toFixed(2)}x` : "1.00x"}
               </p>
             </div>
             <div className="h-8 w-px bg-border/60" />
             <div className="text-center">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Potential win</p>
-              <p className="font-mono text-xl font-bold text-accent-sc">
-                {inActive || roundOver
-                  ? formatCoins((round?.potentialPayout ?? 0) * 100)
-                  : formatCoins(betAmount)}
+              <p className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Cash Out Value</p>
+              <p
+                className={cn(
+                  "font-mono text-xl font-bold text-accent-sc transition-[text-shadow] duration-300",
+                  payoutAnim.flash && (inActive || roundOver) && "text-glow-gold"
+                )}
+              >
+                {inActive || roundOver ? formatCoins(payoutAnim.display) : formatCoins(betAmount)}{" "}
+                <span className="text-sm font-semibold text-text-muted">{displayCurrency}</span>
               </p>
             </div>
           </div>
@@ -157,7 +248,7 @@ export function MinesGame() {
                   bigWin ? "text-accent-gc" : "text-success"
                 )}
               >
-                Cashed out · +{formatCoins((round?.finalPayout ?? 0) * 100)} · {(round?.currentMultiplier ?? 0).toFixed(2)}x
+                Cashed out · +{formatCoins(finalPayoutAnim.display)} · {(round?.currentMultiplier ?? 0).toFixed(2)}x
               </p>
             )}
             {inSelect && (
@@ -208,10 +299,28 @@ export function MinesGame() {
         )}
 
         {inActive && (
-          <Button className="w-full" size="lg" variant="sc" onClick={cashOut} loading={cashingOut} disabled={!canCashOut}>
-            {canCashOut
-              ? `Cash out · ${formatCoins((round?.potentialPayout ?? 0) * 100)}`
-              : "Cash out (pick a tile first)"}
+          // The central decision (keep going vs. take the money) gets a
+          // gold presence that grows with the stakes: a small glow the
+          // moment Cash Out unlocks, warming and brightening as the
+          // potential payout climbs. Purely visual reward — availability
+          // and timing are unaffected, this never gates or rushes the
+          // player.
+          <Button
+            className="w-full transition-shadow duration-500 ease-out"
+            size="lg"
+            variant="sc"
+            onClick={cashOut}
+            loading={cashingOut}
+            disabled={!canCashOut}
+            style={
+              cashOutGlow > 0
+                ? {
+                    boxShadow: `0 0 ${14 + cashOutGlow * 34}px ${2 + cashOutGlow * 5}px rgb(var(--color-accent-gc) / ${(0.22 + cashOutGlow * 0.4).toFixed(2)})`,
+                  }
+                : undefined
+            }
+          >
+            {canCashOut ? `Cash out · ${formatCoins(payoutAnim.display)} ${displayCurrency}` : "Cash out (pick a tile first)"}
           </Button>
         )}
 

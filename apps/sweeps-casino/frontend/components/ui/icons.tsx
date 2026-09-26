@@ -102,6 +102,32 @@ export const Plus = (p: IconProps) => (
 export const Bomb = (p: IconProps) => (
   <svg {...base} {...p}><circle cx="11" cy="13" r="8" /><path d="m17 7 2-2m0 0 2 2m-2-2v4M14 4l1.5 1.5" /></svg>
 );
+// Mines "safe pick" artifact — a faceted gold/teal crystal (Vaultline's
+// vault-deposit gem), replacing the plain yellow star placeholder. Built the
+// same way as the card art in components/casino/originals-art.tsx: flat
+// hand-picked facet colors (no gradients/filters/ids needed, so it's safe to
+// render many at once in a 5x5 grid with zero risk of duplicate-id clashes).
+// Crown (top, lit gold) + a 4-facet pavilion sweeping from gold into teal
+// (bottom-right, cool shadow side) reads as a real cut gem rather than an
+// icon-font glyph.
+export const VaultGem = (p: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" {...p}>
+    <path d="M12 2 L4 9 L12 9 Z" fill="#fdf0c8" />
+    <path d="M12 2 L20 9 L12 9 Z" fill="#eab03e" />
+    <path d="M4 9 L8 13 L12 22 L12 9 Z" fill="#eab03e" />
+    <path d="M8 13 L12 9 L12 22 Z" fill="#7fe9da" />
+    <path d="M12 9 L16 13 L12 22 Z" fill="#20c9b8" />
+    <path d="M20 9 L16 13 L12 22 L12 9 Z" fill="#145a54" />
+    <path
+      d="M12 2 L20 9 L16 13 L12 22 L8 13 L4 9 Z"
+      stroke="rgba(255,255,255,0.55)"
+      strokeWidth={0.6}
+      strokeLinejoin="round"
+    />
+    <path d="M4 9 L20 9 M12 2 L12 22 M8 13 L16 13" stroke="rgba(0,0,0,0.22)" strokeWidth={0.5} />
+    <circle cx={9.3} cy={6.2} r={1.1} fill="rgba(255,255,255,0.9)" />
+  </svg>
+);
 export const Flag = (p: IconProps) => (
   <svg {...base} {...p}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><path d="M4 22V15" /></svg>
 );
