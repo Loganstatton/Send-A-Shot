@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
-import { ZodError, ZodSchema } from 'zod';
+import { z, ZodError, ZodTypeAny } from 'zod';
 import { GenerationError } from './generate';
 import { ComfyError } from '../comfy/client';
 
@@ -12,7 +12,7 @@ export class HttpError extends Error {
   }
 }
 
-export async function parseBody<T>(req: Request, schema: ZodSchema<T>): Promise<T> {
+export async function parseBody<S extends ZodTypeAny>(req: Request, schema: S): Promise<z.output<S>> {
   let body: unknown;
   try {
     body = await req.json();

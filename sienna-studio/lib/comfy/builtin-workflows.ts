@@ -15,6 +15,8 @@
  *   init_image            → img2img branch (LoadImage → ImageScale → VAEEncode)
  *   face_reference_image  → identity conditioning (IPAdapter FaceID / PuLID-Flux)
  *   pose_image            → ControlNet pose branch
+ * The SDXL graph also has an optional face-refinement pass (FaceDetailer from
+ * ComfyUI-Impact-Pack) that is bypassed when switched off or not installed.
  */
 
 import type { ComfyGraph, WorkflowBindings, WorkflowTemplate } from '../types';
@@ -31,7 +33,7 @@ export const PRIMARY_WORKFLOW_ID = 'sienna-sdxl-production';
 // 10 LoadImage face → 11 IPAdapterUnifiedLoaderFaceID → 12 IPAdapterFaceID
 // 20 LoadImage pose → 21 ControlNetLoader → 22 ControlNetApplyAdvanced
 // 30 LoadImage init → 31 ImageScale → 32 VAEEncode   |   33 EmptyLatentImage
-// 40 KSampler · 41 VAEDecode · 42 SaveImage
+// 40 KSampler · 41 VAEDecode → 50 face detector → 51 FaceDetailer (optional) → 42 SaveImage
 const SDXL_PRODUCTION: WorkflowBindings = {
   checkpoint: ref('1', 'ckpt_name'),
   lora_name: ref('2', 'lora_name'),
@@ -54,12 +56,30 @@ const SDXL_PRODUCTION: WorkflowBindings = {
     { nodeId: '33', inputName: 'height' },
   ],
   batch_size: ref('33', 'batch_size'),
-  seed: ref('40', 'seed'),
-  steps: ref('40', 'steps'),
-  cfg: ref('40', 'cfg'),
-  sampler: ref('40', 'sampler_name'),
-  scheduler: ref('40', 'scheduler'),
+  // Sampling values also drive the face-refinement pass (51), so it matches the first pass.
+  seed: [
+    { nodeId: '40', inputName: 'seed' },
+    { nodeId: '51', inputName: 'seed' },
+  ],
+  steps: [
+    { nodeId: '40', inputName: 'steps' },
+    { nodeId: '51', inputName: 'steps' },
+  ],
+  cfg: [
+    { nodeId: '40', inputName: 'cfg' },
+    { nodeId: '51', inputName: 'cfg' },
+  ],
+  sampler: [
+    { nodeId: '40', inputName: 'sampler_name' },
+    { nodeId: '51', inputName: 'sampler_name' },
+  ],
+  scheduler: [
+    { nodeId: '40', inputName: 'scheduler' },
+    { nodeId: '51', inputName: 'scheduler' },
+  ],
   denoise: ref('40', 'denoise'),
+  face_refine_denoise: ref('51', 'denoise'),
+  face_refine_threshold: ref('51', 'guide_size'),
   filename_prefix: ref('42', 'filename_prefix'),
 };
 
@@ -138,7 +158,7 @@ export function builtinWorkflows(): WorkflowTemplate[] {
       id: 'sienna-sdxl-production',
       name: 'Sienna Production · SDXL',
       description:
-        'Primary workflow. SDXL checkpoint + Sienna LoRA, optional img2img, IPAdapter FaceID identity and pose ControlNet (each removed automatically when unused or unavailable).',
+        'Primary workflow. SDXL checkpoint + Sienna LoRA, optional img2img, IPAdapter FaceID identity, pose ControlNet and small-face refinement (each removed automatically when unused or unavailable).',
       graph: sdxlProduction as ComfyGraph,
       bindings: SDXL_PRODUCTION,
       outputNodeIds: [],

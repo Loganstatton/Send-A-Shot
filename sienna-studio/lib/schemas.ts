@@ -44,6 +44,9 @@ export const paramsSchema = z.object({
   controlStrength: z.number().min(0).max(3),
   controlnetModel: str(500),
   batchSize: z.number().int().min(1).max(8),
+  faceRefine: z.boolean().default(false),
+  faceRefineDenoise: z.number().min(0.05).max(1).default(0.3),
+  faceRefineThreshold: z.number().int().min(64).max(2048).default(384),
 });
 
 export const generateSchema = z.object({

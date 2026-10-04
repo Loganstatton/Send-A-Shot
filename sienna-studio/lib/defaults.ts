@@ -116,6 +116,9 @@ export const DEFAULT_PARAMS: GenerationParams = {
   controlStrength: 0.65,
   controlnetModel: '',
   batchSize: 1,
+  faceRefine: false,
+  faceRefineDenoise: 0.3,
+  faceRefineThreshold: 384,
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -226,7 +229,7 @@ const BUILTIN_PRESET_SEEDS: BuiltinPresetSeed[] = [
     fields: {
       outfit: 'comfy hoodie and lounge shorts, fuzzy socks',
       pose: 'curled up on the couch with knees up, holding a mug',
-      expression: 'content, laughing at something off-camera',
+      expression: 'small natural laugh, mouth slightly open, looking off-camera',
       setting: 'living room couch with throw blanket and cushions, TV glow in the background',
       lighting: 'warm lamp light, evening ambience',
       camera: 'iPhone photo taken from across the couch',
@@ -241,7 +244,7 @@ const BUILTIN_PRESET_SEEDS: BuiltinPresetSeed[] = [
     fields: {
       outfit: 'light sundress with a cardigan, small crossbody bag',
       pose: 'walking, glancing back over her shoulder',
-      expression: 'candid laugh',
+      expression: 'small natural laugh, mouth slightly open',
       setting: 'tree-lined city sidewalk, parked cars and storefronts slightly out of focus',
       lighting: 'late afternoon golden sunlight, natural lens flare',
       camera: 'iPhone 1x main camera photo taken by a friend',

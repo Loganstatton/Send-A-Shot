@@ -46,6 +46,7 @@ export function passthroughFor(classType: string, inputs: Record<string, unknown
   if (classType === 'ApplyInstantID' || classType === 'ApplyInstantIDAdvanced') return { 0: 'model', 1: 'positive', 2: 'negative' };
   if (/^ApplyPulid/.test(classType)) return { 0: 'model' };
   if (/^IPAdapter/.test(classType) && 'model' in inputs) return { 0: 'model' };
+  if (classType === 'FaceDetailer') return { 0: 'image' };
   return null;
 }
 
@@ -155,6 +156,39 @@ export function pruneFrom(graph: ComfyGraph, rootId: string): ComfyGraph {
   }
   out = garbageCollect(out, preserve);
   return out;
+}
+
+/**
+ * Remove a pass-through node (e.g. the FaceDetailer refinement pass): its
+ * consumers are rewired to the input it passes through, then anything only
+ * it used (e.g. the face detector) is dropped. Throws if a consumer uses an
+ * output that has no pass-through equivalent.
+ */
+export function bypassNode(graph: ComfyGraph, id: string): ComfyGraph {
+  const node = graph[id];
+  if (!node) return graph;
+  const pt = passthroughFor(node.class_type, node.inputs);
+  if (!pt) throw new Error(`Node ${id} (${node.class_type}) cannot be bypassed.`);
+  const reachable = new Set(Object.keys(garbageCollect(graph)));
+  const preserve = new Set(Object.keys(graph).filter((n) => !reachable.has(n)));
+  const g = cloneGraph(graph);
+  for (const c of consumersOf(g, id)) {
+    const src = pt[c.slot] ? node.inputs[pt[c.slot]] : undefined;
+    if (!isLink(src)) throw new Error(`Node ${c.nodeId} uses output ${c.slot} of ${node.class_type}, which has no bypass.`);
+    g[c.nodeId].inputs[c.input] = src;
+  }
+  delete g[id];
+  return garbageCollect(g, preserve);
+}
+
+/** Node ids that only exist for the pass-through node `id` (removed when it is bypassed). */
+export function bypassNodeIds(graph: ComfyGraph, id: string): string[] {
+  try {
+    const out = bypassNode(graph, id);
+    return Object.keys(graph).filter((n) => !out[n]);
+  } catch {
+    return [];
+  }
 }
 
 /** Drop bindings that point at nodes no longer in the graph. */

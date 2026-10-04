@@ -50,6 +50,18 @@ export function GenerationMeta({ rec, showPrompt = true }: { rec: GenerationReco
         <Meta k="Steps / CFG" v={`${rec.params.steps} / ${rec.params.cfg}`} />
         <Meta k="Sampler" v={`${rec.params.sampler || '—'} · ${rec.params.scheduler || '—'}`} />
         <Meta k="Denoise" v={rec.initImage ? rec.params.denoise : '1 (txt2img)'} />
+        {rec.faceRefine && (
+          <Meta
+            k="Face refinement"
+            v={
+              rec.faceRefine.status === 'on'
+                ? `on · denoise ${rec.faceRefine.denoise} · faces under ${rec.faceRefine.threshold}px`
+                : rec.faceRefine.status === 'off'
+                  ? 'off'
+                  : `skipped (${rec.faceRefine.reason})`
+            }
+          />
+        )}
         <Meta
           k="Modules"
           v={

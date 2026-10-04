@@ -103,6 +103,16 @@ export interface GenerationParams {
   controlStrength: number;
   controlnetModel: string;
   batchSize: number;
+  /**
+   * Second pass that redraws small faces (full-body, mirror shots) with the
+   * same model, LoRA and prompts. Faces already larger than the threshold are
+   * left untouched. No reference image is used.
+   */
+  faceRefine: boolean;
+  /** Denoise for the face redraw — low values keep pose, expression and lighting. */
+  faceRefineDenoise: number;
+  /** Faces smaller than this (px, shorter bbox side) are enlarged to it and redrawn. */
+  faceRefineThreshold: number;
 }
 
 /** Optional images supplied per generation. */
@@ -158,6 +168,8 @@ export const CONTROL_KEYS = [
   'pose_image',
   'control_strength',
   'controlnet_model',
+  'face_refine_denoise',
+  'face_refine_threshold',
   'filename_prefix',
 ] as const;
 
@@ -253,6 +265,8 @@ export interface GenerationRecord {
   warnings: string[];
   /** Optional modules removed for this run (unused or missing nodes). */
   prunedModules?: string[];
+  /** Small-face refinement pass: whether it was in the graph and with which settings. */
+  faceRefine?: { status: 'on' | 'off' | 'skipped'; denoise?: number; threshold?: number; reason?: string };
   /** The exact API-format graph sent to ComfyUI (for debugging). */
   submittedGraph?: ComfyGraph;
   /** Structured ComfyUI error details (node_errors / execution_error). */

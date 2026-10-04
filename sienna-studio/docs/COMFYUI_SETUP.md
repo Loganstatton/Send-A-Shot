@@ -40,6 +40,9 @@ ComfyUI/
 │  ├─ pulid/                       ← PuLID-Flux weights (create the folder)    [Flux face module: optional]
 │  │     pulid_flux_v0.9.1.safetensors
 │  │
+│  ├─ ultralytics/bbox/            ← face detector for face refinement         [face refinement: optional]
+│  │     face_yolov8m.pt   (https://huggingface.co/Bingsu/adetailer)
+│  │
 │  └─ controlnet/                  ← pose ControlNet models                    [pose module: optional]
 │        SDXL: an OpenPose SDXL ControlNet, e.g. OpenPoseXL2.safetensors (thibaud) or controlnet-openpose-sdxl-1.0 (xinsir)
 │        Flux: a Flux union ControlNet, e.g. FLUX.1-dev-ControlNet-Union-Pro (Shakker-Labs)
@@ -69,13 +72,14 @@ server actually has. Pick the file and it becomes the workflow default.
 | Core SDXL / Flux + LoRA, img2img, ControlNet apply | **none** — stock ComfyUI | — |
 | SDXL face reference (IPAdapter FaceID) | **ComfyUI_IPAdapter_plus** | `git clone https://github.com/cubiq/ComfyUI_IPAdapter_plus` and `pip install insightface onnxruntime-gpu` in ComfyUI's Python env |
 | Flux face reference (PuLID-Flux) | **ComfyUI-PuLID-Flux** | `git clone https://github.com/balazik/ComfyUI-PuLID-Flux` then `pip install -r requirements.txt` (insightface, facexlib, onnxruntime-gpu…) |
+| SDXL small-face refinement (FaceDetailer) | **ComfyUI-Impact-Pack** + **ComfyUI-Impact-Subpack** | `git clone https://github.com/ltdrdata/ComfyUI-Impact-Pack` and `git clone https://github.com/ltdrdata/ComfyUI-Impact-Subpack`, then `pip install -r requirements.txt` in each, using ComfyUI's Python env |
 | Making pose skeletons *from photos* (optional) | comfyui_controlnet_aux | `git clone https://github.com/Fannovel16/comfyui_controlnet_aux` and its requirements |
 
 ComfyUI-Manager can install all of these from the ComfyUI web UI as well. **Restart ComfyUI after installing
 nodes**, then re-run Diagnostics. The app caches node lookups for 5 minutes, so restart the app if you need to
 re-check immediately.
 
-The face-reference and pose modules are **optional**. If their nodes or models are missing, the app removes
+The face-reference, pose and face-refinement modules are **optional**. If their nodes or models are missing, the app removes
 those branches from the graph automatically and says so in the generation's warnings. You can run real
 Sienna generations with only a base model and `sienna_v2.safetensors`.
 

@@ -3,7 +3,7 @@
 // /history/{id}, /view). For exercising the real HTTP client + diagnostics
 // without a GPU. NOT used in production.
 //
-//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-lora] [--fail-exec]
+//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-face-refine] [--no-lora] [--fail-exec]
 import http from 'node:http';
 import { deflateSync } from 'node:zlib';
 
@@ -31,7 +31,7 @@ const SPECS = {
   EmptySD3LatentImage: { width: ['INT'], height: ['INT'], batch_size: ['INT'] },
   KSampler: {
     model: ['MODEL'], seed: ['INT'], steps: ['INT'], cfg: ['FLOAT'],
-    sampler_name: combo(['euler', 'dpmpp_2m', 'dpmpp_2m_sde']), scheduler: combo(['normal', 'karras', 'simple']),
+    sampler_name: combo(['euler', 'ddpm', 'dpmpp_2m', 'dpmpp_2m_sde']), scheduler: combo(['normal', 'karras', 'simple']),
     positive: ['CONDITIONING'], negative: ['CONDITIONING'], latent_image: ['LATENT'], denoise: ['FLOAT'],
   },
   VAEDecode: { samples: ['LATENT'], vae: ['VAE'] },
@@ -52,6 +52,17 @@ if (!arg('--no-ipadapter')) {
       weight_type: combo(['linear']), combine_embeds: combo(['concat']), start_at: ['FLOAT'], end_at: ['FLOAT'], embeds_scaling: combo(['V only', 'K+V']),
     },
     IPAdapterModelLoader: { ipadapter_file: combo(['ip-adapter-faceid-plusv2_sdxl.bin']) },
+  });
+}
+if (!arg('--no-face-refine')) {
+  Object.assign(SPECS, {
+    UltralyticsDetectorProvider: { model_name: combo(['bbox/face_yolov8m.pt']) },
+    FaceDetailer: {
+      image: ['IMAGE'], model: ['MODEL'], clip: ['CLIP'], vae: ['VAE'], positive: ['CONDITIONING'], negative: ['CONDITIONING'],
+      bbox_detector: ['BBOX_DETECTOR'], guide_size: ['FLOAT'], guide_size_for: ['BOOLEAN'], max_size: ['FLOAT'], seed: ['INT'],
+      steps: ['INT'], cfg: ['FLOAT'], sampler_name: combo(['euler', 'ddpm', 'dpmpp_2m']), scheduler: combo(['normal', 'karras']),
+      denoise: ['FLOAT'], feather: ['INT'], noise_mask: ['BOOLEAN'], force_inpaint: ['BOOLEAN'],
+    },
   });
 }
 // (PuLID-Flux deliberately absent, to exercise "missing custom node" paths.)

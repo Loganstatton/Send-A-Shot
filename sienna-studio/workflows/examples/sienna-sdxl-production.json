@@ -50,5 +50,20 @@
     "_meta": { "title": "KSampler" }
   },
   "41": { "class_type": "VAEDecode", "inputs": { "samples": ["40", 0], "vae": ["1", 2] }, "_meta": { "title": "VAE Decode" } },
-  "42": { "class_type": "SaveImage", "inputs": { "filename_prefix": "sienna", "images": ["41", 0] }, "_meta": { "title": "Save Image" } }
+
+  "50": { "class_type": "UltralyticsDetectorProvider", "inputs": { "model_name": "bbox/face_yolov8m.pt" }, "_meta": { "title": "Face Detector" } },
+  "51": {
+    "class_type": "FaceDetailer",
+    "inputs": {
+      "image": ["41", 0], "model": ["2", 0], "clip": ["2", 1], "vae": ["1", 2], "positive": ["3", 0], "negative": ["4", 0],
+      "bbox_detector": ["50", 0],
+      "guide_size": 384, "guide_size_for": true, "max_size": 1280, "force_inpaint": false,
+      "seed": 0, "steps": 30, "cfg": 5, "sampler_name": "ddpm", "scheduler": "normal", "denoise": 0.3,
+      "feather": 12, "noise_mask": true, "bbox_threshold": 0.5, "bbox_dilation": 10, "bbox_crop_factor": 2.0,
+      "sam_detection_hint": "center-1", "sam_dilation": 0, "sam_threshold": 0.93, "sam_bbox_expansion": 0,
+      "sam_mask_hint_threshold": 0.7, "sam_mask_hint_use_negative": "False", "drop_size": 10, "wildcard": "", "cycle": 1
+    },
+    "_meta": { "title": "Face Refinement (small faces)" }
+  },
+  "42": { "class_type": "SaveImage", "inputs": { "filename_prefix": "sienna", "images": ["51", 0] }, "_meta": { "title": "Save Image" } }
 }

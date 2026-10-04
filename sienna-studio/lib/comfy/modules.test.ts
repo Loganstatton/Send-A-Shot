@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyBindings, validateBindings } from './adapter';
 import { builtinWorkflows } from './builtin-workflows';
-import { canPrune, garbageCollect, moduleNodeIds, MODULE_KEYS, pruneModule } from './modules';
+import { bypassNode, bypassNodeIds, canPrune, filterBindings, garbageCollect, moduleNodeIds, MODULE_KEYS, pruneModule } from './modules';
 import type { ComfyGraph, WorkflowTemplate } from '../types';
 
 const wf = (id: string) => builtinWorkflows().find((w) => w.id === id)!;
@@ -11,6 +11,11 @@ function pruneAll(w: WorkflowTemplate) {
   let g = w.graph;
   let b = w.bindings;
   for (const k of MODULE_KEYS) ({ graph: g, bindings: b } = pruneModule(g, b, k));
+  const refine = b.face_refine_denoise?.[0]?.nodeId;
+  if (refine) {
+    g = bypassNode(g, refine);
+    b = filterBindings(g, b);
+  }
   return { g, b };
 }
 
@@ -121,5 +126,45 @@ describe('pruning safety', () => {
       c: { class_type: 'Y', inputs: {} },
     };
     expect(Object.keys(garbageCollect(g)).sort()).toEqual(['b', 'c']);
+  });
+});
+
+describe('SDXL production: small-face refinement pass', () => {
+  const w = wf('sienna-sdxl-production');
+  const refine = w.bindings.face_refine_denoise![0].nodeId;
+
+  it('refines the decoded image with the plain LoRA model and prompts (no face reference)', () => {
+    const n = w.graph[refine];
+    expect(n.class_type).toBe('FaceDetailer');
+    expect(n.inputs.image).toEqual(['41', 0]);
+    expect(n.inputs.model).toEqual(['2', 0]);
+    expect(n.inputs.positive).toEqual(['3', 0]);
+    expect(n.inputs.negative).toEqual(['4', 0]);
+    expect(n.inputs.force_inpaint).toBe(false); // large faces are skipped
+    expect(w.graph['42'].inputs.images).toEqual([refine, 0]);
+  });
+
+  it('shares seed/steps/cfg/sampler/scheduler with the first pass', () => {
+    for (const k of ['seed', 'steps', 'cfg', 'sampler', 'scheduler'] as const) {
+      expect(w.bindings[k]!.map((r) => r.nodeId)).toEqual(['40', refine]);
+    }
+  });
+
+  it('bypassing it wires SaveImage to the decoder and drops the detector', () => {
+    const g = bypassNode(w.graph, refine);
+    expect(g[refine]).toBeUndefined();
+    expect(g['50']).toBeUndefined();
+    expect(g['42'].inputs.images).toEqual(['41', 0]);
+    expect(bypassNodeIds(w.graph, refine).sort()).toEqual(['50', refine].sort());
+    expect(validateBindings(g, filterBindings(g, w.bindings))).toEqual([]);
+  });
+
+  it('keeps optional-module orphans when bypassed (the empty latent survives)', () => {
+    const g = bypassNode(w.graph, refine);
+    expect(g['33']).toBeDefined();
+  });
+
+  it('refuses to bypass a node without a pass-through', () => {
+    expect(() => bypassNode(w.graph, '40')).toThrow();
   });
 });

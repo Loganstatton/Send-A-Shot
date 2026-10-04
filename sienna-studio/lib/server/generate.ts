@@ -17,7 +17,17 @@
 import 'server-only';
 import { applyBindings, bypassLora, capabilities, ControlValue, injectLora, validateBindings } from '../comfy/adapter';
 import { ComfyBackend, ComfyError, createBackend } from '../comfy/client';
-import { filterBindings, garbageCollect, MODULE_KEYS, MODULE_LABELS, ModuleKey, moduleNodeIds, pruneModule } from '../comfy/modules';
+import {
+  bypassNode,
+  bypassNodeIds,
+  filterBindings,
+  garbageCollect,
+  MODULE_KEYS,
+  MODULE_LABELS,
+  ModuleKey,
+  moduleNodeIds,
+  pruneModule,
+} from '../comfy/modules';
 import { packageFor } from '../comfy/packages';
 import { MIN_CHARACTER_AGE } from '../defaults';
 import { buildPrompt } from '../prompt';
@@ -74,6 +84,26 @@ async function missingClasses(backend: ComfyBackend, graph: ComfyGraph, ids: str
 export function describeMissing(classes: string[]): string {
   const pkgs = [...new Set(classes.map((c) => packageFor(c)?.name).filter(Boolean))];
   return `${classes.join(', ')}${pkgs.length ? ` (install ${pkgs.join(', ')})` : ''}`;
+}
+
+/**
+ * For nodes that load a detector/model by filename (e.g. the face detector),
+ * check the file is in the server's list. Returns a reason, or null if fine
+ * (or if the server doesn't publish a list).
+ */
+async function missingModelFile(backend: ComfyBackend, graph: ComfyGraph, ids: string[]): Promise<string | null> {
+  for (const id of ids) {
+    const node = graph[id];
+    const file = node?.inputs.model_name;
+    if (typeof file !== 'string') continue;
+    try {
+      const choices = await backend.inputChoices(node.class_type, 'model_name');
+      if (choices.length && !choices.includes(file)) return `model file “${file}” is not on the server`;
+    } catch {
+      // unreachable server → let /prompt report the real problem
+    }
+  }
+  return null;
 }
 
 export interface PreparedGeneration {
@@ -209,6 +239,32 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     if (reason !== 'not used') warnings.push(`${label} module skipped — ${reason}.`);
   }
   const { face_reference_image: faceReference, init_image: initImage, pose_image: poseImage } = wanted;
+
+  // ── Small-face refinement pass (no reference image; same model/LoRA/prompts) ──
+  let faceRefine: GenerationRecord['faceRefine'];
+  const refineId = bindings.face_refine_denoise?.[0]?.nodeId;
+  if (refineId && graph[refineId]) {
+    let reason: string | null = p.faceRefine ? null : 'turned off';
+    if (!reason) {
+      const ids = [refineId, ...bypassNodeIds(graph, refineId)];
+      const missing = await missingClasses(backend, graph, ids);
+      if (missing.length) reason = `server is missing ${describeMissing(missing)}`;
+      else reason = await missingModelFile(backend, graph, ids);
+    }
+    if (reason) {
+      try {
+        graph = bypassNode(graph, refineId);
+      } catch (e: any) {
+        throw new GenerationError(`Face refinement could not be removed: ${e.message}`);
+      }
+      bindings = filterBindings(graph, bindings);
+      faceRefine = { status: p.faceRefine ? 'skipped' : 'off', reason };
+      if (p.faceRefine) warnings.push(`Face refinement skipped — ${reason}.`);
+    } else {
+      faceRefine = { status: 'on', denoise: clamp(p.faceRefineDenoise, 0.05, 1), threshold: Math.round(clamp(p.faceRefineThreshold, 64, 2048)) };
+    }
+  }
+
   // Drop anything no output uses any more (e.g. the empty latent when img2img is active).
   graph = garbageCollect(graph);
   bindings = filterBindings(graph, bindings);
@@ -235,6 +291,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     face_strength: faceReference ? clamp(p.faceStrength, 0, 3) : undefined,
     control_strength: poseImage ? clamp(p.controlStrength, 0, 3) : undefined,
     controlnet_model: poseImage ? p.controlnetModel || undefined : undefined,
+    face_refine_denoise: faceRefine?.status === 'on' ? faceRefine.denoise : undefined,
+    face_refine_threshold: faceRefine?.status === 'on' ? faceRefine.threshold : undefined,
     filename_prefix: 'sienna/sienna',
   };
 
@@ -271,6 +329,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       poseImage,
       warnings,
       prunedModules,
+      faceRefine,
       submittedGraph: graph,
       images: [],
       favorite: false,

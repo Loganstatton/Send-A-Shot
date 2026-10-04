@@ -49,6 +49,22 @@ const PACKAGES: { test: RegExp; pkg: NodePackage }[] = [
     pkg: { name: 'ComfyUI-Advanced-ControlNet', repo: 'https://github.com/Kosinkadink/ComfyUI-Advanced-ControlNet', notes: '' },
   },
   {
+    test: /^(FaceDetailer|SAMLoader|BboxDetector|SegmDetector)/,
+    pkg: {
+      name: 'ComfyUI-Impact-Pack',
+      repo: 'https://github.com/ltdrdata/ComfyUI-Impact-Pack',
+      notes: 'Face refinement. Also needs ComfyUI-Impact-Subpack (face detector) and models/ultralytics/bbox/face_yolov8m.pt.',
+    },
+  },
+  {
+    test: /^UltralyticsDetectorProvider$/,
+    pkg: {
+      name: 'ComfyUI-Impact-Subpack',
+      repo: 'https://github.com/ltdrdata/ComfyUI-Impact-Subpack',
+      notes: 'Needs models/ultralytics/bbox/face_yolov8m.pt (https://huggingface.co/Bingsu/adetailer).',
+    },
+  },
+  {
     test: /GGUF/,
     pkg: { name: 'ComfyUI-GGUF', repo: 'https://github.com/city96/ComfyUI-GGUF', notes: 'For quantised Flux UNETs in models/unet.' },
   },

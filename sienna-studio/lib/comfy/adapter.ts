@@ -67,6 +67,8 @@ export const CONTROL_INFO: Record<ControlKey, { label: string; hint: string; kin
   pose_image: { label: 'Pose / ControlNet image', hint: 'LoadImage.image feeding ControlNetApply*', kind: 'image' },
   control_strength: { label: 'ControlNet strength', hint: 'ControlNetApplyAdvanced.strength', kind: 'number' },
   controlnet_model: { label: 'ControlNet model', hint: 'ControlNetLoader.control_net_name', kind: 'enum' },
+  face_refine_denoise: { label: 'Face refinement denoise', hint: 'FaceDetailer.denoise', kind: 'number' },
+  face_refine_threshold: { label: 'Face refinement size threshold', hint: 'FaceDetailer.guide_size (faces smaller than this are redrawn)', kind: 'number' },
   filename_prefix: { label: 'Output filename prefix', hint: 'SaveImage.filename_prefix', kind: 'text' },
 };
 
@@ -355,6 +357,15 @@ export function autoDetectBindings(graph: ComfyGraph): WorkflowBindings {
     if (t === 'ApplyPulid' || t === 'ApplyPulidFlux' || t === 'ApplyInstantID') push(b, 'face_strength', id, 'weight', node);
     if (t === 'ControlNetLoader') push(b, 'controlnet_model', id, 'control_net_name', node);
     if (t.startsWith('ControlNetApply')) push(b, 'control_strength', id, 'strength', node);
+    if (t === 'FaceDetailer') {
+      push(b, 'face_refine_denoise', id, 'denoise', node);
+      push(b, 'face_refine_threshold', id, 'guide_size', node);
+      push(b, 'seed', id, 'seed', node);
+      push(b, 'steps', id, 'steps', node);
+      push(b, 'cfg', id, 'cfg', node);
+      push(b, 'sampler', id, 'sampler_name', node);
+      push(b, 'scheduler', id, 'scheduler', node);
+    }
     if (OUTPUT_CLASSES.has(t)) push(b, 'filename_prefix', id, 'filename_prefix', node);
   }
 
@@ -392,6 +403,7 @@ export function capabilities(bindings: WorkflowBindings) {
     denoise: has('denoise'),
     guidance: has('guidance'),
     controlnetModel: has('controlnet_model'),
+    faceRefine: has('face_refine_denoise'),
   };
 }
 export type Capabilities = ReturnType<typeof capabilities>;

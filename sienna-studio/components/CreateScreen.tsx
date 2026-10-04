@@ -488,6 +488,27 @@ export function CreateScreen() {
           )}
           <Slider label="LoRA strength" value={draft.params.loraStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('loraStrength', v)} />
           <Slider label="LoRA CLIP strength" value={draft.params.loraClipStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('loraClipStrength', v)} />
+          {caps.faceRefine && (
+            <>
+              <Toggle
+                checked={draft.params.faceRefine ?? DEFAULT_PARAMS.faceRefine}
+                onChange={(v) => setParam('faceRefine', v)}
+                label="Face refinement for small faces"
+                description={`Redraws Sienna’s face when it is under ${draft.params.faceRefineThreshold ?? DEFAULT_PARAMS.faceRefineThreshold}px (full-body, mirror shots). Larger faces are left as they are.`}
+              />
+              {(draft.params.faceRefine ?? DEFAULT_PARAMS.faceRefine) && (
+                <Slider
+                  label="Face refinement strength"
+                  hint="denoise · lower keeps expression and lighting"
+                  value={draft.params.faceRefineDenoise ?? DEFAULT_PARAMS.faceRefineDenoise}
+                  min={0.1}
+                  max={0.5}
+                  step={0.05}
+                  onChange={(v) => setParam('faceRefineDenoise', v)}
+                />
+              )}
+            </>
+          )}
 
           <div>
             <p className="mb-1 text-sm text-ink-200">Seed</p>

@@ -14,6 +14,7 @@ const GROUPS: { title: string; keys: ControlKey[] }[] = [
   { title: 'Sampling', keys: ['seed', 'steps', 'cfg', 'guidance', 'sampler', 'scheduler', 'denoise'] },
   { title: 'Size', keys: ['width', 'height', 'batch_size'] },
   { title: 'Reference & control', keys: ['face_reference_image', 'face_strength', 'init_image', 'pose_image', 'control_strength', 'controlnet_model'] },
+  { title: 'Face refinement', keys: ['face_refine_denoise', 'face_refine_threshold'] },
   { title: 'Output', keys: ['filename_prefix'] },
 ];
 

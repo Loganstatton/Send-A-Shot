@@ -194,6 +194,21 @@ FaceID off; it caused blotchy skin and glassy eyes in testing). With Sienna Lock
 `older woman, middle-aged, wrinkles, aged skin, mature face` to hold her stated age; `dpmpp_2m/karras` and a
 "young-looking" negative both made her look older.
 
+### Face refinement for small faces (SDXL)
+
+In full-body and mirror shots Sienna's face covers only a few pixels, so SDXL draws a more generic face.
+**Advanced → Face refinement for small faces** adds a second pass (FaceDetailer from ComfyUI-Impact-Pack):
+
+1. a face detector (`face_yolov8m.pt`) finds the face in the first-pass image;
+2. faces whose bounding box is **under the threshold (384 px)** are cropped, enlarged to it, and redrawn
+   with the **same checkpoint, Sienna LoRA, prompt, negative prompt, seed and sampler** at low denoise
+   (default **0.30**; 0.20–0.35 tested);
+3. only the face area is masked and blended back with a feathered edge, so pose, expression, hair and
+   lighting stay as they were. Larger faces (close-up selfies) are left untouched.
+
+It never uses a face reference or FaceID. If the nodes or the detector model are missing, the pass is
+skipped with a warning and the image is generated normally. Setup: see `docs/COMFYUI_SETUP.md` §2.
+
 Tuning: changing LoRA strength between 0.9 and 1.1 barely changes the face. If outfits or settings get ignored
 or images look burned, lower it.
 

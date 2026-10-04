@@ -281,6 +281,7 @@ const MOCK_CHOICES: Record<string, string[]> = {
   sampler_name: ['euler', 'euler_ancestral', 'ddpm', 'dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_3m_sde', 'uni_pc'],
   scheduler: ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'beta'],
   control_net_name: ['OpenPoseXL2.safetensors', 'controlnet-union-sdxl-promax.safetensors'],
+  model_name: ['bbox/face_yolov8m.pt'],
 };
 
 export class MockComfy implements ComfyBackend {
