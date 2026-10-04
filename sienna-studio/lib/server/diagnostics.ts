@@ -5,7 +5,7 @@
 
 import 'server-only';
 import { comboOptions, ComfyBackend, createBackend, isMockUrl, NodeInfo } from '../comfy/client';
-import { MODULE_KEYS, MODULE_LABELS, moduleNodeIds } from '../comfy/modules';
+import { bypassNodeIds, MODULE_KEYS, MODULE_LABELS, moduleNodeIds } from '../comfy/modules';
 import { CONTROLNET_CLASSES, IDENTITY_CLASSES, packageFor } from '../comfy/packages';
 import { builtinPresets, DEFAULT_PARAMS, EMPTY_FIELDS } from '../defaults';
 import type { ComfyGraph, GenerateRequest, WorkflowTemplate } from '../types';
@@ -303,12 +303,15 @@ export async function runDiagnostics(workflowId: string | null): Promise<Diagnos
   for (const key of MODULE_KEYS) {
     for (const id of moduleNodeIds(wf.graph, wf.bindings, key)) moduleClass.set(wf.graph[id].class_type, key);
   }
+  const refineId = wf.bindings.face_refine_denoise?.[0]?.nodeId;
+  const refineIds = refineId && wf.graph[refineId] ? [...new Set([refineId, ...bypassNodeIds(wf.graph, refineId)])] : [];
+  for (const id of refineIds) moduleClass.set(wf.graph[id].class_type, 'face_refine');
   const coreMissing = missing.filter((c) => !moduleClass.has(c));
   const items: string[] = [];
-  for (const key of ['core', ...MODULE_KEYS] as const) {
-    const label = key === 'core' ? 'Core (base model + LoRA + sampler)' : MODULE_LABELS[key];
+  for (const key of ['core', ...MODULE_KEYS, 'face_refine'] as const) {
+    const label = key === 'core' ? 'Core (base model + LoRA + sampler)' : key === 'face_refine' ? 'Face refinement' : MODULE_LABELS[key];
     const miss = key === 'core' ? coreMissing : missing.filter((c) => moduleClass.get(c) === key);
-    const hasModule = key === 'core' || (wf.bindings[key]?.length ?? 0) > 0;
+    const hasModule = key === 'core' || (key === 'face_refine' ? refineIds.length > 0 : (wf.bindings[key]?.length ?? 0) > 0);
     if (!hasModule) continue;
     items.push(
       miss.length
@@ -370,6 +373,37 @@ export async function runDiagnostics(workflowId: string | null): Promise<Diagnos
     items: cnModels,
     fix: cnModels.length ? undefined : 'Optional. Put a pose ControlNet in ComfyUI/models/controlnet/ to use pose images.',
   });
+
+  // 8b. Face refinement (FaceDetailer + face detector model)
+  if (refineIds.length) {
+    const settings = await getSettings();
+    const enabled = settings.defaultParams.faceRefine;
+    const missingNodes = [...new Set(refineIds.map((id) => wf.graph[id].class_type))].filter((c) => missing.includes(c));
+    const detectorIds = refineIds.filter((id) => typeof wf.graph[id].inputs.model_name === 'string');
+    const missingModels: string[] = [];
+    for (const id of detectorIds) {
+      const file = wf.graph[id].inputs.model_name as string;
+      const list = await choices(wf.graph[id].class_type, 'model_name');
+      if (!missingNodes.includes(wf.graph[id].class_type) && !list.includes(file)) missingModels.push(file);
+    }
+    const ready = !missingNodes.length && !missingModels.length;
+    const problems = [
+      ...missingNodes.map((c) => `missing node ${c}${packageFor(c) ? ` (${packageFor(c)!.name})` : ''}`),
+      ...missingModels.map((f) => `missing model models/ultralytics/${f}`),
+    ];
+    checks.push({
+      id: 'face-refine',
+      label: 'Face refinement (small faces)',
+      status: ready ? 'pass' : enabled ? 'warn' : 'skip',
+      detail: ready
+        ? `Ready — FaceDetailer and ${detectorIds.map((id) => wf.graph[id].inputs.model_name).join(', ')} are installed. ${enabled ? 'On by default' : 'Off by default'} (denoise ${settings.defaultParams.faceRefineDenoise}, faces under ${settings.defaultParams.faceRefineThreshold}px).`
+        : `Not ready: ${problems.join('; ')}. ${enabled ? 'Generations will skip the refinement pass (with a warning) until this is fixed.' : 'It is switched off by default.'}`,
+      items: problems,
+      fix: ready
+        ? undefined
+        : 'On the GPU machine run scripts/comfyui-bootstrap.sh --restart from the Sienna Studio repo (see docs/COMFYUI_SETUP.md, “After a fresh Pod start”), then re-run Diagnostics.',
+    });
+  }
 
   // 9. Model-file defaults in the template
   report.modelInputs = await collectModelInputs(backend, wf);

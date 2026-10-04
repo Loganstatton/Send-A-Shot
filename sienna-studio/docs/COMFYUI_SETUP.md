@@ -86,6 +86,27 @@ Sienna generations with only a base model and `sienna_v2.safetensors`.
 If your GPU is not NVIDIA, change `provider: CUDA` on the IPAdapter/PuLID loader nodes to `CPU` (or `ROCM` for
 PuLID) in **Library → Workflows → Edit mapping → Nodes**, or edit the JSON and re-upload it.
 
+### After a fresh Pod start (face refinement)
+
+Cloud GPU containers (e.g. RunPod's ComfyUI template without a network volume) lose everything under
+`ComfyUI/` when the Pod stops. Face refinement needs ComfyUI-Impact-Pack, ComfyUI-Impact-Subpack, their
+Python packages and `face_yolov8m.pt`. One command restores all of it — run it in the Pod's web terminal
+(Jupyter → Terminal), from any folder:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/loganstatton/send-a-shot/sienna-studio/sienna-studio/scripts/comfyui-bootstrap.sh | bash -s -- --restart
+```
+
+If the repository is private, copy `sienna-studio/scripts/comfyui-bootstrap.sh` to the Pod (e.g. drag it into
+Jupyter) and run `bash comfyui-bootstrap.sh --restart`. It finds ComfyUI and its Python automatically (override
+with `COMFYUI_DIR` / `COMFYUI_PYTHON`), skips anything already installed, and restarts ComfyUI through
+ComfyUI-Manager. It takes a few minutes (most of it pip). Then open **Diagnostics**: “Face refinement (small
+faces)” should say **Ready**. Until it does, generations still work — the refinement pass is skipped with a
+warning.
+
+The script only restores the face-refinement pieces. The base checkpoint and Sienna LoRA still need copying
+into `models/checkpoints/` and `models/loras/` (§1).
+
 ---
 
 ## 3. Making the server reachable

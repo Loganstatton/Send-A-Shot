@@ -116,7 +116,7 @@ export const DEFAULT_PARAMS: GenerationParams = {
   controlStrength: 0.65,
   controlnetModel: '',
   batchSize: 1,
-  faceRefine: false,
+  faceRefine: true,
   faceRefineDenoise: 0.3,
   faceRefineThreshold: 384,
 };

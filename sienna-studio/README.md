@@ -206,8 +206,11 @@ In full-body and mirror shots Sienna's face covers only a few pixels, so SDXL dr
 3. only the face area is masked and blended back with a feathered edge, so pose, expression, hair and
    lighting stay as they were. Larger faces (close-up selfies) are left untouched.
 
-It never uses a face reference or FaceID. If the nodes or the detector model are missing, the pass is
-skipped with a warning and the image is generated normally. Setup: see `docs/COMFYUI_SETUP.md` §2.
+It is **on by default** (denoise 0.30, threshold 384 px) and can be switched off per generation in
+**Advanced**. It never uses a face reference or FaceID. If the nodes or the detector model are missing, the
+pass is skipped with a warning and the image is generated normally. **Diagnostics → Face refinement** says
+whether it is ready. Setup, including the one-command installer for fresh cloud Pods
+(`scripts/comfyui-bootstrap.sh`): see `docs/COMFYUI_SETUP.md` §2.
 
 Tuning: changing LoRA strength between 0.9 and 1.1 barely changes the face. If outfits or settings get ignored
 or images look burned, lower it.

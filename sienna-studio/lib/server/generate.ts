@@ -246,7 +246,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   if (refineId && graph[refineId]) {
     let reason: string | null = p.faceRefine ? null : 'turned off';
     if (!reason) {
-      const ids = [refineId, ...bypassNodeIds(graph, refineId)];
+      const ids = [...new Set([refineId, ...bypassNodeIds(graph, refineId)])];
       const missing = await missingClasses(backend, graph, ids);
       if (missing.length) reason = `server is missing ${describeMissing(missing)}`;
       else reason = await missingModelFile(backend, graph, ids);
