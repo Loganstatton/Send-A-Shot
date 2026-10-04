@@ -1,0 +1,74 @@
+{
+  "12": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "flux1-dev.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "Load Diffusion Model" }
+  },
+  "11": {
+    "class_type": "DualCLIPLoader",
+    "inputs": { "clip_name1": "t5xxl_fp8_e4m3fn.safetensors", "clip_name2": "clip_l.safetensors", "type": "flux" },
+    "_meta": { "title": "DualCLIPLoader" }
+  },
+  "10": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "ae.safetensors" },
+    "_meta": { "title": "Load VAE" }
+  },
+  "20": {
+    "class_type": "LoraLoader",
+    "inputs": {
+      "model": ["12", 0],
+      "clip": ["11", 0],
+      "lora_name": "sienna_flux_v1.safetensors",
+      "strength_model": 0.9,
+      "strength_clip": 0.9
+    },
+    "_meta": { "title": "Sienna LoRA" }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "positive prompt", "clip": ["20", 1] },
+    "_meta": { "title": "Positive Prompt" }
+  },
+  "33": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "", "clip": ["20", 1] },
+    "_meta": { "title": "Negative Prompt (ignored by Flux at cfg 1)" }
+  },
+  "26": {
+    "class_type": "FluxGuidance",
+    "inputs": { "conditioning": ["6", 0], "guidance": 3.0 },
+    "_meta": { "title": "FluxGuidance" }
+  },
+  "5": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": { "width": 832, "height": 1216, "batch_size": 1 },
+    "_meta": { "title": "Empty Latent" }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 0,
+      "steps": 24,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["20", 0],
+      "positive": ["26", 0],
+      "negative": ["33", 0],
+      "latent_image": ["5", 0]
+    },
+    "_meta": { "title": "KSampler" }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["3", 0], "vae": ["10", 0] },
+    "_meta": { "title": "VAE Decode" }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": { "filename_prefix": "sienna_flux", "images": ["8", 0] },
+    "_meta": { "title": "Save Image" }
+  }
+}

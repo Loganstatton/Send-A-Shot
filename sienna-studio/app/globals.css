@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #0b0b0f;
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+body {
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Large, touch-friendly range thumbs */
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 28px;
+  background: transparent;
+}
+.range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #3a3a4a;
+}
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -10px;
+  border-radius: 999px;
+  background: #e8836b;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #3a3a4a;
+}
+.range::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: #e8836b;
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Space for bottom nav (+ optional sticky action bar) and the home indicator. */
+.pb-nav {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
+}
+.pb-nav-action {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 160px);
+}

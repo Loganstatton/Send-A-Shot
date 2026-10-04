@@ -1,0 +1,15 @@
+# docker compose up -d --build   → http://<host>:3000
+services:
+  sienna:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env          # copy .env.example to .env first
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - sienna-data:/data   # profile, workflows, presets, history, images
+
+volumes:
+  sienna-data:

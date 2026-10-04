@@ -1,0 +1,25 @@
+# Render Blueprint: New → Blueprint → pick this repo and set
+# "Blueprint Path" to  sienna-studio/render.yaml
+# A persistent disk is REQUIRED (history, references and images live in DATA_DIR).
+services:
+  - type: web
+    name: sienna-studio
+    runtime: docker
+    dockerContext: ./sienna-studio
+    dockerfilePath: ./sienna-studio/Dockerfile
+    plan: starter
+    disk:
+      name: sienna-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: APP_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: COMFYUI_URL
+        value: mock
+      - key: COMFYUI_API_KEY
+        sync: false
+      - key: ALLOW_ADULT_CONTENT
+        value: "false"
