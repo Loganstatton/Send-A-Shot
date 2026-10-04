@@ -1,5 +1,5 @@
 {
-  "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "sdxl_base.safetensors" }, "_meta": { "title": "Base Checkpoint (SDXL)" } },
+  "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "RealVisXL_V5.0_fp16.safetensors" }, "_meta": { "title": "Base Checkpoint (SDXL)" } },
   "2": {
     "class_type": "LoraLoader",
     "inputs": { "model": ["1", 0], "clip": ["1", 1], "lora_name": "sienna_v1.safetensors", "strength_model": 0.8, "strength_clip": 0.8 },
