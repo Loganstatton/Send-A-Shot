@@ -65,7 +65,7 @@ export function ConnectionTester({
       <TextInput
         label="ComfyUI server URL"
         hint={envUrl ? `blank = env (${envUrl})` : 'or “mock” for offline test mode'}
-        placeholder="https://xxxx-8188.proxy.runpod.net"
+        placeholder="https://your-comfyui-host:8188"
         inputMode="url"
         autoCapitalize="off"
         autoCorrect="off"

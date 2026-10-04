@@ -14,7 +14,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { builtinPresets, DEFAULT_CHARACTER, DEFAULT_PARAMS, DEFAULT_SETTINGS } from '../defaults';
-import { builtinWorkflows } from '../comfy/builtin-workflows';
+import { builtinWorkflows, LEGACY_WORKFLOW_IDS } from '../comfy/builtin-workflows';
 import type { AppSettings, CharacterProfile, GenerationRecord, Preset, StoredImage, WorkflowTemplate } from '../types';
 import { imageSize } from './png';
 
@@ -74,8 +74,13 @@ function normaliseConfig(doc: Partial<ConfigDoc> | null): ConfigDoc {
     defaultParams: { ...DEFAULT_PARAMS, ...(doc?.settings?.defaultParams ?? {}) },
   };
   const character: CharacterProfile = { ...DEFAULT_CHARACTER, ...(doc?.character ?? {}) };
-  const presets = doc?.presets?.length ? doc.presets : builtinPresets();
-  return { version: 1, settings, character, workflows: doc?.workflows ?? [], presets };
+  const legacy = (id: string | null) => (id && LEGACY_WORKFLOW_IDS[id]) || id;
+  settings.defaultWorkflowId = legacy(settings.defaultWorkflowId);
+  const presets = (doc?.presets?.length ? doc.presets : builtinPresets()).map((p) => ({ ...p, workflowId: legacy(p.workflowId) }));
+  const workflows = (doc?.workflows ?? [])
+    .filter((w) => !LEGACY_WORKFLOW_IDS[w.id])
+    .map((w) => ({ ...w, optionalModules: w.optionalModules ?? ['init_image', 'face_reference_image', 'pose_image'] }));
+  return { version: 1, settings, character, workflows, presets };
 }
 
 async function loadConfig(): Promise<ConfigDoc> {
@@ -156,7 +161,8 @@ export async function listWorkflows(): Promise<WorkflowTemplate[]> {
 }
 
 export async function getWorkflow(id: string): Promise<WorkflowTemplate | null> {
-  return (await listWorkflows()).find((w) => w.id === id) ?? null;
+  const real = LEGACY_WORKFLOW_IDS[id] ?? id;
+  return (await listWorkflows()).find((w) => w.id === real) ?? null;
 }
 
 export function saveWorkflow(wf: WorkflowTemplate): Promise<WorkflowTemplate> {

@@ -267,8 +267,8 @@ export function CreateScreen() {
         title="Create"
         subtitle={workflow ? workflow.name : 'No workflow selected'}
         right={
-          <Link href="/settings">
-            <Badge tone={env?.mock ? 'warn' : 'ok'}>{env?.mock ? 'Mock mode' : 'ComfyUI'}</Badge>
+          <Link href="/diagnostics">
+            <Badge tone={env?.mock ? 'warn' : 'ok'}>{env?.mock ? 'MOCK' : 'ComfyUI live'}</Badge>
           </Link>
         }
       />
@@ -628,7 +628,7 @@ export function CreateScreen() {
             loading={submitting}
             disabled={!!built?.blocked.length || !workflow}
           >
-            {pending.length ? `Generate (${pending.length} running)` : 'Generate'}
+            {pending.length ? `Generate (${pending.length} running)` : env?.mock ? 'Generate (MOCK)' : 'Generate'}
           </Button>
         </div>
       </div>

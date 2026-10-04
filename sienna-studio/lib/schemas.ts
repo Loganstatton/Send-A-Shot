@@ -106,6 +106,7 @@ export const workflowUpdateSchema = z
     bindings: bindingsSchema,
     outputNodeIds: z.array(z.string().max(32)).max(20),
     allowLoraInjection: z.boolean(),
+    optionalModules: z.array(z.enum(['init_image', 'face_reference_image', 'pose_image'])).max(3),
     graph: z.record(z.any()),
   })
   .partial();

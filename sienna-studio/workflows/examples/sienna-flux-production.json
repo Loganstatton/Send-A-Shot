@@ -1,0 +1,62 @@
+{
+  "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "flux1-dev.safetensors", "weight_dtype": "default" }, "_meta": { "title": "Base Model (Flux UNET)" } },
+  "2": {
+    "class_type": "DualCLIPLoader",
+    "inputs": { "clip_name1": "t5xxl_fp8_e4m3fn.safetensors", "clip_name2": "clip_l.safetensors", "type": "flux" },
+    "_meta": { "title": "Flux Text Encoders" }
+  },
+  "3": { "class_type": "VAELoader", "inputs": { "vae_name": "ae.safetensors" }, "_meta": { "title": "Flux VAE" } },
+  "4": {
+    "class_type": "LoraLoader",
+    "inputs": { "model": ["1", 0], "clip": ["2", 0], "lora_name": "sienna_v1.safetensors", "strength_model": 0.8, "strength_clip": 0.8 },
+    "_meta": { "title": "Sienna LoRA" }
+  },
+  "5": { "class_type": "CLIPTextEncode", "inputs": { "text": "positive prompt", "clip": ["4", 1] }, "_meta": { "title": "Positive Prompt" } },
+  "6": { "class_type": "CLIPTextEncode", "inputs": { "text": "", "clip": ["4", 1] }, "_meta": { "title": "Negative Prompt (ignored by Flux at cfg 1)" } },
+  "7": { "class_type": "FluxGuidance", "inputs": { "conditioning": ["5", 0], "guidance": 3.0 }, "_meta": { "title": "Flux Guidance" } },
+
+  "10": { "class_type": "LoadImage", "inputs": { "image": "example.png" }, "_meta": { "title": "Sienna Face Reference" } },
+  "11": { "class_type": "PulidFluxModelLoader", "inputs": { "pulid_file": "pulid_flux_v0.9.1.safetensors" }, "_meta": { "title": "PuLID Flux Model" } },
+  "12": { "class_type": "PulidFluxEvaClipLoader", "inputs": {}, "_meta": { "title": "PuLID EVA-CLIP" } },
+  "13": { "class_type": "PulidFluxInsightFaceLoader", "inputs": { "provider": "CUDA" }, "_meta": { "title": "PuLID InsightFace" } },
+  "14": {
+    "class_type": "ApplyPulidFlux",
+    "inputs": {
+      "model": ["4", 0], "pulid_flux": ["11", 0], "eva_clip": ["12", 0], "face_analysis": ["13", 0], "image": ["10", 0],
+      "weight": 0.9, "start_at": 0, "end_at": 1
+    },
+    "_meta": { "title": "Apply PuLID Flux (identity)" }
+  },
+
+  "20": { "class_type": "LoadImage", "inputs": { "image": "example.png" }, "_meta": { "title": "Pose Image (OpenPose skeleton)" } },
+  "21": { "class_type": "ControlNetLoader", "inputs": { "control_net_name": "flux_controlnet_union.safetensors" }, "_meta": { "title": "Flux ControlNet (union)" } },
+  "23": { "class_type": "SetUnionControlNetType", "inputs": { "control_net": ["21", 0], "type": "openpose" }, "_meta": { "title": "Union type: openpose" } },
+  "22": {
+    "class_type": "ControlNetApplyAdvanced",
+    "inputs": {
+      "positive": ["7", 0], "negative": ["6", 0], "control_net": ["23", 0], "image": ["20", 0], "vae": ["3", 0],
+      "strength": 0.6, "start_percent": 0, "end_percent": 0.6
+    },
+    "_meta": { "title": "Apply Pose ControlNet" }
+  },
+
+  "30": { "class_type": "LoadImage", "inputs": { "image": "example.png" }, "_meta": { "title": "Init Image (img2img)" } },
+  "31": {
+    "class_type": "ImageScale",
+    "inputs": { "image": ["30", 0], "upscale_method": "lanczos", "width": 832, "height": 1216, "crop": "center" },
+    "_meta": { "title": "Resize Init Image" }
+  },
+  "32": { "class_type": "VAEEncode", "inputs": { "pixels": ["31", 0], "vae": ["3", 0] }, "_meta": { "title": "Encode Init Image" } },
+  "33": { "class_type": "EmptySD3LatentImage", "inputs": { "width": 832, "height": 1216, "batch_size": 1 }, "_meta": { "title": "Empty Latent (txt2img)" } },
+
+  "40": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["14", 0], "positive": ["22", 0], "negative": ["22", 1], "latent_image": ["32", 0],
+      "seed": 0, "steps": 24, "cfg": 1, "sampler_name": "euler", "scheduler": "simple", "denoise": 1
+    },
+    "_meta": { "title": "KSampler (cfg must stay 1.0)" }
+  },
+  "41": { "class_type": "VAEDecode", "inputs": { "samples": ["40", 0], "vae": ["3", 0] }, "_meta": { "title": "VAE Decode" } },
+  "42": { "class_type": "SaveImage", "inputs": { "filename_prefix": "sienna_flux", "images": ["41", 0] }, "_meta": { "title": "Save Image" } }
+}

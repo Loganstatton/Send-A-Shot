@@ -29,24 +29,22 @@ describe('built-in workflows', () => {
     });
   }
 
-  it('detects face/pose LoadImage roles from titles', () => {
-    const wf = builtinWorkflows().find((w) => w.id === 'builtin-sdxl-faceid-pose')!;
+  it('detects face/pose/init LoadImage roles in the SDXL production graph', () => {
+    const wf = builtinWorkflows().find((w) => w.id === 'sienna-sdxl-production')!;
     const auto = autoDetectBindings(wf.graph);
-    expect(auto.face_reference_image).toEqual([{ nodeId: '21', inputName: 'image' }]);
-    expect(auto.pose_image).toEqual([{ nodeId: '30', inputName: 'image' }]);
-    expect(capabilities(auto)).toMatchObject({ faceReference: true, pose: true, lora: true });
+    expect(auto.face_reference_image).toEqual([{ nodeId: '10', inputName: 'image' }]);
+    expect(auto.pose_image).toEqual([{ nodeId: '20', inputName: 'image' }]);
+    expect(auto.init_image).toEqual([{ nodeId: '30', inputName: 'image' }]);
+    expect(capabilities(auto)).toMatchObject({ faceReference: true, pose: true, lora: true, img2img: true });
   });
 
-  it('detects img2img init image via VAEEncode consumer', () => {
-    const wf = builtinWorkflows().find((w) => w.id === 'builtin-sdxl-img2img')!;
-    expect(autoDetectBindings(wf.graph).init_image).toEqual([{ nodeId: '11', inputName: 'image' }]);
-  });
-
-  it('detects Flux guidance through FluxGuidance node', () => {
-    const wf = builtinWorkflows().find((w) => w.id === 'builtin-flux-dev-lora')!;
+  it('detects Flux guidance and PuLID weight in the Flux production graph', () => {
+    const wf = builtinWorkflows().find((w) => w.id === 'sienna-flux-production')!;
     const auto = autoDetectBindings(wf.graph);
-    expect(auto.guidance).toEqual([{ nodeId: '26', inputName: 'guidance' }]);
-    expect(auto.positive_prompt).toEqual([{ nodeId: '6', inputName: 'text' }]);
+    expect(auto.guidance).toEqual([{ nodeId: '7', inputName: 'guidance' }]);
+    expect(auto.positive_prompt).toEqual([{ nodeId: '5', inputName: 'text' }]);
+    expect(auto.face_strength).toEqual([{ nodeId: '14', inputName: 'weight' }]);
+    expect(auto.face_reference_image).toEqual([{ nodeId: '10', inputName: 'image' }]);
   });
 });
 

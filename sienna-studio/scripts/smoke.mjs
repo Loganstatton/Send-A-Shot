@@ -34,7 +34,7 @@ assert(test.status === 200 && test.body.ok, `backend reachable (${test.body?.bac
 
 const gen = await call('/api/generate', {
   method: 'POST',
-  body: JSON.stringify({ presetId: 'iphone-selfie', workflowId: 'builtin-sdxl-txt2img', siennaLock: true, contentMode: 'sfw', fields, params, images }),
+  body: JSON.stringify({ presetId: 'iphone-selfie', workflowId: 'sienna-sdxl-production', siennaLock: true, contentMode: 'sfw', fields, params, images }),
 });
 assert(gen.status === 202, 'generation queued');
 assert(!/blonde/.test(gen.body.positivePrompt) && !/,\s*hair,/.test(gen.body.positivePrompt), 'Sienna Lock stripped "blonde hair" entirely');
@@ -54,6 +54,13 @@ const blocked = await call('/api/generate', {
   body: JSON.stringify({ presetId: null, workflowId: null, siennaLock: false, contentMode: 'sfw', fields: { ...fields, outfit: 'schoolgirl' }, params, images }),
 });
 assert(blocked.status === 422, 'minor-coded prompt blocked');
+
+const diag = await call('/api/diagnostics?workflowId=sienna-sdxl-production');
+assert(diag.status === 200 && diag.body.checks.find((c) => c.id === 'reachable')?.status === 'pass', 'diagnostics: server reachable');
+assert(diag.body.checks.find((c) => c.id === 'executable')?.status !== undefined, `diagnostics: executable check ran (${diag.body.checks.find((c) => c.id === 'executable')?.status})`);
+
+const first = await call('/api/diagnostics/first-test', { method: 'POST', body: JSON.stringify({ workflowId: 'sienna-sdxl-production' }) });
+assert(first.status === 202 && first.body.seed === 424242 && (first.body.lora === null || first.body.lora.strength === 0.8), 'first test queued with fixed seed and LoRA 0.8');
 
 const trav = await fetch(`${BASE}/api/files/..%2Fconfig.json`, { headers });
 assert(trav.status === 400, 'path traversal rejected');

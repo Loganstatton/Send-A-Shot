@@ -11,8 +11,9 @@
  *   GET  /view?filename&subfolder&type – fetch an output image
  *   POST /interrupt                – stop the running job
  *
- * Any host that exposes this API works: RunPod / Vast.ai / Lambda / Paperspace
- * pods, your own PC, or a managed service that proxies the native API.
+ * Any reachable host that exposes this API works — any cloud GPU provider,
+ * your own PC, or a managed service that proxies the native API. Nothing here
+ * is provider-specific; auth is via COMFYUI_API_KEY / COMFYUI_EXTRA_HEADERS.
  * A provider with a *different* API (a bespoke serverless endpoint) needs a
  * new class implementing `ComfyBackend` — see README “Other backends”.
  */
@@ -32,7 +33,7 @@ export type JobState =
   | { state: 'pending'; position: number }
   | { state: 'running' }
   | { state: 'done'; images: OutputImageRef[] }
-  | { state: 'error'; message: string }
+  | { state: 'error'; message: string; details?: unknown }
   | { state: 'unknown' };
 
 export interface SystemInfo {
@@ -48,11 +49,19 @@ export interface ComfyBackend {
   systemInfo(): Promise<SystemInfo>;
   /** Choices for one input of a node class, e.g. ("LoraLoader", "lora_name"). */
   inputChoices(nodeClass: string, inputName: string): Promise<string[]>;
+  /** /object_info entry for a node class, or null if the class is not installed. */
+  nodeInfo(nodeClass: string): Promise<NodeInfo | null>;
   uploadImage(bytes: Buffer, filename: string, mime: string): Promise<string>;
   queuePrompt(graph: ComfyGraph, clientId: string): Promise<{ promptId: string }>;
   jobState(promptId: string, outputNodeIds: string[]): Promise<JobState>;
   fetchImage(ref: OutputImageRef): Promise<{ bytes: Buffer; mime: string }>;
   interrupt(): Promise<void>;
+}
+
+export interface NodeInfo {
+  input?: { required?: Record<string, unknown>; optional?: Record<string, unknown> };
+  output?: string[];
+  python_module?: string;
 }
 
 export class ComfyError extends Error {
@@ -80,13 +89,21 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+// /object_info results cached per server URL (5 min) so diagnostics and
+// generation don't re-query node definitions on every request.
+const OBJECT_INFO_TTL = 5 * 60_000;
+const gc = globalThis as unknown as { __siennaObjectInfo?: Map<string, Map<string, { at: number; data: NodeInfo | null }>> };
+const objectInfoCaches = (gc.__siennaObjectInfo ??= new Map());
+
 export class RealComfy implements ComfyBackend {
   readonly kind = 'comfyui' as const;
   private base: string;
-  private objectInfoCache = new Map<string, { at: number; data: any }>();
+  private objectInfoCache: Map<string, { at: number; data: NodeInfo | null }>;
 
   constructor(baseUrl: string) {
     this.base = baseUrl.replace(/\/+$/, '');
+    if (!objectInfoCaches.has(this.base)) objectInfoCaches.set(this.base, new Map());
+    this.objectInfoCache = objectInfoCaches.get(this.base)!;
   }
 
   private async req(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
@@ -139,14 +156,18 @@ export class RealComfy implements ComfyBackend {
     };
   }
 
-  async inputChoices(nodeClass: string, inputName: string): Promise<string[]> {
+  async nodeInfo(nodeClass: string): Promise<NodeInfo | null> {
     const cached = this.objectInfoCache.get(nodeClass);
-    let info = cached && Date.now() - cached.at < 60_000 ? cached.data : null;
-    if (!info) {
-      const all = await this.json<Record<string, any>>(`/object_info/${encodeURIComponent(nodeClass)}`);
-      info = all[nodeClass];
-      this.objectInfoCache.set(nodeClass, { at: Date.now(), data: info });
-    }
+    if (cached && Date.now() - cached.at < OBJECT_INFO_TTL) return cached.data;
+    // ComfyUI returns {} for classes that aren't installed.
+    const all = await this.json<Record<string, NodeInfo>>(`/object_info/${encodeURIComponent(nodeClass)}`);
+    const info = all[nodeClass] ?? null;
+    this.objectInfoCache.set(nodeClass, { at: Date.now(), data: info });
+    return info;
+  }
+
+  async inputChoices(nodeClass: string, inputName: string): Promise<string[]> {
+    const info = await this.nodeInfo(nodeClass);
     if (!info) return [];
     const spec = info.input?.required?.[inputName] ?? info.input?.optional?.[inputName];
     return comboOptions(spec);
@@ -184,8 +205,13 @@ export class RealComfy implements ComfyBackend {
       const status = entry.status;
       if (status?.status_str === 'error') {
         const err = (status.messages ?? []).find((m: any) => m[0] === 'execution_error')?.[1];
-        const msg = err ? `${err.node_type ?? 'Node'} (${err.node_id}): ${err.exception_message ?? 'execution error'}` : 'ComfyUI reported an execution error.';
-        return { state: 'error', message: msg.trim() };
+        const msg = err
+          ? `${err.node_type ?? 'Node'} (node ${err.node_id}): ${err.exception_type ? err.exception_type + ': ' : ''}${err.exception_message ?? 'execution error'}`
+          : 'ComfyUI reported an execution error.';
+        const details = err
+          ? { node_id: err.node_id, node_type: err.node_type, exception_type: err.exception_type, exception_message: err.exception_message, traceback: (err.traceback ?? []).slice(-6) }
+          : status;
+        return { state: 'error', message: msg.trim(), details };
       }
       if (status && status.completed === false && status.status_str !== 'success') return { state: 'running' };
       const images: OutputImageRef[] = [];
@@ -264,6 +290,10 @@ export class MockComfy implements ComfyBackend {
   }
   async inputChoices(_cls: string, inputName: string) {
     return MOCK_CHOICES[inputName] ?? [];
+  }
+  /** Mock mode pretends every node class is installed. */
+  async nodeInfo(_cls: string): Promise<NodeInfo | null> {
+    return { input: { required: {} }, python_module: 'mock' };
   }
   async uploadImage(bytes: Buffer, filename: string) {
     mockFiles.set(filename, bytes);

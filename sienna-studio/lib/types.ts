@@ -189,6 +189,14 @@ export interface WorkflowTemplate {
   outputNodeIds: string[];
   /** If the workflow has no LoRA loader, Sienna Lock may splice one in automatically. */
   allowLoraInjection: boolean;
+  /**
+   * Image modules that are removed from the graph when not used for a generation
+   * (or when the server lacks their nodes). See lib/comfy/modules.ts.
+   * Modules NOT listed here are required: generation fails without their image.
+   */
+  optionalModules: ('init_image' | 'face_reference_image' | 'pose_image')[];
+  /** Base model family — informs defaults and diagnostics. */
+  family?: 'sdxl' | 'flux' | 'other';
   builtIn: boolean;
   updatedAt: string;
 }
@@ -243,6 +251,12 @@ export interface GenerationRecord {
   initImage: StoredImage | null;
   poseImage: StoredImage | null;
   warnings: string[];
+  /** Optional modules removed for this run (unused or missing nodes). */
+  prunedModules?: string[];
+  /** The exact API-format graph sent to ComfyUI (for debugging). */
+  submittedGraph?: ComfyGraph;
+  /** Structured ComfyUI error details (node_errors / execution_error). */
+  errorDetails?: unknown;
 
   images: StoredImage[];
   favorite: boolean;

@@ -8,5 +8,6 @@ export const GET = handle(async (req: Request) => {
   let list = await listHistory();
   if (url.searchParams.get('favorites') === '1') list = list.filter((r) => r.favorite);
   const limit = Math.min(500, Number(url.searchParams.get('limit')) || 200);
-  return json(list.slice(0, limit));
+  // The list view doesn't need the submitted graphs; keep the payload small.
+  return json(list.slice(0, limit).map(({ submittedGraph, ...r }) => r));
 });

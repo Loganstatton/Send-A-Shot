@@ -3,14 +3,13 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { api, fileUrl, useApi } from '@/lib/client/api';
-import { trackJob } from '@/lib/client/jobs';
+import { api, useApi } from '@/lib/client/api';
 import { capabilities } from '@/lib/comfy/adapter';
-import { builtinPresets, DEFAULT_PARAMS, EMPTY_FIELDS } from '@/lib/defaults';
-import type { AppSettings, CharacterProfile, GenerationRecord, WorkflowTemplate } from '@/lib/types';
+import type { AppSettings, WorkflowTemplate } from '@/lib/types';
 import { CharacterEditor } from '@/components/CharacterEditor';
+import { FirstTestCard } from '@/components/FirstTestCard';
 import { ConnectionTester } from '@/components/ConnectionTester';
-import { Badge, Button, Card, Notice, Spinner, cx, toast } from '@/components/ui';
+import { Badge, Button, Card, Notice, Spinner, cx } from '@/components/ui';
 
 interface Payload {
   settings: AppSettings;
@@ -50,7 +49,7 @@ export default function SetupWizard() {
   }
 
   return (
-    <div className="pb-10 pt-[calc(env(safe-area-inset-top)+16px)]">
+    <div className="pb-10 pt-[calc(var(--header-safe)+16px)]">
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-ink-400">
           Step {step + 1} of {STEPS.length} · <span className="text-ink-200">{STEPS[step]}</span>
@@ -90,7 +89,7 @@ export default function SetupWizard() {
             <p>Examples:</p>
             <ul className="list-disc space-y-1 pl-5">
               <li>
-                RunPod: <code className="text-ink-200">https://&lt;pod-id&gt;-8188.proxy.runpod.net</code>
+                Cloud GPU (any provider): <code className="text-ink-200">https://&lt;host-or-proxy-url&gt;</code> that serves ComfyUI
               </li>
               <li>
                 Own PC (same Wi-Fi / Tailscale): <code className="text-ink-200">http://100.x.y.z:8188</code>
@@ -197,11 +196,20 @@ function TestStep({ onBack, onNext }: { onBack: () => void; onNext: () => void }
         </div>
       )}
       {state && <Notice kind={state.ok ? (state.mock ? 'warn' : 'ok') : 'error'}>{state.text}</Notice>}
+      {state?.ok && !state.mock && (
+        <p className="text-sm text-ink-400">
+          For a full check (GPU, models, Sienna LoRA, custom nodes, workflow) open{' '}
+          <Link href="/diagnostics" className="text-accent">
+            Diagnostics
+          </Link>
+          .
+        </p>
+      )}
       {state && !state.ok && (
         <Card className="space-y-1 text-sm text-ink-400">
           <p className="text-ink-200">Troubleshooting</p>
           <p>• Is the GPU pod running and ComfyUI started (port 8188)?</p>
-          <p>• RunPod: expose HTTP port 8188 and use the proxy URL.</p>
+          <p>• Cloud GPU: expose ComfyUI’s port (8188 by default) through your provider’s HTTPS proxy, port mapping or a tunnel.</p>
           <p>• Own PC: start ComfyUI with --listen 0.0.0.0 and make sure the app server can reach it.</p>
           <p>• Behind auth? set COMFYUI_API_KEY or COMFYUI_EXTRA_HEADERS on the app server.</p>
         </Card>
@@ -256,7 +264,10 @@ function WorkflowStep({ defaultId, onBack, onNext }: { defaultId: string | null;
           </button>
         );
       })}
-      <Notice kind="info">Start with “SDXL · text-to-image + LoRA” — it uses only stock ComfyUI nodes.</Notice>
+      <Notice kind="info">
+        Use “Sienna Production · SDXL” (or the Flux version if your LoRA is Flux-trained). Its face-reference and pose modules are skipped
+        automatically until their nodes are installed.
+      </Notice>
       <div className="flex gap-2">
         <Button variant="ghost" className="flex-1" onClick={onBack}>
           Back
@@ -270,93 +281,27 @@ function WorkflowStep({ defaultId, onBack, onNext }: { defaultId: string | null;
 }
 
 function FirstRunStep({ onBack, onFinish }: { onBack: () => void; onFinish: () => void }) {
-  const character = useApi<CharacterProfile>('/api/character');
   const settings = useApi<Payload>('/api/settings');
-  const [job, setJob] = useState<GenerationRecord | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!job || job.status === 'done' || job.status === 'error') return;
-    const t = setInterval(() => api<GenerationRecord>(`/api/history/${job.id}/status`).then(setJob).catch(() => {}), 1500);
-    return () => clearInterval(t);
-  }, [job]);
-
-  async function run() {
-    if (!character.data || !settings.data) return;
-    setBusy(true);
-    try {
-      const preset = builtinPresets().find((p) => p.id === 'studio-neutral')!;
-      const rec = await api<GenerationRecord>('/api/generate', {
-        method: 'POST',
-        json: {
-          presetId: preset.id,
-          workflowId: null,
-          siennaLock: true,
-          contentMode: 'sfw',
-          fields: { ...EMPTY_FIELDS, ...preset.fields },
-          params: {
-            ...DEFAULT_PARAMS,
-            ...settings.data.settings.defaultParams,
-            ...preset.params,
-            loraStrength: character.data.loraWeight,
-            loraClipStrength: character.data.loraClipWeight,
-          },
-          images: { initImage: null, poseImage: null, faceReferenceId: null },
-        },
-      });
-      trackJob(rec.id);
-      setJob(rec);
-    } catch (e: any) {
-      toast(e.message, 'error');
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  if (!settings.data) return null;
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">First test generation</h1>
-      <p className="text-sm text-ink-400">A neutral studio portrait with Sienna Lock on — the best way to check identity.</p>
-      {job ? (
-        <Card className="overflow-hidden p-0">
-          {job.status === 'done' && job.images[0] ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={fileUrl(job.images[0].file)} alt="First test" className="w-full" />
-          ) : job.status === 'error' ? (
-            <div className="p-4">
-              <Notice kind="error">{job.error}</Notice>
-            </div>
-          ) : (
-            <div className="flex aspect-[3/4] flex-col items-center justify-center gap-3 text-sm text-ink-400">
-              <Spinner className="h-8 w-8" />
-              {job.status === 'queued' ? 'Queued…' : 'Generating…'} (first run on a cold GPU can take a few minutes)
-            </div>
-          )}
-          {job.warnings.length > 0 && (
-            <div className="space-y-1 p-3">
-              {job.warnings.map((w, i) => (
-                <p key={i} className="text-xs text-amber-300">
-                  {w}
-                </p>
-              ))}
-            </div>
-          )}
-        </Card>
-      ) : null}
-      <Button variant={job?.status === 'done' ? 'secondary' : 'primary'} className="h-12 w-full" loading={busy} onClick={run}>
-        {job ? 'Run again' : 'Generate test image'}
-      </Button>
+      <p className="text-sm text-ink-400">
+        A neutral studio portrait with Sienna Lock on — the best way to check identity. Run{' '}
+        <Link href="/diagnostics" className="text-accent">
+          Diagnostics
+        </Link>{' '}
+        first if anything fails.
+      </p>
+      <FirstTestCard workflowId={settings.data.settings.defaultWorkflowId} mock={settings.data.env.mock} />
       <div className="flex gap-2">
         <Button variant="ghost" className="flex-1" onClick={onBack}>
           Back
         </Button>
-        <Button variant={job?.status === 'done' ? 'primary' : 'secondary'} className="flex-1" onClick={onFinish}>
+        <Button variant="primary" className="flex-1" onClick={onFinish}>
           Finish setup
         </Button>
       </div>
-      <p className="text-center text-xs text-ink-400">
-        Problems? Check <Link href="/library" className="text-accent">workflow mapping</Link> or <Link href="/settings" className="text-accent">settings</Link>.
-      </p>
     </div>
   );
 }

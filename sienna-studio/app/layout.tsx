@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { BottomNav } from '@/components/BottomNav';
 import { Toaster } from '@/components/ui';
+import { MockBanner } from '@/components/MockBanner';
 
 export const metadata: Metadata = {
   title: 'Sienna Studio',
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="min-h-[100dvh]">
+        <MockBanner />
         <Toaster />
         <main className="mx-auto max-w-xl px-4">{children}</main>
         <BottomNav />

@@ -31,7 +31,8 @@ Data is JSON plus image files in `DATA_DIR`.
 | **Mobile UX** | Bottom navigation, sticky Generate bar, collapsible sections, 44px+ touch targets, 16px inputs (no iOS zoom), safe-area aware, portrait previews. **Save / Share** opens the iOS share sheet so you can tap "Save Image" to put it in Photos. Add to Home Screen gives a full-screen PWA |
 | **Setup wizard** | 1) ComfyUI URL → 2) connection test → 3) references → 4) LoRA → 5) workflow → 6) first test generation |
 | **Backup** | Export/import settings, profile (including reference images), presets and workflows as one JSON file |
-| **Mock mode** | `COMFYUI_URL=mock` runs everything end-to-end with generated placeholder images. No GPU needed |
+| **Diagnostics** | Live checks for server, GPU, checkpoints, LoRAs, Sienna LoRA, custom nodes, IPAdapter/FaceID/PuLID/ControlNet, and a dry-run validation of the selected workflow, plus the first-real-generation test |
+| **Mock mode** | `COMFYUI_URL=mock` runs everything with placeholder images, with an unmistakable MOCK MODE banner |
 | **Security** | Optional password gate (`APP_PASSWORD`) on every page and API route. All ComfyUI credentials stay server-side |
 
 ---
@@ -119,96 +120,122 @@ Set `INSECURE_COOKIES=true` if you use plain HTTP with a password.
 
 ---
 
-## 4. Connect a ComfyUI cloud GPU
+## 4. Connect a real ComfyUI server (any provider)
 
-The **app server** (not your phone) talks to ComfyUI over HTTP, using only ComfyUI's own endpoints:
-`/system_stats`, `/object_info`, `/upload/image`, `/prompt`, `/queue`, `/history`, `/view`, `/interrupt`.
+The app talks to **any reachable ComfyUI HTTP endpoint**: a cloud GPU from any provider, your own PC, or a
+managed service exposing the native API. There is nothing provider-specific in the code. It uses only
+ComfyUI's own endpoints: `/system_stats`, `/object_info`, `/upload/image`, `/prompt`, `/queue`, `/history`,
+`/view` and `/interrupt`.
 
-### RunPod (example)
+1. Run ComfyUI with `python main.py --listen 0.0.0.0 --port 8188` and make port 8188 reachable **from the app
+   server**, through your provider's HTTPS proxy, a port mapping, a tunnel (`cloudflared tunnel --url http://localhost:8188`)
+   or Tailscale.
+2. If it's behind an auth proxy, set `COMFYUI_API_KEY` (sent as `Authorization: Bearer …`) and/or
+   `COMFYUI_EXTRA_HEADERS` (any JSON headers) on the app server.
+3. Put the URL in **Settings → ComfyUI backend** (or `COMFYUI_URL`) and tap **Test**.
+4. Open **Settings → Open diagnostics** (or tap the MOCK / ComfyUI badge on Create).
 
-1. Deploy a pod from a **ComfyUI template**. A 24 GB GPU (RTX 4090 / A5000 / L4) handles SDXL and Flux-fp8 comfortably.
-2. Make sure **HTTP port 8188** is exposed in the pod settings.
-3. Your URL is `https://<POD_ID>-8188.proxy.runpod.net`. Paste it in **Settings → ComfyUI** (or the wizard) and tap **Test**.
-4. Put models on the pod's volume:
-   - checkpoints → `ComfyUI/models/checkpoints/` (e.g. an SDXL photoreal model)
-   - LoRAs → `ComfyUI/models/loras/`
-   - ControlNet → `ComfyUI/models/controlnet/` (for the pose workflow)
-   - IPAdapter/FaceID → per the ComfyUI_IPAdapter_plus README (for the FaceID workflow)
-5. Install any custom nodes your workflows need, using ComfyUI-Manager on the pod.
+**📁 Exactly where models, LoRAs, IPAdapter, ControlNet files and workflow JSON go:
+[`docs/COMFYUI_SETUP.md`](docs/COMFYUI_SETUP.md).**
 
-### Vast.ai / Lambda / Paperspace / others
+### Diagnostics screen (`/diagnostics`)
 
-Any pod running ComfyUI works if the app server can reach port 8188. Use the provider's HTTPS
-proxy or open port, or a Cloudflare Tunnel (`cloudflared tunnel --url http://localhost:8188`).
-If you put an auth proxy in front, set `COMFYUI_API_KEY` or `COMFYUI_EXTRA_HEADERS`.
+It runs against the live server and the selected workflow:
 
-### Your own GPU PC later
+| Check | What it verifies |
+|---|---|
+| Server reachable | `/system_stats` answers (shows version and latency; 401 → API key hint) |
+| GPU detected | a non-CPU device (CUDA / ROCm / MPS) with its VRAM |
+| Checkpoints / base models | files in `models/checkpoints` (SDXL) or `models/diffusion_models` (Flux) |
+| LoRAs | files in `models/loras` |
+| Sienna LoRA | the profile's LoRA filename exists on the server (suggests near matches) |
+| Custom nodes | every node class in the workflow, split into **core** and each **optional module**, with the package to install |
+| Identity nodes | IPAdapter / FaceID / PuLID / InstantID availability, plus IPAdapter, CLIP-Vision and PuLID model files |
+| ControlNet | ControlNet nodes, models, and whether a pose preprocessor exists |
+| Workflow executable | **dry-runs the exact graph the first test would send** and validates every node class, required input and model-file value against the server |
 
-Start ComfyUI with `python main.py --listen 0.0.0.0 --port 8188` and point the app at
-`http://<pc-ip>:8188`, or your Tailscale IP if the app is hosted elsewhere. Nothing else changes.
+Below the checks, **Model files used by this workflow** lets you pick the base checkpoint, VAE, encoders and
+ControlNet from what's actually on the server. Your choice is saved as the workflow default.
 
-### Hosted "serverless ComfyUI" services
+### First real generation test
 
-Services that expose the **native ComfyUI API** work unchanged. Services with their own API
-(custom `/run` endpoints, job IDs, webhooks) need a small adapter: implement the `ComfyBackend`
-interface in [`lib/comfy/client.ts`](lib/comfy/client.ts) (`systemInfo`, `inputChoices`,
-`uploadImage`, `queuePrompt`, `jobState`, `fetchImage`, `interrupt`) and return it from `createBackend()`.
-The rest of the app is backend-agnostic.
+Also on the Diagnostics screen (and in the setup wizard). It uses a fixed request: preset **Studio Neutral**,
+**Sienna Lock on**, **LoRA strength 0.8**, **fixed seed 424242**, no pose, no img2img, SFW, one 896×1152
+portrait. A face reference is used if you uploaded one and the identity nodes are installed. The card shows the
+image and **all metadata**: prompt ID, seed, model, LoRA and strength, sampler, size, modules used or skipped,
+warnings, the exact graph sent, and any ComfyUI error, including validation `node_errors` or the execution
+exception and traceback. Failed attempts are kept in the gallery too.
 
-> **Cold starts:** the first job on a freshly started GPU can take minutes while models load.
-> The job timeout is set in Settings (default 15 min).
+### Other backends
 
----
-
-## 5. Add a trained Sienna LoRA
-
-1. **Train** a LoRA on 20–40 varied, high-quality images of Sienna **as generated by you**, for example
-   renders curated from this app with the Studio-neutral and casual presets. Vary angle, lighting and
-   outfit, and keep the face consistent. Use a rare trigger token such as `sienna_v1`. Typical tools are
-   kohya_ss / OneTrainer / ai-toolkit for SDXL or Flux. Train it **for the same base family**
-   you'll generate with: an SDXL LoRA goes with SDXL workflows, a Flux LoRA with the Flux workflow.
-2. **Upload** `sienna_v1.safetensors` to `ComfyUI/models/loras/` on the GPU server. A subfolder is fine;
-   ComfyUI lists it as `subfolder/sienna_v1.safetensors`.
-3. In the app go to **Sienna → Sienna LoRA**, pick the file from the list (or type the exact name), set the
-   default strength (start at 0.8), and set the **trigger token** to the token you trained with.
-4. Keep **Sienna Lock** on. Generate **Studio neutral**, then tune:
-   - face drifts → raise LoRA strength by +0.1, or add a face reference with the FaceID workflow
-   - outfits/settings get ignored or images look "burned" → lower the strength
-5. Use the **Quality check** to flag drift across a batch, and favourite the best seeds.
-
-Versioning tip: keep `sienna_v1`, `sienna_v2` side by side and switch in the profile. The gallery
-records which LoRA and strength produced each image.
+A service with its *own* API (custom job endpoints instead of `/prompt`) needs a class implementing
+`ComfyBackend` in [`lib/comfy/client.ts`](lib/comfy/client.ts) (`systemInfo`, `inputChoices`, `nodeInfo`,
+`uploadImage`, `queuePrompt`, `jobState`, `fetchImage`, `interrupt`), returned from `createBackend()`.
 
 ---
 
-## 6. Workflows and node mapping
+## 5. The Sienna LoRA (trained separately)
 
-ComfyUI graphs are in **API format**: `{ "<nodeId>": { class_type, inputs } }`. The app stores, per
-workflow, a **bindings** table that maps each UI control to `nodeId.inputName`:
+Training is **not** part of this app. When `sienna_v1.safetensors` is ready:
 
-```ts
-// lib/comfy/builtin-workflows.ts (example adapter for the SDXL graph)
-positive_prompt: [{ nodeId: '6',  inputName: 'text' }],
-seed:            [{ nodeId: '3',  inputName: 'seed' }],
-lora_name:       [{ nodeId: '10', inputName: 'lora_name' }],
-face_reference_image: [{ nodeId: '21', inputName: 'image' }],   // a LoadImage node
-```
+1. Copy it to `ComfyUI/models/loras/sienna_v1.safetensors`. A subfolder also works; it then appears as
+   `subfolder/sienna_v1.safetensors`.
+2. In the app, go to **Sienna → Sienna LoRA** and pick it from the list. Default strength is **0.8**.
+3. Set the **trigger token** to the exact token used in training. The default is `sienna_v1`; change it if yours differs.
+4. Make sure the LoRA's base family matches the workflow: an **SDXL LoRA** goes with *Sienna Production · SDXL*,
+   a **Flux LoRA** with *Sienna Production · Flux.1-dev*.
+5. **Diagnostics → Sienna LoRA** should show ✓. Then run the first generation test.
 
-- **Built-in examples:** [`workflows/examples/`](workflows/examples/), with notes in [its README](workflows/examples/README.md).
-- **Auto-detection and the full explanation of where node IDs come from:**
-  [`lib/comfy/adapter.ts`](lib/comfy/adapter.ts) (header comment).
-- **Uploaded workflows:** map them in the app (**Library → Workflows → Edit mapping**). No code needed.
-
-Behaviour notes:
-
-- Unmapped controls are not sent, so the workflow's own value is used.
-- No LoRA selected → the template's LoRA node is **bypassed** (rewired around), so ComfyUI never tries
-  to load a missing file.
-- Sienna Lock on and no LoRA node in the graph → a `LoraLoader` is **spliced in** after the checkpoint/UNET
-  loader. You can turn this off per workflow.
-- A workflow with a mapped face/init/pose input *requires* that image. The app tells you before submitting.
+Tuning: if the face drifts, raise the strength in +0.1 steps or add a face reference. If outfits or settings get
+ignored or images look burned, lower it.
 
 ---
+
+## 6. Workflows
+
+### Primary production workflows (built in)
+
+| Workflow | Base | Core (always) | Optional modules (auto-removed when unused / unavailable) |
+|---|---|---|---|
+| **Sienna Production · SDXL** (default) | SDXL checkpoint | Sienna LoRA, trigger token, ± prompt, seed, size, steps, CFG, sampler/scheduler | img2img (init image + denoise) · IPAdapter FaceID identity · OpenPose ControlNet |
+| **Sienna Production · Flux.1-dev** | Flux UNET + T5/CLIP-L + VAE | Sienna LoRA, trigger token, prompt (negative ignored at cfg 1), seed, size, steps, **Flux guidance** | img2img · PuLID-Flux identity · union ControlNet (openpose) |
+| Basic SDXL · text-to-image | SDXL | stock nodes only | — (fallback for isolating problems) |
+
+**How optional modules work** ([`lib/comfy/modules.ts`](lib/comfy/modules.ts)): each production graph has every
+module wired in. Per generation, if a module's image isn't supplied, or the server lacks its nodes, that
+branch is cut out of a copy of the graph. IPAdapter/PuLID/ControlNet nodes are bypassed, and img2img falls
+back to the empty latent. Unused loaders are dropped. This is driven by class types and the binding table,
+never by fixed node IDs. In **Library → Workflows → Edit mapping** you can mark each module optional or
+required.
+
+### Node mapping (no fixed IDs)
+
+Each workflow stores a **bindings** table mapping app controls to `nodeId.inputName`. Built-ins define it in
+[`lib/comfy/builtin-workflows.ts`](lib/comfy/builtin-workflows.ts). Uploaded workflows get it auto-detected
+from class types and node titles, and you can edit it in the mapping screen. Re-exporting a graph from ComfyUI
+can renumber nodes; re-run **Auto-detect** or fix the mapping by hand. Both are covered in
+[`lib/comfy/adapter.ts`](lib/comfy/adapter.ts) (header comment) and
+[`workflows/examples/README.md`](workflows/examples/README.md).
+
+Other behaviour:
+
+- No LoRA selected → the LoRA node is bypassed, so ComfyUI never loads a missing file.
+- Sienna Lock on with no LoRA node in the graph → a `LoraLoader` is spliced in (configurable per workflow).
+- Unmapped controls keep the workflow's own value.
+
+---
+
+## 7. Mock mode
+
+`COMFYUI_URL=mock` (the default in `.env.example`), or "mock" in Settings, runs everything without a GPU.
+It is deliberately hard to miss:
+
+- a **striped MOCK MODE banner** on every page (tap it to go to Settings),
+- the Create button reads **Generate (MOCK)** and the header badge reads **MOCK**,
+- mock images have a yellow/black hazard band, and gallery and metadata label them **MOCK**,
+- Diagnostics flags that its results are simulated.
+
+Switching to a real URL in Settings removes all of these immediately.
 
 ## Project structure
 
@@ -219,6 +246,7 @@ sienna-studio/
 │  ├─ gallery/               history grid + detail/review
 │  ├─ character/             Sienna profile
 │  ├─ library/               presets + workflows (+ mapping editor)
+│  ├─ diagnostics/           live server checks + first real generation test
 │  ├─ settings/  setup/  login/
 │  └─ api/                   route handlers (generate, history, workflows, presets, uploads, comfy, export/import…)
 ├─ components/               UI kit, CreateScreen, CharacterEditor, ImagePicker, JobCard…
@@ -226,11 +254,15 @@ sienna-studio/
 │  ├─ types.ts  defaults.ts  schemas.ts  review.ts
 │  ├─ prompt.ts  guard.ts    prompt assembly, Sienna Lock filtering, content guard
 │  ├─ comfy/adapter.ts       bindings, auto-detect, LoRA inject/bypass
+│  ├─ comfy/modules.ts       optional-module pruning (img2img / identity / pose)
+│  ├─ comfy/packages.ts      node class → custom-node package hints
 │  ├─ comfy/client.ts        ComfyUI HTTP client + mock backend
 │  ├─ comfy/builtin-workflows.ts  example adapters (explicit node-ID maps)
-│  └─ server/                store (JSON + files), generation pipeline, PNG encoder
-├─ workflows/examples/       API-format ComfyUI graphs
+│  └─ server/                store, generation pipeline, diagnostics, PNG encoder
+├─ workflows/examples/       API-format ComfyUI graphs (Sienna Production SDXL/Flux, Basic SDXL)
+├─ docs/COMFYUI_SETUP.md     exact ComfyUI folders, custom nodes, reachability
 ├─ scripts/smoke.mjs         end-to-end smoke test
+├─ scripts/fake-comfyui.mjs  ComfyUI-protocol test double (for testing the real client without a GPU)
 ├─ Dockerfile  docker-compose.yml  render.yaml  .env.example
 ```
 

@@ -7,9 +7,10 @@ import { api, fileUrl, useApi } from '@/lib/client/api';
 import { regenerate } from '@/lib/client/jobs';
 import { shareImage } from '@/lib/client/share';
 import { REVIEW_INFO } from '@/lib/review';
-import type { GenerationRecord, ReviewItem, ReviewMark, StoredImage } from '@/lib/types';
+import type { GenerationRecord, ReviewItem, ReviewMark } from '@/lib/types';
 import { PROMPT_FIELD_LABELS, REVIEW_ITEMS } from '@/lib/types';
 import { Badge, Button, Card, Collapsible, Notice, PageHeader, SectionTitle, Spinner, TextArea, cx, toast } from '@/components/ui';
+import { GenerationMeta } from '@/components/GenerationMeta';
 
 export default function GenerationDetail() {
   const { id } = useParams<{ id: string }>();
@@ -132,16 +133,6 @@ export default function GenerationDetail() {
       </div>
       {rec.images.length > 1 && <p className="mt-1 text-xs text-ink-400">Share saves the first image; long-press others to save.</p>}
 
-      {rec.warnings.length > 0 && (
-        <div className="mt-3 space-y-2">
-          {rec.warnings.map((w, i) => (
-            <Notice key={i} kind="warn">
-              {w}
-            </Notice>
-          ))}
-        </div>
-      )}
-
       {/* Quality review */}
       <SectionTitle right={issues.length > 0 && <Badge tone="warn">{issues.length} issue(s)</Badge>}>Quality check</SectionTitle>
       <Card className="divide-y divide-ink-800 p-0">
@@ -182,42 +173,14 @@ export default function GenerationDetail() {
 
       {/* Metadata */}
       <SectionTitle>Details</SectionTitle>
-      <Card>
-        <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-2 text-sm">
-          <Meta k="Date" v={date.toLocaleString()} />
-          <Meta k="Status" v={rec.status} />
-          <Meta k="Seed" v={<span className="select-all">{rec.seed}</span>} />
-          <Meta k="Workflow" v={rec.workflowName} />
-          <Meta k="Backend" v={rec.backend} />
-          <Meta k="Sienna Lock" v={rec.siennaLock ? 'On' : 'Off'} />
-          <Meta k="Content" v={rec.contentMode === 'adult' ? 'Adult 18+' : 'SFW'} />
-          <Meta k="LoRA" v={rec.lora ? `${rec.lora.name} @ ${rec.lora.strength}${rec.lora.injected ? ' (injected)' : ''}` : 'none'} />
-          <Meta k="Model" v={rec.params.checkpoint || '(workflow default)'} />
-          <Meta k="Size" v={`${rec.params.width}×${rec.params.height}`} />
-          <Meta k="Steps / CFG" v={`${rec.params.steps} / ${rec.params.cfg}`} />
-          <Meta k="Sampler" v={`${rec.params.sampler || '—'} · ${rec.params.scheduler || '—'}`} />
-          {rec.initImage && <Meta k="Denoise" v={rec.params.denoise} />}
-        </dl>
-        <div className="mt-3 flex gap-3">
-          <RefThumb label="Face ref" img={rec.faceReference} />
-          <RefThumb label="Init" img={rec.initImage} />
-          <RefThumb label="Pose" img={rec.poseImage} />
-        </div>
-        {rec.parentId && (
-          <Link href={`/gallery/${rec.parentId}`} className="mt-3 block text-sm text-accent">
-            ← Derived from an earlier generation
-          </Link>
-        )}
-      </Card>
+      <GenerationMeta rec={rec} />
+      {rec.parentId && (
+        <Link href={`/gallery/${rec.parentId}`} className="mt-3 block text-sm text-accent">
+          ← Derived from an earlier generation
+        </Link>
+      )}
 
       <div className="mt-3 space-y-3">
-        <Collapsible title="Prompt used">
-          <p className="select-text whitespace-pre-wrap rounded-xl bg-ink-800 p-3 text-sm">{rec.positivePrompt}</p>
-          <p className="select-text whitespace-pre-wrap rounded-xl bg-ink-800 p-3 text-sm text-ink-400">{rec.negativePrompt}</p>
-          <Button variant="ghost" className="w-full" onClick={() => navigator.clipboard?.writeText(rec.positivePrompt).then(() => toast('Copied'))}>
-            Copy prompt
-          </Button>
-        </Collapsible>
         <Collapsible title="Builder fields">
           <dl className="space-y-2 text-sm">
             {(Object.keys(PROMPT_FIELD_LABELS) as (keyof typeof PROMPT_FIELD_LABELS)[])
@@ -243,26 +206,6 @@ export default function GenerationDetail() {
       >
         Delete
       </Button>
-    </div>
-  );
-}
-
-function Meta({ k, v }: { k: string; v: React.ReactNode }) {
-  return (
-    <>
-      <dt className="text-ink-400">{k}</dt>
-      <dd className="min-w-0 break-words">{v}</dd>
-    </>
-  );
-}
-
-function RefThumb({ label, img }: { label: string; img: StoredImage | null }) {
-  if (!img) return null;
-  return (
-    <div className="text-center text-[11px] text-ink-400">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={fileUrl(img.file)} alt={label} className="mb-1 h-20 w-16 rounded-lg object-cover" />
-      {label}
     </div>
   );
 }

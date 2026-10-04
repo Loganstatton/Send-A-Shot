@@ -91,6 +91,8 @@ export function mockPortrait(w: number, h: number, seed: number) {
       else if (y > headY + headR * 0.9 && y <= shoulderTop && Math.abs(x - cx) < headR * 0.45) c = skin;
       if (hairD < 1 && headD >= 0.92) c = hair;
       if (headD < 0.92) c = skin;
+      // hazard band top and bottom so mock output can never be mistaken for a real render
+      if (y < height * 0.05 || y > height * 0.95) c = ((x + y) >> 3) % 2 ? [251, 191, 36] : [17, 17, 17];
       // subtle noise so it reads like a photo placeholder, not flat vector art
       const n = (r() - 0.5) * 10;
       const i = (y * width + x) * 3;

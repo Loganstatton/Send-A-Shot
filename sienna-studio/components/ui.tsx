@@ -56,7 +56,7 @@ export function SectionTitle({ children, right }: { children: ReactNode; right?:
 
 export function PageHeader({ title, subtitle, right }: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
-    <header className="sticky top-0 z-20 -mx-4 mb-2 flex items-center justify-between bg-ink-950/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)] backdrop-blur">
+    <header className="sticky top-[var(--banner-h)] z-20 -mx-4 mb-2 flex items-center justify-between bg-ink-950/90 px-4 pb-3 pt-[calc(var(--header-safe)+12px)] backdrop-blur">
       <div className="min-w-0">
         <h1 className="truncate text-xl font-semibold">{title}</h1>
         {subtitle && <p className="truncate text-xs text-ink-400">{subtitle}</p>}
@@ -329,7 +329,7 @@ export function Toaster() {
   }, [msg]);
   if (!msg) return null;
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+8px)] z-50 flex justify-center px-4">
+    <div className="pointer-events-none fixed inset-x-0 top-[calc(var(--banner-h)+env(safe-area-inset-top)+8px)] z-[60] flex justify-center px-4">
       <div
         key={msg.key}
         className={cx(

@@ -57,6 +57,11 @@ export default function SettingsPage() {
           Using: <span className="break-all text-ink-200">{env.effectiveComfyUrl}</span>
           {env.hasApiKey && ' · API key set via env'}
         </p>
+        <Link href="/diagnostics">
+          <Button variant="primary" className="w-full">
+            Open diagnostics & first-generation test
+          </Button>
+        </Link>
       </Card>
 
       <SectionTitle>Generation defaults</SectionTitle>

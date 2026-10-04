@@ -4,6 +4,20 @@
 
 :root {
   color-scheme: dark;
+  --banner-h: 0px;
+  --header-safe: env(safe-area-inset-top);
+}
+
+/* Mock-mode banner occupies the top (including the notch area). */
+html.mock {
+  --banner-h: calc(env(safe-area-inset-top) + 28px);
+  --header-safe: 0px;
+}
+html.mock body {
+  padding-top: var(--banner-h);
+}
+.mock-stripes {
+  background: repeating-linear-gradient(-45deg, #fbbf24 0 14px, #111 14px 28px);
 }
 
 html,

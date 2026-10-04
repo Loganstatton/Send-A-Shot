@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, useApi } from '@/lib/client/api';
 import { autoDetectBindings, CONTROL_INFO, findOutputNodes, validateBindings } from '@/lib/comfy/adapter';
+import { canPrune, MODULE_KEYS, MODULE_LABELS } from '@/lib/comfy/modules';
 import type { ControlKey, NodeInputRef, WorkflowTemplate } from '@/lib/types';
 import { Badge, Button, Card, Collapsible, Notice, PageHeader, SectionTitle, Spinner, TextArea, TextInput, Toggle, cx, toast } from '@/components/ui';
 
@@ -67,6 +68,7 @@ export default function WorkflowEditor() {
           bindings,
           outputNodeIds: wf.outputNodeIds,
           allowLoraInjection: wf.allowLoraInjection,
+          optionalModules: (wf.optionalModules ?? []).filter((k) => canPrune(wf.graph, bindings, k)),
           graph: wf.graph,
         },
       });
@@ -122,6 +124,30 @@ export default function WorkflowEditor() {
           label="Auto-inject Sienna LoRA"
           description="If the graph has no mapped LoRA node, splice a LoraLoader after the model loader."
         />
+        <div className="space-y-1 border-t border-ink-800 pt-3">
+          <p className="text-sm font-medium">Optional modules</p>
+          <p className="text-xs text-ink-400">
+            Optional modules are removed from the graph automatically when their image isn’t supplied or the server lacks their nodes. Required
+            modules make generation fail without them.
+          </p>
+          {MODULE_KEYS.map((key) => {
+            const mapped = (wf.bindings[key]?.length ?? 0) > 0;
+            const prunable = mapped && canPrune(wf.graph, wf.bindings, key);
+            const on = (wf.optionalModules ?? []).includes(key);
+            return (
+              <Toggle
+                key={key}
+                checked={on && prunable}
+                disabled={!prunable}
+                onChange={(v) =>
+                  setWf({ ...wf, optionalModules: v ? [...(wf.optionalModules ?? []), key] : (wf.optionalModules ?? []).filter((k) => k !== key) })
+                }
+                label={MODULE_LABELS[key]}
+                description={!mapped ? 'not in this workflow (map its image input first)' : prunable ? (on ? 'optional' : 'required') : 'cannot be removed cleanly from this graph — required'}
+              />
+            );
+          })}
+        </div>
         {outputs.length > 1 && (
           <div>
             <p className="mb-1 text-sm">Collect images from</p>
