@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Queue the fixed first-real-generation test: Studio Neutral preset, Sienna
- * Lock on, LoRA 0.8, fixed seed, no pose, SFW, one portrait.
+ * Lock on, LoRA 1.0, fixed seed, no pose, SFW, one portrait.
  * Body: { workflowId?: string }
  */
 export const POST = handle(async (req: Request) => {

@@ -278,7 +278,7 @@ const MOCK_CHOICES: Record<string, string[]> = {
   ckpt_name: ['sd_xl_base_1.0.safetensors', 'realvisxlV50_v50Bakedvae.safetensors', 'juggernautXL_v9.safetensors'],
   unet_name: ['flux1-dev.safetensors', 'flux1-dev-fp8.safetensors'],
   lora_name: ['sienna_v1.safetensors', 'sienna_flux_v1.safetensors', 'detail_tweaker_xl.safetensors'],
-  sampler_name: ['euler', 'euler_ancestral', 'dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_3m_sde', 'uni_pc'],
+  sampler_name: ['euler', 'euler_ancestral', 'ddpm', 'dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_3m_sde', 'uni_pc'],
   scheduler: ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'beta'],
   control_net_name: ['OpenPoseXL2.safetensors', 'controlnet-union-sdxl-promax.safetensors'],
 };

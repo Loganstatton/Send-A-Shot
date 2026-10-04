@@ -50,7 +50,7 @@ export const FIRST_TEST_SEED = 424242;
 
 const MODEL_FILE_RE = /\.(safetensors|ckpt|pt|pth|bin|gguf|sft|onnx)$/i;
 
-/** The fixed "first real generation" request: Studio Neutral, Sienna Lock, LoRA 0.8, fixed seed, no pose, SFW. */
+/** The fixed "first real generation" request: Studio Neutral, Sienna Lock, LoRA 1.0, fixed seed, no pose, SFW. */
 export async function firstTestRequest(workflowId: string | null): Promise<GenerateRequest> {
   const settings = await getSettings();
   const preset = builtinPresets().find((p) => p.id === 'studio-neutral')!;
@@ -66,8 +66,8 @@ export async function firstTestRequest(workflowId: string | null): Promise<Gener
       ...preset.params,
       checkpoint: '', // use the workflow's base-model default (set on the Diagnostics screen)
       loraName: '',
-      loraStrength: 0.8,
-      loraClipStrength: 0.8,
+      loraStrength: 1,
+      loraClipStrength: 1,
       seed: FIRST_TEST_SEED,
       batchSize: 1,
       denoise: 1,
@@ -269,7 +269,7 @@ export async function runDiagnostics(workflowId: string | null): Promise<Diagnos
       label: 'Sienna LoRA',
       status: 'warn',
       detail: 'No LoRA filename set in the Sienna profile yet.',
-      fix: 'When sienna_v1.safetensors is trained, copy it to ComfyUI/models/loras/ and select it on the Sienna tab.',
+      fix: 'Copy sienna_v2.safetensors to ComfyUI/models/loras/ and select it on the Sienna tab.',
     });
   } else if (loras.includes(want)) {
     checks.push({ id: 'sienna-lora', label: 'Sienna LoRA', status: 'pass', detail: `“${want}” is installed.` });

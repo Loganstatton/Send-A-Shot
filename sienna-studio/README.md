@@ -160,7 +160,7 @@ ControlNet from what's actually on the server. Your choice is saved as the workf
 ### First real generation test
 
 Also on the Diagnostics screen (and in the setup wizard). It uses a fixed request: preset **Studio Neutral**,
-**Sienna Lock on**, **LoRA strength 0.8**, **fixed seed 424242**, no pose, no img2img, SFW, one 896×1152
+**Sienna Lock on**, **LoRA strength 1.0**, **fixed seed 424242**, no pose, no img2img, SFW, one 896×1152
 portrait. A face reference is used if you uploaded one and the identity nodes are installed. The card shows the
 image and **all metadata**: prompt ID, seed, model, LoRA and strength, sampler, size, modules used or skipped,
 warnings, the exact graph sent, and any ComfyUI error, including validation `node_errors` or the execution
@@ -176,18 +176,26 @@ A service with its *own* API (custom job endpoints instead of `/prompt`) needs a
 
 ## 5. The Sienna LoRA (trained separately)
 
-Training is **not** part of this app. When `sienna_v1.safetensors` is ready:
+Training is **not** part of this app. The current LoRA is `sienna_v2.safetensors` (SDXL, RealVisXL V5.0 base,
+trigger `sienna_v1`, 2800 steps). To install it:
 
-1. Copy it to `ComfyUI/models/loras/sienna_v1.safetensors`. A subfolder also works; it then appears as
-   `subfolder/sienna_v1.safetensors`.
-2. In the app, go to **Sienna → Sienna LoRA** and pick it from the list. Default strength is **0.8**.
+1. Copy it to `ComfyUI/models/loras/sienna_v2.safetensors`. A subfolder also works; it then appears as
+   `subfolder/sienna_v2.safetensors`.
+2. In the app, go to **Sienna → Sienna LoRA** and pick it from the list. Default strength is **1.0**.
 3. Set the **trigger token** to the exact token used in training. The default is `sienna_v1`; change it if yours differs.
+   Sienna Lock sends it as `sienna_v1 woman`, matching the training captions.
 4. Make sure the LoRA's base family matches the workflow: an **SDXL LoRA** goes with *Sienna Production · SDXL*,
    a **Flux LoRA** with *Sienna Production · Flux.1-dev*.
 5. **Diagnostics → Sienna LoRA** should show ✓. Then run the first generation test.
 
-Tuning: if the face drifts, raise the strength in +0.1 steps or add a face reference. If outfits or settings get
-ignored or images look burned, lower it.
+Tested defaults for `sienna_v2` (chosen by side-by-side comparison against the reference photos):
+LoRA **1.0**, sampler **ddpm**, scheduler **normal**, **30 steps**, CFG 5, and **no face reference** (IPAdapter
+FaceID off; it caused blotchy skin and glassy eyes in testing). With Sienna Lock on, the negative prompt adds
+`older woman, middle-aged, wrinkles, aged skin, mature face` to hold her stated age; `dpmpp_2m/karras` and a
+"young-looking" negative both made her look older.
+
+Tuning: changing LoRA strength between 0.9 and 1.1 barely changes the face. If outfits or settings get ignored
+or images look burned, lower it.
 
 ---
 

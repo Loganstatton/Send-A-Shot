@@ -7,7 +7,7 @@ const character = { ...DEFAULT_CHARACTER, triggerToken: 'sienna_v1', loraFilenam
 describe('buildPrompt', () => {
   it('puts trigger token and traits first when locked', () => {
     const r = buildPrompt({ fields: { ...EMPTY_FIELDS, outfit: 'red hoodie' }, character, siennaLock: true, contentMode: 'sfw' });
-    expect(r.positive.startsWith('sienna_v1, 26-year-old adult woman, ')).toBe(true);
+    expect(r.positive.startsWith('sienna_v1 woman, 24-year-old adult woman, ')).toBe(true);
     expect(r.positive).toContain('red hoodie');
     expect(r.positive).toContain(character.defaultCameraStyle);
   });
@@ -50,6 +50,29 @@ describe('buildPrompt', () => {
   it('clamps age to the adult minimum', () => {
     const r = buildPrompt({ fields: EMPTY_FIELDS, character: { ...character, age: 12 }, siennaLock: true, contentMode: 'sfw' });
     expect(r.positive).toContain('21-year-old adult woman');
+  });
+  it('does not double "woman" when the token already includes it', () => {
+    const r = buildPrompt({ fields: EMPTY_FIELDS, character: { ...character, triggerToken: 'sienna_v1 woman' }, siennaLock: true, contentMode: 'sfw' });
+    expect(r.positive.startsWith('sienna_v1 woman, 24-year-old')).toBe(true);
+  });
+
+  it('adds the age-drift negative only under Sienna Lock, and never "young-looking"', () => {
+    const locked = buildPrompt({ fields: EMPTY_FIELDS, character, siennaLock: true, contentMode: 'sfw' });
+    const unlocked = buildPrompt({ fields: EMPTY_FIELDS, character, siennaLock: false, contentMode: 'sfw' });
+    expect(locked.negative).toMatch(/middle-aged/);
+    expect(unlocked.negative).not.toMatch(/middle-aged/);
+    expect(locked.negative).not.toMatch(/young-looking/);
+  });
+
+  it('reproduces the prompt validated for sienna_v2 with the default profile', () => {
+    const r = buildPrompt({
+      fields: { ...EMPTY_FIELDS, framing: 'close-up iPhone portrait', lighting: 'soft natural daylight' },
+      character: DEFAULT_CHARACTER,
+      siennaLock: true,
+      contentMode: 'sfw',
+    });
+    expect(r.positive).toBe("sienna_v1 woman, 24-year-old adult woman, fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, natural light hazel-green eyes, muted realistic iris color, soft natural daylight, shot on iPhone 15 Pro, 24mm main camera, natural phone processing, close-up iPhone portrait, realistic candid iPhone photo, natural skin texture with subtle visible pores, fine flyaway hair strands, natural facial asymmetry, believable ambient indoor lighting, slight wide-angle phone lens distortion, casual non-cinematic snapshot, imperfect slightly off-center framing, anatomically correct hands with five fingers, believable reflections, soft natural shadows");
+    expect(r.negative).toBe("over-smoothed skin, airbrushed, plastic skin, waxy skin, doll-like face, cgi, 3d render, illustration, anime, over-sharpened, excessive HDR, oversaturated, perfect symmetry, beauty filter, extra fingers, fused fingers, deformed hands, extra limbs, bad anatomy, distorted teeth, warped background, duplicate objects, watermark, text, logo, lowres, blurry, jpeg artifacts, studio lighting, glossy fashion editorial, cinematic color grading, different person, altered face, different face shape, different hair color, different eye color, child, teen, minor, childlike, school uniform, nsfw, nude, nudity, topless, explicit, sexual, lingerie, see-through, older woman, middle-aged, wrinkles, aged skin, mature face");
   });
 });
 

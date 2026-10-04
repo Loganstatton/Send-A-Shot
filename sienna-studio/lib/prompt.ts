@@ -3,6 +3,7 @@
 
 import {
   ADULT_ONLY_NEGATIVE,
+  AGE_DRIFT_NEGATIVE,
   LOCK_NEGATIVE,
   MIN_CHARACTER_AGE,
   NON_STUDIO_NEGATIVE,
@@ -68,8 +69,11 @@ export function buildPrompt({ fields, character, siennaLock, contentMode }: Buil
   const f = effectiveFields;
 
   // 3. Positive prompt, identity first (token + traits weigh most at the front).
+  // The LoRA was captioned "<token> woman", so the token is sent in that form.
+  const token = character.triggerToken.trim();
+  const tokenPhrase = !token || /\bwoman$/i.test(token) ? token : `${token} woman`;
   const identity = siennaLock
-    ? [character.triggerToken, `${age}-year-old adult woman`, character.appearanceTraits]
+    ? [tokenPhrase, `${age}-year-old adult woman`, character.appearanceTraits]
     : [`adult woman`];
 
   const camera = f.camera || (siennaLock ? character.defaultCameraStyle : '');
@@ -97,6 +101,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode }: Buil
     siennaLock ? LOCK_NEGATIVE : '',
     ADULT_ONLY_NEGATIVE,
     contentMode === 'sfw' ? SFW_NEGATIVE : '',
+    siennaLock ? AGE_DRIFT_NEGATIVE : '',
   ]);
 
   if (siennaLock && !character.triggerToken.trim()) {

@@ -27,7 +27,7 @@ ComfyUI/
 │  │     ae.safetensors
 │  │
 │  ├─ loras/                       ← THE SIENNA LoRA                           [REQUIRED for identity]
-│  │     sienna_v1.safetensors
+│  │     sienna_v2.safetensors
 │  │     ip-adapter-faceid-plusv2_sdxl_lora.safetensors   (IPAdapter FaceID helper LoRA, SDXL face module)
 │  │
 │  ├─ ipadapter/                   ← IPAdapter models (create the folder)      [SDXL face module: optional]
@@ -77,7 +77,7 @@ re-check immediately.
 
 The face-reference and pose modules are **optional**. If their nodes or models are missing, the app removes
 those branches from the graph automatically and says so in the generation's warnings. You can run real
-Sienna generations with only a base model and `sienna_v1.safetensors`.
+Sienna generations with only a base model and `sienna_v2.safetensors`.
 
 If your GPU is not NVIDIA, change `provider: CUDA` on the IPAdapter/PuLID loader nodes to `CPU` (or `ROCM` for
 PuLID) in **Library → Workflows → Edit mapping → Nodes**, or edit the JSON and re-upload it.

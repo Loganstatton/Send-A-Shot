@@ -45,7 +45,7 @@
     "class_type": "KSampler",
     "inputs": {
       "model": ["12", 0], "positive": ["22", 0], "negative": ["22", 1], "latent_image": ["32", 0],
-      "seed": 0, "steps": 30, "cfg": 5, "sampler_name": "dpmpp_2m", "scheduler": "karras", "denoise": 1
+      "seed": 0, "steps": 30, "cfg": 5, "sampler_name": "ddpm", "scheduler": "normal", "denoise": 1
     },
     "_meta": { "title": "KSampler" }
   },

@@ -65,7 +65,14 @@ export const DEFAULT_NEGATIVE_PROMPT = [
 export const NON_STUDIO_NEGATIVE = 'studio lighting, glossy fashion editorial, cinematic color grading';
 
 /** Always in the negative prompt — keeps output clearly adult. */
-export const ADULT_ONLY_NEGATIVE = 'child, teen, minor, childlike, young-looking, school uniform';
+export const ADULT_ONLY_NEGATIVE = 'child, teen, minor, childlike, school uniform';
+
+/**
+ * Added when Sienna Lock is on. SDXL base models drift Sienna older than her
+ * stated age; these terms hold her at it. (A "young-looking" negative made
+ * the drift worse, so the adult-only terms above avoid it.)
+ */
+export const AGE_DRIFT_NEGATIVE = 'older woman, middle-aged, wrinkles, aged skin, mature face';
 
 /** Added in SFW mode. */
 export const SFW_NEGATIVE = 'nsfw, nude, nudity, topless, explicit, sexual, lingerie, see-through';
@@ -76,14 +83,14 @@ export const LOCK_NEGATIVE = 'different person, altered face, different face sha
 export const DEFAULT_CHARACTER: CharacterProfile = {
   name: 'Sienna',
   triggerToken: 'sienna_v1',
-  loraFilename: '',
-  loraWeight: 0.8,
-  loraClipWeight: 0.8,
-  age: 26,
+  loraFilename: 'sienna_v2.safetensors',
+  loraWeight: 1,
+  loraClipWeight: 1,
+  age: 24,
   faceReference: null,
   secondaryReferences: [],
   appearanceTraits:
-    'fictional adult woman, shoulder-length wavy auburn hair with a natural side part, light hazel-green eyes, light freckles across nose and cheeks, soft oval face, slightly full lips, fair warm-toned skin, slim natural build',
+    'fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, natural light hazel-green eyes, muted realistic iris color',
   defaultRealismPrompt: DEFAULT_REALISM_PROMPT,
   defaultNegativePrompt: DEFAULT_NEGATIVE_PROMPT,
   defaultCameraStyle: 'shot on iPhone 15 Pro, 24mm main camera, natural phone processing',
@@ -94,17 +101,17 @@ export const DEFAULT_CHARACTER: CharacterProfile = {
 
 export const DEFAULT_PARAMS: GenerationParams = {
   checkpoint: '',
-  sampler: 'dpmpp_2m',
-  scheduler: 'karras',
+  sampler: 'ddpm',
+  scheduler: 'normal',
   seed: -1,
   width: 832,
   height: 1216,
-  steps: 28,
+  steps: 30,
   cfg: 5,
   denoise: 1,
   loraName: '',
-  loraStrength: 0.8,
-  loraClipStrength: 0.8,
+  loraStrength: 1,
+  loraClipStrength: 1,
   faceStrength: 0.8,
   controlStrength: 0.65,
   controlnetModel: '',
