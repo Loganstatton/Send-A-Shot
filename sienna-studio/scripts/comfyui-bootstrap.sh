@@ -61,8 +61,18 @@ install_repo() {
     git -C "$dir" checkout -q "$ref" && echo "at $ref"
   fi
   if [[ -f "$dir/requirements.txt" ]]; then
-    "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check -r "$dir/requirements.txt"
+    # git+ requirements (e.g. sam2) are optional extras that FaceDetailer doesn't
+    # need; GitHub fetches fail intermittently on cloud GPUs, so don't let them
+    # block the rest.
+    local reqs; reqs=$(mktemp)
+    grep -v '^git+' "$dir/requirements.txt" > "$reqs" || true
+    "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check -r "$reqs"
+    rm -f "$reqs"
     echo "requirements installed"
+    while read -r extra; do
+      "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "$extra" \
+        || echo "optional package skipped (install failed): $extra"
+    done < <(grep '^git+' "$dir/requirements.txt" || true)
   fi
 }
 install_repo ComfyUI-Impact-Pack https://github.com/ltdrdata/ComfyUI-Impact-Pack "$IMPACT_PACK_REF"
