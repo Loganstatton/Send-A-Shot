@@ -54,7 +54,16 @@ install_repo() {
   if [[ -d "$dir/.git" ]]; then
     echo "already present"
   else
-    git clone -q "$url" "$dir"
+    # Clone to local temp first: cloning straight onto some cloud network
+    # volumes fails intermittently ("remote end hung up").
+    local tmp; tmp=$(mktemp -d)
+    local ok=0
+    for _ in 1 2 3; do
+      if git clone -q "$url" "$tmp/$name"; then ok=1; break; fi
+      rm -rf "${tmp:?}/$name"; sleep 3
+    done
+    (( ok )) || die "could not clone $url"
+    mv "$tmp/$name" "$dir"; rm -rf "$tmp"
   fi
   if [[ "$ref" != "latest" ]]; then
     git -C "$dir" fetch -q origin || true
