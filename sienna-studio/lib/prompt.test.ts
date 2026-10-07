@@ -13,7 +13,7 @@ describe('buildPrompt', () => {
       contentMode: 'sfw',
     });
     expect(r.positive.startsWith('full body head to toe, entire body visible including feet and shoes, wide shot, camera several meters away, red hoodie, park path, holding coffee, sienna_v1 woman, 24-year-old adult woman, ')).toBe(true);
-    expect(r.positive.indexOf(character.defaultCameraStyle)).toBeGreaterThan(r.positive.indexOf('sienna_v1 woman'));
+    expect(r.positive.indexOf('taken by another person')).toBeGreaterThan(r.positive.indexOf('sienna_v1 woman'));
     expect(r.positive.endsWith(', natural hazel-green eyes with realistic muted iris color')).toBe(true);
     expect(r.positive.match(/hazel-green|iris/g)).toHaveLength(2);
   });
@@ -120,6 +120,33 @@ describe('automatic full-body framing', () => {
     const r = run({ extra: 'full-body photo, close-up of her face' });
     expect(r.positive).not.toContain(FB);
     expect(r.warnings.some((w) => w.includes('full-body'))).toBe(true);
+  });
+
+  it('normal full-body: third-person camera, no close-camera realism, anti-crop negative', () => {
+    const r = run({ extra: 'Sienna walking down a sidewalk, candid full-body iPhone photo' });
+    expect(r.positive).toContain('realistic iPhone photo taken by another person from several meters away, natural phone-camera processing');
+    expect(r.positive).not.toContain(character.defaultCameraStyle);
+    expect(r.positive).not.toContain('wide-angle phone lens distortion');
+    expect(r.positive).toContain('candid full-body iPhone photo');
+    expect(r.negative).toContain("arm's-length selfie, close-up crop, cropped legs, cropped feet");
+  });
+
+  it('full-body mirror selfie: mirror composition, no selfie negative, no phone-camera line', () => {
+    const r = run({ extra: 'Sienna taking a full-body mirror selfie in her bedroom, phone visible in the mirror' });
+    expect(r.positive.startsWith('full-length mirror selfie, entire reflected body visible from head to toe including feet and shoes, tall mirror fully framing her body, phone visible in hand, camera far enough from the mirror to capture the entire reflection, ')).toBe(true);
+    expect(r.positive).not.toContain(FB);
+    expect(r.positive).not.toContain(character.defaultCameraStyle);
+    expect(r.positive).not.toContain('taken by another person');
+    expect(r.positive).not.toContain('wide-angle phone lens distortion');
+    expect(r.negative).not.toMatch(/selfie|cropped/);
+  });
+
+  it("keeps the user's own camera wording and the default camera for other shots", () => {
+    expect(run({ extra: 'full body photo', camera: 'shot on a 50mm lens' }).positive).toContain('shot on a 50mm lens');
+    const seated = run({ extra: 'sitting on a couch, candid iPhone photo' });
+    expect(seated.positive).toContain(character.defaultCameraStyle);
+    expect(seated.positive).toContain('wide-angle phone lens distortion');
+    expect(seated.negative).not.toContain('cropped feet');
   });
 
   it('lets the Framing field decide', () => {

@@ -78,6 +78,16 @@ export const AGE_DRIFT_NEGATIVE = 'older woman, middle-aged, wrinkles, aged skin
 /** Prepended when a request asks for a full-body shot; weaker wording came out as selfie crops. */
 export const FULL_BODY_FRAMING = 'full body head to toe, entire body visible including feet and shoes, wide shot, camera several meters away';
 
+/** Full-body mirror selfies: strengthen the reflected composition instead (no anti-selfie negative). */
+export const MIRROR_FULL_BODY_FRAMING =
+  'full-length mirror selfie, entire reflected body visible from head to toe including feet and shoes, tall mirror fully framing her body, phone visible in hand, camera far enough from the mirror to capture the entire reflection';
+/** Camera line for (non-mirror) full-body shots, replacing the default phone-camera line. */
+export const FULL_BODY_CAMERA = 'realistic iPhone photo taken by another person from several meters away, natural phone-camera processing';
+/** Negative for (non-mirror) full-body shots. */
+export const FULL_BODY_NEGATIVE = "arm's-length selfie, close-up crop, cropped legs, cropped feet";
+/** Default realism fragment implying a close phone camera; dropped for full-body shots. */
+export const CLOSE_CAMERA_REALISM = 'slight wide-angle phone lens distortion';
+
 /** Sienna's eye wording; buildPrompt places it at the end of the positive prompt. */
 export const EYE_TRAIT = 'natural hazel-green eyes with realistic muted iris color';
 /** Eye wording saved in profiles before the prompt reorder; upgraded to EYE_TRAIT. */
