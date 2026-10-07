@@ -5,6 +5,7 @@ import {
   ADULT_ONLY_NEGATIVE,
   AGE_DRIFT_NEGATIVE,
   EYE_TRAIT,
+  FULL_BODY_FRAMING,
   LEGACY_EYE_TRAIT,
   LOCK_NEGATIVE,
   MIN_CHARACTER_AGE,
@@ -46,6 +47,27 @@ export function splitEyeTraits(traits: string): { rest: string; eyes: string } {
     rest: parts.filter((s) => !isEye(s)).join(', '),
     eyes: eyes.toLowerCase() === LEGACY_EYE_TRAIT ? EYE_TRAIT : eyes,
   };
+}
+
+const FULL_BODY_RE = /\b(full[\s-]?body|head[\s-]?to[\s-]?toe|full[\s-]?length|entire\s+body)\b/i;
+const NOT_FULL_BODY_RE = /\b(close[\s-]?up|portrait|waist[\s-]?up|chest[\s-]?up|half[\s-]?body|head[\s-]?and[\s-]?shoulders|headshot)\b/i;
+
+/**
+ * Whether to prepend FULL_BODY_FRAMING. The Framing field decides when filled:
+ * a full-body framing there is strengthened unless it already carries the
+ * strong wording; any other framing (waist-up, medium shot…) is left alone.
+ * Otherwise the request must ask for full body and not also for a tighter shot.
+ */
+export function fullBodyFraming(f: PromptFields): { add: boolean; conflict: boolean } {
+  const framing = f.framing.trim();
+  if (framing) {
+    const add = FULL_BODY_RE.test(framing) && !NOT_FULL_BODY_RE.test(framing) && !/entire body visible/i.test(framing);
+    return { add, conflict: false };
+  }
+  const request = [f.pose, f.outfit, f.bodyPresentation, f.expression, f.setting, f.lighting, f.extra].join(' \n ');
+  const full = FULL_BODY_RE.test(request);
+  const tight = NOT_FULL_BODY_RE.test(request);
+  return { add: full && !tight, conflict: full && tight };
 }
 
 /** Join comma-separated fragments, dropping blanks and exact duplicates. */
@@ -101,8 +123,17 @@ export function buildPrompt({ fields, character, siennaLock, contentMode }: Buil
   const camera = f.camera || (siennaLock ? character.defaultCameraStyle : '');
   const realism = joinParts([character.defaultRealismPrompt, f.realism]);
 
+  const fullBody = fullBodyFraming(f);
+  if (fullBody.conflict) warnings.push('Request mixes full-body and close-up/half-body framing — no full-body framing was added.');
+
+  // Drop Framing fragments the added wording already covers (e.g. "head to toe").
+  const framing = fullBody.add
+    ? f.framing.split(',').filter((s) => !FULL_BODY_FRAMING.includes(s.trim().toLowerCase())).join(',')
+    : f.framing;
+
   const positive = joinParts([
-    f.framing,
+    fullBody.add ? FULL_BODY_FRAMING : '',
+    framing,
     f.pose,
     f.outfit,
     f.bodyPresentation,

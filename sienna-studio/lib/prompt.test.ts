@@ -12,7 +12,7 @@ describe('buildPrompt', () => {
       siennaLock: true,
       contentMode: 'sfw',
     });
-    expect(r.positive.startsWith('full body head to toe, red hoodie, park path, holding coffee, sienna_v1 woman, 24-year-old adult woman, ')).toBe(true);
+    expect(r.positive.startsWith('full body head to toe, entire body visible including feet and shoes, wide shot, camera several meters away, red hoodie, park path, holding coffee, sienna_v1 woman, 24-year-old adult woman, ')).toBe(true);
     expect(r.positive.indexOf(character.defaultCameraStyle)).toBeGreaterThan(r.positive.indexOf('sienna_v1 woman'));
     expect(r.positive.endsWith(', natural hazel-green eyes with realistic muted iris color')).toBe(true);
     expect(r.positive.match(/hazel-green|iris/g)).toHaveLength(2);
@@ -93,6 +93,42 @@ describe('buildPrompt', () => {
     });
     expect(r.positive).toBe("close-up iPhone portrait, soft natural daylight, sienna_v1 woman, 24-year-old adult woman, fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, shot on iPhone 15 Pro, 24mm main camera, natural phone processing, realistic candid iPhone photo, natural skin texture with subtle visible pores, fine flyaway hair strands, natural facial asymmetry, believable ambient indoor lighting, slight wide-angle phone lens distortion, casual non-cinematic snapshot, imperfect slightly off-center framing, anatomically correct hands with five fingers, believable reflections, soft natural shadows, natural hazel-green eyes with realistic muted iris color");
     expect(r.negative).toBe("over-smoothed skin, airbrushed, plastic skin, waxy skin, doll-like face, cgi, 3d render, illustration, anime, over-sharpened, excessive HDR, oversaturated, perfect symmetry, beauty filter, extra fingers, fused fingers, deformed hands, extra limbs, bad anatomy, distorted teeth, warped background, duplicate objects, watermark, text, logo, lowres, blurry, jpeg artifacts, studio lighting, glossy fashion editorial, cinematic color grading, different person, altered face, different face shape, different hair color, different eye color, child, teen, minor, childlike, school uniform, nsfw, nude, nudity, topless, explicit, sexual, lingerie, see-through, older woman, middle-aged, wrinkles, aged skin, mature face");
+  });
+});
+
+describe('automatic full-body framing', () => {
+  const FB = 'full body head to toe, entire body visible including feet and shoes, wide shot, camera several meters away';
+  const run = (fields: Partial<typeof EMPTY_FIELDS>) =>
+    buildPrompt({ fields: { ...EMPTY_FIELDS, ...fields }, character, siennaLock: true, contentMode: 'sfw' });
+
+  it.each(['full body', 'full-body', 'head to toe', 'head-to-toe', 'full length', 'full-length', 'entire body'])('triggers on "%s" and goes first', (phrase) => {
+    const r = run({ extra: `Sienna walking in the park, ${phrase} iPhone photo`, outfit: 'red top' });
+    expect(r.positive.startsWith(FB + ', ')).toBe(true);
+    expect(r.positive.split(FB)).toHaveLength(2);
+  });
+
+  it.each(['close-up', 'portrait', 'waist-up', 'chest-up', 'half-body', 'half body'])('does not trigger for "%s"', (phrase) => {
+    const r = run({ extra: `${phrase} photo of Sienna by a window` });
+    expect(r.positive).not.toContain(FB);
+  });
+
+  it('does not trigger without a full-body request', () => {
+    expect(run({ extra: 'Sienna in her living room at night' }).positive).not.toContain(FB);
+  });
+
+  it('respects the tighter instruction when framing conflicts, with a warning', () => {
+    const r = run({ extra: 'full-body photo, close-up of her face' });
+    expect(r.positive).not.toContain(FB);
+    expect(r.warnings.some((w) => w.includes('full-body'))).toBe(true);
+  });
+
+  it('lets the Framing field decide', () => {
+    expect(run({ framing: 'waist-up shot', extra: 'full body outfit check' }).positive).not.toContain(FB);
+    const weak = run({ framing: 'full body photo' });
+    expect(weak.positive.startsWith(FB + ', full body photo, ')).toBe(true);
+    const strong = run({ framing: 'full body, entire body visible, feet on the floor' });
+    expect(strong.positive).not.toContain(FB);
+    expect(strong.positive.startsWith('full body, entire body visible, feet on the floor, ')).toBe(true);
   });
 });
 
