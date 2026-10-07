@@ -4,6 +4,8 @@
 import {
   ADULT_ONLY_NEGATIVE,
   AGE_DRIFT_NEGATIVE,
+  EYE_TRAIT,
+  LEGACY_EYE_TRAIT,
   LOCK_NEGATIVE,
   MIN_CHARACTER_AGE,
   NON_STUDIO_NEGATIVE,
@@ -29,6 +31,21 @@ export interface BuiltPrompt {
   blocked: GuardHit[];
   /** Fields after Sienna Lock filtering. */
   effectiveFields: PromptFields;
+}
+
+/**
+ * Split profile traits into eye-colour wording and everything else, so the eye
+ * description can be placed at the end of the prompt. The pre-reorder default
+ * wording is upgraded to EYE_TRAIT; custom eye wording is kept as written.
+ */
+export function splitEyeTraits(traits: string): { rest: string; eyes: string } {
+  const parts = traits.split(',').map((s) => s.trim()).filter(Boolean);
+  const isEye = (s: string) => /\b(eyes?|iris(es)?)\b/i.test(s);
+  const eyes = parts.filter(isEye).join(', ');
+  return {
+    rest: parts.filter((s) => !isEye(s)).join(', '),
+    eyes: eyes.toLowerCase() === LEGACY_EYE_TRAIT ? EYE_TRAIT : eyes,
+  };
 }
 
 /** Join comma-separated fragments, dropping blanks and exact duplicates. */
@@ -68,29 +85,35 @@ export function buildPrompt({ fields, character, siennaLock, contentMode }: Buil
   const age = Math.max(MIN_CHARACTER_AGE, Math.round(character.age || MIN_CHARACTER_AGE));
   const f = effectiveFields;
 
-  // 3. Positive prompt, identity first (token + traits weigh most at the front).
+  // 3. Positive prompt. SDXL weighs the start of the prompt most, so the
+  // request (framing, then scene and outfit) comes first and identity after it;
+  // with identity first, outfit colours and full-body framing were ignored.
+  // Eye-colour wording goes last because it bled into clothing colour
+  // (requested red/yellow tops came out muted green).
   // The LoRA was captioned "<token> woman", so the token is sent in that form.
   const token = character.triggerToken.trim();
   const tokenPhrase = !token || /\bwoman$/i.test(token) ? token : `${token} woman`;
+  const traits = splitEyeTraits(character.appearanceTraits);
   const identity = siennaLock
-    ? [tokenPhrase, `${age}-year-old adult woman`, character.appearanceTraits]
+    ? [tokenPhrase, `${age}-year-old adult woman`, traits.rest]
     : [`adult woman`];
 
   const camera = f.camera || (siennaLock ? character.defaultCameraStyle : '');
   const realism = joinParts([character.defaultRealismPrompt, f.realism]);
 
   const positive = joinParts([
-    ...identity,
-    f.outfit,
+    f.framing,
     f.pose,
+    f.outfit,
     f.bodyPresentation,
     f.expression,
     f.setting,
     f.lighting,
-    camera,
-    f.framing,
-    realism,
     f.extra,
+    ...identity,
+    camera,
+    realism,
+    siennaLock ? traits.eyes : '',
   ]);
 
   // 4. Negative prompt.

@@ -75,6 +75,11 @@ export const ADULT_ONLY_NEGATIVE = 'child, teen, minor, childlike, school unifor
 export const AGE_DRIFT_NEGATIVE = 'older woman, middle-aged, wrinkles, aged skin, mature face';
 
 /** Added in SFW mode. */
+/** Sienna's eye wording; buildPrompt places it at the end of the positive prompt. */
+export const EYE_TRAIT = 'natural hazel-green eyes with realistic muted iris color';
+/** Eye wording saved in profiles before the prompt reorder; upgraded to EYE_TRAIT. */
+export const LEGACY_EYE_TRAIT = 'natural light hazel-green eyes, muted realistic iris color';
+
 export const SFW_NEGATIVE = 'nsfw, nude, nudity, topless, explicit, sexual, lingerie, see-through';
 
 /** Added when Sienna Lock is on, to discourage identity drift. */
@@ -89,8 +94,7 @@ export const DEFAULT_CHARACTER: CharacterProfile = {
   age: 24,
   faceReference: null,
   secondaryReferences: [],
-  appearanceTraits:
-    'fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, natural light hazel-green eyes, muted realistic iris color',
+  appearanceTraits: `fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, ${EYE_TRAIT}`,
   defaultRealismPrompt: DEFAULT_REALISM_PROMPT,
   defaultNegativePrompt: DEFAULT_NEGATIVE_PROMPT,
   defaultCameraStyle: 'shot on iPhone 15 Pro, 24mm main camera, natural phone processing',
