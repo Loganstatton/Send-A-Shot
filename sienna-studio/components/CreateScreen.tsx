@@ -10,6 +10,7 @@ import { capabilities } from '@/lib/comfy/adapter';
 import { DEFAULT_PARAMS, EMPTY_FIELDS, SIZE_PRESETS } from '@/lib/defaults';
 import { applyIdentityLock, findHardBlocks } from '@/lib/guard';
 import { buildPrompt } from '@/lib/prompt';
+import { SIENNA_MODELS, resolveLockedLora } from '@/lib/sienna-models';
 import type { AppSettings, CharacterProfile, GenerationRecord, Preset, PromptFields, WorkflowTemplate } from '@/lib/types';
 import { PROMPT_FIELD_LABELS } from '@/lib/types';
 import { ImagePicker } from './ImagePicker';
@@ -246,7 +247,8 @@ export function CreateScreen() {
     );
   }
 
-  const lockedLora = character.loraFilename;
+  const lockedLora = resolveLockedLora(character.loraFilename, draft.params.siennaModel).file;
+  const abModel = SIENNA_MODELS.find((m) => m.file === draft.params.siennaModel);
   const refs = [character.faceReference, ...character.secondaryReferences].filter(Boolean) as NonNullable<CharacterProfile['faceReference']>[];
   const activeRefId = draft.images.faceReferenceId ?? character.faceReference?.id ?? null;
   const fieldWarning = (k: keyof PromptFields) => {
@@ -313,6 +315,19 @@ export function CreateScreen() {
               Edit
             </Link>
           </div>
+        )}
+        {draft.siennaLock && (
+          <Select
+            className="mt-3"
+            label="Sienna model"
+            value={draft.params.siennaModel ?? ''}
+            onChange={(v) => setParam('siennaModel', v)}
+            options={[
+              { value: '', label: `Profile default (${character.loraFilename || 'not set'})` },
+              ...SIENNA_MODELS.filter((m) => m.file !== character.loraFilename).map((m) => ({ value: m.file, label: m.label })),
+            ]}
+            hint={abModel ? <span className="text-amber-400">A/B: {abModel.note}</span> : undefined}
+          />
         )}
         <div className="mt-3 grid grid-cols-2 gap-2 border-t border-ink-800 pt-3">
           {(['sfw', 'adult'] as const).map((m) => (

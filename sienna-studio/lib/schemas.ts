@@ -38,6 +38,7 @@ export const paramsSchema = z.object({
   cfg: z.number().min(0).max(30),
   denoise: z.number().min(0).max(1),
   loraName: str(500),
+  siennaModel: str(500).default(''),
   loraStrength: z.number().min(-2).max(2),
   loraClipStrength: z.number().min(-2).max(2),
   faceStrength: z.number().min(0).max(3),

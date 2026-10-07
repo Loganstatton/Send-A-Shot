@@ -110,6 +110,7 @@ export const DEFAULT_PARAMS: GenerationParams = {
   cfg: 5,
   denoise: 1,
   loraName: '',
+  siennaModel: '',
   loraStrength: 1,
   loraClipStrength: 1,
   faceStrength: 0.8,

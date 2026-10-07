@@ -31,6 +31,7 @@ import {
 import { packageFor } from '../comfy/packages';
 import { MIN_CHARACTER_AGE } from '../defaults';
 import { buildPrompt } from '../prompt';
+import { resolveLockedLora } from '../sienna-models';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
@@ -154,7 +155,12 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
 
   // ── Sienna Lock: LoRA ──────────────────────────────────────────────────
   let lora: GenerationRecord['lora'] = null;
-  const loraName = req.siennaLock ? character.loraFilename.trim() : (p.loraName || '').trim();
+  let loraName = (p.loraName || '').trim();
+  if (req.siennaLock) {
+    const locked = resolveLockedLora(character.loraFilename, p.siennaModel);
+    loraName = locked.file;
+    if (locked.ignored) warnings.push(`“${locked.ignored}” isn't an approved Sienna model — used the profile's LoRA instead.`);
+  }
   const loraStrength = clamp(p.loraStrength, -2, 2);
   const loraClip = clamp(p.loraClipStrength, -2, 2);
   if (loraName) {

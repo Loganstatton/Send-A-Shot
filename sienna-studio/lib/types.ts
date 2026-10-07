@@ -93,8 +93,13 @@ export interface GenerationParams {
   cfg: number;
   /** 1.0 for txt2img; lower for img2img. */
   denoise: number;
-  /** LoRA filename used when Sienna Lock is OFF (when ON the profile's LoRA is forced). */
+  /** LoRA filename used when Sienna Lock is OFF (when ON, the profile's LoRA or the siennaModel A/B choice is used). */
   loraName: string;
+  /**
+   * Sienna Lock A/B: an approved Sienna LoRA (see SIENNA_MODELS) to use instead
+   * of the profile's for this generation. Empty = the profile's LoRA.
+   */
+  siennaModel?: string;
   loraStrength: number;
   loraClipStrength: number;
   /** IPAdapter / face-reference weight. */
