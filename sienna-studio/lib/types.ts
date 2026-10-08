@@ -118,7 +118,16 @@ export interface GenerationParams {
   faceRefineDenoise: number;
   /** Faces smaller than this (px, shorter bbox side) are enlarged to it and redrawn. */
   faceRefineThreshold: number;
+  /** Outfit-reference conditioning weight (independent of the LoRA strength). */
+  outfitStrength?: number;
+  /**
+   * 'design': copy the garment's look but take pose and background from the prompt.
+   * 'close': follow the reference more closely, including its composition.
+   */
+  outfitMode?: OutfitMode;
 }
+
+export type OutfitMode = 'design' | 'close';
 
 /** Optional images supplied per generation. */
 export interface GenerationImages {
@@ -128,6 +137,8 @@ export interface GenerationImages {
   poseImage: StoredImage | null;
   /** Face reference override when Sienna Lock is OFF (or to use a secondary reference). */
   faceReferenceId: string | null;
+  /** Photo of an outfit to put on Sienna (face, hair and background are masked out first). */
+  outfitImage?: StoredImage | null;
 }
 
 export interface Preset {
@@ -173,6 +184,9 @@ export const CONTROL_KEYS = [
   'pose_image',
   'control_strength',
   'controlnet_model',
+  'outfit_reference_image',
+  'outfit_strength',
+  'outfit_weight_type',
   'face_refine_denoise',
   'face_refine_threshold',
   'filename_prefix',
@@ -211,7 +225,7 @@ export interface WorkflowTemplate {
    * (or when the server lacks their nodes). See lib/comfy/modules.ts.
    * Modules NOT listed here are required: generation fails without their image.
    */
-  optionalModules: ('init_image' | 'face_reference_image' | 'pose_image')[];
+  optionalModules: ('init_image' | 'face_reference_image' | 'pose_image' | 'outfit_reference_image')[];
   /** Base model family — informs defaults and diagnostics. */
   family?: 'sdxl' | 'flux' | 'other';
   builtIn: boolean;
@@ -267,6 +281,8 @@ export interface GenerationRecord {
   faceReference: StoredImage | null;
   initImage: StoredImage | null;
   poseImage: StoredImage | null;
+  /** Outfit reference used for this run, with the conditioning that was applied. */
+  outfitReference?: { image: StoredImage; strength: number; mode: OutfitMode } | null;
   warnings: string[];
   /** Optional modules removed for this run (unused or missing nodes). */
   prunedModules?: string[];

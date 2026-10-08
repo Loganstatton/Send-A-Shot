@@ -3,7 +3,7 @@
  * =========================
  *
  * A production workflow contains every module (img2img, face-reference
- * identity conditioning, pose ControlNet) wired in. When a generation does not
+ * identity conditioning, pose ControlNet, outfit reference) wired in. When a generation does not
  * use a module, or the ComfyUI server lacks the module's custom nodes, the
  * module is *pruned* from a copy of the graph before it is queued:
  *
@@ -26,13 +26,14 @@
 import type { ComfyGraph, ControlKey, WorkflowBindings } from '../types';
 import { cloneGraph, findOutputNodes } from './adapter';
 
-export const MODULE_KEYS = ['init_image', 'face_reference_image', 'pose_image'] as const;
+export const MODULE_KEYS = ['init_image', 'face_reference_image', 'pose_image', 'outfit_reference_image'] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
 export const MODULE_LABELS: Record<ModuleKey, string> = {
   init_image: 'Image-to-image',
   face_reference_image: 'Face reference (identity)',
   pose_image: 'Pose / ControlNet',
+  outfit_reference_image: 'Outfit reference',
 };
 
 type Link = [string, number];

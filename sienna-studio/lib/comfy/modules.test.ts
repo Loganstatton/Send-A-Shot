@@ -46,11 +46,12 @@ describe('SDXL production: pruning all optional modules', () => {
 describe('SDXL production: single modules', () => {
   const w = wf('sienna-sdxl-production');
 
-  it('face only: keeps IPAdapter, drops pose + img2img', () => {
+  it('face only: keeps IPAdapter, drops pose + img2img + outfit', () => {
     let g = w.graph;
     let b = w.bindings;
     ({ graph: g, bindings: b } = pruneModule(g, b, 'pose_image'));
     ({ graph: g, bindings: b } = pruneModule(g, b, 'init_image'));
+    ({ graph: g, bindings: b } = pruneModule(g, b, 'outfit_reference_image'));
     expect(g['12'].class_type).toBe('IPAdapterFaceID');
     expect(g['40'].inputs.model).toEqual(['12', 0]);
     expect(g['40'].inputs.positive).toEqual(['3', 0]);
@@ -90,7 +91,7 @@ describe('SDXL production: single modules', () => {
 describe('Flux production', () => {
   const w = wf('sienna-flux-production');
   it('all modules prunable; result is a valid Flux txt2img graph', () => {
-    for (const k of MODULE_KEYS) expect(canPrune(w.graph, w.bindings, k)).toBe(true);
+    for (const k of MODULE_KEYS) expect(canPrune(w.graph, w.bindings, k)).toBe(k !== 'outfit_reference_image'); // Flux has no outfit branch
     const { g, b } = pruneAll(w);
     expect(classes(g)).toEqual(
       ['CLIPTextEncode', 'CLIPTextEncode', 'DualCLIPLoader', 'EmptySD3LatentImage', 'FluxGuidance', 'KSampler', 'LoraLoader', 'SaveImage', 'UNETLoader', 'VAEDecode', 'VAELoader'].sort(),
@@ -166,5 +167,61 @@ describe('SDXL production: small-face refinement pass', () => {
 
   it('refuses to bypass a node without a pass-through', () => {
     expect(() => bypassNode(w.graph, '40')).toThrow();
+  });
+});
+
+describe('SDXL production: outfit reference module', () => {
+  const w = wf('sienna-sdxl-production');
+  const prune = (keys: ('init_image' | 'face_reference_image' | 'pose_image' | 'outfit_reference_image')[]) => {
+    let g = w.graph;
+    let b = w.bindings;
+    for (const k of keys) ({ graph: g, bindings: b } = pruneModule(g, b, k));
+    return { g, b };
+  };
+
+  it('is optional and prunable', () => {
+    expect(w.optionalModules).toContain('outfit_reference_image');
+    expect(canPrune(w.graph, w.bindings, 'outfit_reference_image')).toBe(true);
+  });
+
+  it('outfit pruned: the sampler goes straight to the FaceID chain and every outfit node is removed', () => {
+    const { g, b } = prune(['outfit_reference_image']);
+    expect(g['40'].inputs.model).toEqual(['12', 0]);
+    for (const id of ['60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '70', '71', '72']) expect(g[id]).toBeUndefined();
+    expect(b.outfit_strength).toBeUndefined();
+    expect(validateBindings(g, b)).toEqual([]);
+  });
+
+  it('outfit only (face reference pruned): IPAdapterAdvanced sits on the plain Sienna LoRA model', () => {
+    const { g, b } = prune(['face_reference_image', 'pose_image', 'init_image']);
+    expect(g['72'].class_type).toBe('IPAdapterAdvanced');
+    expect(g['72'].inputs.model).toEqual(['2', 0]);
+    expect(g['40'].inputs.model).toEqual(['72', 0]);
+    expect(g['11']).toBeUndefined();
+    expect(validateBindings(g, b)).toEqual([]);
+    const out = applyBindings(g, b, { outfit_reference_image: 'sienna/o.png', outfit_strength: 0.9, outfit_weight_type: 'linear' }).graph;
+    expect(out['60'].inputs.image).toBe('sienna/o.png');
+    expect(out['72'].inputs.weight).toBe(0.9);
+    expect(out['72'].inputs.weight_type).toBe('linear');
+  });
+
+  it('the face-refinement pass never sees the outfit conditioning', () => {
+    const { g } = prune(['face_reference_image']);
+    expect(g['51'].inputs.model).toEqual(['2', 0]);
+  });
+
+  it('only clothing reaches the IPAdapter: the reference image goes through the person-minus-face mask first', () => {
+    const g = w.graph;
+    expect(g['72'].inputs.image).toEqual(['69', 0]);
+    expect(g['69'].inputs.image).toEqual(['68', 0]);
+    expect(g['68'].inputs.mask).toEqual(['65', 0]);
+    expect(g['65'].inputs.operation).toBe('subtract');
+    expect(g['65'].inputs.source).toEqual(['64', 0]); // face/hair box removed from the person mask
+  });
+
+  it('outfit node ids belong to the module (pruned together)', () => {
+    expect(moduleNodeIds(w.graph, w.bindings, 'outfit_reference_image').sort()).toEqual(
+      ['60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '70', '71', '72'].sort(),
+    );
   });
 });

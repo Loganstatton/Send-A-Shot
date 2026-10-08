@@ -17,6 +17,7 @@
 import 'server-only';
 import { applyBindings, bypassLora, capabilities, ControlValue, injectLora, validateBindings } from '../comfy/adapter';
 import { ComfyBackend, ComfyError, createBackend } from '../comfy/client';
+import { missingModelFile } from '../comfy/model-files';
 import {
   bypassNode,
   bypassNodeIds,
@@ -30,6 +31,7 @@ import {
 } from '../comfy/modules';
 import { packageFor } from '../comfy/packages';
 import { MIN_CHARACTER_AGE } from '../defaults';
+import { OUTFIT_WEIGHT_TYPE } from '../outfit';
 import { buildPrompt } from '../prompt';
 import { resolveLockedLora } from '../sienna-models';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, StoredImage, WorkflowBindings } from '../types';
@@ -85,26 +87,6 @@ async function missingClasses(backend: ComfyBackend, graph: ComfyGraph, ids: str
 export function describeMissing(classes: string[]): string {
   const pkgs = [...new Set(classes.map((c) => packageFor(c)?.name).filter(Boolean))];
   return `${classes.join(', ')}${pkgs.length ? ` (install ${pkgs.join(', ')})` : ''}`;
-}
-
-/**
- * For nodes that load a detector/model by filename (e.g. the face detector),
- * check the file is in the server's list. Returns a reason, or null if fine
- * (or if the server doesn't publish a list).
- */
-async function missingModelFile(backend: ComfyBackend, graph: ComfyGraph, ids: string[]): Promise<string | null> {
-  for (const id of ids) {
-    const node = graph[id];
-    const file = node?.inputs.model_name;
-    if (typeof file !== 'string') continue;
-    try {
-      const choices = await backend.inputChoices(node.class_type, 'model_name');
-      if (choices.length && !choices.includes(file)) return `model file “${file}” is not on the server`;
-    } catch {
-      // unreachable server → let /prompt report the real problem
-    }
-  }
-  return null;
 }
 
 export interface PreparedGeneration {
@@ -203,7 +185,16 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     face_reference_image: req.siennaLock ? chosenRef ?? character.faceReference ?? null : chosenRef,
     init_image: req.images.initImage,
     pose_image: req.images.poseImage,
+    outfit_reference_image: req.images.outfitImage ?? null,
   };
+  // Images the user picked for this run must be used or fail loudly; only the
+  // profile's automatic face reference may be skipped with a warning.
+  const userSupplied = (key: ModuleKey) => key !== 'face_reference_image' || !!req.images.faceReferenceId;
+
+  // The chosen ControlNet file must be in the graph before model files are checked.
+  if (wanted.pose_image && p.controlnetModel && bindings.controlnet_model?.length) {
+    graph = applyBindings(graph, { controlnet_model: bindings.controlnet_model }, { controlnet_model: p.controlnetModel }).graph;
+  }
 
   // ── Optional modules: keep, prune, or fail ─────────────────────────────
   const prunedModules: string[] = [];
@@ -212,7 +203,13 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     const optional = workflow.optionalModules?.includes(key) ?? false;
     const label = MODULE_LABELS[key];
     if (!present) {
-      if (wanted[key] && (key !== 'face_reference_image' || req.images.faceReferenceId)) {
+      if (wanted[key] && key === 'outfit_reference_image') {
+        throw new GenerationError(
+          `${workflow.name} has no outfit-reference input. Use the Sienna Production · SDXL workflow` +
+            ' (if it was edited, Reset it in Library → Workflows to get the outfit nodes).',
+        );
+      }
+      if (wanted[key] && userSupplied(key)) {
         warnings.push(`${label} image ignored: this workflow has no ${label.toLowerCase()} input.`);
       } else if (key === 'face_reference_image' && wanted[key] && req.siennaLock) {
         warnings.push('This workflow has no face-reference input; identity relies on the LoRA + trigger token.');
@@ -224,10 +221,16 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     if (!wanted[key]) {
       reason = key === 'face_reference_image' && req.siennaLock ? 'no face reference uploaded on the Sienna tab' : 'not used';
     } else {
-      const missing = await missingClasses(backend, graph, moduleNodeIds(graph, bindings, key));
+      const ids = moduleNodeIds(graph, bindings, key);
+      const missing = await missingClasses(backend, graph, ids);
       if (missing.length) reason = `server is missing ${describeMissing(missing)}`;
+      else reason = await missingModelFile(backend, graph, ids);
     }
     if (!reason) continue;
+    if (wanted[key] && userSupplied(key)) {
+      // Never generate without an image the user explicitly supplied.
+      throw new GenerationError(`${label} image can't be used — ${reason}. Remove the image or install what's missing.`);
+    }
     if (!optional) {
       throw new GenerationError(
         wanted[key]
@@ -244,7 +247,12 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     wanted[key] = null;
     if (reason !== 'not used') warnings.push(`${label} module skipped — ${reason}.`);
   }
-  const { face_reference_image: faceReference, init_image: initImage, pose_image: poseImage } = wanted;
+  const { face_reference_image: faceReference, init_image: initImage, pose_image: poseImage, outfit_reference_image: outfitImage } = wanted;
+  const outfitMode = p.outfitMode === 'close' ? 'close' : 'design';
+  const outfitStrength = clamp(p.outfitStrength ?? 0.7, 0, 1.5);
+  if (outfitImage && contentMode === 'sfw') {
+    warnings.push('SFW mode: the negative prompt still steers away from nudity, so very revealing outfits may come out with more coverage.');
+  }
 
   // ── Small-face refinement pass (no reference image; same model/LoRA/prompts) ──
   let faceRefine: GenerationRecord['faceRefine'];
@@ -297,6 +305,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     face_strength: faceReference ? clamp(p.faceStrength, 0, 3) : undefined,
     control_strength: poseImage ? clamp(p.controlStrength, 0, 3) : undefined,
     controlnet_model: poseImage ? p.controlnetModel || undefined : undefined,
+    outfit_strength: outfitImage ? outfitStrength : undefined,
+    outfit_weight_type: outfitImage ? OUTFIT_WEIGHT_TYPE[outfitMode] : undefined,
     face_refine_denoise: faceRefine?.status === 'on' ? faceRefine.denoise : undefined,
     face_refine_threshold: faceRefine?.status === 'on' ? faceRefine.threshold : undefined,
     filename_prefix: 'sienna/sienna',
@@ -307,6 +317,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     if (faceReference) values.face_reference_image = await upload(faceReference);
     if (initImage) values.init_image = await upload(initImage);
     if (poseImage) values.pose_image = await upload(poseImage);
+    if (outfitImage) values.outfit_reference_image = await upload(outfitImage);
   } catch (e) {
     if (e instanceof ComfyError) throw new GenerationError(`Uploading reference images failed: ${e.message}`, e.status, e.details);
     throw e;
@@ -333,6 +344,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       faceReference,
       initImage,
       poseImage,
+      outfitReference: outfitImage ? { image: outfitImage, strength: outfitStrength, mode: outfitMode } : null,
       warnings,
       prunedModules,
       faceRefine,

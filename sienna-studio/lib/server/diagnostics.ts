@@ -5,9 +5,12 @@
 
 import 'server-only';
 import { comboOptions, ComfyBackend, createBackend, isMockUrl, NodeInfo } from '../comfy/client';
+import { PRIMARY_WORKFLOW_ID } from '../comfy/builtin-workflows';
+import { missingModelFile } from '../comfy/model-files';
 import { bypassNodeIds, MODULE_KEYS, MODULE_LABELS, moduleNodeIds } from '../comfy/modules';
 import { CONTROLNET_CLASSES, IDENTITY_CLASSES, packageFor } from '../comfy/packages';
 import { builtinPresets, DEFAULT_PARAMS, EMPTY_FIELDS } from '../defaults';
+import { buildOutfitAnalysisGraph } from '../outfit';
 import type { ComfyGraph, GenerateRequest, WorkflowTemplate } from '../types';
 import { prepareGeneration } from './generate';
 import { getCharacter, getComfyUrl, getSettings, getWorkflow } from './store';
@@ -402,6 +405,46 @@ export async function runDiagnostics(workflowId: string | null): Promise<Diagnos
       fix: ready
         ? undefined
         : 'On the GPU machine run scripts/comfyui-bootstrap.sh --restart from the Sienna Studio repo (see docs/COMFYUI_SETUP.md, “After a fresh Pod start”), then re-run Diagnostics.',
+    });
+  }
+
+  // 8c. Outfit reference (garment IPAdapter + Florence-2 analysis)
+  if (wf.bindings.outfit_reference_image?.length) {
+    const genIds = moduleNodeIds(wf.graph, wf.bindings, 'outfit_reference_image');
+    const analysis = buildOutfitAnalysisGraph('probe.png');
+    const classes = [...new Set([...genIds.map((id) => wf.graph[id].class_type), ...Object.values(analysis).map((n) => n.class_type)])];
+    const outfitMissing: string[] = [];
+    await Promise.all(
+      classes.map(async (c) => {
+        if ((await safeInfo(backend, c)) === null) outfitMissing.push(c);
+      }),
+    );
+    const fileProblem = outfitMissing.length
+      ? null
+      : (await missingModelFile(backend, wf.graph, genIds)) ?? (await missingModelFile(backend, analysis, Object.keys(analysis)));
+    const problems = [
+      ...outfitMissing.sort().map((c) => `missing node ${c}${packageFor(c) ? ` (${packageFor(c)!.name})` : ''}`),
+      ...(fileProblem ? [fileProblem] : []),
+    ];
+    checks.push({
+      id: 'outfit-reference',
+      label: 'Outfit reference',
+      status: problems.length ? 'warn' : 'pass',
+      detail: problems.length
+        ? `Not ready: ${problems.join('; ')}. Generations with an outfit photo will be refused until this is fixed.`
+        : 'Ready — garment segmentation, clothing IPAdapter (ViT-H) and Florence-2 analysis nodes and models are installed.',
+      items: problems,
+      fix: problems.length
+        ? 'On the GPU machine run scripts/comfyui-bootstrap.sh --with-outfit --restart (see docs/COMFYUI_SETUP.md), then re-run Diagnostics.'
+        : undefined,
+    });
+  } else if (wf.id === PRIMARY_WORKFLOW_ID) {
+    checks.push({
+      id: 'outfit-reference',
+      label: 'Outfit reference',
+      status: 'warn',
+      detail: 'This saved copy of the workflow predates the outfit-reference nodes.',
+      fix: 'Reset “Sienna Production · SDXL” in Library → Workflows to get the outfit nodes.',
     });
   }
 

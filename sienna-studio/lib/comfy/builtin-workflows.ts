@@ -9,12 +9,14 @@
  * may change: re-run auto-detect or edit the mapping in Library → Workflows
  * (edits to built-ins are saved as overrides; "Reset" restores these).
  *
- * The production graphs contain three OPTIONAL modules. They are pruned
+ * The production graphs contain OPTIONAL modules. They are pruned
  * automatically per generation (lib/comfy/modules.ts) when not used or when
  * the server lacks their custom nodes:
  *   init_image            → img2img branch (LoadImage → ImageScale → VAEEncode)
  *   face_reference_image  → identity conditioning (IPAdapter FaceID / PuLID-Flux)
  *   pose_image            → ControlNet pose branch
+ *   outfit_reference_image → (SDXL only) garment-only IPAdapter: person mask minus
+ *                            face/hair on grey → IPAdapterAdvanced on the first pass
  * The SDXL graph also has an optional face-refinement pass (FaceDetailer from
  * ComfyUI-Impact-Pack) that is bypassed when switched off or not installed.
  */
@@ -33,6 +35,8 @@ export const PRIMARY_WORKFLOW_ID = 'sienna-sdxl-production';
 // 10 LoadImage face → 11 IPAdapterUnifiedLoaderFaceID → 12 IPAdapterFaceID
 // 20 LoadImage pose → 21 ControlNetLoader → 22 ControlNetApplyAdvanced
 // 30 LoadImage init → 31 ImageScale → 32 VAEEncode   |   33 EmptyLatentImage
+// 60 LoadImage outfit → 61-68 garment isolation (lib/outfit.ts) → 69 PrepImageForClipVision
+//   → 70/71 IPAdapter + CLIP-ViT-H loaders → 72 IPAdapterAdvanced (first pass only; FaceDetailer keeps the plain LoRA model)
 // 40 KSampler · 41 VAEDecode → 50 face detector → 51 FaceDetailer (optional) → 42 SaveImage
 const SDXL_PRODUCTION: WorkflowBindings = {
   checkpoint: ref('1', 'ckpt_name'),
@@ -47,6 +51,9 @@ const SDXL_PRODUCTION: WorkflowBindings = {
   controlnet_model: ref('21', 'control_net_name'),
   control_strength: ref('22', 'strength'),
   init_image: ref('30', 'image'),
+  outfit_reference_image: ref('60', 'image'),
+  outfit_strength: ref('72', 'weight'),
+  outfit_weight_type: ref('72', 'weight_type'),
   width: [
     { nodeId: '31', inputName: 'width' },
     { nodeId: '33', inputName: 'width' },
@@ -158,12 +165,12 @@ export function builtinWorkflows(): WorkflowTemplate[] {
       id: 'sienna-sdxl-production',
       name: 'Sienna Production · SDXL',
       description:
-        'Primary workflow. SDXL checkpoint + Sienna LoRA, optional img2img, IPAdapter FaceID identity, pose ControlNet and small-face refinement (each removed automatically when unused or unavailable).',
+        'Primary workflow. SDXL checkpoint + Sienna LoRA, optional img2img, IPAdapter FaceID identity, pose ControlNet, outfit reference and small-face refinement (each removed automatically when unused or unavailable).',
       graph: sdxlProduction as ComfyGraph,
       bindings: SDXL_PRODUCTION,
       outputNodeIds: [],
       allowLoraInjection: true,
-      optionalModules: ALL_OPTIONAL,
+      optionalModules: [...ALL_OPTIONAL, 'outfit_reference_image'],
       family: 'sdxl',
       builtIn: true,
       updatedAt: at,

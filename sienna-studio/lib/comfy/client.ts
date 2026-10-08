@@ -18,6 +18,8 @@
  * new class implementing `ComfyBackend` — see README “Other backends”.
  */
 
+import { comboOptions } from './model-files';
+import { MOCK_OUTFIT_CAPTION } from '../outfit';
 import 'server-only';
 import { encodePng, mockPortrait } from '../server/png';
 import type { ComfyGraph } from '../types';
@@ -32,7 +34,7 @@ export interface OutputImageRef {
 export type JobState =
   | { state: 'pending'; position: number }
   | { state: 'running' }
-  | { state: 'done'; images: OutputImageRef[] }
+  | { state: 'done'; images: OutputImageRef[]; /** STRING outputs published by text output nodes (e.g. SiennaTextOutput). */ texts?: string[] }
   | { state: 'error'; message: string; details?: unknown }
   | { state: 'unknown' };
 
@@ -215,7 +217,9 @@ export class RealComfy implements ComfyBackend {
       }
       if (status && status.completed === false && status.status_str !== 'success') return { state: 'running' };
       const images: OutputImageRef[] = [];
+      const texts: string[] = [];
       for (const [nodeId, out] of Object.entries<any>(entry.outputs ?? {})) {
+        for (const t of [out.text ?? []].flat(2)) if (typeof t === 'string') texts.push(t);
         if (outputNodeIds.length && !outputNodeIds.includes(nodeId)) continue;
         for (const img of out.images ?? []) {
           images.push({ filename: img.filename, subfolder: img.subfolder ?? '', type: img.type ?? 'output', nodeId });
@@ -223,7 +227,7 @@ export class RealComfy implements ComfyBackend {
       }
       // Prefer saved outputs over temp previews when both exist.
       const saved = images.filter((i) => i.type === 'output');
-      return { state: 'done', images: saved.length ? saved : images };
+      return { state: 'done', images: saved.length ? saved : images, ...(texts.length ? { texts } : {}) };
     }
     const q = await this.json<{ queue_running: any[]; queue_pending: any[] }>('/queue');
     if (q.queue_running?.some((item) => item[1] === promptId)) return { state: 'running' };
@@ -242,14 +246,6 @@ export class RealComfy implements ComfyBackend {
   async interrupt() {
     await this.req('/interrupt', { method: 'POST' });
   }
-}
-
-/** Parse both the legacy `[["a","b"]]` and newer `["COMBO", {options:[...]}]` input specs. */
-export function comboOptions(spec: unknown): string[] {
-  if (!Array.isArray(spec)) return [];
-  if (Array.isArray(spec[0])) return spec[0].map(String);
-  if (spec[0] === 'COMBO' && spec[1] && Array.isArray((spec[1] as any).options)) return (spec[1] as any).options.map(String);
-  return [];
 }
 
 function describePromptError(body: any): string | null {
@@ -274,6 +270,8 @@ const g = globalThis as unknown as { __siennaMockJobs?: Map<string, MockJob>; __
 const mockJobs: Map<string, MockJob> = (g.__siennaMockJobs ??= new Map());
 const mockFiles: Map<string, Buffer> = (g.__siennaMockFiles ??= new Map());
 
+export { comboOptions };
+
 const MOCK_CHOICES: Record<string, string[]> = {
   ckpt_name: ['sd_xl_base_1.0.safetensors', 'realvisxlV50_v50Bakedvae.safetensors', 'juggernautXL_v9.safetensors'],
   unet_name: ['flux1-dev.safetensors', 'flux1-dev-fp8.safetensors'],
@@ -281,7 +279,9 @@ const MOCK_CHOICES: Record<string, string[]> = {
   sampler_name: ['euler', 'euler_ancestral', 'ddpm', 'dpmpp_2m', 'dpmpp_2m_sde', 'dpmpp_3m_sde', 'uni_pc'],
   scheduler: ['normal', 'karras', 'exponential', 'sgm_uniform', 'simple', 'beta'],
   control_net_name: ['OpenPoseXL2.safetensors', 'controlnet-union-sdxl-promax.safetensors'],
-  model_name: ['bbox/face_yolov8m.pt'],
+  model_name: ['bbox/face_yolov8m.pt', 'segm/person_yolov8m-seg.pt'],
+  ipadapter_file: ['ip-adapter-plus_sdxl_vit-h.safetensors'],
+  clip_name: ['CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors'],
 };
 
 export class MockComfy implements ComfyBackend {
@@ -324,7 +324,12 @@ export class MockComfy implements ComfyBackend {
         job.images.push({ name: `mock_${promptId}_${i}.png`, bytes: encodePng(img.width, img.height, img.rgb) });
       }
     }
-    return { state: 'done', images: job.images.map((im) => ({ filename: im.name, subfolder: '', type: 'output', nodeId: 'mock' })) };
+    const texts = Object.values(job.graph).some((n) => n.class_type === 'SiennaTextOutput') ? [MOCK_OUTFIT_CAPTION] : undefined;
+    return {
+      state: 'done',
+      images: job.images.map((im) => ({ filename: im.name, subfolder: '', type: 'output', nodeId: 'mock' })),
+      ...(texts ? { texts } : {}),
+    };
   }
   async fetchImage(ref: OutputImageRef) {
     for (const job of mockJobs.values()) {

@@ -5,26 +5,51 @@
 #   - their Python requirements (installed into ComfyUI's own Python)
 #   - models/ultralytics/bbox/face_yolov8m.pt
 #
+# With --with-outfit it also installs what the Outfit Reference feature needs:
+#   - ComfyUI_IPAdapter_plus  (IPAdapterAdvanced, PrepImageForClipVision)
+#   - ComfyUI-Florence2       (outfit description)
+#   - ComfyUI-KJNodes         (GetImageSizeAndCount; kept as-is if already installed)
+#   - custom_nodes/sienna_text_output (returns the description to the app)
+#   - models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors          (h94/IP-Adapter)
+#   - models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors   (h94/IP-Adapter image_encoder)
+#   - models/ultralytics/segm/person_yolov8m-seg.pt                    (Bingsu/adetailer)
+#   - models/LLM/Florence-2-large                                      (microsoft/Florence-2-large)
+# Before downloading, it prints each model repo's declared license and stops
+# if one isn't on the expected list (override: OUTFIT_LICENSE_OK=1).
+#
 # Safe to re-run: existing repos/files are kept. Run it on the GPU machine
 # (e.g. a RunPod web terminal) after every fresh Pod start, then restart ComfyUI.
 #
-#   bash comfyui-bootstrap.sh [--restart]
+#   bash comfyui-bootstrap.sh [--with-outfit] [--restart]
 #
 # Options / environment:
+#   --with-outfit      also install the Outfit Reference nodes and models (~4.5 GB)
 #   --restart          restart ComfyUI afterwards via ComfyUI-Manager (if installed)
 #   COMFYUI_DIR        ComfyUI folder (default: auto-detect)
 #   COMFYUI_PYTHON     Python used by ComfyUI (default: auto-detect its venv)
 #   COMFYUI_PORT       port for --restart (default 8188)
-#   IMPACT_PACK_REF / IMPACT_SUBPACK_REF   git commits to check out
+#   IMPACT_PACK_REF / IMPACT_SUBPACK_REF / IPADAPTER_REF / FLORENCE2_REF / KJNODES_REF
+#                      git commits to check out
 #                      (default: the versions tested with Sienna Studio; "latest" = newest)
 set -euo pipefail
 
 IMPACT_PACK_REF="${IMPACT_PACK_REF:-429d015}"
 IMPACT_SUBPACK_REF="${IMPACT_SUBPACK_REF:-50c7b71}"
-FACE_MODEL_URL="https://huggingface.co/Bingsu/adetailer/resolve/main/face_yolov8m.pt"
+IPADAPTER_REF="${IPADAPTER_REF:-a0f451a}"
+FLORENCE2_REF="${FLORENCE2_REF:-9ece3de}"
+KJNODES_REF="${KJNODES_REF:-d3cfe21}"
+HF="https://huggingface.co"
+FACE_MODEL_URL="$HF/Bingsu/adetailer/resolve/main/face_yolov8m.pt"
 FACE_MODEL_MIN_BYTES=50000000
 RESTART=0
-[[ "${1:-}" == "--restart" ]] && RESTART=1
+OUTFIT=0
+for arg in "$@"; do
+  case "$arg" in
+    --restart) RESTART=1 ;;
+    --with-outfit) OUTFIT=1 ;;
+    *) echo "unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -53,6 +78,9 @@ install_repo() {
   log "$name"
   if [[ -d "$dir/.git" ]]; then
     echo "already present"
+  elif [[ -d "$dir" ]]; then
+    echo "already present (not a git checkout) — kept as-is"
+    return 0
   else
     # Clone to local temp first: cloning straight onto some cloud network
     # volumes fails intermittently ("remote end hung up").
@@ -87,17 +115,95 @@ install_repo() {
 install_repo ComfyUI-Impact-Pack https://github.com/ltdrdata/ComfyUI-Impact-Pack "$IMPACT_PACK_REF"
 install_repo ComfyUI-Impact-Subpack https://github.com/ltdrdata/ComfyUI-Impact-Subpack "$IMPACT_SUBPACK_REF"
 
+# fetch_model <url> <dest> <min bytes>: download once, atomically.
+fetch_model() {
+  local url="$1" dest="$2" min="$3"
+  log "$(basename "$dest")"
+  mkdir -p "$(dirname "$dest")"
+  local size; size=$(stat -c %s "$dest" 2>/dev/null || echo 0)
+  if (( size < min )); then
+    if command -v wget >/dev/null; then wget -q -O "$dest.part" "$url"; else curl -fsSL -o "$dest.part" "$url"; fi
+    mv "$dest.part" "$dest"
+  fi
+  size=$(stat -c %s "$dest")
+  (( size >= min )) || die "$dest is only $size bytes — download incomplete?"
+  echo "$size bytes"
+}
+
 # ── Face detector model ───────────────────────────────────────────────────────
-log "face_yolov8m.pt"
-model_dir="$COMFYUI_DIR/models/ultralytics/bbox"
-model="$model_dir/face_yolov8m.pt"
-mkdir -p "$model_dir"
-size=$(stat -c %s "$model" 2>/dev/null || echo 0)
-if (( size < FACE_MODEL_MIN_BYTES )); then
-  if command -v wget >/dev/null; then wget -q -O "$model.part" "$FACE_MODEL_URL"; else curl -fsSL -o "$model.part" "$FACE_MODEL_URL"; fi
-  mv "$model.part" "$model"
+fetch_model "$FACE_MODEL_URL" "$COMFYUI_DIR/models/ultralytics/bbox/face_yolov8m.pt" "$FACE_MODEL_MIN_BYTES"
+
+# ── Outfit reference ──────────────────────────────────────────────────────────
+if (( OUTFIT )); then
+  # Declared licenses, read from the Hub before anything is downloaded.
+  log "Model licenses (Hugging Face model cards)"
+  license_of() {
+    curl -fsS --max-time 20 "$HF/api/models/$1" | "$COMFYUI_PYTHON" -c \
+      'import json,sys; d=json.load(sys.stdin); c=d.get("cardData") or {}; t=[x[8:] for x in d.get("tags",[]) if x.startswith("license:")]; print(c.get("license") or (t[0] if t else "unknown"))'
+  }
+  bad=0
+  for entry in "h94/IP-Adapter:apache-2.0" "microsoft/Florence-2-large:mit" "Bingsu/adetailer:apache-2.0"; do
+    repo="${entry%%:*}" want="${entry##*:}"
+    got=$(license_of "$repo" || echo "unreachable")
+    printf '  %-28s %s\n' "$repo" "$got"
+    [[ "$got" == "$want" ]] || bad=1
+  done
+  echo "  Note: the YOLOv8 detectors (face_yolov8m.pt, person_yolov8m-seg.pt) are Ultralytics models — Ultralytics"
+  echo "        licenses YOLOv8 under AGPL-3.0 (or a paid Enterprise license) regardless of the repo's tag."
+  if (( bad )) && [[ "${OUTFIT_LICENSE_OK:-0}" != "1" ]]; then
+    die "a model license differs from the expected one — review it, then re-run with OUTFIT_LICENSE_OK=1 to continue."
+  fi
+
+  install_repo ComfyUI_IPAdapter_plus https://github.com/cubiq/ComfyUI_IPAdapter_plus "$IPADAPTER_REF"
+  install_repo ComfyUI-Florence2 https://github.com/kijai/ComfyUI-Florence2 "$FLORENCE2_REF"
+  if [[ -d "$COMFYUI_DIR/custom_nodes/ComfyUI-KJNodes" ]]; then
+    log "ComfyUI-KJNodes"; echo "already installed — kept as-is"
+  else
+    install_repo ComfyUI-KJNodes https://github.com/kijai/ComfyUI-KJNodes "$KJNODES_REF"
+  fi
+
+  log "sienna_text_output"
+  mkdir -p "$COMFYUI_DIR/custom_nodes/sienna_text_output"
+  cat > "$COMFYUI_DIR/custom_nodes/sienna_text_output/__init__.py" <<'PY'
+# Publishes a STRING to the ComfyUI job history so Sienna Studio can read it
+# (used for the Florence-2 outfit description).
+class SiennaTextOutput:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"text": ("STRING", {"forceInput": True})}}
+
+    RETURN_TYPES = ()
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, text):
+        items = text if isinstance(text, list) else [text]
+        return {"ui": {"text": [str(t) for t in items]}}
+
+
+NODE_CLASS_MAPPINGS = {"SiennaTextOutput": SiennaTextOutput}
+NODE_DISPLAY_NAME_MAPPINGS = {"SiennaTextOutput": "Sienna Text Output"}
+PY
+  echo "written"
+
+  fetch_model "$HF/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors" \
+    "$COMFYUI_DIR/models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors" 800000000
+  fetch_model "$HF/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors" \
+    "$COMFYUI_DIR/models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors" 2000000000
+  fetch_model "$HF/Bingsu/adetailer/resolve/main/person_yolov8m-seg.pt" \
+    "$COMFYUI_DIR/models/ultralytics/segm/person_yolov8m-seg.pt" 40000000
+
+  log "Florence-2-large"
+  "$COMFYUI_PYTHON" - "$COMFYUI_DIR/models/LLM/Florence-2-large" <<'PY'
+import os, sys
+from huggingface_hub import snapshot_download
+dest = sys.argv[1]
+snapshot_download(repo_id="microsoft/Florence-2-large", local_dir=dest,
+                  allow_patterns=["*.json", "*.safetensors", "*.bin", "*.txt", "*.model"])
+print(sorted(os.listdir(dest)))
+PY
 fi
-echo "$(stat -c %s "$model") bytes"
 
 # ── Check the Python side imports ─────────────────────────────────────────────
 log "Checking Python packages"
@@ -123,7 +229,13 @@ if (( RESTART )); then
     done
     if (( ok )); then
       echo "ComfyUI restarted — FaceDetailer is loaded."
-      echo "Open Sienna Studio → Diagnostics and check “Face refinement”."
+      if (( OUTFIT )); then
+        for cls in IPAdapterAdvanced Florence2Run GetImageSizeAndCount SiennaTextOutput SegmDetectorCombined_v2; do
+          if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — check the ComfyUI log"; fi
+        done
+      fi
+      if (( OUTFIT )); then echo "Open Sienna Studio → Diagnostics and check “Face refinement” and “Outfit reference”."
+      else echo "Open Sienna Studio → Diagnostics and check “Face refinement”."; fi
     else
       echo "ComfyUI did not come back with FaceDetailer within 3 minutes — check the ComfyUI log, or restart it yourself."
     fi

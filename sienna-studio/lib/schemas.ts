@@ -48,6 +48,8 @@ export const paramsSchema = z.object({
   faceRefine: z.boolean().default(true),
   faceRefineDenoise: z.number().min(0.05).max(1).default(0.3),
   faceRefineThreshold: z.number().int().min(64).max(2048).default(384),
+  outfitStrength: z.number().min(0).max(1.5).default(0.7),
+  outfitMode: z.enum(['design', 'close']).default('design'),
 });
 
 export const generateSchema = z.object({
@@ -61,6 +63,7 @@ export const generateSchema = z.object({
     initImage: storedImageSchema.nullable(),
     poseImage: storedImageSchema.nullable(),
     faceReferenceId: z.string().max(64).nullable(),
+    outfitImage: storedImageSchema.nullable().default(null),
   }),
   parentId: z.string().max(64).optional(),
 });
@@ -110,7 +113,7 @@ export const workflowUpdateSchema = z
     bindings: bindingsSchema,
     outputNodeIds: z.array(z.string().max(32)).max(20),
     allowLoraInjection: z.boolean(),
-    optionalModules: z.array(z.enum(['init_image', 'face_reference_image', 'pose_image'])).max(3),
+    optionalModules: z.array(z.enum(['init_image', 'face_reference_image', 'pose_image', 'outfit_reference_image'])).max(4),
     graph: z.record(z.any()),
   })
   .partial();

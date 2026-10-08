@@ -137,6 +137,8 @@ export const DEFAULT_PARAMS: GenerationParams = {
   faceRefine: true,
   faceRefineDenoise: 0.3,
   faceRefineThreshold: 384,
+  outfitStrength: 0.7,
+  outfitMode: 'design',
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {

@@ -25,7 +25,7 @@ export const emptyDraft = (): Draft => ({
   contentMode: 'sfw',
   fields: { ...EMPTY_FIELDS },
   params: { ...DEFAULT_PARAMS },
-  images: { initImage: null, poseImage: null, faceReferenceId: null },
+  images: { initImage: null, poseImage: null, faceReferenceId: null, outfitImage: null },
 });
 
 function read(): Draft | null {

@@ -16,7 +16,7 @@ const PACKAGES: { test: RegExp; pkg: NodePackage }[] = [
       name: 'ComfyUI_IPAdapter_plus',
       repo: 'https://github.com/cubiq/ComfyUI_IPAdapter_plus',
       notes:
-        'FaceID needs: models/ipadapter/ip-adapter-faceid-plusv2_sdxl.bin, models/loras/ip-adapter-faceid-plusv2_sdxl_lora.safetensors, models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors, plus the Python package insightface (antelopev2/buffalo_l downloads to models/insightface).',
+        'Outfit reference needs: models/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors and models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors (scripts/comfyui-bootstrap.sh --with-outfit). FaceID needs: models/ipadapter/ip-adapter-faceid-plusv2_sdxl.bin, models/loras/ip-adapter-faceid-plusv2_sdxl_lora.safetensors, models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors, plus the Python package insightface (antelopev2/buffalo_l downloads to models/insightface).',
     },
   },
   {
@@ -61,7 +61,28 @@ const PACKAGES: { test: RegExp; pkg: NodePackage }[] = [
     pkg: {
       name: 'ComfyUI-Impact-Subpack',
       repo: 'https://github.com/ltdrdata/ComfyUI-Impact-Subpack',
-      notes: 'Needs models/ultralytics/bbox/face_yolov8m.pt (https://huggingface.co/Bingsu/adetailer).',
+      notes:
+        'Needs models/ultralytics/bbox/face_yolov8m.pt; the outfit reference also needs models/ultralytics/segm/person_yolov8m-seg.pt (both from https://huggingface.co/Bingsu/adetailer).',
+    },
+  },
+  {
+    test: /^(DownloadAndLoadFlorence2Model|Florence2Run|Florence2ModelLoader)$/,
+    pkg: {
+      name: 'ComfyUI-Florence2',
+      repo: 'https://github.com/kijai/ComfyUI-Florence2',
+      notes: 'Outfit analysis. microsoft/Florence-2-large is downloaded to models/LLM/Florence-2-large by scripts/comfyui-bootstrap.sh --with-outfit.',
+    },
+  },
+  {
+    test: /^(GetImageSizeAndCount)$/,
+    pkg: { name: 'ComfyUI-KJNodes', repo: 'https://github.com/kijai/ComfyUI-KJNodes', notes: 'Image size helper used by the outfit garment isolation.' },
+  },
+  {
+    test: /^SiennaTextOutput$/,
+    pkg: {
+      name: 'sienna_text_output (written by scripts/comfyui-bootstrap.sh --with-outfit)',
+      repo: 'scripts/comfyui-bootstrap.sh',
+      notes: 'Tiny output node that returns the outfit description to the app.',
     },
   },
   {

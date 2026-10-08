@@ -107,6 +107,27 @@ warning.
 The script only restores the face-refinement pieces. The base checkpoint and Sienna LoRA still need copying
 into `models/checkpoints/` and `models/loras/` (§1).
 
+### Outfit reference (optional)
+
+The Outfit Reference upload needs extra nodes and about 4.5 GB of models. Add `--with-outfit`:
+
+```bash
+bash comfyui-bootstrap.sh --with-outfit --restart
+```
+
+This installs ComfyUI_IPAdapter_plus, ComfyUI-Florence2, ComfyUI-KJNodes (kept as-is if present) and a tiny
+`sienna_text_output` node, and downloads `ip-adapter-plus_sdxl_vit-h.safetensors` (models/ipadapter), the
+ViT-H image encoder as `CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors` (models/clip_vision),
+`person_yolov8m-seg.pt` (models/ultralytics/segm) and `microsoft/Florence-2-large` (models/LLM). Before
+downloading it prints each model repo's declared license and stops if one changed (re-run with
+`OUTFIT_LICENSE_OK=1` after reviewing). Diagnostics → “Outfit reference” should then say **Ready**. Until
+it does, generations with an outfit photo are refused with the reason (the photo is never silently ignored).
+
+Licensing notes: IP-Adapter (Apache-2.0), Florence-2 (MIT) and the ViT-H encoder (MIT) allow commercial use.
+The YOLOv8 detectors (`face_yolov8m.pt`, `person_yolov8m-seg.pt`) are Ultralytics models, which Ultralytics
+licenses under AGPL-3.0 or a paid Enterprise license — check this before commercial use. ComfyUI,
+IPAdapter_plus and KJNodes are GPL-3.0 (commercial use allowed; copyleft applies if you distribute them).
+
 ---
 
 ## 3. Making the server reachable

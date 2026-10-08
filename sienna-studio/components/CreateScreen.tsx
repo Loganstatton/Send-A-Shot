@@ -15,6 +15,8 @@ import type { AppSettings, CharacterProfile, GenerationRecord, Preset, PromptFie
 import { PROMPT_FIELD_LABELS } from '@/lib/types';
 import { ImagePicker } from './ImagePicker';
 import { JobCard } from './JobCard';
+import { OutfitReference } from './OutfitReference';
+import { OUTFIT_MODE_LABELS } from '@/lib/outfit';
 import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Select, Slider, Spinner, TextArea, Toggle, cx, toast } from './ui';
 
 interface SettingsPayload {
@@ -86,7 +88,12 @@ export function CreateScreen() {
             contentMode: rec.contentMode,
             fields: { ...EMPTY_FIELDS, ...rec.fields },
             params: { ...DEFAULT_PARAMS, ...rec.params, seed: rec.seed },
-            images: { initImage: rec.initImage, poseImage: rec.poseImage, faceReferenceId: rec.faceReference?.id ?? null },
+            images: {
+              initImage: rec.initImage,
+              poseImage: rec.poseImage,
+              faceReferenceId: rec.faceReference?.id ?? null,
+              outfitImage: rec.outfitReference?.image ?? null,
+            },
             parentId: rec.id,
           }));
           toast('Loaded settings from gallery — edit and generate.');
@@ -415,7 +422,7 @@ export function CreateScreen() {
         {/* ── Reference images ── */}
         <Collapsible
           title="Reference images"
-          badge={(draft.images.initImage || draft.images.poseImage) && <Badge tone="accent">set</Badge>}
+          badge={(draft.images.initImage || draft.images.poseImage || draft.images.outfitImage) && <Badge tone="accent">set</Badge>}
         >
           {refs.length > 0 && (
             <div>
@@ -469,6 +476,17 @@ export function CreateScreen() {
           {caps.faceReference && (
             <Slider label="Face reference weight" value={draft.params.faceStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('faceStrength', v)} />
           )}
+          <OutfitReference
+            enabled={caps.outfit}
+            image={draft.images.outfitImage ?? null}
+            onImage={(img) => update((d) => ({ ...d, images: { ...d.images, outfitImage: img } }))}
+            strength={draft.params.outfitStrength ?? DEFAULT_PARAMS.outfitStrength!}
+            onStrength={(v) => setParam('outfitStrength', v)}
+            mode={draft.params.outfitMode ?? 'design'}
+            onMode={(m) => setParam('outfitMode', m)}
+            outfitText={draft.fields.outfit}
+            onUseText={(t) => setField('outfit', t)}
+          />
         </Collapsible>
 
         {/* ── Advanced ── */}
@@ -634,6 +652,15 @@ export function CreateScreen() {
                   {w}
                 </Notice>
               ))}
+              {draft.images.outfitImage &&
+                (caps.outfit ? (
+                  <Notice kind="info">
+                    Outfit reference on — strength {(draft.params.outfitStrength ?? DEFAULT_PARAMS.outfitStrength!).toFixed(2)},{' '}
+                    {OUTFIT_MODE_LABELS[draft.params.outfitMode ?? 'design']}. Clothing only; Sienna&apos;s LoRA, face refinement and identity settings are unchanged.
+                  </Notice>
+                ) : (
+                  <Notice kind="error">This workflow has no outfit-reference input — generation will be refused. Pick Sienna Production · SDXL.</Notice>
+                ))}
               <div>
                 <p className="mb-1 text-xs uppercase tracking-wide text-ink-400">Positive</p>
                 <p className="select-text whitespace-pre-wrap rounded-xl bg-ink-800 p-3 text-sm leading-relaxed">{built.positive}</p>
