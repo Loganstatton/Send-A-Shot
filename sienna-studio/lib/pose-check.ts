@@ -47,7 +47,7 @@ export function buildPoseCheckGraph(
   return g;
 }
 
-/** First person's body keypoints from a DWPose / SiennaPoseRetarget openpose_json string. */
+/** First person's body keypoints (normalized 0..1) from a DWPose / SiennaPoseRetarget openpose_json string. */
 export function firstBody(json: string | undefined): { flat: number[]; width: number; height: number } | null {
   if (!json) return null;
   try {
@@ -55,7 +55,12 @@ export function firstBody(json: string | undefined): { flat: number[]; width: nu
     const pose = Array.isArray(parsed) ? parsed[0] : parsed;
     const flat = pose?.people?.[0]?.pose_keypoints_2d;
     if (!Array.isArray(flat)) return null;
-    return { flat, width: pose.canvas_width, height: pose.canvas_height };
+    const width = Number(pose.canvas_width) || 0;
+    const height = Number(pose.canvas_height) || 0;
+    // DWPreprocessor reports pixels on its canvas (verified on real output); normalize to 0..1.
+    const pixels = flat.some((v: number, i: number) => i % 3 !== 2 && v > 1.5);
+    const norm = pixels && width && height ? flat.map((v: number, i: number) => (i % 3 === 0 ? v / width : i % 3 === 1 ? v / height : v)) : flat;
+    return { flat: norm, width, height };
   } catch {
     return null;
   }
