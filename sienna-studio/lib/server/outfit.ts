@@ -1,48 +1,44 @@
 /**
- * Outfit analysis job: upload the outfit photo, isolate the garment, caption
- * it with Florence-2. Two short requests (start + poll) like generations, so
- * nothing depends on long-lived connections through the Render/Runpod proxies.
+ * Outfit analysis jobs. Two short requests (start + poll) like generations, so nothing
+ * depends on long-lived connections through the Render/Runpod proxies.
+ *
+ *   isolation 'person' (default): person minus face box on grey → Florence-2 caption.
+ *   isolation 'garment' (experimental): Florence-2 segments the named garment pieces →
+ *     garment-only crop with a flat silhouette for fit context → caption of the crop.
+ *     The crop is returned as `preview` and is what generation uses in garment mode.
  */
 
 import 'server-only';
-import { ComfyError, createBackend } from '../comfy/client';
-import { missingModelFile } from '../comfy/model-files';
-import { analyzeCaption, buildOutfitAnalysisGraph, OUTFIT_CAPTION_NODE, OutfitAnalysis } from '../outfit';
+import { createBackend } from '../comfy/client';
+import {
+  analyzeCaption,
+  buildGarmentIsolationGraph,
+  buildOutfitAnalysisGraph,
+  GARMENT_ISOLATE_NODE,
+  OUTFIT_CAPTION_NODE,
+  OUTFIT_PREVIEW_NODE,
+  OutfitAnalysis,
+} from '../outfit';
 import type { StoredImage } from '../types';
-import { describeMissing, GenerationError } from './generate';
-import { getComfyUrl, mimeFromBytes, newId, readImage, storeImage } from './store';
+import { queueImageJob } from './jobs';
+import { getComfyUrl, mimeFromBytes, storeImage } from './store';
+
+export type OutfitIsolationResult = 'person' | 'garment' | 'fallback-person';
 
 export type OutfitAnalysisState =
   | { state: 'pending' | 'running'; position?: number }
   | { state: 'error'; error: string }
-  | ({ state: 'done'; preview: StoredImage | null } & OutfitAnalysis);
+  | ({ state: 'done'; preview: StoredImage | null; isolation: OutfitIsolationResult } & OutfitAnalysis);
 
-export async function startOutfitAnalysis(image: StoredImage): Promise<{ promptId: string }> {
-  const backend = createBackend(await getComfyUrl());
-  const { bytes, mime } = await readImage(image.file);
-  const probe = buildOutfitAnalysisGraph('probe.png');
-  // Check node classes and model files first so the user gets a clear reason, not a ComfyUI stack trace.
-  const classes = [...new Set(Object.values(probe).map((n) => n.class_type))];
-  const missing: string[] = [];
-  await Promise.all(
-    classes.map(async (c) => {
-      try {
-        if (!(await backend.nodeInfo(c))) missing.push(c);
-      } catch {
-        /* unreachable → /prompt reports it */
-      }
-    }),
-  );
-  if (missing.length) throw new GenerationError(`Outfit analysis can't run — server is missing ${describeMissing(missing.sort())}.`);
-  const fileProblem = await missingModelFile(backend, probe, Object.keys(probe));
-  if (fileProblem) throw new GenerationError(`Outfit analysis can't run — ${fileProblem}.`);
-  try {
-    const name = await backend.uploadImage(bytes, image.file, mime);
-    return backend.queuePrompt(buildOutfitAnalysisGraph(name), newId('outfit-'));
-  } catch (e) {
-    if (e instanceof ComfyError) throw new GenerationError(`Outfit analysis failed: ${e.message}`, e.status, e.details);
-    throw e;
+export async function startOutfitAnalysis(
+  image: StoredImage,
+  opts: { isolation?: 'person' | 'garment'; phrases?: string[] } = {},
+): Promise<{ promptId: string }> {
+  if (opts.isolation === 'garment') {
+    const phrases = (opts.phrases ?? []).map((p) => p.trim().slice(0, 60)).filter(Boolean);
+    return queueImageJob(image, (name) => buildGarmentIsolationGraph(name, phrases), 'Garment isolation', 'garment-');
   }
+  return queueImageJob(image, buildOutfitAnalysisGraph, 'Outfit analysis', 'outfit-');
 }
 
 export async function outfitAnalysisStatus(promptId: string): Promise<OutfitAnalysisState> {
@@ -59,12 +55,19 @@ export async function outfitAnalysisStatus(promptId: string): Promise<OutfitAnal
       return { state: 'error', error: s.message };
     case 'done': {
       const caption = (s.texts?.[OUTFIT_CAPTION_NODE] ?? []).join(' ').trim();
+      const mode = s.texts?.[GARMENT_ISOLATE_NODE]?.[0];
+      const isolation: OutfitIsolationResult = mode === 'garment' ? 'garment' : mode === 'fallback-person' ? 'fallback-person' : 'person';
       let preview: StoredImage | null = null;
-      if (s.images[0]) {
-        const { bytes, mime } = await backend.fetchImage(s.images.find((i) => i.nodeId === '23') ?? s.images[0]);
-        preview = await storeImage(bytes, mimeFromBytes(bytes) ?? mime, 'up', 'Outfit garment preview');
+      const ref = s.images.find((i) => i.nodeId === OUTFIT_PREVIEW_NODE) ?? s.images[0];
+      if (ref) {
+        const { bytes, mime } = await backend.fetchImage(ref);
+        preview = await storeImage(bytes, mimeFromBytes(bytes) ?? mime, 'up', isolation === 'garment' ? 'Outfit garment-only crop' : 'Outfit garment preview');
       }
-      return { state: 'done', preview, ...analyzeCaption(caption) };
+      const analysis = analyzeCaption(caption);
+      if (isolation === 'fallback-person') {
+        analysis.notes.unshift('Garment segmentation found nothing — this used the whole-person crop instead (garment mode will not be applied).');
+      }
+      return { state: 'done', preview, isolation, ...analysis };
     }
   }
 }

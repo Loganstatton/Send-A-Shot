@@ -1,25 +1,27 @@
 import { z } from 'zod';
 import { storedImageSchema } from '@/lib/schemas';
 import { handle, HttpError, json, parseBody } from '@/lib/server/http';
-import { outfitAnalysisStatus, startOutfitAnalysis } from '@/lib/server/outfit';
+import { poseCheckStatus, startPoseCheck } from '@/lib/server/pose';
 
 export const dynamic = 'force-dynamic';
 
-/** Start an outfit analysis (garment isolation + Florence-2 caption). Poll with GET ?promptId=. */
+/** Start a pose check (skeleton preview + visible extent). Poll with GET ?promptId=. */
 export const POST = handle(async (req: Request) => {
-  const body = await parseBody(
+  const b = await parseBody(
     req,
     z.object({
       image: storedImageSchema,
-      isolation: z.enum(['person', 'garment']).default('person'),
-      phrases: z.array(z.string().max(60)).max(3).default([]),
+      width: z.number().int().min(256).max(2048),
+      height: z.number().int().min(256).max(2048),
+      fit: z.enum(['crop', 'pad']).default('crop'),
+      retarget: z.number().min(0).max(1).default(0),
     }),
   );
-  return json(await startOutfitAnalysis(body.image, { isolation: body.isolation, phrases: body.phrases }), 202);
+  return json(await startPoseCheck(b.image, b), 202);
 });
 
 export const GET = handle(async (req: Request) => {
   const promptId = new URL(req.url).searchParams.get('promptId') ?? '';
   if (!/^[\w.-]{1,128}$/.test(promptId)) throw new HttpError(400, 'Missing or invalid promptId');
-  return json(await outfitAnalysisStatus(promptId));
+  return json(await poseCheckStatus(promptId));
 });

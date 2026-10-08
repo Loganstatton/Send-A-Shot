@@ -139,8 +139,95 @@ export function buildOutfitAnalysisGraph(uploadedName: string): ComfyGraph {
       _meta: { title: 'Describe Outfit' },
     },
     [OUTFIT_CAPTION_NODE]: { class_type: TEXT_OUTPUT_CLASS, inputs: { text: ['21', 2] }, _meta: { title: 'Outfit Caption' } },
-    '23': { class_type: 'PreviewImage', inputs: { images: [iso.outputId, 0] }, _meta: { title: 'Garment Preview' } },
+    [OUTFIT_PREVIEW_NODE]: { class_type: 'PreviewImage', inputs: { images: [iso.outputId, 0] }, _meta: { title: 'Garment Preview' } },
   };
+}
+
+/** Preview node in both analysis graphs (person-minus-face crop, or the garment-only crop). */
+export const OUTFIT_PREVIEW_NODE = '23';
+/** Garment-isolation node; its text output says 'garment' or 'fallback-person'. */
+export const GARMENT_ISOLATE_NODE = '40';
+
+/**
+ * Garment-only isolation (experimental): Florence-2 referring-expression segmentation finds
+ * each named garment piece, SiennaGarmentIsolate keeps only those pixels (skin becomes a flat
+ * silhouette, face removed, cropped to the garment), and the caption is made from that crop —
+ * so the description is about the clothes at a useful size, not the whole photo.
+ */
+export function buildGarmentIsolationGraph(uploadedName: string, phrases: string[]): ComfyGraph {
+  const iso = garmentIsolationNodes('1', 2); // ids 2–9; we need the person (3) and face (5) masks
+  const g: ComfyGraph = {
+    '1': { class_type: 'LoadImage', inputs: { image: uploadedName }, _meta: { title: 'Outfit Reference Image' } },
+    '2': iso.nodes['2'],
+    '3': iso.nodes['3'],
+    '4': iso.nodes['4'],
+    '5': iso.nodes['5'],
+    '20': { class_type: 'DownloadAndLoadFlorence2Model', inputs: { model: FLORENCE_MODEL, precision: 'fp16' }, _meta: { title: 'Florence-2' } },
+  };
+  const list = (phrases.length ? phrases : ['clothing']).slice(0, 3);
+  let union: [string, number] | null = null;
+  list.forEach((phrase, i) => {
+    const id = String(30 + i);
+    g[id] = {
+      class_type: 'Florence2Run',
+      inputs: {
+        image: ['1', 0],
+        florence2_model: ['20', 0],
+        text_input: phrase,
+        task: 'referring_expression_segmentation',
+        fill_mask: true,
+        keep_model_loaded: true,
+        max_new_tokens: 1024,
+        num_beams: 3,
+        do_sample: false,
+        seed: 1,
+      },
+      _meta: { title: `Segment: ${phrase}` },
+    };
+    if (!union) union = [id, 1];
+    else {
+      const add = String(35 + i);
+      g[add] = { class_type: 'MaskComposite', inputs: { destination: union, source: [id, 1], x: 0, y: 0, operation: 'add' }, _meta: { title: 'Garment pieces' } };
+      union = [add, 0];
+    }
+  });
+  g[GARMENT_ISOLATE_NODE] = {
+    class_type: 'SiennaGarmentIsolate',
+    inputs: { image: ['1', 0], garment_mask: union!, person_mask: ['3', 0], face_mask: ['5', 0], edge_px: 6, silhouette: true, margin: 0.12 },
+    _meta: { title: 'Garment Only (silhouette context)' },
+  };
+  g['21'] = {
+    class_type: 'Florence2Run',
+    inputs: {
+      image: [GARMENT_ISOLATE_NODE, 0],
+      florence2_model: ['20', 0],
+      text_input: '',
+      task: 'more_detailed_caption',
+      fill_mask: false,
+      keep_model_loaded: false,
+      max_new_tokens: 256,
+      num_beams: 3,
+      do_sample: false,
+      seed: 1,
+    },
+    _meta: { title: 'Describe Garment Crop' },
+  };
+  g[OUTFIT_CAPTION_NODE] = { class_type: TEXT_OUTPUT_CLASS, inputs: { text: ['21', 2] }, _meta: { title: 'Outfit Caption' } };
+  g[OUTFIT_PREVIEW_NODE] = { class_type: 'PreviewImage', inputs: { images: [GARMENT_ISOLATE_NODE, 0] }, _meta: { title: 'Garment Crop' } };
+  return g;
+}
+
+/** Segmentation phrases for the garment pieces named in a first-pass analysis (max 3). */
+export function garmentPhrases(types: string[]): string[] {
+  const split: Record<string, string[]> = {
+    bikini: ['bikini top', 'bikini bottom'],
+    'bikini top': ['bikini top'],
+    'bikini bottoms': ['bikini bottom'],
+    lingerie: ['bra', 'underwear'],
+  };
+  const out: string[] = [];
+  for (const t of types) for (const p of split[t] ?? [t]) if (!out.includes(p)) out.push(p);
+  return out.slice(0, 3);
 }
 
 // ── Caption → outfit description ───────────────────────────────────────────

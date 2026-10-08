@@ -125,6 +125,30 @@ export interface GenerationParams {
    * 'close': follow the reference more closely, including its composition.
    */
   outfitMode?: OutfitMode;
+
+  // ── Phase 1 quality options (experimental; defaults reproduce the previous behaviour) ──
+  /**
+   * How a pose photo whose shape differs from the output is fitted. 'crop' (previous):
+   * ComfyUI centre-crops the pose map, cutting off the head/feet. 'pad': the photo is padded
+   * to the output's aspect ratio first, so the whole skeleton is kept.
+   */
+  poseFit?: 'crop' | 'pad';
+  /** Rescale the pose skeleton's bones toward Sienna's proportions (0 = off, 1 = full). Angles are kept. */
+  poseRetarget?: number;
+  /** Optional high-resolution refinement pass (upscale + low-denoise re-render). */
+  hires?: boolean;
+  hiresScale?: number;
+  hiresDenoise?: number;
+  /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */
+  hiresLoraStrength?: number;
+  hiresSteps?: number;
+  /** Experimental negative-prompt cleanup (see buildPrompt). */
+  promptCleanup?: boolean;
+  /**
+   * What the clothing adapter sees. 'person' (previous): whole person minus the face box.
+   * 'garment': the garment-only crop from outfit analysis (skin replaced by a flat silhouette).
+   */
+  outfitIsolation?: 'person' | 'garment';
 }
 
 export type OutfitMode = 'design' | 'close';
@@ -139,6 +163,8 @@ export interface GenerationImages {
   faceReferenceId: string | null;
   /** Photo of an outfit to put on Sienna (face, hair and background are masked out first). */
   outfitImage?: StoredImage | null;
+  /** Garment-only crop produced by outfit analysis (used when params.outfitIsolation = 'garment'). */
+  outfitGarmentImage?: StoredImage | null;
 }
 
 export interface Preset {
@@ -187,6 +213,16 @@ export const CONTROL_KEYS = [
   'outfit_reference_image',
   'outfit_strength',
   'outfit_weight_type',
+  'pose_pad_left',
+  'pose_pad_top',
+  'pose_pad_right',
+  'pose_pad_bottom',
+  'pose_retarget_strength',
+  'pose_proportions',
+  'hires_scale',
+  'hires_denoise',
+  'hires_lora_strength',
+  'hires_steps',
   'face_refine_denoise',
   'face_refine_threshold',
   'filename_prefix',

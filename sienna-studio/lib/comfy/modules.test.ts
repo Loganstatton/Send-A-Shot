@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { applyBindings, validateBindings } from './adapter';
 import { builtinWorkflows } from './builtin-workflows';
+import { applyQualityOptions } from './quality';
 import { bypassNode, bypassNodeIds, canPrune, filterBindings, garbageCollect, moduleNodeIds, MODULE_KEYS, pruneModule } from './modules';
 import type { ComfyGraph, WorkflowTemplate } from '../types';
 
-const wf = (id: string) => builtinWorkflows().find((w) => w.id === id)!;
+// The production template carries optional Phase 1 nodes; with every option off they are removed.
+const wf = (id: string): WorkflowTemplate => {
+  const w = builtinWorkflows().find((x) => x.id === id)!;
+  const graph = applyQualityOptions(w.graph, w.bindings, {});
+  return { ...w, graph, bindings: filterBindings(graph, w.bindings) };
+};
 const classes = (g: ComfyGraph) => Object.values(g).map((n) => n.class_type).sort();
 
 function pruneAll(w: WorkflowTemplate) {

@@ -34,7 +34,14 @@ export interface OutputImageRef {
 export type JobState =
   | { state: 'pending'; position: number }
   | { state: 'running' }
-  | { state: 'done'; images: OutputImageRef[]; /** STRING outputs published by output nodes, by node id (e.g. SiennaTextOutput). */ texts?: Record<string, string[]> }
+  | {
+      state: 'done';
+      images: OutputImageRef[];
+      /** STRING outputs published by output nodes, by node id (e.g. SiennaTextOutput). */
+      texts?: Record<string, string[]>;
+      /** OpenPose JSON published by pose nodes (DWPreprocessor, SiennaPoseRetarget), by node id. */
+      poses?: Record<string, string[]>;
+    }
   | { state: 'error'; message: string; details?: unknown }
   | { state: 'unknown' };
 
@@ -233,9 +240,12 @@ export class RealComfy implements ComfyBackend {
       if (status && status.completed === false && status.status_str !== 'success') return { state: 'running' };
       const images: OutputImageRef[] = [];
       const texts: Record<string, string[]> = {};
+      const poses: Record<string, string[]> = {};
       for (const [nodeId, out] of Object.entries<any>(entry.outputs ?? {})) {
         const t = [out.text ?? []].flat(2).filter((x: unknown): x is string => typeof x === 'string');
         if (t.length) texts[nodeId] = t;
+        const pj = [out.openpose_json ?? []].flat(2).filter((x: unknown): x is string => typeof x === 'string');
+        if (pj.length) poses[nodeId] = pj;
         if (outputNodeIds.length && !outputNodeIds.includes(nodeId)) continue;
         for (const img of out.images ?? []) {
           images.push({ filename: img.filename, subfolder: img.subfolder ?? '', type: img.type ?? 'output', nodeId });
@@ -243,7 +253,12 @@ export class RealComfy implements ComfyBackend {
       }
       // Prefer saved outputs over temp previews when both exist.
       const saved = images.filter((i) => i.type === 'output');
-      return { state: 'done', images: saved.length ? saved : images, ...(Object.keys(texts).length ? { texts } : {}) };
+      return {
+        state: 'done',
+        images: saved.length ? saved : images,
+        ...(Object.keys(texts).length ? { texts } : {}),
+        ...(Object.keys(poses).length ? { poses } : {}),
+      };
     }
     const q = await this.json<{ queue_running: any[]; queue_pending: any[] }>('/queue');
     if (q.queue_running?.some((item) => item[1] === promptId)) return { state: 'running' };
@@ -302,6 +317,22 @@ const MOCK_CHOICES: Record<string, string[]> = {
   clip_name: ['CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors'],
 };
 
+/** A standing, thigh-up skeleton (ankles and knees out of frame) for mock pose checks. */
+const MOCK_POSE_JSON = JSON.stringify([
+  {
+    people: [
+      {
+        pose_keypoints_2d: [
+          0.5, 0.12, 1, 0.5, 0.22, 1, 0.42, 0.23, 1, 0.38, 0.4, 1, 0.36, 0.55, 1, 0.58, 0.23, 1, 0.62, 0.4, 1, 0.64, 0.55, 1,
+          0.45, 0.62, 1, 0, 0, 0, 0, 0, 0, 0.55, 0.62, 1, 0, 0, 0, 0, 0, 0, 0.48, 0.1, 1, 0.52, 0.1, 1, 0.46, 0.11, 1, 0.54, 0.11, 1,
+        ],
+      },
+    ],
+    canvas_width: 832,
+    canvas_height: 1216,
+  },
+]);
+
 export class MockComfy implements ComfyBackend {
   readonly kind = 'mock' as const;
   async systemInfo(): Promise<SystemInfo> {
@@ -342,12 +373,23 @@ export class MockComfy implements ComfyBackend {
         job.images.push({ name: `mock_${promptId}_${i}.png`, bytes: encodePng(img.width, img.height, img.rgb) });
       }
     }
-    const textNode = Object.entries(job.graph).find(([, n]) => n.class_type === 'SiennaTextOutput')?.[0];
-    const texts = textNode ? { [textNode]: [MOCK_OUTFIT_CAPTION] } : undefined;
+    const texts: Record<string, string[]> = {};
+    const poses: Record<string, string[]> = {};
+    for (const [id, n] of Object.entries(job.graph)) {
+      if (n.class_type === 'SiennaTextOutput') texts[id] = [MOCK_OUTFIT_CAPTION];
+      if (n.class_type === 'SiennaGarmentIsolate') texts[id] = ['garment'];
+      if (n.class_type === 'DWPreprocessor' || n.class_type === 'SiennaPoseRetarget') poses[id] = [MOCK_POSE_JSON];
+      if (n.class_type === 'SiennaPoseRetarget') texts[id] = [JSON.stringify([{ thigh: 0.93, shin: 0.95, forearm: 1.04 }])];
+    }
+    // Every preview/save node in the graph gets an image, so callers can pick theirs by node id.
+    const outputs = Object.entries(job.graph).filter(([, n]) => /^(SaveImage|PreviewImage)$/.test(n.class_type)).map(([id]) => id);
     return {
       state: 'done',
-      images: job.images.map((im) => ({ filename: im.name, subfolder: '', type: 'output', nodeId: 'mock' })),
-      ...(texts ? { texts } : {}),
+      images: job.images.flatMap((im, i) =>
+        (outputs.length ? outputs : ['mock']).map((nodeId) => ({ filename: im.name, subfolder: '', type: 'output', nodeId })),
+      ),
+      ...(Object.keys(texts).length ? { texts } : {}),
+      ...(Object.keys(poses).length ? { poses } : {}),
     };
   }
   async fetchImage(ref: OutputImageRef) {

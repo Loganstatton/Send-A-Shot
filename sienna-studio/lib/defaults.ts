@@ -73,6 +73,11 @@ export const ADULT_ONLY_NEGATIVE = 'child, teen, minor, childlike, school unifor
  * the drift worse, so the adult-only terms above avoid it.)
  */
 export const AGE_DRIFT_NEGATIVE = 'older woman, middle-aged, wrinkles, aged skin, mature face';
+/**
+ * Prompt cleanup (experimental): the same age guard without the terms that also penalise
+ * natural skin texture ("wrinkles, aged skin" push the sampler toward smooth, airbrushed skin).
+ */
+export const AGE_DRIFT_NEGATIVE_CLEAN = 'older woman, middle-aged, mature face';
 
 /** Added in SFW mode. */
 /** Prepended when a request asks for a full-body shot; weaker wording came out as selfie crops. */
@@ -139,6 +144,15 @@ export const DEFAULT_PARAMS: GenerationParams = {
   faceRefineThreshold: 384,
   outfitStrength: 0.7,
   outfitMode: 'design',
+  poseFit: 'crop',
+  poseRetarget: 0,
+  hires: false,
+  hiresScale: 1.5,
+  hiresDenoise: 0.3,
+  hiresLoraStrength: 0.7,
+  hiresSteps: 20,
+  promptCleanup: false,
+  outfitIsolation: 'person',
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {

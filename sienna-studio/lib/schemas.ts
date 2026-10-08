@@ -50,6 +50,15 @@ export const paramsSchema = z.object({
   faceRefineThreshold: z.number().int().min(64).max(2048).default(384),
   outfitStrength: z.number().min(0).max(1.5).default(0.7),
   outfitMode: z.enum(['design', 'close']).default('design'),
+  poseFit: z.enum(['crop', 'pad']).default('crop'),
+  poseRetarget: z.number().min(0).max(1).default(0),
+  hires: z.boolean().default(false),
+  hiresScale: z.number().min(1).max(2).default(1.5),
+  hiresDenoise: z.number().min(0.1).max(0.7).default(0.3),
+  hiresLoraStrength: z.number().min(0).max(1.5).default(0.7),
+  hiresSteps: z.number().int().min(4).max(60).default(20),
+  promptCleanup: z.boolean().default(false),
+  outfitIsolation: z.enum(['person', 'garment']).default('person'),
 });
 
 export const generateSchema = z.object({
@@ -64,6 +73,7 @@ export const generateSchema = z.object({
     poseImage: storedImageSchema.nullable(),
     faceReferenceId: z.string().max(64).nullable(),
     outfitImage: storedImageSchema.nullable().default(null),
+    outfitGarmentImage: storedImageSchema.nullable().default(null),
   }),
   parentId: z.string().max(64).optional(),
 });

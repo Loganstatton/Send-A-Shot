@@ -31,6 +31,8 @@ import {
 } from '../comfy/modules';
 import { packageFor } from '../comfy/packages';
 import { MIN_CHARACTER_AGE } from '../defaults';
+import { applyQualityOptions, posePadding } from '../comfy/quality';
+import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt } from '../prompt';
 import { resolveLockedLora } from '../sienna-models';
@@ -113,7 +115,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
 
   // ── Prompt ─────────────────────────────────────────────────────────────
-  const built = buildPrompt({ fields: req.fields, character, siennaLock: req.siennaLock, contentMode });
+  const built = buildPrompt({ fields: req.fields, character, siennaLock: req.siennaLock, contentMode, cleanup: !!req.params.promptCleanup });
   if (built.blocked.length) {
     throw new GenerationError(
       `Prompt blocked: ${built.blocked.map((b) => `“${b.term}” — ${b.reason}`).join(' ')}`,
@@ -173,7 +175,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     if (caps.lora) {
       // No LoRA chosen: bypass the template's LoRA node so ComfyUI doesn't try
       // to load whatever filename happened to be saved in the workflow.
-      graph = bypassLora(graph, bindings.lora_name![0].nodeId);
+      for (const r of bindings.lora_name ?? []) graph = bypassLora(graph, r.nodeId);
       const { lora_name, lora_strength, lora_clip_strength, ...rest } = bindings;
       bindings = rest;
     }
@@ -197,6 +199,39 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   if (wanted.pose_image && p.controlnetModel && bindings.controlnet_model?.length) {
     graph = applyBindings(graph, { controlnet_model: bindings.controlnet_model }, { controlnet_model: p.controlnetModel }).graph;
   }
+
+  // ── Phase 1 quality options (each off = previous behaviour) ─────────────
+  const outW = Math.round(clamp(p.width, 256, 2048) / 8) * 8;
+  const outH = Math.round(clamp(p.height, 256, 2048) / 8) * 8;
+  const quality: Parameters<typeof applyQualityOptions>[2] = {};
+  const unsupported = (what: string) =>
+    warnings.push(`${what} isn't in this copy of the workflow — it was not applied (Reset the workflow in Library → Workflows to get it).`);
+  if (wanted.pose_image) {
+    if (p.poseFit === 'pad') {
+      if (!bindings.pose_pad_left?.length) unsupported('Pose fit “pad”');
+      else {
+        const pad = posePadding(wanted.pose_image.width, wanted.pose_image.height, outW, outH);
+        if (pad) quality.posePad = pad;
+        else if (!wanted.pose_image.width) warnings.push('Pose photo size unknown — it could not be padded to the output shape.');
+      }
+    }
+    if ((p.poseRetarget ?? 0) > 0) {
+      if (!bindings.pose_retarget_strength?.length) unsupported('Pose retargeting');
+      else quality.poseRetarget = clamp(p.poseRetarget!, 0, 1);
+    }
+  }
+  if (p.hires) {
+    if (!bindings.hires_denoise?.length) unsupported('The refinement pass');
+    else quality.hires = true;
+  }
+  if (wanted.outfit_reference_image && p.outfitIsolation === 'garment') {
+    if (!req.images.outfitGarmentImage) {
+      throw new GenerationError('Garment-only isolation needs the garment crop from “Analyze outfit” (garment mode). Run it first, or switch isolation back to “Whole person”.');
+    }
+    quality.garmentImage = true;
+  }
+  graph = applyQualityOptions(graph, bindings, quality);
+  bindings = filterBindings(graph, bindings);
 
   // ── Optional modules: keep, prune, or fail ─────────────────────────────
   const prunedModules: string[] = [];
@@ -314,6 +349,12 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     controlnet_model: poseImage ? p.controlnetModel || undefined : undefined,
     outfit_strength: outfitImage ? outfitStrength : undefined,
     outfit_weight_type: outfitImage ? OUTFIT_WEIGHT_TYPE[outfitMode] : undefined,
+    pose_retarget_strength: poseImage && quality.poseRetarget ? quality.poseRetarget : undefined,
+    pose_proportions: poseImage && quality.poseRetarget ? JSON.stringify(poseProportions().values) : undefined,
+    hires_scale: quality.hires ? clamp(p.hiresScale ?? 1.5, 1, 2) : undefined,
+    hires_denoise: quality.hires ? clamp(p.hiresDenoise ?? 0.3, 0.1, 0.7) : undefined,
+    hires_lora_strength: quality.hires ? clamp(p.hiresLoraStrength ?? 0.7, 0, 1.5) : undefined,
+    hires_steps: quality.hires ? Math.round(clamp(p.hiresSteps ?? 20, 4, 60)) : undefined,
     face_refine_denoise: faceRefine?.status === 'on' ? faceRefine.denoise : undefined,
     face_refine_threshold: faceRefine?.status === 'on' ? faceRefine.threshold : undefined,
     filename_prefix: 'sienna/sienna',
@@ -324,7 +365,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     if (faceReference) values.face_reference_image = await upload(faceReference);
     if (initImage) values.init_image = await upload(initImage);
     if (poseImage) values.pose_image = await upload(poseImage);
-    if (outfitImage) values.outfit_reference_image = await upload(outfitImage);
+    if (outfitImage) {
+      values.outfit_reference_image = await upload(quality.garmentImage ? req.images.outfitGarmentImage! : outfitImage);
+    }
   } catch (e) {
     if (e instanceof ComfyError) throw new GenerationError(`Uploading reference images failed: ${e.message}`, e.status, e.details);
     throw e;

@@ -235,6 +235,22 @@ if (( POSE )); then
   done
 fi
 
+# ── Sienna custom nodes (pose retargeting, garment-only isolation) ─────────────
+# Shipped in this repo (scripts/comfy_nodes/sienna_nodes). Copied when the script runs from
+# a checkout, or when SIENNA_NODES_DIR points at an uploaded copy.
+if (( OUTFIT || POSE )); then
+  log "sienna_nodes"
+  src="${SIENNA_NODES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/comfy_nodes/sienna_nodes}"
+  if [[ -f "$src/__init__.py" ]]; then
+    rm -rf "$COMFYUI_DIR/custom_nodes/sienna_nodes"
+    cp -r "$src" "$COMFYUI_DIR/custom_nodes/sienna_nodes"
+    rm -rf "$COMFYUI_DIR/custom_nodes/sienna_nodes/__pycache__"
+    echo "installed from $src"
+  else
+    echo "not found at $src — pose retargeting and garment-only isolation will be unavailable (set SIENNA_NODES_DIR)"
+  fi
+fi
+
 # ── Check the Python side imports ─────────────────────────────────────────────
 log "Checking Python packages"
 "$COMFYUI_PYTHON" -c "import ultralytics, cv2, segment_anything, skimage, piexif; print('ultralytics', ultralytics.__version__, '· ok')"
@@ -260,7 +276,7 @@ if (( RESTART )); then
     if (( ok )); then
       echo "ComfyUI restarted — FaceDetailer is loaded."
       if (( OUTFIT || POSE )); then
-        for cls in IPAdapterAdvanced Florence2Run GetImageSizeAndCount SiennaTextOutput SegmDetectorCombined_v2 $( (( POSE )) && echo DWPreprocessor ); do
+        for cls in IPAdapterAdvanced Florence2Run GetImageSizeAndCount SiennaTextOutput SegmDetectorCombined_v2 SiennaGarmentIsolate $( (( POSE )) && echo DWPreprocessor SiennaPoseRetarget ); do
           if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — check the ComfyUI log"; fi
         done
       fi

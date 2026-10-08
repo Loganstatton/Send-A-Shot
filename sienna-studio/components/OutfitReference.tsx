@@ -1,19 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { api, fileUrl } from '@/lib/client/api';
-import { OUTFIT_ATTRIBUTE_KEYS, OUTFIT_ATTRIBUTE_LABELS, OUTFIT_LIMITATIONS, OUTFIT_MAX_STRENGTH, OUTFIT_MODE_LABELS, OUTFIT_RECOMMENDED, OutfitAnalysis } from '@/lib/outfit';
+import { fileUrl } from '@/lib/client/api';
+import { runJob } from '@/lib/client/poll';
+import { OUTFIT_ATTRIBUTE_KEYS, OUTFIT_ATTRIBUTE_LABELS, OUTFIT_LIMITATIONS, OUTFIT_MAX_STRENGTH, OUTFIT_MODE_LABELS, OUTFIT_RECOMMENDED, OutfitAnalysis, garmentPhrases } from '@/lib/outfit';
 import type { StoredImage } from '@/lib/types';
 import { Button, Notice, Slider, Spinner, toast } from './ui';
 
 type Status =
   | { state: 'pending' | 'running'; position?: number }
   | { state: 'error'; error: string }
-  | ({ state: 'done'; preview: StoredImage | null } & OutfitAnalysis);
-
-const POLL_MS = 2000;
-// Generous: the analysis waits in the same GPU queue as any running generations.
-const TIMEOUT_MS = 10 * 60 * 1000;
+  | ({ state: 'done'; preview: StoredImage | null; isolation?: 'person' | 'garment' | 'fallback-person' } & OutfitAnalysis);
 
 /**
  * Outfit reference panel, shown under the photo tiles once an outfit photo is
@@ -26,6 +23,9 @@ export function OutfitReference({
   onStrength,
   outfitText,
   onUseText,
+  isolation = 'person',
+  garmentImage = null,
+  onGarmentImage,
 }: {
   enabled: boolean;
   image: StoredImage | null;
@@ -33,31 +33,42 @@ export function OutfitReference({
   onStrength: (v: number) => void;
   outfitText: string;
   onUseText: (text: string) => void;
+  /** 'garment': after analysis, segment the garment pieces and use the garment-only crop. */
+  isolation?: 'person' | 'garment';
+  garmentImage?: StoredImage | null;
+  onGarmentImage?: (img: StoredImage | null) => void;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const cancelled = useRef(false);
   useEffect(() => () => void (cancelled.current = true), []);
 
-  // A new photo invalidates the previous analysis.
-  useEffect(() => setStatus(null), [image?.id]);
+  // A new photo invalidates the previous analysis (and its garment crop).
+  const lastImage = useRef(image?.id);
+  useEffect(() => {
+    if (lastImage.current === image?.id) return;
+    lastImage.current = image?.id;
+    setStatus(null);
+    onGarmentImage?.(null);
+  }, [image?.id, onGarmentImage]);
 
   async function analyze() {
     if (!image) return;
     setBusy(true);
     setStatus({ state: 'pending' });
+    onGarmentImage?.(null);
     try {
-      const { promptId } = await api<{ promptId: string }>('/api/outfit/analyze', { method: 'POST', json: { image } });
-      const started = Date.now();
-      while (!cancelled.current) {
-        await new Promise((r) => setTimeout(r, POLL_MS));
-        const s = await api<Status>(`/api/outfit/analyze?promptId=${encodeURIComponent(promptId)}`);
-        setStatus(s);
-        if (s.state === 'done' || s.state === 'error') break;
-        if (Date.now() - started > TIMEOUT_MS) {
-          setStatus({ state: 'error', error: 'Analysis timed out. Is the GPU server running?' });
-          break;
-        }
+      const first = await runJob<Status>('/api/outfit/analyze', { image }, setStatus, () => cancelled.current);
+      if (isolation === 'garment' && first?.state === 'done') {
+        // Second pass: segment the named garment pieces and caption the garment-only crop.
+        setStatus({ state: 'running' });
+        const second = await runJob<Status>(
+          '/api/outfit/analyze',
+          { image, isolation: 'garment', phrases: garmentPhrases(first.attributes.type) },
+          setStatus,
+          () => cancelled.current,
+        );
+        if (second?.state === 'done') onGarmentImage?.(second.isolation === 'garment' ? second.preview : null);
       }
     } catch (e: any) {
       setStatus({ state: 'error', error: e.message });
@@ -101,7 +112,9 @@ export function OutfitReference({
               <div className="w-24 shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={fileUrl(done.preview.file)} alt="Clothing-only crop" className="aspect-[3/4] w-full rounded-lg bg-ink-800 object-contain" />
-                <p className="mt-1 text-center text-[10px] text-ink-400">What the model sees</p>
+                <p className="mt-1 text-center text-[10px] text-ink-400">
+                  {done.isolation === 'garment' ? 'Garment only (used)' : 'What the model sees'}
+                </p>
               </div>
             )}
             <div className="min-w-0 flex-1 space-y-2">
@@ -137,6 +150,13 @@ export function OutfitReference({
             </Button>
           </div>
         </div>
+      )}
+
+      {isolation === 'garment' && (
+        <p className="text-xs text-ink-400">
+          Isolation: garment only (experimental).{' '}
+          {garmentImage ? 'Garment crop ready.' : 'Run “Analyze outfit” to make the garment crop — generation needs it.'}
+        </p>
       )}
 
       <Slider

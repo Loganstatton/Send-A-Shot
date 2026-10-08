@@ -37,10 +37,15 @@ export const PRIMARY_WORKFLOW_ID = 'sienna-sdxl-production';
 // 30 LoadImage init → 31 ImageScale → 32 VAEEncode   |   33 EmptyLatentImage
 // 60 LoadImage outfit → 61-68 garment isolation (lib/outfit.ts) → 69 PrepImageForClipVision
 //   → 70/71 IPAdapter + CLIP-ViT-H loaders → 72 IPAdapterAdvanced (first pass only; FaceDetailer keeps the plain LoRA model)
+// Optional (unwired unless enabled): 24 pad pose photo · 25 SiennaPoseRetarget ·
+//   80-85 refinement pass (decode → upscale → encode → own-strength LoRA + outfit adapter → low-denoise KSampler)
 // 40 KSampler · 41 VAEDecode → 50 face detector → 51 FaceDetailer (optional) → 42 SaveImage
 const SDXL_PRODUCTION: WorkflowBindings = {
   checkpoint: ref('1', 'ckpt_name'),
-  lora_name: ref('2', 'lora_name'),
+  lora_name: [
+    { nodeId: '2', inputName: 'lora_name' },
+    { nodeId: '83', inputName: 'lora_name' },
+  ],
   lora_strength: ref('2', 'strength_model'),
   lora_clip_strength: ref('2', 'strength_clip'),
   positive_prompt: ref('3', 'text'),
@@ -52,8 +57,25 @@ const SDXL_PRODUCTION: WorkflowBindings = {
   control_strength: ref('22', 'strength'),
   init_image: ref('30', 'image'),
   outfit_reference_image: ref('60', 'image'),
-  outfit_strength: ref('72', 'weight'),
-  outfit_weight_type: ref('72', 'weight_type'),
+  outfit_strength: [
+    { nodeId: '72', inputName: 'weight' },
+    { nodeId: '84', inputName: 'weight' },
+  ],
+  outfit_weight_type: [
+    { nodeId: '72', inputName: 'weight_type' },
+    { nodeId: '84', inputName: 'weight_type' },
+  ],
+  // Optional Phase 1 nodes — unwired in the template; generate.ts wires them in when enabled.
+  pose_pad_left: ref('24', 'left'),
+  pose_pad_top: ref('24', 'top'),
+  pose_pad_right: ref('24', 'right'),
+  pose_pad_bottom: ref('24', 'bottom'),
+  pose_retarget_strength: ref('25', 'strength'),
+  pose_proportions: ref('25', 'proportions'),
+  hires_scale: ref('81', 'scale_by'),
+  hires_denoise: ref('85', 'denoise'),
+  hires_lora_strength: ref('83', 'strength_model'),
+  hires_steps: ref('85', 'steps'),
   width: [
     { nodeId: '31', inputName: 'width' },
     { nodeId: '33', inputName: 'width' },
@@ -67,6 +89,7 @@ const SDXL_PRODUCTION: WorkflowBindings = {
   seed: [
     { nodeId: '40', inputName: 'seed' },
     { nodeId: '51', inputName: 'seed' },
+    { nodeId: '85', inputName: 'seed' },
   ],
   steps: [
     { nodeId: '40', inputName: 'steps' },
@@ -75,14 +98,17 @@ const SDXL_PRODUCTION: WorkflowBindings = {
   cfg: [
     { nodeId: '40', inputName: 'cfg' },
     { nodeId: '51', inputName: 'cfg' },
+    { nodeId: '85', inputName: 'cfg' },
   ],
   sampler: [
     { nodeId: '40', inputName: 'sampler_name' },
     { nodeId: '51', inputName: 'sampler_name' },
+    { nodeId: '85', inputName: 'sampler_name' },
   ],
   scheduler: [
     { nodeId: '40', inputName: 'scheduler' },
     { nodeId: '51', inputName: 'scheduler' },
+    { nodeId: '85', inputName: 'scheduler' },
   ],
   denoise: ref('40', 'denoise'),
   face_refine_denoise: ref('51', 'denoise'),

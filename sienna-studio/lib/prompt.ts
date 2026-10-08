@@ -4,6 +4,7 @@
 import {
   ADULT_ONLY_NEGATIVE,
   AGE_DRIFT_NEGATIVE,
+  AGE_DRIFT_NEGATIVE_CLEAN,
   EYE_TRAIT,
   CLOSE_CAMERA_REALISM,
   FULL_BODY_CAMERA,
@@ -25,6 +26,12 @@ export interface BuildPromptInput {
   character: CharacterProfile;
   siennaLock: boolean;
   contentMode: ContentMode;
+  /**
+   * Experimental prompt cleanup: drop negatives that work against the request — the abstract
+   * identity phrases ("different person, altered face…", which CLIP can't act on) and the
+   * texture-penalising age terms. Off = the current production prompt.
+   */
+  cleanup?: boolean;
 }
 
 export interface BuiltPrompt {
@@ -90,7 +97,7 @@ export function joinParts(parts: (string | undefined | null)[]): string {
   return out.join(', ');
 }
 
-export function buildPrompt({ fields, character, siennaLock, contentMode }: BuildPromptInput): BuiltPrompt {
+export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
 
@@ -167,10 +174,10 @@ export function buildPrompt({ fields, character, siennaLock, contentMode }: Buil
   const negative = joinParts([
     character.defaultNegativePrompt,
     wantsStudio ? '' : NON_STUDIO_NEGATIVE,
-    siennaLock ? LOCK_NEGATIVE : '',
+    siennaLock && !cleanup ? LOCK_NEGATIVE : '',
     ADULT_ONLY_NEGATIVE,
     contentMode === 'sfw' ? SFW_NEGATIVE : '',
-    siennaLock ? AGE_DRIFT_NEGATIVE : '',
+    siennaLock ? (cleanup ? AGE_DRIFT_NEGATIVE_CLEAN : AGE_DRIFT_NEGATIVE) : '',
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
   ]);
 

@@ -16,6 +16,8 @@ import { PROMPT_FIELD_LABELS } from '@/lib/types';
 import { ImagePicker } from './ImagePicker';
 import { JobCard } from './JobCard';
 import { OutfitReference } from './OutfitReference';
+import { PoseCheck } from './PoseCheck';
+import { detectFramingConflicts, FramingLevel } from '@/lib/framing';
 import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Select, Slider, Spinner, TextArea, Toggle, cx, toast } from './ui';
 
 interface SettingsPayload {
@@ -39,6 +41,18 @@ const PLACEHOLDERS: Record<keyof PromptFields, string> = {
 /** Fields always shown; the rest sit under "More details". */
 const MAIN_KEYS: (keyof PromptFields)[] = ['outfit', 'pose', 'setting', 'lighting', 'expression'];
 const MORE_KEYS: (keyof PromptFields)[] = ['bodyPresentation', 'framing', 'camera', 'realism', 'extra'];
+
+/** Number of Phase 1 quality options switched on (for the section badge). */
+function phase1On(p: Draft['params']): number {
+  return [p.poseFit === 'pad', (p.poseRetarget ?? 0) > 0, !!p.hires, !!p.promptCleanup, p.outfitIsolation === 'garment'].filter(Boolean).length;
+}
+
+/** About one megapixel at the given aspect ratio, in multiples of 64 (SDXL-friendly). */
+function sizeForAspect(aspect: number) {
+  const area = 832 * 1216;
+  const r64 = (n: number) => Math.min(1536, Math.max(512, Math.round(n / 64) * 64));
+  return { width: r64(Math.sqrt(area * aspect)), height: r64(Math.sqrt(area / aspect)) };
+}
 
 /** A titled block inside a card, for settings that belong to one photo. */
 function SubPanel({ title, children }: { title: string; children: ReactNode }) {
@@ -142,6 +156,8 @@ export function CreateScreen() {
 
   // ── Jobs (polling) ──
   const [jobs, setJobs] = useState<GenerationRecord[]>([]);
+  // Shot size implied by the pose photo's skeleton (from "Check pose"); feeds the framing check.
+  const [poseExtent, setPoseExtent] = useState<FramingLevel | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const scrollToJobs = useRef(false);
 
@@ -189,6 +205,14 @@ export function CreateScreen() {
   }, [draft, character]);
 
   const update = useCallback((fn: (d: Draft) => Draft) => setDraft(fn), [setDraft]);
+  const framingIssues = useMemo(
+    () => (draft ? detectFramingConflicts(draft.fields, draft.images.poseImage ? poseExtent : null) : []),
+    [draft, poseExtent],
+  );
+  const onGarmentImage = useCallback(
+    (img: GenerationRecord['initImage']) => setDraft((d) => ({ ...d, images: { ...d.images, outfitGarmentImage: img } })),
+    [setDraft],
+  );
   const setField = (k: keyof PromptFields, v: string) => update((d) => ({ ...d, fields: { ...d.fields, [k]: v } }));
   const setParam = <K extends keyof Draft['params']>(k: K, v: Draft['params'][K]) => update((d) => ({ ...d, params: { ...d.params, [k]: v } }));
 
@@ -420,6 +444,23 @@ export function CreateScreen() {
             ))}
           </div>
         </details>
+        {framingIssues.length > 0 && (
+          <div className="space-y-2">
+            {framingIssues.map((issue, i) => (
+              <Notice key={i} kind={issue.severity === 'warn' ? 'warn' : 'info'}>
+                {issue.message}
+                {issue.suggestion && (
+                  <button
+                    className="ml-2 underline"
+                    onClick={() => setField(issue.suggestion!.field, issue.suggestion!.value)}
+                  >
+                    {issue.suggestion.label}
+                  </button>
+                )}
+              </Notice>
+            ))}
+          </div>
+        )}
       </Card>
 
       {/* ── Copy from a photo ── */}
@@ -474,6 +515,9 @@ export function CreateScreen() {
               onStrength={(v) => setParam('outfitStrength', v)}
               outfitText={draft.fields.outfit}
               onUseText={(t) => setField('outfit', t)}
+              isolation={draft.params.outfitIsolation ?? 'person'}
+              garmentImage={draft.images.outfitGarmentImage ?? null}
+              onGarmentImage={onGarmentImage}
             />
           </SubPanel>
         )}
@@ -481,6 +525,27 @@ export function CreateScreen() {
           <SubPanel title="Pose">
             <p className="text-xs text-ink-400">Only the body position is copied — Sienna keeps her own face and body. Your Pose text is still used.</p>
             <Slider label="Pose strength" hint="lower = looser" value={draft.params.controlStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('controlStrength', v)} />
+            <PoseCheck
+              image={draft.images.poseImage}
+              width={draft.params.width}
+              height={draft.params.height}
+              fit={draft.params.poseFit ?? 'crop'}
+              retarget={draft.params.poseRetarget ?? 0}
+              onExtent={setPoseExtent}
+            />
+            {draft.images.poseImage.width && draft.images.poseImage.height && (
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  const size = sizeForAspect(draft.images.poseImage!.width! / draft.images.poseImage!.height!);
+                  update((d) => ({ ...d, params: { ...d.params, ...size } }));
+                  toast(`Output size set to ${size.width}×${size.height} to match the pose photo`);
+                }}
+              >
+                Match output size to the pose photo
+              </Button>
+            )}
           </SubPanel>
         )}
         {draft.images.initImage && caps.img2img && (
@@ -587,6 +652,60 @@ export function CreateScreen() {
               )}
             </div>
           </div>
+        </Collapsible>
+
+        <Collapsible
+          title="Quality (experimental)"
+          badge={phase1On(draft.params) ? <Badge tone="accent">{phase1On(draft.params)} on</Badge> : null}
+        >
+          <p className="text-xs text-ink-400">Off = current behaviour. Each option can be compared on/off with the same seed.</p>
+          <Select
+            label="Pose photo shape"
+            value={draft.params.poseFit ?? 'crop'}
+            onChange={(v) => setParam('poseFit', v === 'pad' ? 'pad' : 'crop')}
+            options={[
+              { value: 'crop', label: 'Crop to output (current)' },
+              { value: 'pad', label: 'Pad to output — keep the whole skeleton' },
+            ]}
+          />
+          <Slider
+            label="Pose retargeting"
+            hint="0 = off · rescales the skeleton toward Sienna's proportions, angles kept"
+            value={draft.params.poseRetarget ?? 0}
+            min={0}
+            max={1}
+            step={0.25}
+            onChange={(v) => setParam('poseRetarget', v)}
+          />
+          <Toggle
+            checked={draft.params.hires ?? false}
+            onChange={(v) => setParam('hires', v)}
+            label="Refinement pass"
+            description="Upscales and re-renders at low strength for finer detail. About 2–2.5× slower."
+          />
+          {draft.params.hires && (
+            <>
+              <Slider label="Refinement scale" value={draft.params.hiresScale ?? 1.5} min={1.25} max={2} step={0.05} onChange={(v) => setParam('hiresScale', v)} />
+              <Slider label="Refinement strength" hint="denoise · higher changes more" value={draft.params.hiresDenoise ?? 0.3} min={0.15} max={0.5} step={0.05} onChange={(v) => setParam('hiresDenoise', v)} />
+              <Slider label="Refinement LoRA strength" hint="lower lets photographic texture through" value={draft.params.hiresLoraStrength ?? 0.7} min={0.3} max={1.2} step={0.05} onChange={(v) => setParam('hiresLoraStrength', v)} />
+            </>
+          )}
+          <Toggle
+            checked={draft.params.promptCleanup ?? false}
+            onChange={(v) => setParam('promptCleanup', v)}
+            label="Prompt cleanup"
+            description="Drops negatives that fight natural skin (wrinkles, aged skin) and abstract identity phrases."
+          />
+          <Select
+            label="Outfit isolation"
+            value={draft.params.outfitIsolation ?? 'person'}
+            onChange={(v) => setParam('outfitIsolation', v === 'garment' ? 'garment' : 'person')}
+            options={[
+              { value: 'person', label: 'Whole person minus face (current)' },
+              { value: 'garment', label: 'Garment only, flat silhouette for fit' },
+            ]}
+            hint="Garment only needs “Analyze outfit” to be run on the outfit photo."
+          />
         </Collapsible>
 
         <Collapsible title="Expert">
