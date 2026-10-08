@@ -86,6 +86,19 @@ describe('"in a <garment>" captions', () => {
   });
 });
 
+describe('"and is <verb>ing" clauses', () => {
+  it('cuts "wearing a white bikini and is holding a phone" after the garment (real caption)', () => {
+    const r = analyzeCaption(
+      'The image shows a young woman standing in front of a gray background. She is wearing a white bikini and is holding a phone in her right hand. ' +
+        'The woman has long dark hair and is covering her face with a blank white rectangle.',
+    );
+    expect(r.outfitText).toBe('white bikini');
+  });
+  it('still keeps "and has a slit" garment details', () => {
+    expect(outfitFromCaption('The skirt of the dress is knee-length and has a slit on the side.')).toBe('the skirt of the dress is knee-length and has a slit on the side');
+  });
+});
+
 describe('extractOutfitAttributes', () => {
   it('finds each attribute group; longer phrases win', () => {
     const a = extractOutfitAttributes('emerald green satin midi dress with thin spaghetti straps, square neck, high slit, fitted, thin gold belt');

@@ -159,7 +159,7 @@ const BODY_WORDS_RE =
   /\b(?:(?:slender|skinny|petite|curvy|voluptuous|busty|athletic|muscular|young|beautiful|pretty|attractive|sexy)\b|(?:slim|thin|tall|short|lean|toned|fit)\s+(?=(?:woman|girl|lady|body|figure|frame|build|physique|waist|legs|arms|model)\b))\s*/gi;
 /** Where a "wearing …" clause stops describing clothes. */
 const CLAUSE_END_RE =
-  /\s*(?:,\s*)?\b(?:and (?:she|her|appears|stands|looks)|while|revealing|showing|she is|she's|her (?:hair|face|arms?|hands?|legs?|body)|standing|sitting|posing|leaning|holding|looking|in front of|against|with (?:her|a) (?:hair|hand|arm)|the background)\b.*$/i;
+  /\s*(?:,\s*)?\b(?:and (?:she|her|appears|stands|looks)|and (?:is|are) \w+ing|while|revealing|showing|she is|she's|her (?:hair|face|arms?|hands?|legs?|body)|standing|sitting|posing|leaning|holding|looking|in front of|against|with (?:her|a) (?:hair|hand|arm)|the background)\b.*$/i;
 
 function sentences(text: string): string[] {
   return text
