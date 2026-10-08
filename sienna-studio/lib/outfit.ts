@@ -149,6 +149,8 @@ const GARMENT_NOUNS =
   'dress|gown|slip|bikini|swimsuit|one-piece|monokini|bodysuit|jumpsuit|romper|playsuit|top|crop top|tank|camisole|cami|blouse|shirt|t-shirt|tee|sweater|jumper|hoodie|cardigan|jacket|blazer|coat|vest|skirt|shorts|jeans|pants|trousers|leggings|lingerie|bra|bralette|corset|bustier|teddy|babydoll|robe|kimono|sarong|outfit|garment|set|suit|halter|straps?|neckline|sleeves?|hem|waist(?:band)?|belt|bottoms?|briefs|heels|boots|sandals|shoes|sneakers|stockings|tights|necklace|bracelet|earrings?|choker';
 // String concatenation, not a template literal: the production minifier mangles "\\b" inside templates.
 const GARMENT_RE = new RegExp('\\b(?:' + GARMENT_NOUNS + ')\\b', 'i');
+/** "in a/an/her <up to 6 words> <garment>" — the garment phrase is group 1. */
+const IN_GARMENT_RE = new RegExp('\\bin\\s+(?:a|an|her)\\s+((?:[\\w-]+,?\\s+){0,6}?(?:' + GARMENT_NOUNS + '))\\b', 'i');
 /** Sentences about the person, setting or photo rather than the clothes. */
 const NON_GARMENT_RE =
   /\b(hair|face|faces|eyes?|smil\w*|expression|lips|mouth|makeup|head|headless|background|wall|room|floor|ground|backdrop|scene|grey|gray|photo|photograph|picture|image|camera|lighting|light|shadow|skin|tattoo\w*)\b/i;
@@ -193,6 +195,13 @@ export function outfitFromCaption(caption: string): string {
       continue;
     }
     if (!GARMENT_RE.test(s)) continue;
+    // "taking a selfie in a white bikini", "posing in her red satin dress"
+    const inGarment = s.match(IN_GARMENT_RE);
+    if (inGarment) {
+      const phrase = tidy(inGarment[1]);
+      if (phrase) out.push(phrase);
+      continue;
+    }
     // "The dress has thin straps…" — keep, unless the sentence is really about the person or setting.
     const subject = s.split(/\s+/).slice(0, 5).join(' ');
     if (!GARMENT_RE.test(subject) && NON_GARMENT_RE.test(s)) continue;

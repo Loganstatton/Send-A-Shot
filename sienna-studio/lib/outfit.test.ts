@@ -68,6 +68,24 @@ describe('real Florence-2 captions (outfit test run)', () => {
   });
 });
 
+describe('"in a <garment>" captions', () => {
+  it('keeps the garment from "taking a selfie in a white bikini" (real caption)', () => {
+    const r = analyzeCaption(
+      'The image shows a young woman taking a selfie in a white bikini. She is standing with her body slightly turned to the side, with her left hand on her hip and her right hand holding her phone up to take the picture. ' +
+        'The woman has long dark hair that is styled in loose waves and is wearing a gold necklace. The background is a plain grey color.',
+    );
+    expect(r.outfitText).toBe('white bikini, gold necklace');
+    expect(r.attributes.type).toEqual(['bikini']);
+    expect(r.attributes.colour).toEqual(expect.arrayContaining(['white', 'gold']));
+    expect(r.notes).toEqual([]);
+  });
+
+  it('handles "posing in her red satin dress" and ignores "in front of"', () => {
+    expect(outfitFromCaption('A woman posing in her red satin dress in front of a mirror.')).toBe('red satin dress');
+    expect(outfitFromCaption('A woman standing in front of a wall in a black leather jacket.')).toBe('black leather jacket');
+  });
+});
+
 describe('extractOutfitAttributes', () => {
   it('finds each attribute group; longer phrases win', () => {
     const a = extractOutfitAttributes('emerald green satin midi dress with thin spaghetti straps, square neck, high slit, fitted, thin gold belt');
