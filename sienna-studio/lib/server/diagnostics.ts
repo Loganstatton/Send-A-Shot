@@ -7,13 +7,14 @@ import 'server-only';
 import { comboOptions, ComfyBackend, createBackend, isMockUrl, NodeInfo } from '../comfy/client';
 import { PRIMARY_WORKFLOW_ID } from '../comfy/builtin-workflows';
 import { missingModelFile } from '../comfy/model-files';
+import { applyQualityOptions } from '../comfy/quality';
 import { bypassNodeIds, MODULE_KEYS, MODULE_LABELS, moduleNodeIds } from '../comfy/modules';
 import { CONTROLNET_CLASSES, IDENTITY_CLASSES, packageFor } from '../comfy/packages';
 import { builtinPresets, DEFAULT_PARAMS, EMPTY_FIELDS } from '../defaults';
 import { buildOutfitAnalysisGraph } from '../outfit';
 import type { ComfyGraph, GenerateRequest, WorkflowTemplate } from '../types';
 import { prepareGeneration } from './generate';
-import { getCharacter, getComfyUrl, getSettings, getWorkflow } from './store';
+import { experimentsEnabled, getCharacter, getComfyUrl, getSettings, getWorkflow } from './store';
 
 export type CheckStatus = 'pass' | 'warn' | 'fail' | 'skip';
 
@@ -294,7 +295,13 @@ export async function runDiagnostics(workflowId: string | null): Promise<Diagnos
   }
 
   // 6. Custom nodes used by the workflow, split into core vs optional modules
-  const allClasses = [...new Set(Object.values(wf.graph).map((n) => n.class_type))];
+  // Optional nodes that can never run in this deployment (experiments off) are not required.
+  const usable = applyQualityOptions(wf.graph, wf.bindings, {
+    posePad: { left: 8, top: 8, right: 8, bottom: 8 },
+    hires: true,
+    poseRetarget: experimentsEnabled() ? 1 : 0,
+  });
+  const allClasses = [...new Set(Object.values(usable).map((n) => n.class_type))];
   const missing: string[] = [];
   await Promise.all(
     allClasses.map(async (c) => {
