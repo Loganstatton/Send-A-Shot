@@ -127,6 +127,19 @@ export class RealComfy implements ComfyBackend {
     }
   }
 
+  /**
+   * Every path this client calls exists on a running ComfyUI, so a 404/502/503/504
+   * means nothing is answering behind the URL — typically a stopped (or still
+   * booting) GPU Pod behind the provider's HTTPS proxy.
+   */
+  private gpuDown(status: number, details?: unknown) {
+    return new ComfyError(
+      `The GPU server isn't answering (HTTP ${status} from ${this.base}). It is probably stopped or still starting — start the Pod, wait until ComfyUI is up, then try again.`,
+      503,
+      details,
+    );
+  }
+
   private async json<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
     const res = await this.req(path, init);
     const text = await res.text();
@@ -138,6 +151,7 @@ export class RealComfy implements ComfyBackend {
       if (res.status === 401 || res.status === 403) {
         throw new ComfyError(`ComfyUI rejected the request (HTTP ${res.status}). Check COMFYUI_API_KEY / COMFYUI_EXTRA_HEADERS.`, res.status, details);
       }
+      if (GPU_DOWN_STATUSES.includes(res.status)) throw this.gpuDown(res.status, details);
       throw new ComfyError(`ComfyUI ${path} returned HTTP ${res.status}.`, res.status >= 500 ? 502 : 400, details);
     }
     try {
@@ -194,6 +208,7 @@ export class RealComfy implements ComfyBackend {
       timeoutMs: 30000,
     });
     const body = await res.json().catch(() => null);
+    if (!body && GPU_DOWN_STATUSES.includes(res.status)) throw this.gpuDown(res.status);
     if (!res.ok || !body?.prompt_id) {
       throw new ComfyError(describePromptError(body) || `ComfyUI /prompt returned HTTP ${res.status}.`, 400, body);
     }
@@ -272,6 +287,8 @@ const mockJobs: Map<string, MockJob> = (g.__siennaMockJobs ??= new Map());
 const mockFiles: Map<string, Buffer> = (g.__siennaMockFiles ??= new Map());
 
 export { comboOptions };
+
+const GPU_DOWN_STATUSES = [404, 502, 503, 504];
 
 const MOCK_CHOICES: Record<string, string[]> = {
   ckpt_name: ['sd_xl_base_1.0.safetensors', 'realvisxlV50_v50Bakedvae.safetensors', 'juggernautXL_v9.safetensors'],

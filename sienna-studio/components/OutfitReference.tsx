@@ -22,6 +22,7 @@ const TIMEOUT_MS = 10 * 60 * 1000;
  */
 export function OutfitReference({
   enabled,
+  needsReset,
   image,
   onImage,
   strength,
@@ -32,6 +33,8 @@ export function OutfitReference({
   onUseText,
 }: {
   enabled: boolean;
+  /** The saved copy of the production workflow predates the outfit nodes. */
+  needsReset?: boolean;
   image: StoredImage | null;
   onImage: (img: StoredImage | null) => void;
   strength: number;
@@ -83,7 +86,13 @@ export function OutfitReference({
           value={image}
           onChange={onImage}
           disabled={!enabled}
-          hint={enabled ? 'Photo of the outfit — only the clothes are used, never the face' : 'Pick the Sienna Production · SDXL workflow'}
+          hint={
+            enabled
+              ? 'Photo of the outfit — only the clothes are used, never the face'
+              : needsReset
+                ? 'Your saved copy of this workflow predates outfit reference — Reset it in Library → Workflows'
+                : 'Pick the Sienna Production · SDXL workflow'
+          }
         />
         {done?.preview ? (
           <div>

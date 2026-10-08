@@ -478,6 +478,7 @@ export function CreateScreen() {
           )}
           <OutfitReference
             enabled={caps.outfit}
+            needsReset={!caps.outfit && workflow?.id === 'sienna-sdxl-production' /* PRIMARY_WORKFLOW_ID; not imported to keep graphs out of the client bundle */}
             image={draft.images.outfitImage ?? null}
             onImage={(img) => update((d) => ({ ...d, images: { ...d.images, outfitImage: img } }))}
             strength={draft.params.outfitStrength ?? DEFAULT_PARAMS.outfitStrength!}
