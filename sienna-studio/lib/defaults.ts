@@ -144,7 +144,7 @@ export const DEFAULT_PARAMS: GenerationParams = {
   faceRefineThreshold: 384,
   outfitStrength: 0.7,
   outfitMode: 'design',
-  poseFit: 'crop',
+  poseFit: 'pad',
   poseRetarget: 0,
   hires: false,
   hiresScale: 1.5,

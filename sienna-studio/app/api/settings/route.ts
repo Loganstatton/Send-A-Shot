@@ -2,7 +2,7 @@ import { authEnabled } from '@/lib/auth';
 import { isMockUrl } from '@/lib/comfy/client';
 import { settingsPatchSchema } from '@/lib/schemas';
 import { handle, json, parseBody } from '@/lib/server/http';
-import { adultContentAllowed, getComfyUrl, getSettings, updateSettings } from '@/lib/server/store';
+import { adultContentAllowed, experimentsEnabled, getComfyUrl, getSettings, updateSettings } from '@/lib/server/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +12,7 @@ async function payload() {
     settings,
     env: {
       adultContentAllowed: adultContentAllowed(),
+      experiments: experimentsEnabled(),
       authEnabled: authEnabled(),
       envComfyUrl: process.env.COMFYUI_URL || '',
       hasApiKey: !!process.env.COMFYUI_API_KEY,

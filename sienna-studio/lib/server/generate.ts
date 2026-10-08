@@ -43,6 +43,7 @@ import {
   getComfyUrl,
   getRecord,
   getSettings,
+  experimentsEnabled,
   getWorkflow,
   listPresets,
   mimeFromBytes,
@@ -115,6 +116,10 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
 
   // ── Prompt ─────────────────────────────────────────────────────────────
+  // Experiments not approved for production are ignored unless SIENNA_EXPERIMENTAL=true.
+  if (!experimentsEnabled()) {
+    req = { ...req, params: { ...req.params, poseRetarget: 0, outfitIsolation: 'person', promptCleanup: false } };
+  }
   const built = buildPrompt({ fields: req.fields, character, siennaLock: req.siennaLock, contentMode, cleanup: !!req.params.promptCleanup });
   if (built.blocked.length) {
     throw new GenerationError(

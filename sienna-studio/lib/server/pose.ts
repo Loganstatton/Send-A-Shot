@@ -6,7 +6,7 @@ import { buildPoseCheckGraph, firstBody, POSE_DETECT_NODE, POSE_RETARGET_NODE, P
 import { poseProportions } from '../pose-proportions';
 import type { StoredImage } from '../types';
 import { queueImageJob } from './jobs';
-import { getComfyUrl, mimeFromBytes, storeImage } from './store';
+import { experimentsEnabled, getComfyUrl, mimeFromBytes, storeImage } from './store';
 
 export type PoseCheckState =
   | { state: 'pending' | 'running'; position?: number }
@@ -29,6 +29,7 @@ export async function startPoseCheck(
   opts: { width: number; height: number; fit: 'crop' | 'pad'; retarget: number },
 ): Promise<{ promptId: string }> {
   const pad = opts.fit === 'pad' ? posePadding(image.width, image.height, opts.width, opts.height) : null;
+  if (!experimentsEnabled()) opts = { ...opts, retarget: 0 };
   const props = poseProportions().values;
   return queueImageJob(image, (name) => buildPoseCheckGraph(name, { pad, retarget: opts.retarget, proportions: props }), 'Pose check', 'pose-');
 }

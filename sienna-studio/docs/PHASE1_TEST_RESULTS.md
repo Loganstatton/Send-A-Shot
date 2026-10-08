@@ -51,3 +51,11 @@ differences between conditions are within noise. Clothing recall differences are
 ## Bug found by real data
 DWPose reports keypoints in canvas pixels, not 0..1, so the framing check against the pose photo never fired on a
 real server (mock data was normalized). Fixed in `lib/pose-check.ts` with a regression test.
+
+## Production rollout
+
+Shipped: pose padding (default "Keep the whole pose photo"; "Crop" reproduces the previous graph exactly),
+the optional Refinement pass (off by default), and framing conflict detection with one-tap fixes.
+
+Pose retargeting, garment-only outfit isolation and prompt cleanup stay in the code but are hidden in the
+UI and ignored by the server unless the environment variable `SIENNA_EXPERIMENTAL=true` is set.

@@ -22,7 +22,7 @@ import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitl
 
 interface SettingsPayload {
   settings: AppSettings;
-  env: { adultContentAllowed: boolean; mock: boolean; effectiveComfyUrl: string };
+  env: { adultContentAllowed: boolean; mock: boolean; effectiveComfyUrl: string; experiments?: boolean };
 }
 
 const PLACEHOLDERS: Record<keyof PromptFields, string> = {
@@ -43,8 +43,9 @@ const MAIN_KEYS: (keyof PromptFields)[] = ['outfit', 'pose', 'setting', 'lightin
 const MORE_KEYS: (keyof PromptFields)[] = ['bodyPresentation', 'framing', 'camera', 'realism', 'extra'];
 
 /** Number of Phase 1 quality options switched on (for the section badge). */
-function phase1On(p: Draft['params']): number {
-  return [p.poseFit === 'pad', (p.poseRetarget ?? 0) > 0, !!p.hires, !!p.promptCleanup, p.outfitIsolation === 'garment'].filter(Boolean).length;
+function phase1On(p: Draft['params'], experiments: boolean): number {
+  return [!!p.hires, experiments && (p.poseRetarget ?? 0) > 0, experiments && !!p.promptCleanup, experiments && p.outfitIsolation === 'garment'].filter(Boolean)
+    .length;
 }
 
 /** About one megapixel at the given aspect ratio, in multiples of 64 (SDXL-friendly). */
@@ -515,7 +516,7 @@ export function CreateScreen() {
               onStrength={(v) => setParam('outfitStrength', v)}
               outfitText={draft.fields.outfit}
               onUseText={(t) => setField('outfit', t)}
-              isolation={draft.params.outfitIsolation ?? 'person'}
+              isolation={env?.experiments ? draft.params.outfitIsolation ?? 'person' : 'person'}
               garmentImage={draft.images.outfitGarmentImage ?? null}
               onGarmentImage={onGarmentImage}
             />
@@ -529,8 +530,8 @@ export function CreateScreen() {
               image={draft.images.poseImage}
               width={draft.params.width}
               height={draft.params.height}
-              fit={draft.params.poseFit ?? 'crop'}
-              retarget={draft.params.poseRetarget ?? 0}
+              fit={draft.params.poseFit ?? 'pad'}
+              retarget={env?.experiments ? draft.params.poseRetarget ?? 0 : 0}
               onExtent={setPoseExtent}
             />
             {draft.images.poseImage.width && draft.images.poseImage.height && (
@@ -655,33 +656,35 @@ export function CreateScreen() {
         </Collapsible>
 
         <Collapsible
-          title="Quality (experimental)"
-          badge={phase1On(draft.params) ? <Badge tone="accent">{phase1On(draft.params)} on</Badge> : null}
+          title="Quality"
+          badge={phase1On(draft.params, !!env?.experiments) ? <Badge tone="accent">{phase1On(draft.params, !!env?.experiments)} on</Badge> : null}
         >
-          <p className="text-xs text-ink-400">Off = current behaviour. Each option can be compared on/off with the same seed.</p>
           <Select
             label="Pose photo shape"
-            value={draft.params.poseFit ?? 'crop'}
-            onChange={(v) => setParam('poseFit', v === 'pad' ? 'pad' : 'crop')}
+            value={draft.params.poseFit ?? 'pad'}
+            onChange={(v) => setParam('poseFit', v === 'crop' ? 'crop' : 'pad')}
             options={[
-              { value: 'crop', label: 'Crop to output (current)' },
-              { value: 'pad', label: 'Pad to output — keep the whole skeleton' },
+              { value: 'pad', label: 'Keep the whole pose photo (recommended)' },
+              { value: 'crop', label: 'Crop to the output shape (previous)' },
             ]}
+            hint="Only matters with a pose photo. Keeping the whole photo stops heads and feet being cut off."
           />
-          <Slider
-            label="Pose retargeting"
-            hint="0 = off · rescales the skeleton toward Sienna's proportions, angles kept"
-            value={draft.params.poseRetarget ?? 0}
-            min={0}
-            max={1}
-            step={0.25}
-            onChange={(v) => setParam('poseRetarget', v)}
-          />
+          {env?.experiments && (
+            <Slider
+              label="Pose retargeting"
+              hint="0 = off · rescales the skeleton toward Sienna's proportions, angles kept"
+              value={draft.params.poseRetarget ?? 0}
+              min={0}
+              max={1}
+              step={0.25}
+              onChange={(v) => setParam('poseRetarget', v)}
+            />
+          )}
           <Toggle
             checked={draft.params.hires ?? false}
             onChange={(v) => setParam('hires', v)}
             label="Refinement pass"
-            description="Upscales and re-renders at low strength for finer detail. About 2–2.5× slower."
+            description="Upscales 1.5× and re-renders lightly for sharper eyes, hair and fabric. About 1.5× slower."
           />
           {draft.params.hires && (
             <>
@@ -690,22 +693,26 @@ export function CreateScreen() {
               <Slider label="Refinement LoRA strength" hint="lower lets photographic texture through" value={draft.params.hiresLoraStrength ?? 0.7} min={0.3} max={1.2} step={0.05} onChange={(v) => setParam('hiresLoraStrength', v)} />
             </>
           )}
-          <Toggle
-            checked={draft.params.promptCleanup ?? false}
-            onChange={(v) => setParam('promptCleanup', v)}
-            label="Prompt cleanup"
-            description="Drops negatives that fight natural skin (wrinkles, aged skin) and abstract identity phrases."
-          />
-          <Select
-            label="Outfit isolation"
-            value={draft.params.outfitIsolation ?? 'person'}
-            onChange={(v) => setParam('outfitIsolation', v === 'garment' ? 'garment' : 'person')}
-            options={[
-              { value: 'person', label: 'Whole person minus face (current)' },
-              { value: 'garment', label: 'Garment only, flat silhouette for fit' },
-            ]}
-            hint="Garment only needs “Analyze outfit” to be run on the outfit photo."
-          />
+          {env?.experiments && (
+            <>
+              <Toggle
+                checked={draft.params.promptCleanup ?? false}
+                onChange={(v) => setParam('promptCleanup', v)}
+                label="Prompt cleanup"
+                description="Drops negatives that fight natural skin (wrinkles, aged skin) and abstract identity phrases."
+              />
+              <Select
+                label="Outfit isolation"
+                value={draft.params.outfitIsolation ?? 'person'}
+                onChange={(v) => setParam('outfitIsolation', v === 'garment' ? 'garment' : 'person')}
+                options={[
+                  { value: 'person', label: 'Whole person minus face (current)' },
+                  { value: 'garment', label: 'Garment only, flat silhouette for fit' },
+                ]}
+                hint="Garment only needs “Analyze outfit” to be run on the outfit photo."
+              />
+            </>
+          )}
         </Collapsible>
 
         <Collapsible title="Expert">

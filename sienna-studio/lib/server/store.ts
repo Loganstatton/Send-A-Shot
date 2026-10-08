@@ -135,6 +135,14 @@ export function adultContentAllowed(): boolean {
   return process.env.ALLOW_ADULT_CONTENT === 'true';
 }
 
+/**
+ * Untested-in-production quality experiments (pose retargeting, garment-only isolation,
+ * prompt cleanup). Off unless SIENNA_EXPERIMENTAL=true: hidden in the UI and ignored by the server.
+ */
+export function experimentsEnabled(): boolean {
+  return process.env.SIENNA_EXPERIMENTAL === 'true';
+}
+
 // ── Character ───────────────────────────────────────────────────────────────
 
 export async function getCharacter(): Promise<CharacterProfile> {

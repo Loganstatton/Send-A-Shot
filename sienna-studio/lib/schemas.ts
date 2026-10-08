@@ -50,7 +50,7 @@ export const paramsSchema = z.object({
   faceRefineThreshold: z.number().int().min(64).max(2048).default(384),
   outfitStrength: z.number().min(0).max(1.5).default(0.7),
   outfitMode: z.enum(['design', 'close']).default('design'),
-  poseFit: z.enum(['crop', 'pad']).default('crop'),
+  poseFit: z.enum(['crop', 'pad']).default('pad'),
   poseRetarget: z.number().min(0).max(1).default(0),
   hires: z.boolean().default(false),
   hiresScale: z.number().min(1).max(2).default(1.5),
