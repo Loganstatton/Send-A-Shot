@@ -10,3 +10,4 @@ data/pre-restore-*.db
 .env.local
 *.log
 *.tsbuildinfo
+__pycache__/
