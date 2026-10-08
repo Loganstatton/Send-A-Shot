@@ -42,18 +42,6 @@ function PresetsTab() {
     }
   }
 
-  async function assign(p: Preset, workflowId: string) {
-    try {
-      await api(`/api/presets/${p.id}`, {
-        method: 'PUT',
-        json: { name: p.name, emoji: p.emoji, fields: p.fields, params: p.params, workflowId: workflowId || null },
-      });
-      presets.reload();
-    } catch (e: any) {
-      toast(e.message, 'error');
-    }
-  }
-
   async function remove(p: Preset) {
     if (!confirm(`Delete preset “${p.name}”?`)) return;
     await api(`/api/presets/${p.id}`, { method: 'DELETE' });
@@ -69,28 +57,39 @@ function PresetsTab() {
           + New preset
         </Button>
       </Link>
-      {(presets.data ?? []).map((p) => (
-        <Card key={p.id} className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">{p.emoji}</span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{p.name}</p>
-              <p className="truncate text-xs text-ink-400">{[p.fields.setting, p.fields.camera].filter(Boolean).join(' · ') || 'No fields set'}</p>
+      <Card className="divide-y divide-ink-800 p-0">
+        {(presets.data ?? []).map((p) => {
+          const wf = p.workflowId ? wfOptions.find((o) => o.value === p.workflowId)?.label ?? p.workflowId : null;
+          return (
+            <div key={p.id} className="flex items-center gap-2 px-3 py-2">
+              <Link href={`/library/presets/${p.id}`} className="flex min-h-[48px] min-w-0 flex-1 items-center gap-3">
+                <span className="text-2xl">{p.emoji}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate font-medium">{p.name}</span>
+                    {p.builtIn && (
+                      <span className="shrink-0 whitespace-nowrap">
+                        <Badge>built-in</Badge>
+                      </span>
+                    )}
+                  </span>
+                  <span className="block truncate text-xs text-ink-400">
+                    {wf ? `${wf} · ` : ''}
+                    {[p.fields.setting, p.fields.camera].filter(Boolean).join(' · ') || 'No fields set'}
+                  </span>
+                </span>
+              </Link>
+              <button onClick={() => duplicate(p)} aria-label={`Duplicate ${p.name}`} className="h-10 w-10 shrink-0 rounded-lg text-ink-400 hover:bg-ink-800">
+                ⧉
+              </button>
+              <button onClick={() => remove(p)} aria-label={`Delete ${p.name}`} className="h-10 w-10 shrink-0 rounded-lg text-ink-400 hover:bg-ink-800">
+                🗑
+              </button>
             </div>
-            {p.builtIn && <Badge>built-in</Badge>}
-          </div>
-          <Select label="Workflow" value={p.workflowId ?? ''} onChange={(v) => assign(p, v)} placeholder="(default workflow)" options={wfOptions} />
-          <div className="grid grid-cols-3 gap-2">
-            <Link href={`/library/presets/${p.id}`}>
-              <Button className="w-full">Edit</Button>
-            </Link>
-            <Button onClick={() => duplicate(p)}>Duplicate</Button>
-            <Button variant="ghost" onClick={() => remove(p)}>
-              Delete
-            </Button>
-          </div>
-        </Card>
-      ))}
+          );
+        })}
+      </Card>
+      <p className="px-1 text-xs text-ink-400">Tap a preset to edit it (including which workflow it uses). ⧉ duplicates, 🗑 deletes.</p>
       <Button
         variant="ghost"
         className="w-full"

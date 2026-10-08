@@ -107,6 +107,20 @@ warning.
 The script only restores the face-refinement pieces. The base checkpoint and Sienna LoRA still need copying
 into `models/checkpoints/` and `models/loras/` (§1).
 
+### Pose copying (optional)
+
+The **Pose** photo on the Create screen copies only the body position. Add `--with-pose` to the bootstrap:
+
+```bash
+bash comfyui-bootstrap.sh --with-outfit --with-pose --restart
+```
+
+This installs comfyui_controlnet_aux (Apache-2.0; only the DWPose extractor's light dependencies are
+installed) with the DWPose models from `yzd-v/DWPose` (Apache-2.0), and downloads
+`xinsir/controlnet-openpose-sdxl-1.0` (Apache-2.0, ~2.5 GB) as `models/controlnet/sdxl_openpose.safetensors`.
+The photo is turned into a stick-figure skeleton (hands and body; face keypoints off) before it reaches the
+model, so the person in the photo never shapes Sienna's face or body.
+
 ### Outfit reference (optional)
 
 The Outfit Reference upload needs extra nodes and about 4.5 GB of models. Add `--with-outfit`:

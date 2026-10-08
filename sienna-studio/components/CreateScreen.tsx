@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, fileUrl, useApi } from '@/lib/client/api';
 import { Draft, useDraft } from '@/lib/client/draft';
 import { JOBS_KEY } from '@/lib/client/jobs';
@@ -16,7 +16,6 @@ import { PROMPT_FIELD_LABELS } from '@/lib/types';
 import { ImagePicker } from './ImagePicker';
 import { JobCard } from './JobCard';
 import { OutfitReference } from './OutfitReference';
-import { OUTFIT_MODE_LABELS } from '@/lib/outfit';
 import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Select, Slider, Spinner, TextArea, Toggle, cx, toast } from './ui';
 
 interface SettingsPayload {
@@ -37,8 +36,19 @@ const PLACEHOLDERS: Record<keyof PromptFields, string> = {
   extra: 'anything else',
 };
 
-const SCENE_KEYS: (keyof PromptFields)[] = ['outfit', 'pose', 'bodyPresentation', 'expression', 'setting', 'lighting'];
-const CAMERA_KEYS: (keyof PromptFields)[] = ['camera', 'framing', 'realism', 'extra'];
+/** Fields always shown; the rest sit under "More details". */
+const MAIN_KEYS: (keyof PromptFields)[] = ['outfit', 'pose', 'setting', 'lighting', 'expression'];
+const MORE_KEYS: (keyof PromptFields)[] = ['bodyPresentation', 'framing', 'camera', 'realism', 'extra'];
+
+/** A titled block inside a card, for settings that belong to one photo. */
+function SubPanel({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-3 rounded-xl bg-ink-950/60 p-3 ring-1 ring-ink-800">
+      <p className="text-xs font-semibold uppercase tracking-wider text-ink-400">{title}</p>
+      {children}
+    </div>
+  );
+}
 
 
 export function CreateScreen() {
@@ -258,6 +268,8 @@ export function CreateScreen() {
   const abModel = SIENNA_MODELS.find((m) => m.file === draft.params.siennaModel);
   const refs = [character.faceReference, ...character.secondaryReferences].filter(Boolean) as NonNullable<CharacterProfile['faceReference']>[];
   const activeRefId = draft.images.faceReferenceId ?? character.faceReference?.id ?? null;
+  // The saved copy of the production workflow predates the outfit nodes (fixed by Reset in Library).
+  const outfitNeedsReset = !caps.outfit && workflow?.id === 'sienna-sdxl-production';
   const fieldWarning = (k: keyof PromptFields) => {
     const v = draft.fields[k];
     if (!v) return undefined;
@@ -290,53 +302,38 @@ export function CreateScreen() {
         </div>
       )}
 
-      {/* ── Sienna Lock ── */}
-      <Card className={cx('mt-3', draft.siennaLock && 'ring-accent/60')}>
+      {/* ── Sienna ── */}
+      <Card className={cx('mt-3 space-y-3', draft.siennaLock && 'ring-accent/60')}>
         <Toggle
           checked={draft.siennaLock}
           onChange={(v) => update((d) => ({ ...d, siennaLock: v }))}
           label={<span className="font-semibold">🔒 Sienna Lock</span>}
-          description={draft.siennaLock ? 'Identity fixed: LoRA, face reference and core traits are injected; identity edits are stripped.' : 'Off — free prompt, nothing injected.'}
+          description={draft.siennaLock ? 'Keeps her face, hair and look consistent.' : 'Off — free prompt, nothing about Sienna is added.'}
         />
         {draft.siennaLock && (
-          <div className="mt-3 flex items-center gap-3 border-t border-ink-800 pt-3">
-            {character.faceReference ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={fileUrl(refs.find((r) => r.id === activeRefId)?.file ?? character.faceReference.file)} alt="" className="h-14 w-14 rounded-xl object-cover" />
-            ) : (
-              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-ink-800 text-[10px] text-ink-400">no ref</div>
-            )}
-            <div className="min-w-0 flex-1 text-xs text-ink-400">
-              <p className="truncate">
-                <span className="text-ink-200">Token</span> {character.triggerToken || '—'}
-              </p>
-              <p className="truncate">
-                <span className="text-ink-200">LoRA</span> {lockedLora || <span className="text-amber-400">not set</span>} @ {draft.params.loraStrength}
-              </p>
-              <p className="truncate">
-                <span className="text-ink-200">Face ref</span>{' '}
-                {caps.faceReference ? (character.faceReference ? 'applied' : <span className="text-amber-400">missing</span>) : 'not in this workflow'}
-              </p>
-            </div>
-            <Link href="/character" className="text-xs text-accent">
-              Edit
-            </Link>
-          </div>
-        )}
-        {draft.siennaLock && (
           <Select
-            className="mt-3"
             label="Sienna model"
             value={draft.params.siennaModel ?? ''}
             onChange={(v) => setParam('siennaModel', v)}
             options={[
-              { value: '', label: `Profile default (${character.loraFilename || 'not set'})` },
+              { value: '', label: `Default (${character.loraFilename || 'not set'})` },
               ...SIENNA_MODELS.filter((m) => m.file !== character.loraFilename).map((m) => ({ value: m.file, label: m.label })),
             ]}
-            hint={abModel ? <span className="text-amber-400">A/B: {abModel.note}</span> : undefined}
+            hint={
+              abModel ? (
+                <span className="text-amber-400">{abModel.note}</span>
+              ) : (
+                <span>
+                  {lockedLora || 'No LoRA set'} @ {draft.params.loraStrength} ·{' '}
+                  <Link href="/character" className="text-accent">
+                    Edit profile
+                  </Link>
+                </span>
+              )
+            }
           />
         )}
-        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-ink-800 pt-3">
+        <div className="grid grid-cols-2 gap-2">
           {(['sfw', 'adult'] as const).map((m) => (
             <Chip
               key={m}
@@ -377,7 +374,7 @@ export function CreateScreen() {
         </Link>
       </div>
 
-      {/* ── Prompt builder ── */}
+      {/* ── Describe ── */}
       <SectionTitle
         right={
           <button
@@ -390,150 +387,174 @@ export function CreateScreen() {
           </button>
         }
       >
-        Prompt builder
+        Describe the photo
       </SectionTitle>
-      <div className="space-y-3">
-        <Collapsible title="Outfit, pose & scene" defaultOpen>
-          {SCENE_KEYS.map((k) => (
-            <TextArea
-              key={k}
-              label={PROMPT_FIELD_LABELS[k]}
-              value={draft.fields[k]}
-              placeholder={PLACEHOLDERS[k]}
-              onChange={(e) => setField(k, e.target.value)}
-              warning={fieldWarning(k)}
-            />
-          ))}
-        </Collapsible>
-
-        <Collapsible title="Camera, framing & realism">
-          {CAMERA_KEYS.map((k) => (
-            <TextArea
-              key={k}
-              label={PROMPT_FIELD_LABELS[k]}
-              value={draft.fields[k]}
-              placeholder={k === 'camera' && draft.siennaLock ? character.defaultCameraStyle : PLACEHOLDERS[k]}
-              onChange={(e) => setField(k, e.target.value)}
-              warning={fieldWarning(k)}
-            />
-          ))}
-        </Collapsible>
-
-        {/* ── Reference images ── */}
-        <Collapsible
-          title="Reference images"
-          badge={(draft.images.initImage || draft.images.poseImage || draft.images.outfitImage) && <Badge tone="accent">set</Badge>}
-        >
-          {refs.length > 0 && (
-            <div>
-              <p className="mb-1 text-sm text-ink-200">
-                Face reference {!caps.faceReference && <span className="text-xs text-ink-400">(this workflow has no face input)</span>}
-              </p>
-              <div className="no-scrollbar flex gap-2 overflow-x-auto">
-                {!draft.siennaLock && (
-                  <button
-                    onClick={() => update((d) => ({ ...d, images: { ...d.images, faceReferenceId: null } }))}
-                    className={cx('flex h-20 w-16 shrink-0 items-center justify-center rounded-lg bg-ink-800 text-xs', !draft.images.faceReferenceId && 'ring-2 ring-accent')}
-                  >
-                    None
-                  </button>
-                )}
-                {refs.map((r) => (
-                  <button
-                    key={r.id}
-                    onClick={() => update((d) => ({ ...d, images: { ...d.images, faceReferenceId: r.id } }))}
-                    className={cx('h-20 w-16 shrink-0 overflow-hidden rounded-lg', (draft.siennaLock ? activeRefId : draft.images.faceReferenceId) === r.id && 'ring-2 ring-accent')}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={fileUrl(r.file)} alt="" className="h-full w-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <ImagePicker
-              label="Init image (img2img)"
-              value={draft.images.initImage}
-              onChange={(img) => update((d) => ({ ...d, images: { ...d.images, initImage: img } }))}
-              disabled={!caps.img2img}
-              hint={caps.img2img ? undefined : 'Pick an img2img workflow'}
-            />
-            <ImagePicker
-              label="Pose / ControlNet"
-              value={draft.images.poseImage}
-              onChange={(img) => update((d) => ({ ...d, images: { ...d.images, poseImage: img } }))}
-              disabled={!caps.pose}
-              hint={caps.pose ? 'OpenPose skeleton or a photo for the preprocessor' : 'Pick a ControlNet workflow'}
-            />
+      <Card className="space-y-4">
+        {MAIN_KEYS.map((k) => (
+          <TextArea
+            key={k}
+            label={PROMPT_FIELD_LABELS[k]}
+            value={draft.fields[k]}
+            placeholder={PLACEHOLDERS[k]}
+            onChange={(e) => setField(k, e.target.value)}
+            warning={fieldWarning(k)}
+          />
+        ))}
+        <details className="group" open={MORE_KEYS.some((k) => draft.fields[k])}>
+          <summary className="flex min-h-[40px] cursor-pointer list-none items-center justify-between text-sm text-ink-200">
+            <span>
+              More details <span className="text-ink-400">— body, camera, framing, realism</span>
+            </span>
+            <span className="text-ink-400 transition-transform group-open:rotate-180">⌄</span>
+          </summary>
+          <div className="mt-3 space-y-4">
+            {MORE_KEYS.map((k) => (
+              <TextArea
+                key={k}
+                label={PROMPT_FIELD_LABELS[k]}
+                value={draft.fields[k]}
+                placeholder={k === 'camera' && draft.siennaLock ? character.defaultCameraStyle : PLACEHOLDERS[k]}
+                onChange={(e) => setField(k, e.target.value)}
+                warning={fieldWarning(k)}
+              />
+            ))}
           </div>
-          {caps.img2img && (
-            <Slider label="Denoise strength" hint="lower = closer to init" value={draft.params.denoise} min={0.05} max={1} step={0.01} onChange={(v) => setParam('denoise', v)} />
-          )}
-          {caps.pose && (
-            <Slider label="Pose strength" value={draft.params.controlStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('controlStrength', v)} />
-          )}
-          {caps.faceReference && (
-            <Slider label="Face reference weight" value={draft.params.faceStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('faceStrength', v)} />
-          )}
-          <OutfitReference
-            enabled={caps.outfit}
-            needsReset={!caps.outfit && workflow?.id === 'sienna-sdxl-production' /* PRIMARY_WORKFLOW_ID; not imported to keep graphs out of the client bundle */}
-            image={draft.images.outfitImage ?? null}
-            onImage={(img) => update((d) => ({ ...d, images: { ...d.images, outfitImage: img } }))}
-            strength={draft.params.outfitStrength ?? DEFAULT_PARAMS.outfitStrength!}
-            onStrength={(v) => setParam('outfitStrength', v)}
-            mode={draft.params.outfitMode ?? 'design'}
-            onMode={(m) => setParam('outfitMode', m)}
-            outfitText={draft.fields.outfit}
-            onUseText={(t) => setField('outfit', t)}
-          />
-        </Collapsible>
+        </details>
+      </Card>
 
-        {/* ── Advanced ── */}
-        <Collapsible title="Advanced generation settings">
-          <Select
-            label="Workflow"
-            value={workflowId}
-            onChange={(v) => update((d) => ({ ...d, workflowId: v || null }))}
-            options={workflows.map((w) => ({ value: w.id, label: w.name }))}
+      {/* ── Copy from a photo ── */}
+      <SectionTitle right={<span className="text-xs text-ink-400">optional</span>}>Copy from a photo</SectionTitle>
+      <Card className="space-y-4">
+        <div className="grid grid-cols-3 gap-2">
+          <ImagePicker
+            label="Outfit"
+            aspect="aspect-[3/4]"
+            value={draft.images.outfitImage ?? null}
+            onChange={(img) => update((d) => ({ ...d, images: { ...d.images, outfitImage: img } }))}
+            disabled={!caps.outfit}
+            hint={caps.outfit ? undefined : outfitNeedsReset ? 'Reset the workflow in Library first' : 'Not in this workflow'}
           />
-          {caps.checkpoint && (
-            <Select
-              label="Model"
-              value={draft.params.checkpoint}
-              onChange={(v) => setParam('checkpoint', v)}
-              placeholder="(workflow default)"
-              options={(opts.checkpoint ?? []).map((o) => ({ value: o, label: o }))}
+          <ImagePicker
+            label="Pose"
+            aspect="aspect-[3/4]"
+            value={draft.images.poseImage}
+            onChange={(img) => update((d) => ({ ...d, images: { ...d.images, poseImage: img } }))}
+            disabled={!caps.pose}
+            hint={caps.pose ? undefined : 'Not in this workflow'}
+          />
+          <ImagePicker
+            label="Start image"
+            aspect="aspect-[3/4]"
+            value={draft.images.initImage}
+            onChange={(img) =>
+              update((d) => ({
+                ...d,
+                images: { ...d.images, initImage: img },
+                // A start image at full denoise would be ignored — begin halfway.
+                params: img && d.params.denoise >= 0.95 ? { ...d.params, denoise: 0.55 } : d.params,
+              }))
+            }
+            disabled={!caps.img2img}
+            hint={caps.img2img ? undefined : 'Not in this workflow'}
+          />
+        </div>
+        {!draft.images.outfitImage && !draft.images.poseImage && !draft.images.initImage && (
+          <p className="text-xs text-ink-400">
+            <b className="text-ink-200">Outfit</b> copies the clothes. <b className="text-ink-200">Pose</b> copies only the body position (a stick-figure
+            skeleton — never the face or body). <b className="text-ink-200">Start image</b> reworks an existing picture.
+          </p>
+        )}
+
+        {draft.images.outfitImage && caps.outfit && (
+          <SubPanel title="Outfit">
+            <OutfitReference
+              enabled={caps.outfit}
+              image={draft.images.outfitImage ?? null}
+              strength={draft.params.outfitStrength ?? DEFAULT_PARAMS.outfitStrength!}
+              onStrength={(v) => setParam('outfitStrength', v)}
+              outfitText={draft.fields.outfit}
+              onUseText={(t) => setField('outfit', t)}
             />
-          )}
-          {draft.siennaLock ? (
-            <p className="text-sm text-ink-400">
-              LoRA locked to <span className="text-ink-200">{lockedLora || 'not set'}</span>
-            </p>
-          ) : (
-            <Select
-              label="LoRA"
-              value={draft.params.loraName}
-              onChange={(v) => setParam('loraName', v)}
-              placeholder="(none)"
-              options={(opts.lora_name ?? []).map((o) => ({ value: o, label: o }))}
+          </SubPanel>
+        )}
+        {draft.images.poseImage && caps.pose && (
+          <SubPanel title="Pose">
+            <p className="text-xs text-ink-400">Only the body position is copied — Sienna keeps her own face and body. Your Pose text is still used.</p>
+            <Slider label="Pose strength" hint="lower = looser" value={draft.params.controlStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('controlStrength', v)} />
+          </SubPanel>
+        )}
+        {draft.images.initImage && caps.img2img && (
+          <SubPanel title="Start image">
+            <Slider
+              label="How much to change"
+              hint="lower = closer to the start image"
+              value={draft.params.denoise}
+              min={0.05}
+              max={1}
+              step={0.01}
+              onChange={(v) => setParam('denoise', v)}
             />
-          )}
-          <Slider label="LoRA strength" value={draft.params.loraStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('loraStrength', v)} />
-          <Slider label="LoRA CLIP strength" value={draft.params.loraClipStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('loraClipStrength', v)} />
+          </SubPanel>
+        )}
+
+        {refs.length > 0 && caps.faceReference && (
+          <SubPanel title="Face reference">
+            <div className="no-scrollbar flex gap-2 overflow-x-auto">
+              {!draft.siennaLock && (
+                <button
+                  onClick={() => update((d) => ({ ...d, images: { ...d.images, faceReferenceId: null } }))}
+                  className={cx('flex h-20 w-16 shrink-0 items-center justify-center rounded-lg bg-ink-800 text-xs', !draft.images.faceReferenceId && 'ring-2 ring-accent')}
+                >
+                  None
+                </button>
+              )}
+              {refs.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => update((d) => ({ ...d, images: { ...d.images, faceReferenceId: r.id } }))}
+                  className={cx('h-20 w-16 shrink-0 overflow-hidden rounded-lg', (draft.siennaLock ? activeRefId : draft.images.faceReferenceId) === r.id && 'ring-2 ring-accent')}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={fileUrl(r.file)} alt="" className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+            <Slider label="Face reference weight" value={draft.params.faceStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('faceStrength', v)} />
+          </SubPanel>
+        )}
+      </Card>
+
+      {/* ── Settings ── */}
+      <SectionTitle>Settings</SectionTitle>
+      <div className="space-y-3">
+        <Collapsible title="Size, quality & seed">
+          <div>
+            <p className="mb-1 text-sm text-ink-200">Size</p>
+            <div className="no-scrollbar flex gap-2 overflow-x-auto">
+              {SIZE_PRESETS.map((s) => (
+                <Chip
+                  key={s.label}
+                  active={draft.params.width === s.width && draft.params.height === s.height}
+                  onClick={() => update((d) => ({ ...d, params: { ...d.params, width: s.width, height: s.height } }))}
+                >
+                  {s.label}
+                </Chip>
+              ))}
+            </div>
+          </div>
+          <Slider label="Images per run" value={draft.params.batchSize} min={1} max={4} step={1} onChange={(v) => setParam('batchSize', v)} />
           {caps.faceRefine && (
             <>
               <Toggle
                 checked={draft.params.faceRefine ?? DEFAULT_PARAMS.faceRefine}
                 onChange={(v) => setParam('faceRefine', v)}
                 label="Face refinement for small faces"
-                description={`Redraws Sienna’s face when it is under ${draft.params.faceRefineThreshold ?? DEFAULT_PARAMS.faceRefineThreshold}px (full-body, mirror shots). Larger faces are left as they are.`}
+                description={`Redraws Sienna’s face when it is under ${draft.params.faceRefineThreshold ?? DEFAULT_PARAMS.faceRefineThreshold}px (full-body, mirror shots).`}
               />
               {(draft.params.faceRefine ?? DEFAULT_PARAMS.faceRefine) && (
                 <Slider
                   label="Face refinement strength"
-                  hint="denoise · lower keeps expression and lighting"
+                  hint="lower keeps expression and lighting"
                   value={draft.params.faceRefineDenoise ?? DEFAULT_PARAMS.faceRefineDenoise}
                   min={0.1}
                   max={0.5}
@@ -543,7 +564,6 @@ export function CreateScreen() {
               )}
             </>
           )}
-
           <div>
             <p className="mb-1 text-sm text-ink-200">Seed</p>
             <div className="flex gap-2">
@@ -567,35 +587,41 @@ export function CreateScreen() {
               )}
             </div>
           </div>
+        </Collapsible>
 
-          <div>
-            <p className="mb-1 text-sm text-ink-200">Size</p>
-            <div className="no-scrollbar flex gap-2 overflow-x-auto">
-              {SIZE_PRESETS.map((s) => (
-                <Chip
-                  key={s.label}
-                  active={draft.params.width === s.width && draft.params.height === s.height}
-                  onClick={() => update((d) => ({ ...d, params: { ...d.params, width: s.width, height: s.height } }))}
-                >
-                  {s.label}
-                </Chip>
-              ))}
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <Slider label="Width" value={draft.params.width} min={512} max={1536} step={64} onChange={(v) => setParam('width', v)} />
-              <Slider label="Height" value={draft.params.height} min={512} max={1536} step={64} onChange={(v) => setParam('height', v)} />
-            </div>
-          </div>
-
-          <Slider label="Steps" value={draft.params.steps} min={4} max={80} step={1} onChange={(v) => setParam('steps', v)} />
-          <Slider
-            label={caps.guidance ? 'Guidance (Flux)' : 'CFG'}
-            value={draft.params.cfg}
-            min={1}
-            max={12}
-            step={0.1}
-            onChange={(v) => setParam('cfg', v)}
+        <Collapsible title="Expert">
+          <Select
+            label="Workflow"
+            value={workflowId}
+            onChange={(v) => update((d) => ({ ...d, workflowId: v || null }))}
+            options={workflows.map((w) => ({ value: w.id, label: w.name }))}
           />
+          {caps.checkpoint && (
+            <Select
+              label="Base model"
+              value={draft.params.checkpoint}
+              onChange={(v) => setParam('checkpoint', v)}
+              placeholder="(workflow default)"
+              options={(opts.checkpoint ?? []).map((o) => ({ value: o, label: o }))}
+            />
+          )}
+          {!draft.siennaLock && (
+            <Select
+              label="LoRA"
+              value={draft.params.loraName}
+              onChange={(v) => setParam('loraName', v)}
+              placeholder="(none)"
+              options={(opts.lora_name ?? []).map((o) => ({ value: o, label: o }))}
+            />
+          )}
+          <Slider label="LoRA strength" value={draft.params.loraStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('loraStrength', v)} />
+          <Slider label="LoRA CLIP strength" value={draft.params.loraClipStrength} min={0} max={1.5} step={0.05} onChange={(v) => setParam('loraClipStrength', v)} />
+          <div className="grid grid-cols-2 gap-2">
+            <Slider label="Width" value={draft.params.width} min={512} max={1536} step={64} onChange={(v) => setParam('width', v)} />
+            <Slider label="Height" value={draft.params.height} min={512} max={1536} step={64} onChange={(v) => setParam('height', v)} />
+          </div>
+          <Slider label="Steps" value={draft.params.steps} min={4} max={80} step={1} onChange={(v) => setParam('steps', v)} />
+          <Slider label={caps.guidance ? 'Guidance (Flux)' : 'CFG'} value={draft.params.cfg} min={1} max={12} step={0.1} onChange={(v) => setParam('cfg', v)} />
           <div className="grid grid-cols-2 gap-2">
             <Select
               label="Sampler"
@@ -616,21 +642,20 @@ export function CreateScreen() {
           </div>
           {caps.controlnetModel && (
             <Select
-              label="ControlNet model"
+              label="Pose ControlNet model"
               value={draft.params.controlnetModel}
               onChange={(v) => setParam('controlnetModel', v)}
               placeholder="(workflow default)"
               options={(opts.controlnet_model ?? []).map((o) => ({ value: o, label: o }))}
             />
           )}
-          <Slider label="Images per run" value={draft.params.batchSize} min={1} max={4} step={1} onChange={(v) => setParam('batchSize', v)} />
           {optionsQ.data?.error && <Notice kind="warn">Couldn’t load model lists: {optionsQ.data.error}</Notice>}
           <Button
             variant="ghost"
             className="w-full"
             onClick={() => update((d) => ({ ...d, params: { ...DEFAULT_PARAMS, ...settings.defaultParams, loraStrength: character.loraWeight, loraClipStrength: character.loraClipWeight } }))}
           >
-            Reset to defaults
+            Reset all settings to defaults
           </Button>
         </Collapsible>
 
@@ -656,12 +681,15 @@ export function CreateScreen() {
               {draft.images.outfitImage &&
                 (caps.outfit ? (
                   <Notice kind="info">
-                    Outfit reference on — strength {Math.min(draft.params.outfitStrength ?? DEFAULT_PARAMS.outfitStrength!, 1).toFixed(2)},{' '}
-                    {OUTFIT_MODE_LABELS.design}. Clothing only; Sienna&apos;s LoRA, face refinement and identity settings are unchanged.
+                    Outfit photo on — strength {Math.min(draft.params.outfitStrength ?? DEFAULT_PARAMS.outfitStrength!, 1).toFixed(2)}. Clothing only; Sienna&apos;s
+                    LoRA, face refinement and identity settings are unchanged.
                   </Notice>
                 ) : (
-                  <Notice kind="error">This workflow has no outfit-reference input — generation will be refused. Pick Sienna Production · SDXL.</Notice>
+                  <Notice kind="error">This workflow has no outfit input — generation will be refused. Pick Sienna Production · SDXL.</Notice>
                 ))}
+              {draft.images.poseImage && caps.pose && (
+                <Notice kind="info">Pose photo on — strength {draft.params.controlStrength}. Only the skeleton (body position) is used.</Notice>
+              )}
               <div>
                 <p className="mb-1 text-xs uppercase tracking-wide text-ink-400">Positive</p>
                 <p className="select-text whitespace-pre-wrap rounded-xl bg-ink-800 p-3 text-sm leading-relaxed">{built.positive}</p>

@@ -133,52 +133,59 @@ export default function GenerationDetail() {
       </div>
       {rec.images.length > 1 && <p className="mt-1 text-xs text-ink-400">Share saves the first image; long-press others to save.</p>}
 
-      {/* Quality review */}
-      <SectionTitle right={issues.length > 0 && <Badge tone="warn">{issues.length} issue(s)</Badge>}>Quality check</SectionTitle>
-      <Card className="divide-y divide-ink-800 p-0">
-        {REVIEW_ITEMS.map((item) => {
-          const mark = rec.review[item];
-          return (
-            <div key={item} className="px-4 py-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[15px]">{REVIEW_INFO[item].label}</span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setMark(item, mark === 'ok' ? null : 'ok')}
-                    className={cx('h-10 w-12 rounded-lg text-sm', mark === 'ok' ? 'bg-emerald-700 text-white' : 'bg-ink-800 text-ink-400')}
-                  >
-                    OK
-                  </button>
-                  <button
-                    onClick={() => setMark(item, mark === 'issue' ? null : 'issue')}
-                    className={cx('h-10 w-12 rounded-lg text-sm', mark === 'issue' ? 'bg-amber-600 text-white' : 'bg-ink-800 text-ink-400')}
-                  >
-                    ✗
-                  </button>
+      <div className="mt-5 space-y-3">
+        {/* Quality review */}
+        <Collapsible
+          title="Quality check & notes"
+          defaultOpen={issues.length > 0 || !!rec.notes}
+          badge={issues.length > 0 ? <Badge tone="warn">{issues.length} issue(s)</Badge> : rec.notes ? <Badge>note</Badge> : null}
+        >
+          <div className="-mx-4 divide-y divide-ink-800">
+            {REVIEW_ITEMS.map((item) => {
+              const mark = rec.review[item];
+              return (
+                <div key={item} className="px-4 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[15px]">{REVIEW_INFO[item].label}</span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setMark(item, mark === 'ok' ? null : 'ok')}
+                        className={cx('h-10 w-12 rounded-lg text-sm', mark === 'ok' ? 'bg-emerald-700 text-white' : 'bg-ink-800 text-ink-400')}
+                      >
+                        OK
+                      </button>
+                      <button
+                        onClick={() => setMark(item, mark === 'issue' ? null : 'issue')}
+                        className={cx('h-10 w-12 rounded-lg text-sm', mark === 'issue' ? 'bg-amber-600 text-white' : 'bg-ink-800 text-ink-400')}
+                      >
+                        ✗
+                      </button>
+                    </div>
+                  </div>
+                  {mark === 'issue' && <p className="mt-1 text-xs text-amber-300">Fix: {REVIEW_INFO[item].fix}</p>}
                 </div>
-              </div>
-              {mark === 'issue' && <p className="mt-1 text-xs text-amber-300">Fix: {REVIEW_INFO[item].fix}</p>}
-            </div>
-          );
-        })}
-      </Card>
-      <TextArea
-        className="mt-3"
-        label="Notes"
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        onBlur={() => notes !== rec.notes && patch({ notes })}
-        placeholder="e.g. best face match so far"
-      />
+              );
+            })}
+          </div>
+          <TextArea
+            label="Notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={() => notes !== rec.notes && patch({ notes })}
+            placeholder="e.g. best face match so far"
+          />
+        </Collapsible>
 
-      {/* Metadata */}
-      <SectionTitle>Details</SectionTitle>
-      <GenerationMeta rec={rec} />
-      {rec.parentId && (
-        <Link href={`/gallery/${rec.parentId}`} className="mt-3 block text-sm text-accent">
-          ← Derived from an earlier generation
-        </Link>
-      )}
+        {/* Metadata */}
+        <Collapsible title="Generation details">
+          <GenerationMeta rec={rec} />
+          {rec.parentId && (
+            <Link href={`/gallery/${rec.parentId}`} className="block text-sm text-accent">
+              ← Derived from an earlier generation
+            </Link>
+          )}
+        </Collapsible>
+      </div>
 
       <div className="mt-3 space-y-3">
         <Collapsible title="Builder fields">

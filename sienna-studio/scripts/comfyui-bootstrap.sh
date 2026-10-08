@@ -24,6 +24,9 @@
 #
 # Options / environment:
 #   --with-outfit      also install the Outfit Reference nodes and models (~4.5 GB)
+#   --with-pose        also install pose copying: comfyui_controlnet_aux (DWPose skeleton
+#                      extractor, minimal deps) + models/controlnet/sdxl_openpose.safetensors
+#                      (xinsir/controlnet-openpose-sdxl-1.0, ~2.5 GB)
 #   --restart          restart ComfyUI afterwards via ComfyUI-Manager (if installed)
 #   COMFYUI_DIR        ComfyUI folder (default: auto-detect)
 #   COMFYUI_PYTHON     Python used by ComfyUI (default: auto-detect its venv)
@@ -38,15 +41,18 @@ IMPACT_SUBPACK_REF="${IMPACT_SUBPACK_REF:-50c7b71}"
 IPADAPTER_REF="${IPADAPTER_REF:-a0f451a}"
 FLORENCE2_REF="${FLORENCE2_REF:-9ece3de}"
 KJNODES_REF="${KJNODES_REF:-d3cfe21}"
+CNAUX_REF="${CNAUX_REF:-0cd2904}"
 HF="https://huggingface.co"
 FACE_MODEL_URL="$HF/Bingsu/adetailer/resolve/main/face_yolov8m.pt"
 FACE_MODEL_MIN_BYTES=50000000
 RESTART=0
 OUTFIT=0
+POSE=0
 for arg in "$@"; do
   case "$arg" in
     --restart) RESTART=1 ;;
     --with-outfit) OUTFIT=1 ;;
+    --with-pose) POSE=1 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -74,7 +80,7 @@ echo "Python:  $COMFYUI_PYTHON"
 
 # ── Custom nodes ──────────────────────────────────────────────────────────────
 install_repo() {
-  local name="$1" url="$2" ref="$3" dir="$COMFYUI_DIR/custom_nodes/$1"
+  local name="$1" url="$2" ref="$3" dir="$COMFYUI_DIR/custom_nodes/$1" reqs_mode="${4:-reqs}"
   log "$name"
   if [[ -d "$dir/.git" ]]; then
     echo "already present"
@@ -97,7 +103,7 @@ install_repo() {
     git -C "$dir" fetch -q origin || true
     git -C "$dir" checkout -q "$ref" && echo "at $ref"
   fi
-  if [[ -f "$dir/requirements.txt" ]]; then
+  if [[ "$reqs_mode" == "reqs" && -f "$dir/requirements.txt" ]]; then
     # git+ requirements (e.g. sam2) are optional extras that FaceDetailer doesn't
     # need; GitHub fetches fail intermittently on cloud GPUs, so don't let them
     # block the rest.
@@ -133,26 +139,32 @@ fetch_model() {
 # ── Face detector model ───────────────────────────────────────────────────────
 fetch_model "$FACE_MODEL_URL" "$COMFYUI_DIR/models/ultralytics/bbox/face_yolov8m.pt" "$FACE_MODEL_MIN_BYTES"
 
+# check_licenses "<hf repo>:<expected license>" … — prints each declared license and
+# stops if one differs (override after reviewing: OUTFIT_LICENSE_OK=1).
+license_of() {
+  curl -fsS --max-time 20 "$HF/api/models/$1" | "$COMFYUI_PYTHON" -c \
+    'import json,sys; d=json.load(sys.stdin); c=d.get("cardData") or {}; t=[x[8:] for x in d.get("tags",[]) if x.startswith("license:")]; print(c.get("license") or (t[0] if t else "unknown"))'
+}
+check_licenses() {
+  local bad=0 entry repo want got
+  for entry in "$@"; do
+    repo="${entry%%:*}" want="${entry##*:}"
+    got=$(license_of "$repo" || echo "unreachable")
+    printf '  %-36s %s\n' "$repo" "$got"
+    [[ "$got" == "$want" ]] || bad=1
+  done
+  if (( bad )) && [[ "${OUTFIT_LICENSE_OK:-0}" != "1" ]]; then
+    die "a model license differs from the expected one — review it, then re-run with OUTFIT_LICENSE_OK=1 to continue."
+  fi
+}
+
 # ── Outfit reference ──────────────────────────────────────────────────────────
 if (( OUTFIT )); then
   # Declared licenses, read from the Hub before anything is downloaded.
   log "Model licenses (Hugging Face model cards)"
-  license_of() {
-    curl -fsS --max-time 20 "$HF/api/models/$1" | "$COMFYUI_PYTHON" -c \
-      'import json,sys; d=json.load(sys.stdin); c=d.get("cardData") or {}; t=[x[8:] for x in d.get("tags",[]) if x.startswith("license:")]; print(c.get("license") or (t[0] if t else "unknown"))'
-  }
-  bad=0
-  for entry in "h94/IP-Adapter:apache-2.0" "microsoft/Florence-2-large:mit" "Bingsu/adetailer:apache-2.0"; do
-    repo="${entry%%:*}" want="${entry##*:}"
-    got=$(license_of "$repo" || echo "unreachable")
-    printf '  %-28s %s\n' "$repo" "$got"
-    [[ "$got" == "$want" ]] || bad=1
-  done
+  check_licenses "h94/IP-Adapter:apache-2.0" "microsoft/Florence-2-large:mit" "Bingsu/adetailer:apache-2.0"
   echo "  Note: the YOLOv8 detectors (face_yolov8m.pt, person_yolov8m-seg.pt) are Ultralytics models — Ultralytics"
   echo "        licenses YOLOv8 under AGPL-3.0 (or a paid Enterprise license) regardless of the repo's tag."
-  if (( bad )) && [[ "${OUTFIT_LICENSE_OK:-0}" != "1" ]]; then
-    die "a model license differs from the expected one — review it, then re-run with OUTFIT_LICENSE_OK=1 to continue."
-  fi
 
   install_repo ComfyUI_IPAdapter_plus https://github.com/cubiq/ComfyUI_IPAdapter_plus "$IPADAPTER_REF"
   install_repo ComfyUI-Florence2 https://github.com/kijai/ComfyUI-Florence2 "$FLORENCE2_REF"
@@ -205,6 +217,24 @@ print(sorted(os.listdir(dest)))
 PY
 fi
 
+# ── Pose copying (photo → skeleton → OpenPose ControlNet) ─────────────────────
+if (( POSE )); then
+  log "Pose model licenses (Hugging Face model cards)"
+  check_licenses "xinsir/controlnet-openpose-sdxl-1.0:apache-2.0" "yzd-v/DWPose:apache-2.0"
+  # The pack's full requirements pull mediapipe, trimesh and onnxruntime-gpu for
+  # preprocessors we don't use; DWPose only needs these.
+  install_repo comfyui_controlnet_aux https://github.com/Fannovel16/comfyui_controlnet_aux "$CNAUX_REF" noreqs
+  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check \
+    huggingface_hub opencv-python-headless scipy einops filelock scikit-image matplotlib pyyaml addict yacs omegaconf python-dateutil onnxruntime
+  echo "DWPose requirements installed"
+  fetch_model "$HF/xinsir/controlnet-openpose-sdxl-1.0/resolve/main/diffusion_pytorch_model.safetensors" \
+    "$COMFYUI_DIR/models/controlnet/sdxl_openpose.safetensors" 2000000000
+  log "DWPose models (yzd-v/DWPose → comfyui_controlnet_aux/ckpts)"
+  for f in yolox_l.onnx dw-ll_ucoco_384.onnx; do
+    fetch_model "$HF/yzd-v/DWPose/resolve/main/$f" "$COMFYUI_DIR/custom_nodes/comfyui_controlnet_aux/ckpts/yzd-v/DWPose/$f" 100000000
+  done
+fi
+
 # ── Check the Python side imports ─────────────────────────────────────────────
 log "Checking Python packages"
 "$COMFYUI_PYTHON" -c "import ultralytics, cv2, segment_anything, skimage, piexif; print('ultralytics', ultralytics.__version__, '· ok')"
@@ -229,8 +259,8 @@ if (( RESTART )); then
     done
     if (( ok )); then
       echo "ComfyUI restarted — FaceDetailer is loaded."
-      if (( OUTFIT )); then
-        for cls in IPAdapterAdvanced Florence2Run GetImageSizeAndCount SiennaTextOutput SegmDetectorCombined_v2; do
+      if (( OUTFIT || POSE )); then
+        for cls in IPAdapterAdvanced Florence2Run GetImageSizeAndCount SiennaTextOutput SegmDetectorCombined_v2 $( (( POSE )) && echo DWPreprocessor ); do
           if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — check the ComfyUI log"; fi
         done
       fi

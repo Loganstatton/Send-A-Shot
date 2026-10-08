@@ -1,5 +1,6 @@
 'use client';
 
+import { visibleWarnings } from '@/lib/warnings';
 import Link from 'next/link';
 import { fileUrl } from '@/lib/client/api';
 import { shareImage } from '@/lib/client/share';
@@ -40,7 +41,7 @@ export function JobCard({ job, onDismiss }: { job: GenerationRecord; onDismiss: 
           {job.images.length > 1 && <span>· {job.images.length} images</span>}
         </div>
         {job.error && <Notice kind="error">{job.error}</Notice>}
-        {job.warnings.slice(0, 2).map((w, i) => (
+        {visibleWarnings(job.warnings).slice(0, 2).map((w, i) => (
           <p key={i} className="text-xs text-amber-300">
             {w}
           </p>

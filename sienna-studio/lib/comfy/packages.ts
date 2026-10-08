@@ -41,7 +41,8 @@ const PACKAGES: { test: RegExp; pkg: NodePackage }[] = [
     pkg: {
       name: 'comfyui_controlnet_aux',
       repo: 'https://github.com/Fannovel16/comfyui_controlnet_aux',
-      notes: 'Only needed if you feed photos instead of ready-made OpenPose skeleton images.',
+      notes:
+        'Pose copying: DWPreprocessor turns a reference photo into a skeleton (pose only, no face or body). Install with scripts/comfyui-bootstrap.sh --with-pose, which also downloads models/controlnet/sdxl_openpose.safetensors.',
     },
   },
   {

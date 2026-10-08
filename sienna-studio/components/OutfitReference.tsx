@@ -2,10 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api, fileUrl } from '@/lib/client/api';
-import { OUTFIT_ATTRIBUTE_KEYS, OUTFIT_ATTRIBUTE_LABELS, OUTFIT_LIMITATIONS, OUTFIT_MAX_STRENGTH, OUTFIT_MODE_LABELS, OUTFIT_MODES_OFFERED, OUTFIT_RECOMMENDED, OutfitAnalysis } from '@/lib/outfit';
-import type { OutfitMode, StoredImage } from '@/lib/types';
-import { ImagePicker } from './ImagePicker';
-import { Button, Notice, Select, Slider, Spinner, toast } from './ui';
+import { OUTFIT_ATTRIBUTE_KEYS, OUTFIT_ATTRIBUTE_LABELS, OUTFIT_LIMITATIONS, OUTFIT_MAX_STRENGTH, OUTFIT_MODE_LABELS, OUTFIT_RECOMMENDED, OutfitAnalysis } from '@/lib/outfit';
+import type { StoredImage } from '@/lib/types';
+import { Button, Notice, Slider, Spinner, toast } from './ui';
 
 type Status =
   | { state: 'pending' | 'running'; position?: number }
@@ -17,30 +16,21 @@ const POLL_MS = 2000;
 const TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
- * Outfit reference: upload a photo of an outfit, check what the app extracted
- * (garment-only crop + description), then generate Sienna wearing it.
+ * Outfit reference panel, shown under the photo tiles once an outfit photo is
+ * picked: optional analysis (clothing-only crop + description) and strength.
  */
 export function OutfitReference({
   enabled,
-  needsReset,
   image,
-  onImage,
   strength,
   onStrength,
-  mode,
-  onMode,
   outfitText,
   onUseText,
 }: {
   enabled: boolean;
-  /** The saved copy of the production workflow predates the outfit nodes. */
-  needsReset?: boolean;
   image: StoredImage | null;
-  onImage: (img: StoredImage | null) => void;
   strength: number;
   onStrength: (v: number) => void;
-  mode: OutfitMode;
-  onMode: (m: OutfitMode) => void;
   outfitText: string;
   onUseText: (text: string) => void;
 }) {
@@ -78,37 +68,19 @@ export function OutfitReference({
 
   const done = status?.state === 'done' ? status : null;
 
+  const found = done ? OUTFIT_ATTRIBUTE_KEYS.filter((k) => done.attributes[k].length) : [];
+  const missing = done ? OUTFIT_ATTRIBUTE_KEYS.filter((k) => !done.attributes[k].length) : [];
+
   return (
-    <div className="space-y-3 rounded-xl bg-ink-900/60 p-3 ring-1 ring-ink-800">
-      <div className="grid grid-cols-2 gap-3">
-        <ImagePicker
-          label="Outfit reference"
-          value={image}
-          onChange={onImage}
-          disabled={!enabled}
-          hint={
-            enabled
-              ? 'Photo of the outfit — only the clothes are used, never the face'
-              : needsReset
-                ? 'Your saved copy of this workflow predates outfit reference — Reset it in Library → Workflows'
-                : 'Pick the Sienna Production · SDXL workflow'
-          }
-        />
-        {done?.preview ? (
-          <div>
-            <p className="mb-1 text-sm text-ink-200">What the model sees</p>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={fileUrl(done.preview.file)} alt="Garment-only crop" className="aspect-[3/4] w-full rounded-xl bg-ink-800 object-contain" />
-          </div>
-        ) : (
-          <div className="flex flex-col justify-end gap-2">
-            <Button onClick={analyze} loading={busy} disabled={!image || !enabled}>
-              Analyze outfit
-            </Button>
-            <p className="text-xs text-ink-400">Shows the garment-only crop and a description before you generate.</p>
-          </div>
-        )}
-      </div>
+    <div className="space-y-3">
+      {!done && (
+        <div className="flex items-center gap-3">
+          <Button onClick={analyze} loading={busy} disabled={!image || !enabled} className="shrink-0">
+            Analyze outfit
+          </Button>
+          <p className="text-xs text-ink-400">Optional — shows what the model sees and writes the Outfit text for you.</p>
+        </div>
+      )}
 
       {status && status.state !== 'done' && status.state !== 'error' && (
         <p className="flex items-center gap-2 text-sm text-ink-400">
@@ -118,30 +90,36 @@ export function OutfitReference({
       {status?.state === 'error' && <Notice kind="error">{status.error}</Notice>}
 
       {done && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {done.notes.map((n, i) => (
             <Notice key={i} kind="warn">
               {n}
             </Notice>
           ))}
-          <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-sm">
-            {OUTFIT_ATTRIBUTE_KEYS.map((k) => (
-              <div key={k} className="contents">
-                <dt className="text-ink-400">{OUTFIT_ATTRIBUTE_LABELS[k]}</dt>
-                <dd className={done.attributes[k].length ? 'text-ink-100' : 'text-ink-500'}>
-                  {done.attributes[k].length ? done.attributes[k].join(', ') : 'not detected'}
-                </dd>
+          <div className="flex gap-3">
+            {done.preview && (
+              <div className="w-24 shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={fileUrl(done.preview.file)} alt="Clothing-only crop" className="aspect-[3/4] w-full rounded-lg bg-ink-800 object-contain" />
+                <p className="mt-1 text-center text-[10px] text-ink-400">What the model sees</p>
               </div>
-            ))}
-          </dl>
-          <div>
-            <p className="mb-1 text-xs uppercase tracking-wide text-ink-400">Outfit description</p>
-            <p className="select-text rounded-xl bg-ink-800 p-3 text-sm">{done.outfitText || '—'}</p>
+            )}
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="select-text rounded-xl bg-ink-800 p-2.5 text-sm">{done.outfitText || '—'}</p>
+              <div className="flex flex-wrap gap-1">
+                {found.flatMap((k) =>
+                  done.attributes[k].map((v) => (
+                    <span key={k + v} className="rounded-full bg-ink-800 px-2 py-0.5 text-[11px] text-ink-200" title={OUTFIT_ATTRIBUTE_LABELS[k]}>
+                      {v}
+                    </span>
+                  )),
+                )}
+              </div>
+              {missing.length > 0 && (
+                <p className="text-[11px] text-ink-400">Not detected: {missing.map((k) => OUTFIT_ATTRIBUTE_LABELS[k].toLowerCase()).join(', ')}</p>
+              )}
+            </div>
           </div>
-          <details className="text-xs text-ink-400">
-            <summary>Raw Florence-2 caption</summary>
-            <p className="mt-1 select-text">{done.caption || '—'}</p>
-          </details>
           <div className="flex gap-2">
             <Button
               className="flex-1"
@@ -149,10 +127,10 @@ export function OutfitReference({
               disabled={!done.outfitText || done.outfitText === outfitText}
               onClick={() => {
                 onUseText(done.outfitText);
-                toast('Outfit field updated — check the Final prompt.');
+                toast('Outfit text updated');
               }}
             >
-              Use as Outfit text
+              {done.outfitText && done.outfitText === outfitText ? 'Outfit text set ✓' : 'Use as Outfit text'}
             </Button>
             <Button variant="ghost" onClick={analyze} loading={busy}>
               Re-analyze
@@ -161,40 +139,30 @@ export function OutfitReference({
         </div>
       )}
 
-      {enabled && (
-        <>
-          <Slider
-            label="Outfit strength"
-            hint={`independent of LoRA strength · ${OUTFIT_RECOMMENDED} works best`}
-            value={Math.min(strength, OUTFIT_MAX_STRENGTH)}
-            min={0}
-            max={OUTFIT_MAX_STRENGTH}
-            step={0.05}
-            onChange={onStrength}
-          />
-          {OUTFIT_MODES_OFFERED.length > 1 ? (
-            <Select
-              label="Outfit mode"
-              value={mode}
-              onChange={(v) => onMode(v === 'close' ? 'close' : 'design')}
-              options={OUTFIT_MODES_OFFERED.map((m) => ({ value: m, label: OUTFIT_MODE_LABELS[m] }))}
-            />
-          ) : (
-            <p className="text-xs text-ink-400">Mode: {OUTFIT_MODE_LABELS.design} — the outfit follows the photo; pose and background come from your prompt.</p>
-          )}
-        </>
-      )}
+      <Slider
+        label="Outfit strength"
+        hint={`${OUTFIT_RECOMMENDED} works best`}
+        value={Math.min(strength, OUTFIT_MAX_STRENGTH)}
+        min={0}
+        max={OUTFIT_MAX_STRENGTH}
+        step={0.05}
+        onChange={onStrength}
+      />
 
-      {image && (
-        <details className="text-xs text-ink-400">
-          <summary>Limitations</summary>
-          <ul className="mt-1 list-disc space-y-1 pl-4">
-            {OUTFIT_LIMITATIONS.map((l) => (
-              <li key={l}>{l}</li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <details className="text-xs text-ink-400">
+        <summary>How this works &amp; limitations</summary>
+        <ul className="mt-1 list-disc space-y-1 pl-4">
+          <li>{OUTFIT_MODE_LABELS.design}: the outfit follows the photo; pose and background come from your prompt.</li>
+          {OUTFIT_LIMITATIONS.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+          {done && (
+            <li>
+              Raw caption: <span className="select-text">{done.caption || '—'}</span>
+            </li>
+          )}
+        </ul>
+      </details>
     </div>
   );
 }

@@ -33,7 +33,7 @@ export const PRIMARY_WORKFLOW_ID = 'sienna-sdxl-production';
 // ── Sienna Production · SDXL ────────────────────────────────────────────────
 // 1 CheckpointLoaderSimple · 2 LoraLoader (Sienna) · 3/4 CLIPTextEncode ±
 // 10 LoadImage face → 11 IPAdapterUnifiedLoaderFaceID → 12 IPAdapterFaceID
-// 20 LoadImage pose → 21 ControlNetLoader → 22 ControlNetApplyAdvanced
+// 20 LoadImage pose photo → 23 DWPreprocessor (skeleton only) → 22 ControlNetApplyAdvanced ← 21 ControlNetLoader
 // 30 LoadImage init → 31 ImageScale → 32 VAEEncode   |   33 EmptyLatentImage
 // 60 LoadImage outfit → 61-68 garment isolation (lib/outfit.ts) → 69 PrepImageForClipVision
 //   → 70/71 IPAdapter + CLIP-ViT-H loaders → 72 IPAdapterAdvanced (first pass only; FaceDetailer keeps the plain LoRA model)

@@ -83,7 +83,7 @@ describe('SDXL production: single modules', () => {
 
   it('reports module node sets', () => {
     expect(moduleNodeIds(w.graph, w.bindings, 'face_reference_image').sort()).toEqual(['10', '11', '12']);
-    expect(moduleNodeIds(w.graph, w.bindings, 'pose_image').sort()).toEqual(['20', '21', '22']);
+    expect(moduleNodeIds(w.graph, w.bindings, 'pose_image').sort()).toEqual(['20', '21', '22', '23']);
     expect(moduleNodeIds(w.graph, w.bindings, 'init_image').sort()).toEqual(['30', '31', '32']);
   });
 });
@@ -223,5 +223,19 @@ describe('SDXL production: outfit reference module', () => {
     expect(moduleNodeIds(w.graph, w.bindings, 'outfit_reference_image').sort()).toEqual(
       ['60', '61', '62', '63', '64', '65', '66', '67', '68', '69', '70', '71', '72'].sort(),
     );
+  });
+});
+
+describe('SDXL production: pose module', () => {
+  const w = wf('sienna-sdxl-production');
+  it('only the extracted skeleton reaches the ControlNet', () => {
+    expect(w.graph['22'].inputs.image).toEqual(['23', 0]);
+    expect(w.graph['23'].class_type).toBe('DWPreprocessor');
+    expect(w.graph['23'].inputs.detect_face).toBe('disable');
+  });
+  it('pruning pose removes the extractor, loader and apply node', () => {
+    const { graph: g } = pruneModule(w.graph, w.bindings, 'pose_image');
+    for (const id of ['20', '21', '22', '23']) expect(g[id]).toBeUndefined();
+    expect(g['40'].inputs.positive).toEqual(['3', 0]);
   });
 });

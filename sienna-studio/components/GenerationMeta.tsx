@@ -1,5 +1,6 @@
 'use client';
 
+import { visibleWarnings } from '@/lib/warnings';
 import { fileUrl } from '@/lib/client/api';
 import { MODULE_LABELS, ModuleKey } from '@/lib/comfy/modules';
 import type { GenerationRecord, StoredImage } from '@/lib/types';
@@ -8,6 +9,7 @@ import { Badge, Button, Collapsible, Notice, toast } from './ui';
 /** Every piece of metadata for a generation, including ComfyUI error details and the submitted graph. */
 export function GenerationMeta({ rec, showPrompt = true }: { rec: GenerationRecord; showPrompt?: boolean }) {
   const date = new Date(rec.createdAt);
+  const warnings = visibleWarnings(rec.warnings);
   const took = rec.completedAt ? Math.round((Date.parse(rec.completedAt) - Date.parse(rec.createdAt)) / 1000) : null;
   return (
     <div className="space-y-3">
@@ -24,9 +26,9 @@ export function GenerationMeta({ rec, showPrompt = true }: { rec: GenerationReco
           </pre>
         </Collapsible>
       )}
-      {rec.warnings.length > 0 && (
+      {warnings.length > 0 && (
         <div className="space-y-2">
-          {rec.warnings.map((w, i) => (
+          {warnings.map((w, i) => (
             <Notice key={i} kind="warn">
               {w}
             </Notice>

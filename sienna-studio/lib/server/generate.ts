@@ -51,6 +51,8 @@ import {
   storeImage,
 } from './store';
 
+const NO_FACE_REF = 'no face reference uploaded on the Sienna tab';
+
 export class GenerationError extends Error {
   constructor(
     message: string,
@@ -219,7 +221,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
     let reason: string | null = null;
     if (!wanted[key]) {
-      reason = key === 'face_reference_image' && req.siennaLock ? 'no face reference uploaded on the Sienna tab' : 'not used';
+      reason = key === 'face_reference_image' && req.siennaLock ? NO_FACE_REF : 'not used';
     } else {
       const ids = moduleNodeIds(graph, bindings, key);
       const missing = await missingClasses(backend, graph, ids);
@@ -245,7 +247,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
     prunedModules.push(key);
     wanted[key] = null;
-    if (reason !== 'not used') warnings.push(`${label} module skipped — ${reason}.`);
+    // No face photo on the Sienna tab is the normal setup (identity comes from the LoRA), not a problem worth flagging.
+    if (reason !== 'not used' && reason !== NO_FACE_REF) warnings.push(`${label} module skipped — ${reason}.`);
   }
   const { face_reference_image: faceReference, init_image: initImage, pose_image: poseImage, outfit_reference_image: outfitImage } = wanted;
   let outfitMode: OutfitMode = p.outfitMode === 'close' ? 'close' : 'design';
