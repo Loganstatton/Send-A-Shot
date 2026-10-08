@@ -25,7 +25,7 @@ describe('garment isolation', () => {
 
   it('mode → IPAdapter weight type', () => {
     expect(OUTFIT_WEIGHT_TYPE.design).toBe('style transfer');
-    expect(OUTFIT_WEIGHT_TYPE.close).toBe('linear');
+    expect(OUTFIT_WEIGHT_TYPE.close).toBe('strong style transfer');
   });
 });
 
@@ -52,6 +52,19 @@ describe('outfitFromCaption', () => {
 
   it('returns empty when nothing is about clothing', () => {
     expect(outfitFromCaption('The image shows a grey background with a blurred shape.')).toBe('');
+  });
+});
+
+describe('real Florence-2 captions (outfit test run)', () => {
+  it('keeps garment details joined with "and has", drops the body part they reveal and the size prefix', () => {
+    const r = analyzeCaption(
+      '1x832x1216 The image shows a woman wearing a long, emerald green dress. The dress has a deep V-neckline and thin straps that wrap around her body. ' +
+        'The skirt of the dress is knee-length and has a slit on the side, revealing her legs. She is wearing gold high heels and her hair is styled in loose waves. ' +
+        'The background is a plain grey color. Her face is partially obscured by a white mask covering her face.',
+    );
+    expect(r.outfitText).toContain('the skirt of the dress is knee-length and has a slit on the side');
+    expect(r.outfitText).not.toMatch(/legs|hair|mask|background/);
+    expect(r.attributes.cutouts).toEqual(['slit']);
   });
 });
 

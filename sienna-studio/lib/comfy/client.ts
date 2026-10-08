@@ -34,7 +34,7 @@ export interface OutputImageRef {
 export type JobState =
   | { state: 'pending'; position: number }
   | { state: 'running' }
-  | { state: 'done'; images: OutputImageRef[]; /** STRING outputs published by text output nodes (e.g. SiennaTextOutput). */ texts?: string[] }
+  | { state: 'done'; images: OutputImageRef[]; /** STRING outputs published by output nodes, by node id (e.g. SiennaTextOutput). */ texts?: Record<string, string[]> }
   | { state: 'error'; message: string; details?: unknown }
   | { state: 'unknown' };
 
@@ -217,9 +217,10 @@ export class RealComfy implements ComfyBackend {
       }
       if (status && status.completed === false && status.status_str !== 'success') return { state: 'running' };
       const images: OutputImageRef[] = [];
-      const texts: string[] = [];
+      const texts: Record<string, string[]> = {};
       for (const [nodeId, out] of Object.entries<any>(entry.outputs ?? {})) {
-        for (const t of [out.text ?? []].flat(2)) if (typeof t === 'string') texts.push(t);
+        const t = [out.text ?? []].flat(2).filter((x: unknown): x is string => typeof x === 'string');
+        if (t.length) texts[nodeId] = t;
         if (outputNodeIds.length && !outputNodeIds.includes(nodeId)) continue;
         for (const img of out.images ?? []) {
           images.push({ filename: img.filename, subfolder: img.subfolder ?? '', type: img.type ?? 'output', nodeId });
@@ -227,7 +228,7 @@ export class RealComfy implements ComfyBackend {
       }
       // Prefer saved outputs over temp previews when both exist.
       const saved = images.filter((i) => i.type === 'output');
-      return { state: 'done', images: saved.length ? saved : images, ...(texts.length ? { texts } : {}) };
+      return { state: 'done', images: saved.length ? saved : images, ...(Object.keys(texts).length ? { texts } : {}) };
     }
     const q = await this.json<{ queue_running: any[]; queue_pending: any[] }>('/queue');
     if (q.queue_running?.some((item) => item[1] === promptId)) return { state: 'running' };
@@ -324,7 +325,8 @@ export class MockComfy implements ComfyBackend {
         job.images.push({ name: `mock_${promptId}_${i}.png`, bytes: encodePng(img.width, img.height, img.rgb) });
       }
     }
-    const texts = Object.values(job.graph).some((n) => n.class_type === 'SiennaTextOutput') ? [MOCK_OUTFIT_CAPTION] : undefined;
+    const textNode = Object.entries(job.graph).find(([, n]) => n.class_type === 'SiennaTextOutput')?.[0];
+    const texts = textNode ? { [textNode]: [MOCK_OUTFIT_CAPTION] } : undefined;
     return {
       state: 'done',
       images: job.images.map((im) => ({ filename: im.name, subfolder: '', type: 'output', nodeId: 'mock' })),

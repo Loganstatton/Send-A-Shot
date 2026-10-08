@@ -655,8 +655,8 @@ export function CreateScreen() {
               {draft.images.outfitImage &&
                 (caps.outfit ? (
                   <Notice kind="info">
-                    Outfit reference on — strength {(draft.params.outfitStrength ?? DEFAULT_PARAMS.outfitStrength!).toFixed(2)},{' '}
-                    {OUTFIT_MODE_LABELS[draft.params.outfitMode ?? 'design']}. Clothing only; Sienna&apos;s LoRA, face refinement and identity settings are unchanged.
+                    Outfit reference on — strength {Math.min(draft.params.outfitStrength ?? DEFAULT_PARAMS.outfitStrength!, 1).toFixed(2)},{' '}
+                    {OUTFIT_MODE_LABELS.design}. Clothing only; Sienna&apos;s LoRA, face refinement and identity settings are unchanged.
                   </Notice>
                 ) : (
                   <Notice kind="error">This workflow has no outfit-reference input — generation will be refused. Pick Sienna Production · SDXL.</Notice>

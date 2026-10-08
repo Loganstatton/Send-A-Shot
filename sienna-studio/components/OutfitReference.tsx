@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api, fileUrl } from '@/lib/client/api';
-import { OUTFIT_ATTRIBUTE_KEYS, OUTFIT_ATTRIBUTE_LABELS, OUTFIT_LIMITATIONS, OUTFIT_MODE_LABELS, OutfitAnalysis } from '@/lib/outfit';
+import { OUTFIT_ATTRIBUTE_KEYS, OUTFIT_ATTRIBUTE_LABELS, OUTFIT_LIMITATIONS, OUTFIT_MAX_STRENGTH, OUTFIT_MODE_LABELS, OUTFIT_MODES_OFFERED, OUTFIT_RECOMMENDED, OutfitAnalysis } from '@/lib/outfit';
 import type { OutfitMode, StoredImage } from '@/lib/types';
 import { ImagePicker } from './ImagePicker';
 import { Button, Notice, Select, Slider, Spinner, toast } from './ui';
@@ -13,7 +13,8 @@ type Status =
   | ({ state: 'done'; preview: StoredImage | null } & OutfitAnalysis);
 
 const POLL_MS = 2000;
-const TIMEOUT_MS = 4 * 60 * 1000;
+// Generous: the analysis waits in the same GPU queue as any running generations.
+const TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * Outfit reference: upload a photo of an outfit, check what the app extracted
@@ -155,19 +156,23 @@ export function OutfitReference({
         <>
           <Slider
             label="Outfit strength"
-            hint="independent of LoRA strength"
-            value={strength}
+            hint={`independent of LoRA strength · ${OUTFIT_RECOMMENDED} works best`}
+            value={Math.min(strength, OUTFIT_MAX_STRENGTH)}
             min={0}
-            max={1.5}
+            max={OUTFIT_MAX_STRENGTH}
             step={0.05}
             onChange={onStrength}
           />
-          <Select
-            label="Outfit mode"
-            value={mode}
-            onChange={(v) => onMode(v === 'close' ? 'close' : 'design')}
-            options={(Object.keys(OUTFIT_MODE_LABELS) as OutfitMode[]).map((m) => ({ value: m, label: OUTFIT_MODE_LABELS[m] }))}
-          />
+          {OUTFIT_MODES_OFFERED.length > 1 ? (
+            <Select
+              label="Outfit mode"
+              value={mode}
+              onChange={(v) => onMode(v === 'close' ? 'close' : 'design')}
+              options={OUTFIT_MODES_OFFERED.map((m) => ({ value: m, label: OUTFIT_MODE_LABELS[m] }))}
+            />
+          ) : (
+            <p className="text-xs text-ink-400">Mode: {OUTFIT_MODE_LABELS.design} — the outfit follows the photo; pose and background come from your prompt.</p>
+          )}
         </>
       )}
 

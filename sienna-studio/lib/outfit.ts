@@ -26,8 +26,9 @@ import type { ComfyGraph, OutfitMode } from './types';
 export const OUTFIT_WEIGHT_TYPE: Record<OutfitMode, string> = {
   // Style-only blocks: copies colour/fabric/cut but leaves pose, framing and background to the prompt.
   design: 'style transfer',
-  // All blocks: closer to the reference, but also pulls in its composition and pose.
-  close: 'linear',
+  // More style blocks for closer garment detail. Not 'linear': in testing that copied the
+  // reference's pose, studio background and identity cues (hair, skin tone, a smeared face).
+  close: 'strong style transfer',
 };
 
 export const OUTFIT_MODE_LABELS: Record<OutfitMode, string> = {
@@ -35,11 +36,27 @@ export const OUTFIT_MODE_LABELS: Record<OutfitMode, string> = {
   close: 'Match reference closely',
 };
 
+/**
+ * Modes offered in the UI. 'close' is withheld: in fidelity testing both 'linear' and
+ * 'strong style transfer' copied the reference's pose, studio background and identity
+ * cues (skin tone, hair), which the outfit feature must never do.
+ */
+export const OUTFIT_MODES_OFFERED: OutfitMode[] = ['design'];
+
+/** Highest outfit strength applied; above ~0.8 the reference background starts to creep in. */
+export const OUTFIT_MAX_STRENGTH = 1.0;
+export const OUTFIT_RECOMMENDED = '0.6–0.8';
+
+/** Outfit words that the SFW negative prompt may tone down. */
+export const REVEALING_OUTFIT_RE =
+  /\b(swimsuit|bikini|monokini|lingerie|bra|bralette|corset|bustier|teddy|babydoll|thong|sheer|see-through|mesh|cut-?outs?|backless|plunging|micro|high-cut)\b/i;
+
 export const OUTFIT_LIMITATIONS = [
   'The outfit is matched by look, not copied pixel-for-pixel: small details (strap layout, lace pattern, exact cutout shape, logos, text) can drift.',
   'Only clothing is used — the face and hair of the person in the photo are masked out before anything reaches the model.',
-  'Garments the base model rarely saw can come out simplified; raise Outfit strength or use "Match reference closely".',
-  'High outfit strength can pull in the reference pose or body shape; lower it if Sienna starts to look different.',
+  'Colour-block and print layouts are reinterpreted (e.g. a diagonal stripe may come out as a V).',
+  'Florence-2 can misread details (it called wide swimsuit straps "thin") — check the description before using it.',
+  'Above about 0.8 the reference photo’s plain background and pose start to creep in; 0.6–0.8 works best.',
 ];
 
 // ── Garment isolation (shared by the analysis graph and the production workflow) ──
@@ -89,6 +106,9 @@ export function garmentIsolationNodes(imageId: string, start = 61): { nodes: Com
   return { nodes, outputId: id(7) };
 }
 
+/** Node in the analysis graph whose text output is the caption (other nodes, e.g. KJNodes, also publish text). */
+export const OUTFIT_CAPTION_NODE = '22';
+
 /** Node class that publishes a STRING to the job history (installed by scripts/comfyui-bootstrap.sh). */
 export const TEXT_OUTPUT_CLASS = 'SiennaTextOutput';
 
@@ -118,7 +138,7 @@ export function buildOutfitAnalysisGraph(uploadedName: string): ComfyGraph {
       },
       _meta: { title: 'Describe Outfit' },
     },
-    '22': { class_type: TEXT_OUTPUT_CLASS, inputs: { text: ['21', 2] }, _meta: { title: 'Outfit Caption' } },
+    [OUTFIT_CAPTION_NODE]: { class_type: TEXT_OUTPUT_CLASS, inputs: { text: ['21', 2] }, _meta: { title: 'Outfit Caption' } },
     '23': { class_type: 'PreviewImage', inputs: { images: [iso.outputId, 0] }, _meta: { title: 'Garment Preview' } },
   };
 }
@@ -137,7 +157,7 @@ const BODY_WORDS_RE =
   /\b(?:(?:slender|skinny|petite|curvy|voluptuous|busty|athletic|muscular|young|beautiful|pretty|attractive|sexy)\b|(?:slim|thin|tall|short|lean|toned|fit)\s+(?=(?:woman|girl|lady|body|figure|frame|build|physique|waist|legs|arms|model)\b))\s*/gi;
 /** Where a "wearing …" clause stops describing clothes. */
 const CLAUSE_END_RE =
-  /\s*(?:,\s*)?\b(?:and (?:she|her|is|has|appears|stands|looks)|while|she is|she's|her (?:hair|face|arms?|hands?|legs?|body)|standing|sitting|posing|leaning|holding|looking|in front of|against|with (?:her|a) (?:hair|hand|arm)|the background)\b.*$/i;
+  /\s*(?:,\s*)?\b(?:and (?:she|her|appears|stands|looks)|while|revealing|showing|she is|she's|her (?:hair|face|arms?|hands?|legs?|body)|standing|sitting|posing|leaning|holding|looking|in front of|against|with (?:her|a) (?:hair|hand|arm)|the background)\b.*$/i;
 
 function sentences(text: string): string[] {
   return text

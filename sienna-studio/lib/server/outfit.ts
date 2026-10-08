@@ -7,7 +7,7 @@
 import 'server-only';
 import { ComfyError, createBackend } from '../comfy/client';
 import { missingModelFile } from '../comfy/model-files';
-import { analyzeCaption, buildOutfitAnalysisGraph, OutfitAnalysis } from '../outfit';
+import { analyzeCaption, buildOutfitAnalysisGraph, OUTFIT_CAPTION_NODE, OutfitAnalysis } from '../outfit';
 import type { StoredImage } from '../types';
 import { describeMissing, GenerationError } from './generate';
 import { getComfyUrl, mimeFromBytes, newId, readImage, storeImage } from './store';
@@ -58,10 +58,10 @@ export async function outfitAnalysisStatus(promptId: string): Promise<OutfitAnal
     case 'error':
       return { state: 'error', error: s.message };
     case 'done': {
-      const caption = (s.texts ?? []).join(' ').trim();
+      const caption = (s.texts?.[OUTFIT_CAPTION_NODE] ?? []).join(' ').trim();
       let preview: StoredImage | null = null;
       if (s.images[0]) {
-        const { bytes, mime } = await backend.fetchImage(s.images[0]);
+        const { bytes, mime } = await backend.fetchImage(s.images.find((i) => i.nodeId === '23') ?? s.images[0]);
         preview = await storeImage(bytes, mimeFromBytes(bytes) ?? mime, 'up', 'Outfit garment preview');
       }
       return { state: 'done', preview, ...analyzeCaption(caption) };

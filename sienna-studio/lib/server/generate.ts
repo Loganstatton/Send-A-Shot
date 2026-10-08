@@ -31,10 +31,10 @@ import {
 } from '../comfy/modules';
 import { packageFor } from '../comfy/packages';
 import { MIN_CHARACTER_AGE } from '../defaults';
-import { OUTFIT_WEIGHT_TYPE } from '../outfit';
+import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt } from '../prompt';
 import { resolveLockedLora } from '../sienna-models';
-import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, StoredImage, WorkflowBindings } from '../types';
+import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
   getCharacter,
@@ -248,9 +248,13 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     if (reason !== 'not used') warnings.push(`${label} module skipped — ${reason}.`);
   }
   const { face_reference_image: faceReference, init_image: initImage, pose_image: poseImage, outfit_reference_image: outfitImage } = wanted;
-  const outfitMode = p.outfitMode === 'close' ? 'close' : 'design';
-  const outfitStrength = clamp(p.outfitStrength ?? 0.7, 0, 1.5);
-  if (outfitImage && contentMode === 'sfw') {
+  let outfitMode: OutfitMode = p.outfitMode === 'close' ? 'close' : 'design';
+  if (outfitImage && !OUTFIT_MODES_OFFERED.includes(outfitMode)) {
+    warnings.push('“Match reference closely” is disabled (it copied the reference person’s pose and look in testing) — used “Keep design”.');
+    outfitMode = 'design';
+  }
+  const outfitStrength = clamp(p.outfitStrength ?? 0.7, 0, OUTFIT_MAX_STRENGTH);
+  if (outfitImage && contentMode === 'sfw' && REVEALING_OUTFIT_RE.test(req.fields.outfit)) {
     warnings.push('SFW mode: the negative prompt still steers away from nudity, so very revealing outfits may come out with more coverage.');
   }
 
