@@ -184,11 +184,12 @@ describe('body protection prompt', () => {
     expect(p).toContain('do not copy the body shape, figure, proportions, height or skin tone of the person in image 2');
     expect(p).not.toContain('Image 3');
   });
-  it('with body references, names image 3 as her body', () => {
+  it('with body references, explains the two parts of image 2', () => {
     const p = buildEditPrompt({ ...base, protect: { ...NO_PROTECT, bodyRef: true } });
-    expect(p).toContain('Image 3 is only a body reference');
-    expect(p).toContain('Take nothing else from image 3: the background, lighting, framing and pose come from image 1');
-    expect(p).toMatch(/must stay exactly as in image 1 and image 3/);
+    expect(p).toContain('The left part shows the clothing to dress her in');
+    expect(p).toContain('must stay exactly as in image 1 and in the right part of image 2');
+    expect(p).toContain('the background, lighting, framing and pose come from image 1');
+    expect(p).not.toContain('Image 3');
   });
 });
 
@@ -228,11 +229,12 @@ describe('graph with body protection', () => {
     expect(g.body_sheet).toBeUndefined();
     linksOk(g);
   });
-  it('body references: stitched sheet is image 3 of both encoders', () => {
+  it('body references: image 2 = clothing (left) + her body cut-outs (right); no third image', () => {
     const g = buildOutfitEditGraph({ ...base, protect: { ...NO_PROTECT, bodyRef: true } });
-    expect(g.body_sheet.inputs).toMatchObject({ image1: ['body_ref_1', 0], image3: ['body_ref_3', 0], mask1: ['bref1_person', 0], mask3: ['bref3_person', 0] });
-    expect(g.q_pos.inputs.image3).toEqual(['body_sheet', 0]);
-    expect(g.q_neg.inputs.image3).toEqual(['body_sheet', 0]);
+    expect(g.body_sheet.inputs).toMatchObject({ image1: ['ref_crop', 0], image2: ['body_ref_1', 0], image4: ['body_ref_3', 0], mask2: ['bref1_person', 0], mask4: ['bref3_person', 0] });
+    expect(g.body_sheet.inputs.mask1).toBeUndefined();
+    expect(g.q_pos.inputs.image2).toEqual(['body_sheet', 0]);
+    expect(g.q_pos.inputs.image3).toBeUndefined();
     linksOk(g);
   });
   it('body check: measures source, result and each reference; flags passed through', () => {

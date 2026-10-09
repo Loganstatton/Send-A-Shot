@@ -136,11 +136,14 @@ export interface EditPromptInput {
 
 const NOCOPY =
   'Image 2 is only a clothing reference: do not copy the body shape, figure, proportions, height or skin tone of the person in image 2. ';
+// Body references share image 2 with the clothing (left: clothing, right: her body cut out on grey). As a third
+// image they made the editor replace the whole scene (GPU comparison, 3 of 3), with the clothing in image 2 it kept it.
 const BODYREF =
-  'Image 3 is only a body reference: approved photos of the same woman as image 1, cut out on grey. Her body (shoulders, bust, waist, hips, ' +
-  'thighs, legs and overall build) must stay exactly as in image 1 and image 3. Take nothing else from image 3: the background, lighting, ' +
-  'framing and pose come from image 1, and the clothing from image 2. ';
-const protectText = (p?: BodyProtect) => (p && (p.garmentOnly || p.bodyRef) ? NOCOPY : '') + (p?.bodyRef ? BODYREF : '');
+  'Image 2 has two parts. The left part shows the clothing to dress her in; do not copy the body, figure, proportions or skin tone of anyone wearing it. ' +
+  'The right part shows approved photos of the same woman as image 1, cut out on grey: her real body. Her body (shoulders, bust, waist, hips, ' +
+  'thighs, legs and overall build) must stay exactly as in image 1 and in the right part of image 2. Take only the clothing from the left part, and ' +
+  'nothing else from image 2: the background, lighting, framing and pose come from image 1. ';
+const protectText = (p?: BodyProtect) => (p?.bodyRef ? BODYREF : p?.garmentOnly ? NOCOPY : '');
 
 const KEEP =
   'Keep her face, hair, skin, body shape and proportions (same leg length and limb thickness), pose, expression, ' +
@@ -319,28 +322,29 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
     g.save_crop = { class_type: 'SaveImage', inputs: { images: ['ref_crop', 0], filename_prefix: 'sienna/outfit-ref' } };
     refOut = ['ref_crop', 0];
   }
-  let sheet: { image3?: [string, number] } = {};
   if (pr.bodyRef && refs.length) {
+    // image 2 = [clothing | her body cut out on grey ×3]
+    const sheetRefs = refs.slice(0, 3);
     g.body_sheet = {
       class_type: 'SiennaBodySheet',
       inputs: {
         height: 768,
-        ...Object.fromEntries(refs.map((_, k) => [`image${k + 1}`, [`body_ref_${k + 1}`, 0]])),
-        // her body only, on grey: with the full photos the editor copied their studio background (GPU comparison)
-        ...Object.fromEntries(refs.map((_, k) => [`mask${k + 1}`, personOf(`bref${k + 1}`, [`body_ref_${k + 1}`, 0])])),
+        image1: refOut,
+        ...Object.fromEntries(sheetRefs.map((_, k) => [`image${k + 2}`, [`body_ref_${k + 1}`, 0]])),
+        ...Object.fromEntries(sheetRefs.map((_, k) => [`mask${k + 2}`, personOf(`bref${k + 1}`, [`body_ref_${k + 1}`, 0])])),
       },
-      _meta: { title: 'Sienna body references (image 3, cut out)' },
+      _meta: { title: 'Clothing (left) + Sienna body references (right)' },
     };
-    sheet = { image3: ['body_sheet', 0] };
+    refOut = ['body_sheet', 0];
   }
   Object.assign(g, {
     q_pos: {
       class_type: 'TextEncodeQwenImageEditPlus',
-      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: i.prompt, ...sheet },
+      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: i.prompt },
     },
     q_neg: {
       class_type: 'TextEncodeQwenImageEditPlus',
-      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: '', ...sheet },
+      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: '' },
     },
     q_shift: { class_type: 'ModelSamplingAuraFlow', inputs: { model: ['q_unet', 0], shift: QWEN_SAMPLING.shift } },
     q_cfgnorm: { class_type: 'CFGNorm', inputs: { model: ['q_shift', 0], strength: 1 } },
