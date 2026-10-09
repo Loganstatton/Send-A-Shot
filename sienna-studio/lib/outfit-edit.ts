@@ -136,11 +136,12 @@ export interface EditPromptInput {
 
 const NOCOPY =
   'Image 2 is only a clothing reference: do not copy the body shape, figure, proportions, height or skin tone of the person in image 2. ';
-// Body references share image 2 with the clothing (left: clothing, right: her body cut out on grey). As a third
-// image they made the editor replace the whole scene (GPU comparison, 3 of 3), with the clothing in image 2 it kept it.
+// Body references share image 2 with the clothing (left: clothing, right: her body cut out). As a third image, or cut
+// out on flat grey, they made the editor replace her room with a grey studio (GPU comparison), so the cut-outs sit on a
+// blurred copy of her own scene.
 const BODYREF =
   'Image 2 has two parts. The left part shows the clothing to dress her in; do not copy the body, figure, proportions or skin tone of anyone wearing it. ' +
-  'The right part shows approved photos of the same woman as image 1, cut out on grey: her real body. Her body (shoulders, bust, waist, hips, ' +
+  'The right part shows approved photos of the same woman as image 1, cut out over a blurred copy of image 1’s room: her real body. Her body (shoulders, bust, waist, hips, ' +
   'thighs, legs and overall build) must stay exactly as in image 1 and in the right part of image 2. Take only the clothing from the left part, and ' +
   'nothing else from image 2: the background, lighting, framing and pose come from image 1. ';
 const protectText = (p?: BodyProtect) => (p?.bodyRef ? BODYREF : p?.garmentOnly ? NOCOPY : '');
@@ -323,7 +324,7 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
     refOut = ['ref_crop', 0];
   }
   if (pr.bodyRef && refs.length) {
-    // image 2 = [clothing | her body cut out on grey ×3]
+    // image 2 = [clothing | her body cut out ×3, on her own blurred scene]
     const sheetRefs = refs.slice(0, 3);
     g.body_sheet = {
       class_type: 'SiennaBodySheet',
@@ -332,6 +333,9 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
         image1: refOut,
         ...Object.fromEntries(sheetRefs.map((_, k) => [`image${k + 2}`, [`body_ref_${k + 1}`, 0]])),
         ...Object.fromEntries(sheetRefs.map((_, k) => [`mask${k + 2}`, personOf(`bref${k + 1}`, [`body_ref_${k + 1}`, 0])])),
+        // cut-outs on a blurred copy of her own scene: on flat grey the editor turned her room into a grey studio
+        backdrop: ['src', 0],
+        backdrop_mask: personOf('src', ['src', 0]),
       },
       _meta: { title: 'Clothing (left) + Sienna body references (right)' },
     };

@@ -17,7 +17,7 @@ import json
 import numpy as np
 import torch
 
-from .sienna_body import SCENE_CHANGED, body_sheet, compare, garment_only, keypoints_from_pose, measure_body, scale_points, scene_change
+from .sienna_body import SCENE_CHANGED, body_sheet, compare, garment_only, keypoints_from_pose, measure_body, scale_points, scene_backdrop, scene_change
 from .sienna_crop import chin_crop
 from .sienna_garment import garment_composite
 from .sienna_pose import DEFAULT_PROPORTIONS, retarget_openpose
@@ -168,18 +168,24 @@ class SiennaBodySheet:
         return {
             "required": {"image1": ("IMAGE",), "height": ("INT", {"default": 768, "min": 256, "max": 2048})},
             "optional": {"image2": ("IMAGE",), "image3": ("IMAGE",), "image4": ("IMAGE",),
-                         **{f"mask{i}": ("MASK",) for i in range(1, 5)}},
+                         **{f"mask{i}": ("MASK",) for i in range(1, 5)},
+                         "backdrop": ("IMAGE",), "backdrop_mask": ("MASK",)},
         }
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "run"
     CATEGORY = "sienna"
 
-    def run(self, image1, height, image2=None, image3=None, image4=None, mask1=None, mask2=None, mask3=None, mask4=None):
+    def run(self, image1, height, image2=None, image3=None, image4=None, mask1=None, mask2=None, mask3=None, mask4=None,
+            backdrop=None, backdrop_mask=None):
         pairs = [(i, m) for i, m in ((image1, mask1), (image2, mask2), (image3, mask3), (image4, mask4)) if i is not None]
         ims = [i[0].detach().cpu().numpy().astype(np.float32) for i, _ in pairs]
         masks = [_mask_np(m, 0, im.shape[:2]) for (_, m), im in zip(pairs, ims)]
-        return (torch.from_numpy(np.ascontiguousarray(body_sheet(ims, height, masks=masks)))[None, ...],)
+        bg = None
+        if backdrop is not None:
+            b = backdrop[0].detach().cpu().numpy().astype(np.float32)
+            bg = scene_backdrop(b, _mask_np(backdrop_mask, 0, b.shape[:2]))
+        return (torch.from_numpy(np.ascontiguousarray(body_sheet(ims, height, masks=masks, backdrop=bg)))[None, ...],)
 
 
 class SiennaBodyMeasure:

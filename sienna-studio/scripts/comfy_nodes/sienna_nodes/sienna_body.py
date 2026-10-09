@@ -237,14 +237,42 @@ def garment_only(img: np.ndarray, person: np.ndarray, face_mask: Optional[np.nda
 
 # ── B: body reference sheet ──────────────────────────────────────────────────
 
-def body_sheet(images: List[np.ndarray], height: int = 768, gap: int = 16, masks: Optional[List[Optional[np.ndarray]]] = None) -> np.ndarray:
+def scene_backdrop(img: np.ndarray, person: Optional[np.ndarray] = None, small: int = 160) -> np.ndarray:
+    """The source photo's own scene with the person removed and blurred: a backdrop for body cut-outs.
+
+    Flat grey behind the cut-outs made the editor turn her room into a grey studio; if it copies this backdrop,
+    it copies her own scene."""
+    im = np.clip(img[..., :3], 0, 1)
+    h, w = im.shape[:2]
+    sw, sh = max(8, round(w * small / h)), small
+    lo = cv2.resize((im * 255).astype(np.uint8), (sw, sh), interpolation=cv2.INTER_AREA)
+    if person is not None and (np.asarray(person) > 0.5).any():
+        pm = cv2.resize((np.asarray(person) > 0.5).astype(np.uint8), (sw, sh), interpolation=cv2.INTER_NEAREST)
+        pm = cv2.dilate(pm, np.ones((5, 5), np.uint8))
+        lo = cv2.inpaint(lo, pm * 255, 7, cv2.INPAINT_TELEA)
+    lo = cv2.GaussianBlur(lo, (0, 0), sh * 0.02)
+    return cv2.resize(lo, (w, h), interpolation=cv2.INTER_CUBIC).astype(np.float32) / 255
+
+
+def _cover(bg: np.ndarray, w: int, h: int) -> np.ndarray:
+    """bg scaled to cover w x h and centre-cropped."""
+    s = max(w / bg.shape[1], h / bg.shape[0])
+    r = cv2.resize(bg, (max(w, round(bg.shape[1] * s)), max(h, round(bg.shape[0] * s))), interpolation=cv2.INTER_LINEAR)
+    y, x = (r.shape[0] - h) // 2, (r.shape[1] - w) // 2
+    return r[y:y + h, x:x + w]
+
+
+def body_sheet(images: List[np.ndarray], height: int = 768, gap: int = 16, masks: Optional[List[Optional[np.ndarray]]] = None,
+               backdrop: Optional[np.ndarray] = None) -> np.ndarray:
     """Approved Sienna references side by side at the same height (one image for Qwen's third input).
 
-    With person masks, each reference is cut to her body on flat grey: in the first GPU comparison the editor
-    copied the references' studio background into the edit, so only the body is shown."""
+    With person masks, each reference is cut to her body: in the first GPU comparison the editor copied the
+    references' studio background into the edit, so only the body is shown. The cut-outs sit on flat grey, or on
+    `backdrop` (see scene_backdrop) when given."""
     tiles = []
     for k, im in enumerate(images):
         m = masks[k] if masks and k < len(masks) else None
+        im = im[..., :3]
         if m is not None and (np.asarray(m) > 0.5).any():
             m = np.asarray(m) > 0.5
             if m.shape != im.shape[:2]:
@@ -253,11 +281,14 @@ def body_sheet(images: List[np.ndarray], height: int = 768, gap: int = 16, masks
             pad = int(0.03 * im.shape[0])
             y0, y1 = max(0, ys.min() - pad), min(im.shape[0], ys.max() + pad)
             x0, x1 = max(0, xs.min() - pad), min(im.shape[1], xs.max() + pad)
-            im = np.where(m[..., None], im[..., :3], 0.5)[y0:y1, x0:x1]
+            im, m = im[y0:y1, x0:x1], m[y0:y1, x0:x1]
+            bg = 0.5 if backdrop is None else _cover(backdrop[..., :3].astype(np.float32), im.shape[1], im.shape[0])
+            im = np.where(m[..., None], im, bg)
         h, w = im.shape[:2]
-        tiles.append(cv2.resize(im, (max(1, round(w * height / h)), height), interpolation=cv2.INTER_AREA))
+        tiles.append(cv2.resize(im.astype(np.float32), (max(1, round(w * height / h)), height), interpolation=cv2.INTER_AREA))
     width = sum(t.shape[1] for t in tiles) + gap * (len(tiles) - 1)
-    sheet = np.full((height, max(1, width), 3), 0.5, np.float32)
+    sheet = (np.full((height, max(1, width), 3), 0.5, np.float32) if backdrop is None
+             else _cover(backdrop[..., :3].astype(np.float32), max(1, width), height))
     x = 0
     for t in tiles:
         sheet[:, x:x + t.shape[1]] = t[..., :3]

@@ -312,6 +312,18 @@ def test_body_sheet_cuts_references_to_the_person_on_grey():
     assert np.allclose(sheet[2, 2], 0.5) and sheet.mean() < 0.5      # studio background gone, body kept
 
 
+def test_scene_backdrop_removes_the_person_and_sheet_uses_it():
+    scene = np.zeros((400, 200, 3), np.float32); scene[..., 2] = 0.8            # blue room
+    scene[100:300, 70:130] = (0.9, 0.1, 0.1)                                     # red person in it
+    pm = np.zeros((400, 200), np.float32); pm[100:300, 70:130] = 1
+    bg = sb.scene_backdrop(scene, pm)
+    assert bg.shape == scene.shape and bg[200, 100, 0] < 0.3 and bg[200, 100, 2] > 0.6   # person filled with the room
+    img = np.full((400, 200, 3), 0.9, np.float32); img[100:300, 60:140] = 0.2
+    m = np.zeros((400, 200), np.float32); m[100:300, 60:140] = 1
+    sheet = sb.body_sheet([img, img], height=200, masks=[None, m], backdrop=bg)
+    assert sheet[2, 110, 2] > 0.6 and sheet[100, 160, 0] < 0.3                  # gap and cut-out surround = room
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

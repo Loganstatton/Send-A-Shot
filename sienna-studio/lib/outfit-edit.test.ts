@@ -233,6 +233,7 @@ describe('graph with body protection', () => {
     const g = buildOutfitEditGraph({ ...base, protect: { ...NO_PROTECT, bodyRef: true } });
     expect(g.body_sheet.inputs).toMatchObject({ image1: ['ref_crop', 0], image2: ['body_ref_1', 0], image4: ['body_ref_3', 0], mask2: ['bref1_person', 0], mask4: ['bref3_person', 0] });
     expect(g.body_sheet.inputs.mask1).toBeUndefined();
+    expect(g.body_sheet.inputs).toMatchObject({ backdrop: ['src', 0], backdrop_mask: ['src_person', 0] });
     expect(g.q_pos.inputs.image2).toEqual(['body_sheet', 0]);
     expect(g.q_pos.inputs.image3).toBeUndefined();
     linksOk(g);
