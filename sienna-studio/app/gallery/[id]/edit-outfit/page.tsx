@@ -204,6 +204,10 @@ export default function EditOutfitPage() {
               </Chip>
             ))}
           </div>
+          <p className="mt-2 text-xs text-ink-400">
+            The frame stays as it is, so pick a photo that shows the clothes you're replacing: for bottoms, skirts or swimwear,
+            one that shows her legs. On a photo cut off at the hips the new bottoms barely appear and the scene may change.
+          </p>
         </div>
         <div>
           <TextArea

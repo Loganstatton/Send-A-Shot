@@ -20,10 +20,11 @@ describe('buildEditPrompt', () => {
     const p = buildEditPrompt({ scope: 'full', description: BIKINI, originalOutfit: ORIG, footwear: 'barefoot' });
     expect(p).toContain("Replace the woman's entire outfit in image 1 with the outfit shown in image 2.");
     expect(p).toContain(`Completely remove all of her original clothing and footwear (${ORIG}); none of it may remain.`);
-    expect(p).toContain(`She now wears only ${BIKINI}, with bare legs and bare feet.`);
+    expect(p).toContain(`She now wears only ${BIKINI}, with bare legs.`);
     expect(p).toContain('number of pieces, construction of the top and of the bottom, straps and ties, neckline, cut, leg line, fit, colour and how much skin is covered');
-    expect(p).toContain('Do not add any other clothing. Take off her shoes and socks: both feet are bare.');
+    expect(p).toContain('Do not add any other clothing. If her feet are in the picture, they are bare: no shoes or socks.');
     expect(p).toContain('Ignore any shoes or sandals shown in image 2.');
+    expect(p).toContain('Keep the exact camera framing, crop and zoom of image 1: do not zoom out');
     expect(p).toMatch(/body shape and proportions \(same leg length and limb thickness\), pose, expression, background, framing and lighting from image 1 unchanged\.$/);
   });
 
@@ -31,7 +32,7 @@ describe('buildEditPrompt', () => {
     const p = buildEditPrompt({ scope: 'full', description: 'a green satin slip dress', originalOutfit: ORIG, footwear: 'keep' });
     expect(p).toContain('remove all of her original clothing (');
     expect(p).toContain('but not her footwear');
-    expect(p).toContain('Keep her footwear from image 1 exactly as it is.');
+    expect(p).toContain('Keep her footwear from image 1 exactly as it is, if it is in the picture.');
     expect(p).not.toContain('bare feet');
   });
 
@@ -58,7 +59,7 @@ describe('buildEditPrompt', () => {
   it('bottom only keeps the top', () => {
     const p = buildEditPrompt({ scope: 'bottom', description: 'black high-waisted bikini bottoms', originalOutfit: '', footwear: 'barefoot' });
     expect(p).toContain('Replace only the bottom (her lower-body garment');
-    expect(p).toContain('Keep her top from image 1 exactly as it is. She is barefoot.');
+    expect(p).toContain('Keep her top from image 1 exactly as it is. If her feet are in the picture, she is barefoot.');
     expect(p).toContain('In image 1 she wears her current clothes.');
   });
 

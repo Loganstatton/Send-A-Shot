@@ -146,7 +146,11 @@ const BODYREF =
   'nothing else from image 2: the background, lighting, framing and pose come from image 1. ';
 const protectText = (p?: BodyProtect) => (p?.bodyRef ? BODYREF : p?.garmentOnly ? NOCOPY : '');
 
+// Release check: on a photo cropped at the hips, footwear wording made Qwen zoom out to show her feet, which changed
+// framing, pose and background. The frame of image 1 is fixed; footwear only applies where her feet are visible.
+const FRAME = 'Keep the exact camera framing, crop and zoom of image 1: do not zoom out and do not show any part of her that is outside the frame of image 1. ';
 const KEEP =
+  FRAME +
   'Keep her face, hair, skin, body shape and proportions (same leg length and limb thickness), pose, expression, ' +
   'background, framing and lighting from image 1 unchanged.';
 
@@ -172,7 +176,7 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear, 
     const feet =
       footwear === 'barefoot'
         ? swim
-          ? ', with bare legs and bare feet'
+          ? ', with bare legs'
           : ', and she is barefoot'
         : footwear === 'reference'
           ? ', with the footwear shown in image 2'
@@ -180,9 +184,9 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear, 
     // GPU comparison: one barefoot swim edit in 16 kept her sneakers, so say it outright
     const keepShoes =
       footwear === 'keep'
-        ? ' Keep her footwear from image 1 exactly as it is.'
+        ? ' Keep her footwear from image 1 exactly as it is, if it is in the picture.'
         : footwear === 'barefoot'
-          ? ' Take off her shoes and socks: both feet are bare.'
+          ? ' If her feet are in the picture, they are bare: no shoes or socks.'
           : '';
     return (
       `Replace the woman's entire outfit in image 1 with the outfit shown in image 2. Completely remove all of her original ${removeWhat}; ` +
@@ -197,10 +201,10 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear, 
   const what = scope === 'top' ? 'top' : 'bottom';
   const feet =
     footwear === 'barefoot'
-      ? ' She is barefoot.'
+      ? ' If her feet are in the picture, she is barefoot.'
       : footwear === 'reference'
-        ? ' She wears the footwear shown in image 2.'
-        : ' Keep her footwear from image 1 exactly as it is.';
+        ? ' If her feet are in the picture, she wears the footwear shown in image 2.'
+        : ' Keep her footwear from image 1 exactly as it is, if it is in the picture.';
   return (
     `Replace only the ${piece} of the woman in image 1 with the ${what} shown in image 2: ${desc}. ` +
     `Remove her original ${what} completely; none of it may remain. In image 1 she wears ${orig}. ` +
