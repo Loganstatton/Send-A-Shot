@@ -255,6 +255,14 @@ protection**, not yet proven on the GPU:
   the approved references (at least two, never one). It also flags edits that replaced the whole scene.
 
 They need `comfyui-bootstrap.sh --with-qwen-edit` (adds DWPose and the person segmenter).
+
+GPU comparison result (24 edits): none of the three beat the plain edit yet — body references lost the scene in
+half the runs, clothing-only made no measurable difference, and the checker warns too often. Keep them off.
+
+**Idle shutdown on Runpod (`scripts/comfy_nodes/sienna_autostop`).** Copy the folder into ComfyUI's
+`custom_nodes`. It adds no nodes; on a Runpod Pod it terminates the Pod after `SIENNA_IDLE_MINUTES` (default 30)
+with nothing queued or run, so a forgotten GPU stops billing. A network volume (models, LoRA, ComfyUI install)
+is kept, so the next Pod starts in a few minutes without downloads.
 ---
 
 ## 6. Workflows
