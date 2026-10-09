@@ -22,7 +22,7 @@ describe('buildEditPrompt', () => {
     expect(p).toContain(`Completely remove all of her original clothing and footwear (${ORIG}); none of it may remain.`);
     expect(p).toContain(`She now wears only ${BIKINI}, with bare legs and bare feet.`);
     expect(p).toContain('number of pieces, construction of the top and of the bottom, straps and ties, neckline, cut, leg line, fit, colour and how much skin is covered');
-    expect(p).toContain('Do not add any other clothing.');
+    expect(p).toContain('Do not add any other clothing. Take off her shoes and socks: both feet are bare.');
     expect(p).toContain('Ignore any shoes or sandals shown in image 2.');
     expect(p).toMatch(/body shape and proportions \(same leg length and limb thickness\), pose, expression, background, framing and lighting from image 1 unchanged\.$/);
   });

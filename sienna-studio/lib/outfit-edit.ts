@@ -177,7 +177,13 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear, 
         : footwear === 'reference'
           ? ', with the footwear shown in image 2'
           : '';
-    const keepShoes = footwear === 'keep' ? ' Keep her footwear from image 1 exactly as it is.' : '';
+    // GPU comparison: one barefoot swim edit in 16 kept her sneakers, so say it outright
+    const keepShoes =
+      footwear === 'keep'
+        ? ' Keep her footwear from image 1 exactly as it is.'
+        : footwear === 'barefoot'
+          ? ' Take off her shoes and socks: both feet are bare.'
+          : '';
     return (
       `Replace the woman's entire outfit in image 1 with the outfit shown in image 2. Completely remove all of her original ${removeWhat}; ` +
       `none of it may remain. She now wears only ${desc}${feet}. Match the garments in image 2 exactly: number of pieces, ` +

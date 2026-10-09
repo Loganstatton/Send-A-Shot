@@ -60,7 +60,42 @@ assert(diag.status === 200 && diag.body.checks.find((c) => c.id === 'reachable')
 assert(diag.body.checks.find((c) => c.id === 'executable')?.status !== undefined, `diagnostics: executable check ran (${diag.body.checks.find((c) => c.id === 'executable')?.status})`);
 
 const first = await call('/api/diagnostics/first-test', { method: 'POST', body: JSON.stringify({ workflowId: 'sienna-sdxl-production' }) });
-assert(first.status === 202 && first.body.seed === 424242 && (first.body.lora === null || first.body.lora.strength === 0.8), 'first test queued with fixed seed and LoRA 0.8');
+assert(first.status === 202 && first.body.seed === 424242 && (first.body.lora === null || first.body.lora.strength === 1), 'first test queued with fixed seed and the tested LoRA strength (1.0)');
+
+// ── Edit Outfit (only when SIENNA_OUTFIT_EDIT=true on the server) ──
+const avail = await call('/api/outfit-edit');
+if (avail.status === 200 && avail.body.enabled) {
+  assert(avail.body.available, `Edit Outfit available (missing: ${avail.body.missing?.join(', ') || 'none'})`);
+  // a 64×96 PNG as the clothing photo, from the generated image itself
+  const png = Buffer.from(await (await fetch(`${BASE}/api/files/${rec.images[0].file}`, { headers })).arrayBuffer());
+  const form = new FormData();
+  form.append('file', new Blob([png], { type: 'image/png' }), 'clothing.png');
+  form.append('purpose', 'up');
+  const upH = { ...headers }; delete upH['Content-Type'];
+  const up = await (await fetch(`${BASE}/api/uploads`, { method: 'POST', headers: upH, body: form })).json();
+  assert(!!up.file, 'clothing photo uploaded');
+  const before = (await call(`/api/history/${rec.id}/status`)).body;
+  for (const [scope, description, footwear] of [['full', 'red string bikini', 'barefoot'], ['top', 'white linen shirt', 'keep'], ['bottom', 'black mini skirt', 'reference']]) {
+    const q = await call('/api/outfit-edit', {
+      method: 'POST',
+      body: JSON.stringify({ sourceId: rec.id, reference: up, description, scope, footwear, face: 'standard', seed: 7,
+        protect: { garmentOnly: true, bodyRef: true, bodyCheck: true } }),
+    });
+    assert(q.status === 202, `edit queued (${scope}, ${footwear})`);
+    let e = q.body;
+    for (let i = 0; i < 120 && e.status !== 'done' && e.status !== 'error'; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      e = (await call(`/api/history/${e.id}/status`)).body;
+    }
+    assert(e.status === 'done' && e.images.length === 1 && e.id !== rec.id, `edit saved as a new image (${scope})`);
+    assert(e.outfitEdit?.sourceId === rec.id && e.outfitEdit?.scope === scope && e.outfitEdit?.footwear === footwear, `edit record links its source (${scope})`);
+    assert(!e.outfitEdit?.protect || Object.values(e.outfitEdit.protect).every((v) => !v) || avail.body.experiments, 'experimental body protection ignored while experiments are off');
+  }
+  const after = (await call(`/api/history/${rec.id}/status`)).body;
+  assert(after.images[0].file === before.images[0].file, 'original image untouched');
+} else {
+  console.log('– Edit Outfit is off on this server (SIENNA_OUTFIT_EDIT), skipped');
+}
 
 const trav = await fetch(`${BASE}/api/files/..%2Fconfig.json`, { headers });
 assert(trav.status === 400, 'path traversal rejected');
