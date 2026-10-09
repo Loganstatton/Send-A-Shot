@@ -121,9 +121,10 @@ install_repo() {
     "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check -r "$reqs"
     rm -f "$reqs"
     echo "requirements installed"
+    # Some extras build from source (sam2 compiled for 20+ min on a Runpod RTX 3090): cap each at 5 min.
     while read -r extra; do
-      "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "$extra" \
-        || echo "optional package skipped (install failed): $extra"
+      timeout "${OPTIONAL_PIP_TIMEOUT:-300}" "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "$extra" \
+        || echo "optional package skipped (install failed or took over ${OPTIONAL_PIP_TIMEOUT:-300}s): $extra"
     done < <(grep '^git+' "$dir/requirements.txt" || true)
   fi
 }
