@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { z, ZodError, ZodTypeAny } from 'zod';
 import { GenerationError } from './generate';
 import { ComfyError } from '../comfy/client';
+import { MissingImageError } from './store';
 
 export const json = (data: unknown, status = 200) => NextResponse.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 
@@ -31,7 +32,7 @@ export function handle<A extends unknown[]>(fn: (...args: A) => Promise<Response
       if (e instanceof ZodError) {
         return json({ error: e.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ') }, 400);
       }
-      if (e instanceof HttpError || e instanceof GenerationError || e instanceof ComfyError) {
+      if (e instanceof HttpError || e instanceof GenerationError || e instanceof ComfyError || e instanceof MissingImageError) {
         return json({ error: e.message, details: (e as any).details }, e.status);
       }
       console.error(e);

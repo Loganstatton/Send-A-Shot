@@ -69,7 +69,10 @@ function SubPanel({ title, children }: { title: string; children: ReactNode }) {
 export function CreateScreen() {
   const router = useRouter();
   const search = useSearchParams();
-  const { draft, setDraft, isNew } = useDraft();
+  const { draft, setDraft, isNew, droppedPhotos } = useDraft();
+  useEffect(() => {
+    if (droppedPhotos) toast(`${droppedPhotos === 1 ? 'A photo on this screen was' : `${droppedPhotos} photos on this screen were`} lost when the app restarted — add again if needed.`, 'error');
+  }, [droppedPhotos]);
 
   const settingsQ = useApi<SettingsPayload>('/api/settings');
   const characterQ = useApi<CharacterProfile>('/api/character');

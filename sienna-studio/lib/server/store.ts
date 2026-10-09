@@ -312,9 +312,19 @@ export async function storeImage(bytes: Buffer, mime: string, prefix: 'ref' | 'g
   return { id, file, width: size?.width, height: size?.height, label, createdAt: now() };
 }
 
+/** A stored image that is gone, e.g. after a restart on a host without a persistent disk. */
+export class MissingImageError extends Error {
+  status = 410;
+  constructor(file: string) {
+    super(`A photo used here (${file}) is no longer on the server — the app restarted and lost its storage. Remove that photo and add it again.`);
+  }
+}
+
 export async function readImage(file: string): Promise<{ bytes: Buffer; mime: string }> {
   if (!SAFE_FILE_RE.test(file)) throw new Error('Invalid file name');
-  const bytes = await fs.readFile(path.join(IMAGES_DIR, file));
+  const bytes = await fs.readFile(path.join(IMAGES_DIR, file)).catch((e) => {
+    throw e?.code === 'ENOENT' ? new MissingImageError(file) : e;
+  });
   const ext = file.split('.').pop()!.toLowerCase();
   const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
   return { bytes, mime };
