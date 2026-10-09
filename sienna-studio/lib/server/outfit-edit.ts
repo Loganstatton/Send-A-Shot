@@ -25,6 +25,7 @@ import {
   parseBodyReport,
   PERSON_SEGM_FILE,
   PROTECT_NODES,
+  buildEditNegative,
   buildOutfitEditGraph,
   CROP_NOTES,
   EDIT_NODES,
@@ -247,7 +248,7 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
     legsHidden: legsHidden(description, originalOutfit),
   };
   const graphFor = (sourceName: string, referenceName: string, bodyRefNames: string[] = bodyRefs.map((r) => `probe_${r.image.file}`)) =>
-    buildOutfitEditGraph({ sourceName, sourceSize, referenceName, autoCrop: !req.manualCrop, prompt, seed, faceRestore, bodyRefNames, ...graphExtras });
+    buildOutfitEditGraph({ sourceName, sourceSize, referenceName, autoCrop: !req.manualCrop, prompt, negativePrompt: buildEditNegative(description), seed, faceRestore, bodyRefNames, ...graphExtras });
   if (backend.kind !== 'mock') {
     const avail = await availability();
     if (!avail.available) throw new GenerationError(`Edit Outfit can't run — the GPU server is missing ${avail.missing.join('; ')}.`);

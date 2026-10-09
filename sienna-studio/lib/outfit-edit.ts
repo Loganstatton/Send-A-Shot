@@ -162,25 +162,64 @@ export function defaultFootwear(scope: OutfitEditScope, description: string): Ou
 }
 
 /**
+ * "No beige fabric, no wide cups" sentences in a description. Text encoders read "no X" as X, so these move to the
+ * negative prompt (live case: "no wide bikini cups" in the positive prompt, wide cups in the result).
+ */
+export function splitNegations(description: string): { positive: string; avoid: string[] } {
+  const keep: string[] = [];
+  const avoid: string[] = [];
+  for (const sentence of clean(description).split(/(?<=[.;])\s+/)) {
+    if (/^\s*(no|without)\b/i.test(sentence)) {
+      for (const part of sentence.replace(/[.;]+$/, '').split(/,|\band\b/i)) {
+        const item = part.replace(/^\s*(no|without|nor)\s+/i, '').trim();
+        if (item) avoid.push(item);
+      }
+    } else keep.push(sentence);
+  }
+  return { positive: keep.join(' ').trim() || clean(description), avoid };
+}
+
+/** Negative prompt for the editor: what the description says to avoid. */
+export function buildEditNegative(description: string): string {
+  return splitNegations(description).avoid.join(', ');
+}
+
+const garmentWords = (t: string) =>
+  new Set(
+    [UPPER_RE, LOWER_RE, WHOLE_RE, SWIMWEAR_RE].flatMap((re) =>
+      [...t.toLowerCase().matchAll(new RegExp(re.source, 'gi'))].map((m) => m[0].replace(/s$/, '').replace(/\s/g, '')),
+    ),
+  );
+/**
+ * The source's outfit text, if it is safe to name for removal. It is what was *asked for* when the image was made,
+ * not necessarily what is in it; when it names the same kind of garment as the new description (live case: a micro
+ * bikini asked for, a full-cup bikini generated), "remove the micro bikini, she now wears a micro bikini" told Qwen to
+ * keep what is there. Long texts are skipped too.
+ */
+export function namedOriginal(originalOutfit: string, description: string): string {
+  const o = clean(originalOutfit);
+  if (!o || o.length > 160) return '';
+  const now = garmentWords(description);
+  if ([...garmentWords(o)].some((w) => now.has(w))) return '';
+  return o;
+}
+
+/**
  * The instruction sent to Qwen-Image-Edit. The 'full' wording is the one validated in the second GPU
  * test (old outfit named for removal, piece-by-piece match, nothing added).
  */
 export function buildEditPrompt({ scope, description, originalOutfit, footwear, protect }: EditPromptInput): string {
-  const desc = clean(description);
-  const orig = clean(originalOutfit) || 'her current clothes';
+  const desc = splitNegations(description).positive;
+  const named = namedOriginal(originalOutfit, desc);
   const swim = SWIMWEAR_RE.test(desc);
   const ignoreRefShoes = footwear === 'reference' ? '' : ' Ignore any shoes or sandals shown in image 2.';
+  // Live case: a white micro bikini photo + "black micro bikini" text came out as her old full-cup bikini recoloured.
+  const textWins = ' Where this description differs from image 2 (for example the colour), follow the description.';
 
   if (scope === 'full') {
-    const removeWhat = footwear === 'keep' ? `clothing (${orig}), but not her footwear` : `clothing and footwear (${orig})`;
-    const feet =
-      footwear === 'barefoot'
-        ? swim
-          ? ', with bare legs'
-          : ', and she is barefoot'
-        : footwear === 'reference'
-          ? ', with the footwear shown in image 2'
-          : '';
+    const what = named ? `clothing${footwear === 'keep' ? '' : ' and footwear'} (${named})` : `clothing${footwear === 'keep' ? '' : ' and footwear'}`;
+    const removeWhat = footwear === 'keep' ? `${what}, but not her footwear` : what;
+    const feet = footwear === 'barefoot' ? (swim ? ', with bare legs' : ', and she is barefoot') : footwear === 'reference' ? ', with the footwear shown in image 2' : '';
     // GPU comparison: one barefoot swim edit in 16 kept her sneakers, so say it outright
     const keepShoes =
       footwear === 'keep'
@@ -190,8 +229,9 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear, 
           : '';
     return (
       `Replace the woman's entire outfit in image 1 with the outfit shown in image 2. Completely remove all of her original ${removeWhat}; ` +
-      `none of it may remain. She now wears only ${desc}${feet}. Match the garments in image 2 exactly: number of pieces, ` +
-      'construction of the top and of the bottom, straps and ties, neckline, cut, leg line, fit, colour and how much skin is covered. ' +
+      `none of it may remain. She now wears only ${desc}${feet}.${textWins} Copy the garment design in image 2 exactly: number of pieces, ` +
+      'construction of the top and of the bottom, cup size and shape, strap width and placement, ties, neckline, cut, leg line, fit and how much skin is covered. ' +
+      'Do not reuse or recolour the garment she wears in image 1: its shape, cup size, strap width and coverage must change to match image 2. ' +
       `Do not add any other clothing.${keepShoes}${ignoreRefShoes} ${protectText(protect)}${KEEP}`
     );
   }
@@ -206,11 +246,11 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear, 
         ? ' If her feet are in the picture, she wears the footwear shown in image 2.'
         : ' Keep her footwear from image 1 exactly as it is, if it is in the picture.';
   return (
-    `Replace only the ${piece} of the woman in image 1 with the ${what} shown in image 2: ${desc}. ` +
-    `Remove her original ${what} completely; none of it may remain. In image 1 she wears ${orig}. ` +
+    `Replace only the ${piece} of the woman in image 1 with the ${what} shown in image 2: ${desc}.${textWins} ` +
+    `Remove her original ${what} completely; none of it may remain.${named ? ` In image 1 she wears ${named}.` : ''} ` +
     `Keep her ${other} from image 1 exactly as it is.${feet} ` +
-    `Match the ${what} in image 2 exactly: construction, straps and ties, neckline, cut, length, leg line, fit, colour and how much skin is covered. ` +
-    `Ignore every other garment shown in image 2 and do not add any other clothing.${ignoreRefShoes} ${protectText(protect)}${KEEP}`
+    `Copy the ${what} in image 2 exactly: construction, cup size and shape, strap width and placement, ties, neckline, cut, length, leg line, fit and how much skin is covered. ` +
+    `Do not reuse or recolour her old ${what}. Ignore every other garment shown in image 2 and do not add any other clothing.${ignoreRefShoes} ${protectText(protect)}${KEEP}`
   );
 }
 
@@ -257,6 +297,8 @@ export interface EditGraphInput {
   /** false when the clothing photo was already cropped by hand in the editor. */
   autoCrop: boolean;
   prompt: string;
+  /** What to avoid (from "no …" sentences in the description); empty = the validated graph. */
+  negativePrompt?: string;
   seed: number;
   faceRestore: FaceRestoreSpec | null;
   /** Experimental body protection (all off = the graph validated on the GPU). */
@@ -358,7 +400,7 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
     },
     q_neg: {
       class_type: 'TextEncodeQwenImageEditPlus',
-      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: '' },
+      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: i.negativePrompt ?? '' },
     },
     q_shift: { class_type: 'ModelSamplingAuraFlow', inputs: { model: ['q_unet', 0], shift: QWEN_SAMPLING.shift } },
     q_cfgnorm: { class_type: 'CFGNorm', inputs: { model: ['q_shift', 0], strength: 1 } },

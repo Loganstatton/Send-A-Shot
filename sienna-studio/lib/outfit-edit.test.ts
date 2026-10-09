@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildEditNegative,
   buildEditPrompt,
+  namedOriginal,
+  splitNegations,
   buildOutfitEditGraph,
   defaultFootwear,
   EDIT_NODES,
@@ -21,7 +24,7 @@ describe('buildEditPrompt', () => {
     expect(p).toContain("Replace the woman's entire outfit in image 1 with the outfit shown in image 2.");
     expect(p).toContain(`Completely remove all of her original clothing and footwear (${ORIG}); none of it may remain.`);
     expect(p).toContain(`She now wears only ${BIKINI}, with bare legs.`);
-    expect(p).toContain('number of pieces, construction of the top and of the bottom, straps and ties, neckline, cut, leg line, fit, colour and how much skin is covered');
+    expect(p).toContain('number of pieces, construction of the top and of the bottom, cup size and shape, strap width and placement, ties, neckline, cut, leg line, fit and how much skin is covered');
     expect(p).toContain('Do not add any other clothing. If her feet are in the picture, they are bare: no shoes or socks.');
     expect(p).toContain('Ignore any shoes or sandals shown in image 2.');
     expect(p).toContain('Keep the exact camera framing, crop and zoom of image 1: do not zoom out');
@@ -60,7 +63,7 @@ describe('buildEditPrompt', () => {
     const p = buildEditPrompt({ scope: 'bottom', description: 'black high-waisted bikini bottoms', originalOutfit: '', footwear: 'barefoot' });
     expect(p).toContain('Replace only the bottom (her lower-body garment');
     expect(p).toContain('Keep her top from image 1 exactly as it is. If her feet are in the picture, she is barefoot.');
-    expect(p).toContain('In image 1 she wears her current clothes.');
+    expect(p).not.toContain('In image 1 she wears');
   });
 
   it('normalises whitespace and trailing punctuation', () => {
@@ -258,5 +261,45 @@ describe('body check report', () => {
     expect(w[1]).toContain('possibly waist width +5% (outside the range of her 3 references)');
     expect(bodyCheckWarnings(parseBodyReport(JSON.stringify({ status: 'insufficient', flags: [], checked: [], skipped: [{ part: 'all', why: 'x' }] })))).toEqual([]);
     expect(parseBodyReport('nope')).toBeNull();
+  });
+});
+
+describe('clothing control (live case: black micro bikini came out as her old full-cup bikini recoloured)', () => {
+  const MICRO = 'An extremely minimal black string micro bikini with tiny, narrow triangular cups and ultra-thin halter straps';
+  const DESC =
+    'Black minimalist micro string bikini. Very small opaque triangular bikini cups with thin black halter-neck straps. ' +
+    'No beige fabric, no wide bikini cups, no thick straps, no additional fabric panels. Accurate black swimwear color.';
+
+  it('moves "no …" sentences to the negative prompt', () => {
+    const { positive, avoid } = splitNegations(DESC);
+    expect(avoid).toEqual(['beige fabric', 'wide bikini cups', 'thick straps', 'additional fabric panels']);
+    expect(positive).not.toMatch(/\bno\b/i);
+    expect(positive).toContain('Very small opaque triangular bikini cups');
+    expect(buildEditNegative(DESC)).toBe('beige fabric, wide bikini cups, thick straps, additional fabric panels');
+    expect(buildEditNegative(BIKINI)).toBe('');
+  });
+
+  it('does not name the old outfit when it is the same kind of garment', () => {
+    expect(namedOriginal(MICRO, DESC)).toBe('');
+    expect(namedOriginal(ORIG, BIKINI)).toBe(ORIG);
+    expect(namedOriginal('x'.repeat(200), BIKINI)).toBe('');
+    const p = buildEditPrompt({ scope: 'full', description: DESC, originalOutfit: MICRO, footwear: 'keep' });
+    expect(p).toContain('Completely remove all of her original clothing, but not her footwear; none of it may remain.');
+    expect(p).not.toContain('extremely minimal');
+    expect(p).not.toContain('wide bikini cups');
+  });
+
+  it('text wins over the photo on colour, and the old garment may not be recoloured', () => {
+    const p = buildEditPrompt({ scope: 'full', description: DESC, originalOutfit: MICRO, footwear: 'keep' });
+    expect(p).toContain('Where this description differs from image 2 (for example the colour), follow the description.');
+    expect(p).toContain('cup size and shape, strap width and placement');
+    expect(p).toContain('Do not reuse or recolour the garment she wears in image 1');
+    expect(p).not.toContain('colour and how much skin');
+  });
+
+  it('negative prompt reaches the editor graph; empty by default', () => {
+    const base = { sourceName: 's.png', sourceSize: { width: 832, height: 1216 }, referenceName: 'r.png', autoCrop: true, prompt: 'p', seed: 1, faceRestore: null };
+    expect(buildOutfitEditGraph(base as any).q_neg.inputs.prompt).toBe('');
+    expect(buildOutfitEditGraph({ ...base, negativePrompt: 'wide bikini cups' } as any).q_neg.inputs.prompt).toBe('wide bikini cups');
   });
 });
