@@ -261,6 +261,7 @@ function OutfitEditCard({ rec }: { rec: GenerationRecord }) {
     ['Original', e.sourceImage],
     ['Clothing photo', e.reference],
     [e.manualCrop ? 'Cropped by hand' : 'As the editor saw it', e.manualCrop ? e.reference : e.referenceCrop],
+    ...(e.redraw?.preview ? ([['Area redrawn', e.redraw.preview]] as [string, { file: string }][]) : []),
   ];
   return (
     <Card className="mt-4 space-y-3">
@@ -288,6 +289,25 @@ function OutfitEditCard({ rec }: { rec: GenerationRecord }) {
         <dd>{FOOTWEAR_LABELS[e.footwear]}</dd>
         <dt className="text-ink-400">Face restore</dt>
         <dd>{FACE_LABELS[e.face]}</dd>
+        {e.redraw && (
+          <>
+            <dt className="text-ink-400">Changed</dt>
+            <dd>
+              only the clothes
+              {e.redraw.info && (
+                <span className="block text-xs text-ink-400">
+                  {Math.round(e.redraw.info.mask * 100)}% of the image redrawn{e.redraw.info.source === 'pose' ? ' (area estimated from her pose)' : ''}
+                </span>
+              )}
+            </dd>
+          </>
+        )}
+        {e.avoid && (
+          <>
+            <dt className="text-ink-400">Avoid</dt>
+            <dd className="text-xs">{e.avoid}</dd>
+          </>
+        )}
         <dt className="text-ink-400">Crop</dt>
         <dd>
           {e.manualCrop

@@ -82,6 +82,9 @@ if (arg('--qwen-edit')) {
     SiennaBodyCheck: { source: ['STRING'], result: ['STRING'], footwear_changed: ['BOOLEAN'], legs_hidden: ['BOOLEAN'] },
     DWPreprocessor: { image: ['IMAGE'], detect_hand: combo(['enable', 'disable']), detect_body: combo(['enable', 'disable']), detect_face: combo(['enable', 'disable']), resolution: ['INT'], bbox_detector: combo(['yolox_l.onnx']), pose_estimator: combo(['dw-ll_ucoco_384.onnx']), scale_stick_for_xinsr_cn: combo(['enable', 'disable']) },
     SegmDetectorCombined_v2: { segm_detector: ['SEGM_DETECTOR'], image: ['IMAGE'], threshold: ['FLOAT'], dilation: ['INT'] },
+    SiennaGarmentRedrawMask: { image: ['IMAGE'], scope: combo(['full', 'top', 'bottom']), grow: combo(['garment', 'torso', 'legs', 'body']), include_feet: ['BOOLEAN'] },
+    SetLatentNoiseMask: { samples: ['LATENT'], mask: ['MASK'] },
+    ImageCompositeMasked: { destination: ['IMAGE'], source: ['IMAGE'], x: ['INT'], y: ['INT'], resize_source: ['BOOLEAN'] },
   });
 }
 // (PuLID-Flux deliberately absent, to exercise "missing custom node" paths.)
@@ -173,6 +176,7 @@ http
         if (n.class_type === 'SaveImage') outputs[k] = { images: [{ filename: `${id}_${k}.png`, subfolder: 'sienna', type: 'output' }] };
         if (n.class_type === 'SiennaChinCrop') outputs[k] = { text: [JSON.stringify({ mode: 'cropped', cut: 0.21 })] };
         if (n.class_type === 'SiennaGarmentOnly') outputs[k] = { text: [JSON.stringify({ mode: 'garment-only', cut: 0.21, coverage: { upper: 0.2, lower: 0.35 } })] };
+        if (n.class_type === 'SiennaGarmentRedrawMask') outputs[k] = { text: [JSON.stringify({ scope: 'full', grow: 'garment', source: 'segmenter', grown: false, uncovered: 0.011, old_garment: 0.047, mask: 0.157, empty: false })] };
         if (n.class_type === 'SiennaBodyCheck') outputs[k] = { text: [JSON.stringify({ status: 'warn', flags: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06, severity: 'likely' }], checked: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06 }], skipped: [], scene: { diff: 6.1, changed: false } })] };
       }
       return send(res, 200, { [id]: { outputs, status: { status_str: 'success', completed: true, messages: [] } } });

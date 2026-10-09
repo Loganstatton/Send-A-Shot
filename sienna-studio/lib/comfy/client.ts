@@ -394,6 +394,8 @@ export class MockComfy implements ComfyBackend {
       if (n.class_type === 'SiennaChinCrop') texts[id] = [JSON.stringify({ mode: 'cropped', cut: 0.2 })];
       if (n.class_type === 'SiennaGarmentOnly') texts[id] = [JSON.stringify({ mode: 'garment-only', cut: 0.2, coverage: { upper: 0.2, lower: 0.35 } })];
       if (n.class_type === 'SiennaBodyCheck') texts[id] = [MOCK_BODY_CHECK];
+      if (n.class_type === 'SiennaGarmentRedrawMask')
+        texts[id] = [JSON.stringify({ scope: 'full', grow: 'garment', source: 'segmenter', grown: false, uncovered: 0.01, old_garment: 0.05, mask: 0.15, empty: false })];
       if (n.class_type === 'DWPreprocessor' || n.class_type === 'SiennaPoseRetarget') poses[id] = [MOCK_POSE_JSON];
       if (n.class_type === 'SiennaPoseRetarget') texts[id] = [JSON.stringify([{ thigh: 0.93, shin: 0.95, forearm: 1.04 }])];
     }

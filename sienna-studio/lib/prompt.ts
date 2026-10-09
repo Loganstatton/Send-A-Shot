@@ -18,6 +18,7 @@ import {
   SFW_NEGATIVE,
 } from './defaults';
 import { applyIdentityLock, findHardBlocks, GuardHit, tidy } from './guard';
+import { splitAvoid } from './outfit-edit';
 import type { CharacterProfile, ContentMode, PromptFields } from './types';
 import { PROMPT_FIELD_KEYS, PROMPT_FIELD_LABELS } from './types';
 
@@ -169,7 +170,21 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     siennaLock ? traits.eyes : '',
   ]);
 
-  // 4. Negative prompt.
+  // 4. Negative prompt. The Avoid box goes here (never the positive prompt); with Sienna Lock on, identity terms
+  // ("freckles", "dark hair") can't be avoided.
+  let avoidItems = splitAvoid(fields.avoid ?? '');
+  if (siennaLock && avoidItems.length) {
+    // her own traits (freckles, wavy hair, eye colour) can't be avoided either
+    const traitWords = new Set((character.appearanceTraits.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !['with', 'across', 'light', 'long'].includes(w)));
+    avoidItems = avoidItems.flatMap((item) => {
+      const res = applyIdentityLock(item, character.extraLockedTerms);
+      for (const r of res.removed) warnings.push(`Sienna Lock removed “${r.term}” from Avoid (${r.category} is locked).`);
+      const kept = res.text.trim();
+      const hit = (kept.toLowerCase().match(/[a-z]{4,}/g) ?? []).find((w) => traitWords.has(w) || traitWords.has(w.replace(/s$/, '')));
+      if (hit) warnings.push(`Sienna Lock removed “${kept}” from Avoid (it is one of her traits).`);
+      return kept && !hit ? [kept] : [];
+    });
+  }
   const wantsStudio = /\bstudio\b/i.test(`${f.lighting} ${f.setting} ${f.camera}`);
   const negative = joinParts([
     character.defaultNegativePrompt,
@@ -179,6 +194,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     contentMode === 'sfw' ? SFW_NEGATIVE : '',
     siennaLock ? (cleanup ? AGE_DRIFT_NEGATIVE_CLEAN : AGE_DRIFT_NEGATIVE) : '',
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
+    avoidItems.join(', '),
   ]);
 
   if (siennaLock && !character.triggerToken.trim()) {

@@ -13,6 +13,7 @@ export const EMPTY_FIELDS: PromptFields = {
   framing: '',
   realism: '',
   extra: '',
+  avoid: '',
 };
 
 /** Realism language favouring casual phone photography over glossy "AI" renders. */

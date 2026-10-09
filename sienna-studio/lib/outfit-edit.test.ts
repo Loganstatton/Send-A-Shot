@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  parseRedrawInfo,
+  redrawGrow,
+  redrawWarnings,
   buildEditNegative,
   buildEditPrompt,
   namedOriginal,
@@ -301,5 +304,61 @@ describe('clothing control (live case: black micro bikini came out as her old fu
     const base = { sourceName: 's.png', sourceSize: { width: 832, height: 1216 }, referenceName: 'r.png', autoCrop: true, prompt: 'p', seed: 1, faceRestore: null };
     expect(buildOutfitEditGraph(base as any).q_neg.inputs.prompt).toBe('');
     expect(buildOutfitEditGraph({ ...base, negativePrompt: 'wide bikini cups' } as any).q_neg.inputs.prompt).toBe('wide bikini cups');
+  });
+});
+
+describe('garment-only redraw', () => {
+  const base = { sourceName: 's.png', sourceSize: { width: 832, height: 1216 }, referenceName: 'r.png', autoCrop: true, prompt: 'p', seed: 1, faceRestore: null };
+
+  it('grow: a smaller garment stays in the old one, larger garments get room', () => {
+    expect(redrawGrow('full', 'black micro string bikini, tiny triangle cups')).toBe('garment');
+    expect(redrawGrow('full', 'orange one-piece swimsuit')).toBe('torso');
+    expect(redrawGrow('full', 'green satin slip dress')).toBe('body');
+    expect(redrawGrow('top', 'white bandeau bikini top')).toBe('garment');
+    expect(redrawGrow('top', 'oversized grey t-shirt')).toBe('torso');
+    expect(redrawGrow('bottom', 'emerald midi skirt')).toBe('legs');
+    expect(redrawGrow('bottom', 'black string bikini bottoms')).toBe('garment');
+  });
+
+  it('graph: masked sampling of the greyed-out source, pasted back onto the untouched source', () => {
+    const g: any = buildOutfitEditGraph({ ...base, redraw: { scope: 'full', grow: 'garment', includeFeet: false } } as any);
+    expect(g.redraw_mask.class_type).toBe('SiennaGarmentRedrawMask');
+    expect(g.redraw_mask.inputs).toMatchObject({ image: ['src_scale', 0], scope: 'full', grow: 'garment', include_feet: false });
+    expect(g.redraw_mask.inputs.person_mask).toEqual(['srcw_person', 0]);
+    expect(g.redraw_mask.inputs.pose_keypoint).toEqual(['srcw_pose', 1]);
+    expect(g.q_pos.inputs.image1).toEqual(['redraw_mask', 2]);
+    expect(g.q_neg.inputs.image1).toEqual(['redraw_mask', 2]);
+    expect(g.q_masked).toMatchObject({ class_type: 'SetLatentNoiseMask', inputs: { samples: ['q_latent', 0], mask: ['redraw_mask', 0] } });
+    expect(g.q_latent.inputs.pixels).toEqual(['src_scale', 0]);
+    expect(g.q_sample.inputs.latent_image).toEqual(['q_masked', 0]);
+    expect(g.q_comp).toMatchObject({ class_type: 'ImageCompositeMasked', inputs: { destination: ['src_scale', 0], source: ['q_decode', 0], mask: ['redraw_mask', 1] } });
+    expect(g.q_resize.inputs.image).toEqual(['q_comp', 0]);
+    expect(g.save_redraw.inputs.images).toEqual(['redraw_mask', 3]);
+  });
+
+  it('without redraw the graph is exactly the validated one', () => {
+    const g: any = buildOutfitEditGraph(base as any);
+    for (const k of ['redraw_mask', 'q_masked', 'q_comp', 'save_redraw']) expect(g[k]).toBeUndefined();
+    expect(g.q_sample.inputs.latent_image).toEqual(['q_latent', 0]);
+    expect(g.q_pos.inputs.image1).toEqual(['src_scale', 0]);
+  });
+
+  it('prompt tells the editor about the grey area only when redrawing', () => {
+    const p = buildEditPrompt({ scope: 'full', description: 'black micro bikini', originalOutfit: '', footwear: 'barefoot', redraw: true });
+    expect(p).toContain('The flat grey area in image 1 is where her old outfit was.');
+    expect(buildEditPrompt({ scope: 'full', description: 'black micro bikini', originalOutfit: '', footwear: 'barefoot' })).not.toContain('grey area');
+  });
+
+  it('report and warnings', () => {
+    const info = parseRedrawInfo(JSON.stringify({ source: 'segmenter', grow: 'garment', mask: 0.157, old_garment: 0.047, uncovered: 0.06, empty: false }));
+    expect(info).toMatchObject({ mask: 0.157, oldGarment: 0.047, uncovered: 0.06 });
+    expect(redrawWarnings(info).join(' ')).toMatch(/6% of the old garment/);
+    expect(redrawWarnings({ ...info!, uncovered: 0.01 })).toEqual([]);
+    expect(redrawWarnings({ ...info!, source: 'pose', uncovered: 0 }).join(' ')).toMatch(/estimated from her pose/);
+    expect(parseRedrawInfo('nope')).toBeNull();
+  });
+
+  it('Avoid box merges with the description\'s "no …" sentences', () => {
+    expect(buildEditNegative('black bikini. No wide cups.', 'thick straps, no beige fabric\nwide cups')).toBe('thick straps, beige fabric, wide cups');
   });
 });

@@ -25,6 +25,7 @@ export const fieldsSchema = z.object({
   framing: str(),
   realism: str(),
   extra: str(),
+  avoid: str(300).optional().default(''),
 });
 
 export const paramsSchema = z.object({

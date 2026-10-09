@@ -13,6 +13,7 @@ export interface OutfitEditAvailability {
   experiments: boolean;
   protectMissing: Record<keyof BodyProtect, string[]>;
   bodyRefCount: number;
+  redrawMissing: string[];
 }
 
 export interface OutfitEditBody {
@@ -26,6 +27,8 @@ export interface OutfitEditBody {
   face: OutfitEditFace;
   seed: number;
   protect?: Partial<BodyProtect>;
+  redraw?: boolean;
+  avoid?: string;
 }
 
 export async function startOutfitEdit(body: OutfitEditBody): Promise<GenerationRecord> {
@@ -47,6 +50,8 @@ export function rerunOutfitEdit(rec: GenerationRecord, newSeed: boolean): Promis
     face: e.face,
     seed: newSeed ? -1 : rec.seed,
     ...(e.protect ? { protect: e.protect } : {}),
+    ...(e.redraw ? { redraw: true } : {}),
+    ...(e.avoid ? { avoid: e.avoid } : {}),
   });
 }
 

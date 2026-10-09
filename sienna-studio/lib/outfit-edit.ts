@@ -124,6 +124,27 @@ export const SWIMWEAR_RE = /\b(bikini|swimsuit|swim ?suit|swimwear|one-piece|mon
 
 export const MAX_DESCRIPTION = 600;
 
+/** Garment-only redraw: how far beyond the old garment the new one may reach (SiennaGarmentRedrawMask). */
+export type RedrawGrow = 'garment' | 'torso' | 'legs' | 'body';
+export const REDRAW_NODES = ['SiennaGarmentRedrawMask', 'SetLatentNoiseMask', 'ImageCompositeMasked', 'DWPreprocessor', 'SegmDetectorCombined_v2'];
+const COVERS_LEGS_RE = /\b(dress|gown|jumpsuit|romper|playsuit|overalls|trousers|pants|jeans|leggings|skirt|shorts|culottes|maxi|robe|coat|kaftan|sarong)\b/i;
+const COVERS_TORSO_RE = /\b(one-piece|swimsuit|swim ?suit|monokini|bodysuit|catsuit|leotard|shirt|blouse|tee|t-shirt|tank|camisole|cami|sweater|jumper|hoodie|cardigan|jacket|blazer|corset|bustier|vest|crop top|tube top)\b/i;
+/**
+ * How much room the new garment needs. A bikini needs only the old garment's area (plus strings); a one-piece or a
+ * shirt may cover the midriff; a skirt, trousers or a dress cover the legs.
+ */
+export function redrawGrow(scope: OutfitEditScope, description: string): RedrawGrow {
+  const legs = COVERS_LEGS_RE.test(description);
+  const torso = COVERS_TORSO_RE.test(description) && !/\bbikini\b/i.test(description);
+  if (scope === 'top') return torso ? 'torso' : 'garment';
+  if (scope === 'bottom') return legs ? 'legs' : 'garment';
+  return legs ? 'body' : torso ? 'torso' : 'garment';
+}
+
+const REDRAW_TEXT =
+  'The flat grey area in image 1 is where her old outfit was. Draw the new outfit there, and her natural skin, matching the skin around it, ' +
+  'wherever the new outfit leaves her uncovered; no grey may remain. Do not change anything outside the grey area. ';
+
 export interface EditPromptInput {
   scope: OutfitEditScope;
   /** What she should wear (for top/bottom: only that piece). Must match the clothing photo. */
@@ -132,6 +153,8 @@ export interface EditPromptInput {
   originalOutfit: string;
   footwear: OutfitEditFootwear;
   protect?: BodyProtect;
+  /** Garment-only redraw: image 1 shows the old garment greyed out. */
+  redraw?: boolean;
 }
 
 const NOCOPY =
@@ -180,8 +203,18 @@ export function splitNegations(description: string): { positive: string; avoid: 
 }
 
 /** Negative prompt for the editor: what the description says to avoid. */
-export function buildEditNegative(description: string): string {
-  return splitNegations(description).avoid.join(', ');
+export function buildEditNegative(description: string, avoid = ''): string {
+  const items = [...splitAvoid(avoid), ...splitNegations(description).avoid];
+  return [...new Set(items.map((x) => x.toLowerCase()))].join(', ');
+}
+
+/** The Avoid box: comma/line separated things the image should not have ("no " prefixes are dropped). */
+export function splitAvoid(avoid: string): string[] {
+  return avoid
+    .split(/[,;\n]+/)
+    .map((x) => clean(x).replace(/^(no|without|avoid)\s+/i, ''))
+    .filter((x) => x.length > 1)
+    .slice(0, 30);
 }
 
 const garmentWords = (t: string) =>
@@ -208,7 +241,7 @@ export function namedOriginal(originalOutfit: string, description: string): stri
  * The instruction sent to Qwen-Image-Edit. The 'full' wording is the one validated in the second GPU
  * test (old outfit named for removal, piece-by-piece match, nothing added).
  */
-export function buildEditPrompt({ scope, description, originalOutfit, footwear, protect }: EditPromptInput): string {
+export function buildEditPrompt({ scope, description, originalOutfit, footwear, protect, redraw }: EditPromptInput): string {
   const desc = splitNegations(description).positive;
   const named = namedOriginal(originalOutfit, desc);
   const swim = SWIMWEAR_RE.test(desc);
@@ -232,7 +265,7 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear, 
       `none of it may remain. She now wears only ${desc}${feet}.${textWins} Copy the garment design in image 2 exactly: number of pieces, ` +
       'construction of the top and of the bottom, cup size and shape, strap width and placement, ties, neckline, cut, leg line, fit and how much skin is covered. ' +
       'Do not reuse or recolour the garment she wears in image 1: its shape, cup size, strap width and coverage must change to match image 2. ' +
-      `Do not add any other clothing.${keepShoes}${ignoreRefShoes} ${protectText(protect)}${KEEP}`
+      `Do not add any other clothing.${keepShoes}${ignoreRefShoes} ${redraw ? REDRAW_TEXT : ''}${protectText(protect)}${KEEP}`
     );
   }
 
@@ -250,7 +283,7 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear, 
     `Remove her original ${what} completely; none of it may remain.${named ? ` In image 1 she wears ${named}.` : ''} ` +
     `Keep her ${other} from image 1 exactly as it is.${feet} ` +
     `Copy the ${what} in image 2 exactly: construction, cup size and shape, strap width and placement, ties, neckline, cut, length, leg line, fit and how much skin is covered. ` +
-    `Do not reuse or recolour her old ${what}. Ignore every other garment shown in image 2 and do not add any other clothing.${ignoreRefShoes} ${protectText(protect)}${KEEP}`
+    `Do not reuse or recolour her old ${what}. Ignore every other garment shown in image 2 and do not add any other clothing.${ignoreRefShoes} ${redraw ? REDRAW_TEXT : ''}${protectText(protect)}${KEEP}`
   );
 }
 
@@ -278,7 +311,7 @@ export function editSize(width: number, height: number): { width: number; height
 }
 
 /** Node ids in the edit graph that the server reads back. */
-export const EDIT_NODES = { final: 'save_final', crop: 'save_crop', cropInfo: 'ref_crop', bodyCheck: 'body_check' } as const;
+export const EDIT_NODES = { final: 'save_final', crop: 'save_crop', cropInfo: 'ref_crop', bodyCheck: 'body_check', redrawInfo: 'redraw_mask', redrawPreview: 'save_redraw' } as const;
 
 export interface FaceRestoreSpec {
   denoise: number;
@@ -299,6 +332,8 @@ export interface EditGraphInput {
   prompt: string;
   /** What to avoid (from "no …" sentences in the description); empty = the validated graph. */
   negativePrompt?: string;
+  /** Garment-only redraw: only the clothing region of the source is sampled and pasted back. */
+  redraw?: { scope: OutfitEditScope; grow: RedrawGrow; includeFeet: boolean };
   seed: number;
   faceRestore: FaceRestoreSpec | null;
   /** Experimental body protection (all off = the graph validated on the GPU). */
@@ -427,6 +462,35 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
       _meta: { title: 'Back to the source size' },
     },
   } satisfies ComfyGraph);
+  if (i.redraw) {
+    // Garment-only redraw: the editor sees the old garment greyed out, samples only the clothing region, and the
+    // result is pasted back over the untouched source with a feathered edge.
+    const s: [string, number] = ['src_scale', 0];
+    g.redraw_mask = {
+      class_type: 'SiennaGarmentRedrawMask',
+      inputs: {
+        image: s,
+        scope: i.redraw.scope,
+        grow: i.redraw.grow,
+        include_feet: i.redraw.includeFeet,
+        person_mask: personOf('srcw', s),
+        face_mask: faceOf('srcw', s),
+        pose_keypoint: poseOf('srcw', s),
+      },
+      _meta: { title: 'Clothing region to redraw (old garment greyed out)' },
+    };
+    g.q_pos.inputs.image1 = ['redraw_mask', 2];
+    g.q_neg.inputs.image1 = ['redraw_mask', 2];
+    g.q_masked = { class_type: 'SetLatentNoiseMask', inputs: { samples: ['q_latent', 0], mask: ['redraw_mask', 0] } };
+    g.q_sample.inputs.latent_image = ['q_masked', 0];
+    g.q_comp = {
+      class_type: 'ImageCompositeMasked',
+      inputs: { destination: s, source: ['q_decode', 0], x: 0, y: 0, resize_source: false, mask: ['redraw_mask', 1] },
+      _meta: { title: 'Paste the redrawn clothing region onto the untouched source' },
+    };
+    g.q_resize.inputs.image = ['q_comp', 0];
+    g.save_redraw = { class_type: 'SaveImage', inputs: { images: ['redraw_mask', 3], filename_prefix: 'sienna/outfit-redraw' } };
+  }
   let finalOut: [string, number] = ['q_resize', 0];
   const fr = i.faceRestore;
   if (fr) {
@@ -542,4 +606,33 @@ export function bodyCheckWarnings(r: BodyCheckReport | null): string[] {
     out.push(`Body check: Sienna’s proportions may have changed — ${items.join('; ')}.`);
   }
   return out;
+}
+
+export interface RedrawInfo {
+  source: 'segmenter' | 'pose';
+  grow: RedrawGrow;
+  mask: number;
+  oldGarment: number;
+  uncovered: number;
+  empty: boolean;
+}
+/** The redraw-mask report from the GPU (SiennaGarmentRedrawMask). */
+export function parseRedrawInfo(text: string | undefined): RedrawInfo | null {
+  if (!text) return null;
+  try {
+    const j = JSON.parse(text);
+    return { source: j.source === 'pose' ? 'pose' : 'segmenter', grow: j.grow, mask: Number(j.mask) || 0, oldGarment: Number(j.old_garment) || 0, uncovered: Number(j.uncovered) || 0, empty: !!j.empty };
+  } catch {
+    return null;
+  }
+}
+
+/** Plain-language notes about a garment-only redraw. */
+export function redrawWarnings(r: RedrawInfo | null): string[] {
+  if (!r) return [];
+  const w: string[] = [];
+  if (r.source === 'pose') w.push('Clothing detector not installed on the GPU — the redraw area was estimated from her pose; check the edges.');
+  if (r.empty) w.push('No clothing was found in the image — the redraw used body zones; check the result.');
+  else if (r.uncovered > 0.03) w.push(`About ${Math.round(r.uncovered * 100)}% of the old garment was outside the redraw area — look for leftover fabric.`);
+  return w;
 }

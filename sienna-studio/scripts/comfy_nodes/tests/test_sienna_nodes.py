@@ -8,6 +8,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sienna_nodes"))
 from sienna_crop import chin_crop, topmost_face_band  # noqa: E402
 import sienna_body as sb  # noqa: E402
+import sienna_redraw as rd  # noqa: E402
 from sienna_garment import garment_composite  # noqa: E402
 from sienna_pose import (  # noqa: E402
     BONES, angle_errors, measure_proportions, retarget_body, retarget_openpose, to_flat, to_points,
@@ -322,6 +323,60 @@ def test_scene_backdrop_removes_the_person_and_sheet_uses_it():
     m = np.zeros((400, 200), np.float32); m[100:300, 60:140] = 1
     sheet = sb.body_sheet([img, img], height=200, masks=[None, m], backdrop=bg)
     assert sheet[2, 110, 2] > 0.6 and sheet[100, 160, 0] < 0.3                  # gap and cut-out surround = room
+
+
+def _classes(img, person, face, garment_col=None):
+    """Stand-in for the MediaPipe segmenter on the synthetic figure: clothes = garment-coloured pixels."""
+    col = np.array(garment_col if garment_col is not None else RED, np.float32)
+    clothes = (np.abs(img - col).sum(2) < 0.05) & person
+    body = person & ~clothes & (face < 0.5)
+    z = np.zeros(img.shape[:2], np.float32)
+    return [(~person).astype(np.float32), z, body.astype(np.float32), face.astype(np.float32), clothes.astype(np.float32), z]
+
+
+def test_redraw_mask_covers_old_garment_and_ties_but_not_face_or_background():
+    img, person, face, kp = figure()
+    hard, soft, info = rd.garment_region(img, _classes(img, person, face), person.astype(np.float32), face, kp, "full", "garment")
+    m = hard > 0.5
+    assert m[260, 300] and m[480, 300]                       # top, bottom
+    assert m[540, 300 - 77]                                   # thin string tie
+    assert not m[100, 300]                                    # face
+    assert not m[30, 30] and not m[700, 20]                   # background far from her
+    assert info["uncovered"] < 0.02 and not info["empty"]
+    assert (soft <= 1).all() and soft[260, 300] > 0.99 and soft[100, 300] == 0
+
+
+def test_redraw_paste_back_leaves_everything_outside_the_mask_untouched():
+    img, person, face, kp = figure()
+    hard, soft, _ = rd.garment_region(img, _classes(img, person, face), person.astype(np.float32), face, kp, "full", "garment")
+    edited = np.clip(img + 0.3, 0, 1)                         # stand-in for the editor's output
+    out = rd.composite(img, edited, soft)
+    outside = soft == 0
+    assert np.abs(out - img)[outside].max() == 0
+    assert np.allclose(out[260, 300], edited[260, 300])
+    grey = rd.erase(img, hard)
+    assert np.allclose(grey[260, 300], 0.5) and np.allclose(grey[100, 300], img[100, 300])
+
+
+def test_redraw_mask_scope_grow_feet_and_arms():
+    img, person, face, kp = figure()
+    cl = _classes(img, person, face)
+    top, _, _ = rd.garment_region(img, cl, person.astype(np.float32), face, kp, "top", "garment")
+    bottom, _, _ = rd.garment_region(img, cl, person.astype(np.float32), face, kp, "bottom", "garment")
+    assert top[260, 300] and not top[505, 300]                # top only: the bottom stays
+    assert bottom[505, 300] and not bottom[260, 300]          # bottom only: the top stays
+    plain, _, _ = rd.garment_region(img, cl, person.astype(np.float32), face, kp, "full", "garment")
+    assert not plain[650, 260]                                # bare thigh not redrawn for a bikini
+    legs, _, _ = rd.garment_region(img, cl, person.astype(np.float32), face, kp, "full", "body")
+    assert legs[650, 260]                                     # a dress or trousers may cover the legs
+    feet, _, _ = rd.garment_region(img, cl, person.astype(np.float32), face, kp, "full", "garment", include_feet=True)
+    assert feet[kp[10][1] + 10, int(kp[10][0])] and not plain[kp[10][1] + 10, int(kp[10][0])]
+
+
+def test_redraw_mask_without_segmenter_falls_back_to_pose_zones():
+    img, person, face, kp = figure()
+    hard, _, info = rd.garment_region(img, None, person.astype(np.float32), face, kp, "full", "garment")
+    assert info["source"] == "pose" and hard[260, 300] and hard[480, 300] and not hard[100, 300]
 
 
 if __name__ == "__main__":

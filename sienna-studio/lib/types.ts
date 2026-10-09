@@ -54,6 +54,8 @@ export interface PromptFields {
   framing: string;
   realism: string;
   extra: string;
+  /** Things the image should not have, comma separated: sent to the negative prompt only. */
+  avoid?: string;
 }
 
 export const PROMPT_FIELD_KEYS: (keyof PromptFields)[] = [
@@ -80,6 +82,7 @@ export const PROMPT_FIELD_LABELS: Record<keyof PromptFields, string> = {
   framing: 'Framing',
   realism: 'Realism details',
   extra: 'Anything else',
+  avoid: 'Avoid',
 };
 
 /** Numeric/enum generation parameters. */
@@ -366,6 +369,10 @@ export interface OutfitEditInfo {
   /** Clothing-only isolation result ('garment-only', or 'fallback-chin-crop' with the reason). */
   isolation?: { mode: string; reason?: string } | null;
   bodyCheck?: import('./outfit-edit').BodyCheckReport | null;
+  /** Things to keep out of the result (the Avoid box); sent to the editor's negative prompt. */
+  avoid?: string;
+  /** Garment-only redraw: only the clothing region was changed. */
+  redraw?: { grow: import('./outfit-edit').RedrawGrow; info?: import('./outfit-edit').RedrawInfo | null; preview?: StoredImage | null };
 }
 
 export interface AppSettings {

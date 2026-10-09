@@ -19,6 +19,7 @@ import torch
 
 from .sienna_body import SCENE_CHANGED, body_sheet, compare, garment_only, keypoints_from_pose, measure_body, scale_points, scene_backdrop, scene_change
 from .sienna_crop import chin_crop
+from .sienna_redraw import GROW_MODES, erase, garment_region, overlay, segment_classes
 from .sienna_garment import garment_composite
 from .sienna_pose import DEFAULT_PROPORTIONS, retarget_openpose
 
@@ -244,6 +245,38 @@ class SiennaBodyCheck:
         return {"ui": {"text": [text]}, "result": (text,)}
 
 
+class SiennaGarmentRedrawMask:
+    """Edit Outfit garment-only redraw: the region the editor may change, image 1 with the old garment greyed out,
+    and a preview. The paste-back uses the feathered mask (ImageCompositeMasked)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "scope": (["full", "top", "bottom"],),
+                "grow": (list(GROW_MODES),),
+                "include_feet": ("BOOLEAN", {"default": False}),
+            },
+            "optional": {"person_mask": ("MASK",), "face_mask": ("MASK",), "pose_keypoint": ("POSE_KEYPOINT",)},
+        }
+
+    RETURN_TYPES = ("MASK", "MASK", "IMAGE", "IMAGE", "STRING")
+    RETURN_NAMES = ("mask", "soft_mask", "erased", "preview", "info")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image, scope, grow, include_feet, person_mask=None, face_mask=None, pose_keypoint=None):
+        img = image[0].detach().cpu().numpy().astype(np.float32)
+        shape = img.shape[:2]
+        hard, soft, info = garment_region(img, segment_classes(img), _mask_np(person_mask, 0, shape), _mask_np(face_mask, 0, shape),
+                                          _kp_for(pose_keypoint, shape), scope, grow, include_feet)
+        text = json.dumps(info)
+        t = lambda a: torch.from_numpy(np.ascontiguousarray(a))[None, ...]
+        return {"ui": {"text": [text]}, "result": (t(hard), t(soft), t(erase(img, hard)), t(overlay(img, hard)), text)}
+
+
 NODE_CLASS_MAPPINGS = {
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
@@ -252,6 +285,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaBodySheet": SiennaBodySheet,
     "SiennaBodyMeasure": SiennaBodyMeasure,
     "SiennaBodyCheck": SiennaBodyCheck,
+    "SiennaGarmentRedrawMask": SiennaGarmentRedrawMask,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaPoseRetarget": "Sienna Pose Retarget",
@@ -261,4 +295,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaBodySheet": "Sienna Body Sheet",
     "SiennaBodyMeasure": "Sienna Body Measure",
     "SiennaBodyCheck": "Sienna Body Check",
+    "SiennaGarmentRedrawMask": "Sienna Garment Redraw Mask",
 }

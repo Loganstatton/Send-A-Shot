@@ -8,6 +8,7 @@ import { cropTopAndUpload, OutfitEditAvailability, startOutfitEdit } from '@/lib
 import { runJob } from '@/lib/client/poll';
 import {
   BodyProtect,
+  buildEditNegative,
   buildEditPrompt,
   NO_PROTECT,
   PROTECT_LABELS,
@@ -21,6 +22,7 @@ import {
   SCOPE_LABELS,
 } from '@/lib/outfit-edit';
 import type { OutfitAnalysis } from '@/lib/outfit';
+import { promptAdvice } from '@/lib/prompt-advice';
 import type { GenerationRecord, StoredImage } from '@/lib/types';
 import { ImagePicker } from '@/components/ImagePicker';
 import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Slider, Spinner, TextArea, TextInput, Toggle, toast } from '@/components/ui';
@@ -51,6 +53,8 @@ export default function EditOutfitPage() {
   const [face, setFace] = useState<OutfitEditFace>('standard');
   const [seed, setSeed] = useState('');
   const [protect, setProtect] = useState<BodyProtect>(NO_PROTECT);
+  const [avoid, setAvoid] = useState('');
+  const [redraw, setRedraw] = useState(false);
   const [analysis, setAnalysis] = useState<AnalyzeStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const cancelled = useRef(false);
@@ -66,8 +70,13 @@ export default function EditOutfitPage() {
   const source = rec?.images[imageIndex] ?? null;
   const originalOutfit = rec?.fields.outfit ?? '';
   const prompt = useMemo(
-    () => buildEditPrompt({ scope, description: description || '…', originalOutfit, footwear, protect }),
-    [scope, description, originalOutfit, footwear, protect],
+    () => buildEditPrompt({ scope, description: description || '…', originalOutfit, footwear, protect, redraw }),
+    [scope, description, originalOutfit, footwear, protect, redraw],
+  );
+  const editNegative = useMemo(() => buildEditNegative(description, avoid), [description, avoid]);
+  const advice = useMemo(
+    () => (description.trim() ? promptAdvice({ positive: description, outfit: description, avoid, negationsMoved: true }).filter((a) => a.id !== 'buried' && a.id !== 'long') : []),
+    [description, avoid],
   );
 
   if (error) return <p className="pt-20 text-center text-red-300">{error}</p>;
@@ -105,6 +114,8 @@ export default function EditOutfitPage() {
         face,
         seed: seed.trim() === '' ? -1 : Math.max(0, Math.floor(Number(seed)) || 0),
         ...(avail?.experiments ? { protect } : {}),
+        ...(redraw ? { redraw: true } : {}),
+        ...(avoid.trim() ? { avoid: avoid.trim() } : {}),
       });
       toast(next.status === 'error' ? 'Edit failed — see details' : 'Edit queued');
       router.push(`/gallery/${next.id}`);
@@ -237,6 +248,36 @@ export default function EditOutfitPage() {
           {analysis?.state === 'done' && (
             <p className="mt-1 text-xs text-amber-300">Draft from the photo — edit it: automatic descriptions miss straps, ties and exact cuts.</p>
           )}
+          {advice.length > 0 && (
+            <div className="mt-2 space-y-2">
+              {advice.map((a) => (
+                <Notice key={a.id} kind={a.id === 'negation' ? 'info' : 'warn'}>
+                  {a.text}
+                </Notice>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <TextArea
+            label="Avoid"
+            hint="optional"
+            rows={2}
+            value={avoid}
+            placeholder="e.g. wide bikini cups, thick straps, beige fabric"
+            onChange={(e) => setAvoid(e.target.value.slice(0, 300))}
+          />
+          <p className="mt-1 text-xs text-ink-400">Things the new outfit must not have, separated by commas — no need to write “no”. Your description wins over the photo where they differ (e.g. colour).</p>
+        </div>
+        <div>
+          <Toggle
+            checked={redraw && !avail.redrawMissing?.length}
+            disabled={!!avail.redrawMissing?.length}
+            onChange={setRedraw}
+            label="Change only the clothes"
+            description="Redraws just the area of her clothes (plus room for straps and ties) and keeps her face, body, pose and background pixel-for-pixel. Best when swapping one bikini for a smaller one."
+          />
+          {!!avail.redrawMissing?.length && <p className="text-xs text-amber-300">Needs on the GPU: {avail.redrawMissing.join('; ')}</p>}
         </div>
         <div>
           <p className="mb-2 text-sm text-ink-200">Footwear</p>
@@ -315,6 +356,12 @@ export default function EditOutfitPage() {
             <p className="mb-1 text-sm text-ink-200">Instruction sent to the editor</p>
             <p className="select-text whitespace-pre-wrap rounded-xl bg-ink-800 p-3 text-xs text-ink-200">{prompt}</p>
           </div>
+          {editNegative && (
+            <div>
+              <p className="mb-1 text-sm text-ink-200">Avoid list sent to the editor</p>
+              <p className="select-text whitespace-pre-wrap rounded-xl bg-ink-800 p-3 text-xs text-ink-400">{editNegative}</p>
+            </div>
+          )}
         </Collapsible>
       </div>
 

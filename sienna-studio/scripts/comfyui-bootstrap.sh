@@ -18,7 +18,9 @@
 #   - models/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors (Comfy-Org/Qwen-Image-Edit_ComfyUI)
 #   - models/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors          (Comfy-Org/Qwen-Image_ComfyUI)
 #   - models/vae/qwen_image_vae.safetensors                               (Comfy-Org/Qwen-Image_ComfyUI)
-#   - custom_nodes/sienna_nodes (SiennaChinCrop + the experimental body-protection nodes)
+#   - custom_nodes/sienna_nodes (SiennaChinCrop, SiennaGarmentRedrawMask + the experimental body-protection nodes)
+#   - for "Change only the clothes": mediapipe (pip, --no-deps) + models/mediapipe/selfie_multiclass_256x256.tflite
+#     (Google MediaPipe, Apache-2.0, ~16 MB)
 #   - for the experimental body protection (clothing-only isolation, body check):
 #     comfyui_controlnet_aux (DWPose, minimal deps) + its two DWPose models (yzd-v/DWPose, ~0.4 GB)
 #     and models/ultralytics/segm/person_yolov8m-seg.pt (Bingsu/adetailer, ~50 MB)
@@ -261,6 +263,16 @@ if (( QWEN )); then
     fetch_model "$HF/yzd-v/DWPose/resolve/main/$f" "$COMFYUI_DIR/custom_nodes/comfyui_controlnet_aux/ckpts/yzd-v/DWPose/$f" 100000000
   done
   fetch_model "$HF/Bingsu/adetailer/resolve/main/person_yolov8m-seg.pt" "$COMFYUI_DIR/models/ultralytics/segm/person_yolov8m-seg.pt" 40000000
+  # "Change only the clothes" (garment-only redraw): MediaPipe's multiclass selfie segmenter (Apache-2.0) tells
+  # clothes from skin. Installed without dependencies — it would pull opencv-contrib next to ComfyUI's opencv;
+  # what it needs at runtime is installed above or here. Without it the redraw area is estimated from the pose.
+  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check --no-deps "mediapipe==1.1.0" \
+    || echo "mediapipe not installed — garment-only redraw will estimate the clothing area from the pose"
+  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "absl-py>=2.1" "flatbuffers>=24" certifi || true
+  fetch_model "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite" \
+    "$COMFYUI_DIR/models/mediapipe/selfie_multiclass_256x256.tflite" 10000000
+  "$COMFYUI_PYTHON" -c "from mediapipe.tasks.python import vision; print('mediapipe · ok')" \
+    || echo "mediapipe import failed — garment-only redraw will estimate the clothing area from the pose"
   fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors" \
     "$COMFYUI_DIR/models/vae/qwen_image_vae.safetensors" 200000000
   fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" \

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, fileUrl, useApi } from '@/lib/client/api';
 import { Draft, useDraft } from '@/lib/client/draft';
+import { promptAdvice } from '@/lib/prompt-advice';
 import { JOBS_KEY } from '@/lib/client/jobs';
 import { capabilities } from '@/lib/comfy/adapter';
 import { DEFAULT_PARAMS, EMPTY_FIELDS, SIZE_PRESETS } from '@/lib/defaults';
@@ -36,10 +37,11 @@ const PLACEHOLDERS: Record<keyof PromptFields, string> = {
   framing: 'e.g. waist-up, slightly off-center',
   realism: 'added to the profile realism prompt',
   extra: 'anything else',
+  avoid: 'e.g. wide bikini cups, thick straps, beige fabric (no need to write “no”)',
 };
 
 /** Fields always shown; the rest sit under "More details". */
-const MAIN_KEYS: (keyof PromptFields)[] = ['outfit', 'pose', 'setting', 'lighting', 'expression'];
+const MAIN_KEYS: (keyof PromptFields)[] = ['outfit', 'avoid', 'pose', 'setting', 'lighting', 'expression'];
 const MORE_KEYS: (keyof PromptFields)[] = ['bodyPresentation', 'framing', 'camera', 'realism', 'extra'];
 
 /** Number of Phase 1 quality options switched on (for the section badge). */
@@ -207,6 +209,11 @@ export function CreateScreen() {
     if (!draft || !character) return null;
     return buildPrompt({ fields: draft.fields, character, siennaLock: draft.siennaLock, contentMode: draft.contentMode });
   }, [draft, character]);
+
+  const advice = useMemo(
+    () => (built && draft ? promptAdvice({ positive: built.positive, outfit: built.effectiveFields.outfit, avoid: draft.fields.avoid }) : []),
+    [built, draft],
+  );
 
   const update = useCallback((fn: (d: Draft) => Draft) => setDraft(fn), [setDraft]);
   const framingIssues = useMemo(
@@ -422,7 +429,7 @@ export function CreateScreen() {
           <TextArea
             key={k}
             label={PROMPT_FIELD_LABELS[k]}
-            value={draft.fields[k]}
+            value={draft.fields[k] ?? ''}
             placeholder={PLACEHOLDERS[k]}
             onChange={(e) => setField(k, e.target.value)}
             warning={fieldWarning(k)}
@@ -461,6 +468,16 @@ export function CreateScreen() {
                     {issue.suggestion.label}
                   </button>
                 )}
+              </Notice>
+            ))}
+          </div>
+        )}
+        {advice.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-wide text-ink-400">Outfit control</p>
+            {advice.map((a) => (
+              <Notice key={a.id} kind="warn">
+                {a.text}
               </Notice>
             ))}
           </div>

@@ -91,6 +91,19 @@ if (avail.status === 200 && avail.body.enabled) {
     assert(e.outfitEdit?.sourceId === rec.id && e.outfitEdit?.scope === scope && e.outfitEdit?.footwear === footwear, `edit record links its source (${scope})`);
     assert(!e.outfitEdit?.protect || Object.values(e.outfitEdit.protect).every((v) => !v) || avail.body.experiments, 'experimental body protection ignored while experiments are off');
   }
+  // garment-only redraw + Avoid
+  const rq = await call('/api/outfit-edit', {
+    method: 'POST',
+    body: JSON.stringify({ sourceId: rec.id, reference: up, description: 'black micro string bikini. No wide cups.', scope: 'full', footwear: 'barefoot', face: 'standard', seed: 7, redraw: true, avoid: 'thick straps, beige fabric' }),
+  });
+  assert(rq.status === 202 && rq.body.outfitEdit?.redraw?.grow === 'garment' && rq.body.outfitEdit?.avoid === 'thick straps, beige fabric', 'clothes-only redraw queued with Avoid list');
+  assert(rq.body.submittedGraph?.q_neg?.inputs?.prompt === 'thick straps, beige fabric, wide cups', 'Avoid + "no …" sentences reach the editor negative prompt');
+  let re = rq.body;
+  for (let i = 0; i < 120 && re.status !== 'done' && re.status !== 'error'; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    re = (await call(`/api/history/${re.id}/status`)).body;
+  }
+  assert(re.status === 'done' && re.outfitEdit?.redraw?.info?.mask > 0, `clothes-only redraw finished (${re.error ?? 'redraw area ' + re.outfitEdit?.redraw?.info?.mask})`);
   const after = (await call(`/api/history/${rec.id}/status`)).body;
   assert(after.images[0].file === before.images[0].file, 'original image untouched');
 } else {
