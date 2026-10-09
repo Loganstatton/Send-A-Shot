@@ -6,6 +6,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sienna_nodes"))
+from sienna_crop import chin_crop, topmost_face_band  # noqa: E402
 from sienna_garment import garment_composite  # noqa: E402
 from sienna_pose import (  # noqa: E402
     BONES, angle_errors, measure_proportions, retarget_body, retarget_openpose, to_flat, to_points,
@@ -124,6 +125,48 @@ def test_empty_garment_falls_back_and_says_so():
     person = np.ones((50, 40), np.float32)
     out, mode = garment_composite(img, np.zeros((50, 40)), person, None)
     assert mode == "fallback-person" and out.shape == (50, 40, 3)
+
+
+# ── Edit Outfit: below-the-chin reference crop ──────────────────────────────
+
+def _face_mask(h, w, boxes):
+    m = np.zeros((h, w), np.float32)
+    for x1, y1, x2, y2 in boxes:
+        m[y1:y2, x1:x2] = 1
+    return m
+
+
+def test_chin_crop_cuts_below_face_and_keeps_full_width_and_bottom():
+    img = np.random.rand(1000, 600, 3).astype(np.float32)
+    out, info = chin_crop(img, _face_mask(1000, 600, [(250, 80, 350, 180)]), margin=0.1)
+    assert info["mode"] == "cropped"
+    # box rows 80..179 → face height 100, cut at 180 + 10
+    assert out.shape == (810, 600, 3)
+    assert np.array_equal(out, img[190:])
+    assert abs(info["cut"] - 0.19) < 1e-6
+
+
+def test_chin_crop_no_face_returns_original():
+    img = np.zeros((100, 80, 3), np.float32)
+    out, info = chin_crop(img, None)
+    assert out is img and info["mode"] == "no-face"
+    out, info = chin_crop(img, np.zeros((100, 80), np.float32))
+    assert out is img and info["mode"] == "no-face"
+
+
+def test_chin_crop_face_too_low_is_not_cropped():
+    img = np.zeros((1000, 600, 3), np.float32)
+    out, info = chin_crop(img, _face_mask(1000, 600, [(250, 600, 350, 700)]), min_keep=0.35)
+    assert out is img and info["mode"] == "face-too-low"
+
+
+def test_chin_crop_uses_topmost_face_and_resizes_mask():
+    # Two people stacked: the lower face must not decide the cut.
+    m = _face_mask(500, 300, [(100, 40, 150, 90), (120, 300, 160, 340)])
+    assert topmost_face_band(m) == (40, 89)
+    img = np.zeros((1000, 600, 3), np.float32)
+    out, info = chin_crop(img, m, margin=0.0)  # mask at half resolution
+    assert info["mode"] == "cropped" and out.shape[0] == 1000 - 180
 
 
 if __name__ == "__main__":

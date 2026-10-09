@@ -3,8 +3,9 @@ Sienna Studio custom ComfyUI nodes (installed by scripts/comfyui-bootstrap.sh).
 
   SiennaPoseRetarget     POSE_KEYPOINT → OpenPose image with Sienna's proportions (angles kept)
   SiennaGarmentIsolate   photo + garment/person/face masks → garment-only crop for the outfit adapter
+  SiennaChinCrop         clothing photo + face-box mask → crop below the chin (Edit Outfit reference)
 
-The math lives in sienna_pose.py / sienna_garment.py (no ComfyUI imports; unit-tested).
+The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py (no ComfyUI imports; unit-tested).
 """
 
 import json
@@ -12,6 +13,7 @@ import json
 import numpy as np
 import torch
 
+from .sienna_crop import chin_crop
 from .sienna_garment import garment_composite
 from .sienna_pose import DEFAULT_PROPORTIONS, retarget_openpose
 
@@ -95,11 +97,38 @@ class SiennaGarmentIsolate:
         return {"ui": {"text": [mode]}, "result": (torch.from_numpy(np.ascontiguousarray(out))[None, ...], mode)}
 
 
+class SiennaChinCrop:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "margin": ("FLOAT", {"default": 0.08, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "min_keep": ("FLOAT", {"default": 0.35, "min": 0.0, "max": 1.0, "step": 0.01}),
+            },
+            "optional": {"face_mask": ("MASK",)},
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "info")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image, margin, min_keep, face_mask=None):
+        img = image[0].detach().cpu().numpy().astype(np.float32)
+        out, info = chin_crop(img, _mask_np(face_mask, 0, img.shape[:2]), margin=margin, min_keep=min_keep)
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out))[None, ...], text)}
+
+
 NODE_CLASS_MAPPINGS = {
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
+    "SiennaChinCrop": SiennaChinCrop,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaPoseRetarget": "Sienna Pose Retarget",
     "SiennaGarmentIsolate": "Sienna Garment Isolate",
+    "SiennaChinCrop": "Sienna Chin Crop",
 }

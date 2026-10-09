@@ -82,6 +82,7 @@ See [`.env.example`](.env.example). **None of these reach the browser.**
 | `ALLOW_ADULT_CONTENT` | `true` enables the Adult 18+ mode toggle. Default `false` forces SFW. |
 | `DATA_DIR` | Storage folder (default `./data`). Must be persistent in production. |
 | `INSECURE_COOKIES` | `true` only if you serve production over plain HTTP (e.g. a LAN or Tailscale IP). |
+| `SIENNA_OUTFIT_EDIT` | `true` turns on the optional **Edit Outfit** button (Qwen-Image-Edit-2509). Default off. See §5. |
 
 ---
 
@@ -215,6 +216,27 @@ whether it is ready. Setup, including the one-command installer for fresh cloud 
 Tuning: changing LoRA strength between 0.9 and 1.1 barely changes the face. If outfits or settings get ignored
 or images look burned, lower it.
 
+
+### Edit Outfit (optional, Qwen-Image-Edit-2509)
+
+Changes the clothes on an **existing** image and saves the result as a **new** gallery image; the original is
+never modified. Separate from the generator and Outfit Reference (both unchanged). Off unless
+`SIENNA_OUTFIT_EDIT=true`.
+
+Gallery → image → **👗 Edit outfit**: add a clothing photo, describe it (or **Describe from photo** for a
+draft), pick **Entire outfit / Top only / Bottom only**, footwear (**Keep current / Barefoot / From photo**) and
+**Sienna face restore** (Off / Standard 0.3 / Strong 0.45). The pipeline (`lib/outfit-edit.ts`):
+
+1. the clothing photo is cropped just below the chin (`SiennaChinCrop` + the face detector) so the editor can't
+   copy that person's face; the full width and everything below is kept. **Crop by hand** overrides it;
+2. Qwen-Image-Edit-2509 edits the image at the source's exact aspect ratio, told to remove the old outfit
+   (the record's outfit text) and match the photo piece by piece;
+3. the result is scaled back to the source size and Sienna's production FaceDetailer (same settings as the
+   generator's face refinement, Sienna LoRA) redraws the face at 0.3 or 0.45.
+
+The description matters: Qwen follows the **text over the photo** (a detail that isn't in the photo gets
+added). Needs a 24 GB+ GPU and ~30 GB of models: `comfyui-bootstrap.sh --with-qwen-edit`. The edit screen
+lists anything missing. Speed measured: ~100 s per edit on an L40S, ~7.5 min on an RTX 3090.
 ---
 
 ## 6. Workflows

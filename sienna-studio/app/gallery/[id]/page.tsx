@@ -5,11 +5,13 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, fileUrl, useApi } from '@/lib/client/api';
 import { regenerate } from '@/lib/client/jobs';
+import { OutfitEditAvailability, rerunOutfitEdit } from '@/lib/client/outfit-edit';
+import { FACE_LABELS, FOOTWEAR_LABELS, SCOPE_LABELS } from '@/lib/outfit-edit';
 import { shareImage } from '@/lib/client/share';
 import { REVIEW_INFO } from '@/lib/review';
 import type { GenerationRecord, ReviewItem, ReviewMark } from '@/lib/types';
 import { PROMPT_FIELD_LABELS, REVIEW_ITEMS } from '@/lib/types';
-import { Badge, Button, Card, Collapsible, Notice, PageHeader, SectionTitle, Spinner, TextArea, cx, toast } from '@/components/ui';
+import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Spinner, TextArea, cx, toast } from '@/components/ui';
 import { GenerationMeta } from '@/components/GenerationMeta';
 
 export default function GenerationDetail() {
@@ -18,6 +20,8 @@ export default function GenerationDetail() {
   const { data: rec, setData, error } = useApi<GenerationRecord>(`/api/history/${id}`);
   const [busy, setBusy] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
+  const { data: editAvail } = useApi<OutfitEditAvailability>('/api/outfit-edit');
+  const [showBefore, setShowBefore] = useState(false);
 
   useEffect(() => {
     if (rec) setNotes(rec.notes);
@@ -49,6 +53,11 @@ export default function GenerationDetail() {
   async function rerun(newSeed: boolean) {
     setBusy(newSeed ? 'var' : 'regen');
     try {
+      if (rec!.outfitEdit) {
+        const next = await rerunOutfitEdit(rec!, newSeed);
+        router.push(`/gallery/${next.id}`);
+        return;
+      }
       await regenerate(rec!, newSeed);
       router.push('/');
     } catch (e: any) {
@@ -80,8 +89,21 @@ export default function GenerationDetail() {
         }
       />
 
+      {rec.outfitEdit && rec.images.length > 0 && (
+        <div className="mb-2 flex gap-2">
+          <Chip active={!showBefore} onClick={() => setShowBefore(false)}>
+            After
+          </Chip>
+          <Chip active={showBefore} onClick={() => setShowBefore(true)}>
+            Before
+          </Chip>
+        </div>
+      )}
       {/* Images: horizontal swipe when there are several */}
-      {rec.images.length > 0 ? (
+      {rec.outfitEdit && showBefore ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={fileUrl(rec.outfitEdit.sourceImage.file)} alt="Before the edit" className="max-h-[75vh] w-full rounded-2xl bg-black object-contain" />
+      ) : rec.images.length > 0 ? (
         <div className="no-scrollbar -mx-4 flex snap-x snap-mandatory overflow-x-auto">
           {rec.images.map((img, i) => (
             <div key={img.id} className="w-full shrink-0 snap-center px-4">
@@ -117,14 +139,23 @@ export default function GenerationDetail() {
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <Button onClick={() => rerun(false)} loading={busy === 'regen'}>
-          ↻ Regenerate
+          {rec.outfitEdit ? '↻ Re-run edit' : '↻ Regenerate'}
         </Button>
         <Button onClick={() => rerun(true)} loading={busy === 'var'}>
           🎲 New seed
         </Button>
-        <Link href={`/?from=${rec.id}`}>
-          <Button className="w-full">✎ Edit & regenerate</Button>
-        </Link>
+        {editAvail?.enabled && (
+          <Link href={`/gallery/${rec.id}/edit-outfit`} className="col-span-2">
+            <Button className="w-full" disabled={!rec.images[0]}>
+              👗 Edit outfit
+            </Button>
+          </Link>
+        )}
+        {!rec.outfitEdit && (
+          <Link href={`/?from=${rec.id}`}>
+            <Button className="w-full">✎ Edit & regenerate</Button>
+          </Link>
+        )}
         <Link href={`/?init=${rec.id}`}>
           <Button className="w-full" disabled={!rec.images[0]}>
             ⇢ Use as init
@@ -132,6 +163,8 @@ export default function GenerationDetail() {
         </Link>
       </div>
       {rec.images.length > 1 && <p className="mt-1 text-xs text-ink-400">Share saves the first image; long-press others to save.</p>}
+
+      {rec.outfitEdit && <OutfitEditCard rec={rec} />}
 
       <div className="mt-5 space-y-3">
         {/* Quality review */}
@@ -181,7 +214,7 @@ export default function GenerationDetail() {
           <GenerationMeta rec={rec} />
           {rec.parentId && (
             <Link href={`/gallery/${rec.parentId}`} className="block text-sm text-accent">
-              ← Derived from an earlier generation
+              {rec.outfitEdit ? '← Original image' : '← Derived from an earlier generation'}
             </Link>
           )}
         </Collapsible>
@@ -214,5 +247,61 @@ export default function GenerationDetail() {
         Delete
       </Button>
     </div>
+  );
+}
+
+function OutfitEditCard({ rec }: { rec: GenerationRecord }) {
+  const e = rec.outfitEdit!;
+  const thumbs: [string, { file: string } | null | undefined][] = [
+    ['Original', e.sourceImage],
+    ['Clothing photo', e.reference],
+    [e.manualCrop ? 'Cropped by hand' : 'As the editor saw it', e.manualCrop ? e.reference : e.referenceCrop],
+  ];
+  return (
+    <Card className="mt-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="font-medium">Outfit edit</p>
+        <Link href={`/gallery/${e.sourceId}`} className="text-sm text-accent">
+          Open original →
+        </Link>
+      </div>
+      <div className="flex gap-3">
+        {thumbs.map(([label, img]) =>
+          img ? (
+            <div key={label} className="text-center text-[11px] text-ink-400">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={fileUrl(img.file)} alt={label} className="mb-1 h-24 w-[72px] rounded-lg bg-black object-cover" />
+              {label}
+            </div>
+          ) : null,
+        )}
+      </div>
+      <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
+        <dt className="text-ink-400">Replaced</dt>
+        <dd>{SCOPE_LABELS[e.scope]}</dd>
+        <dt className="text-ink-400">Footwear</dt>
+        <dd>{FOOTWEAR_LABELS[e.footwear]}</dd>
+        <dt className="text-ink-400">Face restore</dt>
+        <dd>{FACE_LABELS[e.face]}</dd>
+        <dt className="text-ink-400">Crop</dt>
+        <dd>
+          {e.manualCrop
+            ? 'by hand'
+            : e.crop
+              ? e.crop.mode === 'cropped'
+                ? `below the chin (top ${Math.round(e.crop.cut * 100)}% removed)`
+                : e.crop.mode === 'no-face'
+                  ? 'no face found — uncropped'
+                  : 'face too low — uncropped'
+              : rec.status === 'done'
+                ? '—'
+                : 'pending'}
+        </dd>
+        <dt className="text-ink-400">Description</dt>
+        <dd className="break-words">{e.description}</dd>
+        <dt className="text-ink-400">Was wearing</dt>
+        <dd className="break-words text-ink-400">{e.originalOutfit || '—'}</dd>
+      </dl>
+    </Card>
   );
 }

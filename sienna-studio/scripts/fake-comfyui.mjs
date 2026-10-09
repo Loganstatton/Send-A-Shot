@@ -3,7 +3,7 @@
 // /history/{id}, /view). For exercising the real HTTP client + diagnostics
 // without a GPU. NOT used in production.
 //
-//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-face-refine] [--no-lora] [--fail-exec]
+//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-face-refine] [--no-lora] [--fail-exec] [--qwen-edit]
 import http from 'node:http';
 import { deflateSync } from 'node:zlib';
 
@@ -11,9 +11,9 @@ const arg = (n) => process.argv.includes(n);
 const PORT = Number(process.argv[process.argv.indexOf('--port') + 1]) || 8188;
 
 const MODELS = {
-  ckpt_name: ['realvisxlV50.safetensors', 'sd_xl_base_1.0.safetensors'],
+  ckpt_name: ['realvisxlV50.safetensors', 'sd_xl_base_1.0.safetensors', 'RealVisXL_V5.0_fp16.safetensors'],
   unet_name: ['flux1-dev-fp8.safetensors'],
-  lora_name: arg('--no-lora') ? ['other_style.safetensors'] : ['sienna_v1.safetensors', 'other_style.safetensors'],
+  lora_name: arg('--no-lora') ? ['other_style.safetensors'] : ['sienna_v1.safetensors', 'sienna_v2.safetensors', 'other_style.safetensors'],
   control_net_name: ['OpenPoseXL2.safetensors'],
   vae_name: ['ae.safetensors'],
   clip_name: ['clip_l.safetensors', 't5xxl_fp8_e4m3fn.safetensors'],
@@ -63,6 +63,19 @@ if (!arg('--no-face-refine')) {
       steps: ['INT'], cfg: ['FLOAT'], sampler_name: combo(['euler', 'ddpm', 'dpmpp_2m']), scheduler: combo(['normal', 'karras']),
       denoise: ['FLOAT'], feather: ['INT'], noise_mask: ['BOOLEAN'], force_inpaint: ['BOOLEAN'],
     },
+  });
+}
+if (arg('--qwen-edit')) {
+  // Edit Outfit: Qwen-Image-Edit-2509 files + core Qwen nodes + Sienna chin crop + Impact bbox mask.
+  MODELS.unet_name.push('qwen_image_edit_2509_fp8_e4m3fn.safetensors');
+  MODELS.vae_name.push('qwen_image_vae.safetensors');
+  Object.assign(SPECS, {
+    CLIPLoader: { clip_name: combo(['qwen_2.5_vl_7b_fp8_scaled.safetensors']), type: combo(['qwen_image', 'sdxl']), device: combo(['default', 'cpu']) },
+    TextEncodeQwenImageEditPlus: { clip: ['CLIP'], vae: ['VAE'], prompt: ['STRING'] },
+    ModelSamplingAuraFlow: { model: ['MODEL'], shift: ['FLOAT'] },
+    CFGNorm: { model: ['MODEL'], strength: ['FLOAT'] },
+    BboxDetectorCombined_v2: { bbox_detector: ['BBOX_DETECTOR'], image: ['IMAGE'], threshold: ['FLOAT'], dilation: ['INT'] },
+    SiennaChinCrop: { image: ['IMAGE'], margin: ['FLOAT'], min_keep: ['FLOAT'] },
   });
 }
 // (PuLID-Flux deliberately absent, to exercise "missing custom node" paths.)
@@ -149,8 +162,12 @@ http
           },
         });
       }
-      const saveId = Object.keys(j.prompt).find((k) => j.prompt[k].class_type === 'SaveImage');
-      return send(res, 200, { [id]: { outputs: { [saveId]: { images: [{ filename: `${id}.png`, subfolder: 'sienna', type: 'output' }] } }, status: { status_str: 'success', completed: true, messages: [] } } });
+      const outputs = {};
+      for (const [k, n] of Object.entries(j.prompt)) {
+        if (n.class_type === 'SaveImage') outputs[k] = { images: [{ filename: `${id}_${k}.png`, subfolder: 'sienna', type: 'output' }] };
+        if (n.class_type === 'SiennaChinCrop') outputs[k] = { text: [JSON.stringify({ mode: 'cropped', cut: 0.21 })] };
+      }
+      return send(res, 200, { [id]: { outputs, status: { status_str: 'success', completed: true, messages: [] } } });
     }
     if (p === '/view') return send(res, 200, png(), 'image/png');
     if (p === '/interrupt') return send(res, 200, {});

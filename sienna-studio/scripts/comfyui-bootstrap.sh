@@ -14,6 +14,12 @@
 #   - models/clip_vision/CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors   (h94/IP-Adapter image_encoder)
 #   - models/ultralytics/segm/person_yolov8m-seg.pt                    (Bingsu/adetailer)
 #   - models/LLM/Florence-2-large                                      (microsoft/Florence-2-large)
+# With --with-qwen-edit it also installs the optional Edit Outfit editor (~30 GB):
+#   - models/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors (Comfy-Org/Qwen-Image-Edit_ComfyUI)
+#   - models/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors          (Comfy-Org/Qwen-Image_ComfyUI)
+#   - models/vae/qwen_image_vae.safetensors                               (Comfy-Org/Qwen-Image_ComfyUI)
+#   - custom_nodes/sienna_nodes (SiennaChinCrop)
+#   Needs a GPU with 24 GB+ VRAM and ~48 GB system RAM.
 # Before downloading, it prints each model repo's declared license and stops
 # if one isn't on the expected list (override: OUTFIT_LICENSE_OK=1).
 #
@@ -27,6 +33,7 @@
 #   --with-pose        also install pose copying: comfyui_controlnet_aux (DWPose skeleton
 #                      extractor, minimal deps) + models/controlnet/sdxl_openpose.safetensors
 #                      (xinsir/controlnet-openpose-sdxl-1.0, ~2.5 GB)
+#   --with-qwen-edit   also install the optional Edit Outfit editor (Qwen-Image-Edit-2509 fp8, ~30 GB)
 #   --restart          restart ComfyUI afterwards via ComfyUI-Manager (if installed)
 #   COMFYUI_DIR        ComfyUI folder (default: auto-detect)
 #   COMFYUI_PYTHON     Python used by ComfyUI (default: auto-detect its venv)
@@ -48,11 +55,13 @@ FACE_MODEL_MIN_BYTES=50000000
 RESTART=0
 OUTFIT=0
 POSE=0
+QWEN=0
 for arg in "$@"; do
   case "$arg" in
     --restart) RESTART=1 ;;
     --with-outfit) OUTFIT=1 ;;
     --with-pose) POSE=1 ;;
+    --with-qwen-edit) QWEN=1 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -235,10 +244,22 @@ if (( POSE )); then
   done
 fi
 
-# ── Sienna custom nodes (pose retargeting, garment-only isolation) ─────────────
+# ── Edit Outfit (Qwen-Image-Edit-2509, optional) ──────────────────────────────
+if (( QWEN )); then
+  log "Edit Outfit model licenses (Hugging Face model cards)"
+  check_licenses "Comfy-Org/Qwen-Image-Edit_ComfyUI:apache-2.0" "Comfy-Org/Qwen-Image_ComfyUI:apache-2.0" "Qwen/Qwen-Image-Edit-2509:apache-2.0"
+  fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors" \
+    "$COMFYUI_DIR/models/vae/qwen_image_vae.safetensors" 200000000
+  fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" \
+    "$COMFYUI_DIR/models/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" 9000000000
+  fetch_model "$HF/Comfy-Org/Qwen-Image-Edit_ComfyUI/resolve/main/split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors" \
+    "$COMFYUI_DIR/models/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors" 20000000000
+fi
+
+# ── Sienna custom nodes (pose retargeting, garment-only isolation, chin crop) ──
 # Shipped in this repo (scripts/comfy_nodes/sienna_nodes). Copied when the script runs from
 # a checkout, or when SIENNA_NODES_DIR points at an uploaded copy.
-if (( OUTFIT || POSE )); then
+if (( OUTFIT || POSE || QWEN )); then
   log "sienna_nodes"
   src="${SIENNA_NODES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/comfy_nodes/sienna_nodes}"
   if [[ -f "$src/__init__.py" ]]; then
@@ -275,6 +296,11 @@ if (( RESTART )); then
     done
     if (( ok )); then
       echo "ComfyUI restarted — FaceDetailer is loaded."
+      if (( QWEN )); then
+        for cls in TextEncodeQwenImageEditPlus ModelSamplingAuraFlow CFGNorm SiennaChinCrop BboxDetectorCombined_v2; do
+          if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — update ComfyUI (Qwen nodes need a 2025-09+ build) or check the log"; fi
+        done
+      fi
       if (( OUTFIT || POSE )); then
         for cls in IPAdapterAdvanced Florence2Run GetImageSizeAndCount SiennaTextOutput SegmDetectorCombined_v2 SiennaGarmentIsolate $( (( POSE )) && echo DWPreprocessor SiennaPoseRetarget ); do
           if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — check the ComfyUI log"; fi

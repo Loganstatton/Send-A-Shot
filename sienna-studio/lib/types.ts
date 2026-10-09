@@ -335,6 +335,28 @@ export interface GenerationRecord {
   notes: string;
   /** If this was a regenerate/edit of another record. */
   parentId?: string;
+  /** Set when this image was made by Edit Outfit (Qwen-Image-Edit) from another record's image. */
+  outfitEdit?: OutfitEditInfo;
+}
+
+/** How an Edit Outfit result was made. The source record and its image are never modified. */
+export interface OutfitEditInfo {
+  model: 'qwen-image-edit-2509';
+  sourceId: string;
+  /** The image that was edited (belongs to the source record). */
+  sourceImage: StoredImage;
+  /** Clothing photo as uploaded (or as cropped by hand in the editor). */
+  reference: StoredImage;
+  manualCrop: boolean;
+  /** The clothing photo exactly as the editor saw it (after the automatic below-the-chin crop). */
+  referenceCrop?: StoredImage | null;
+  crop?: { mode: 'cropped' | 'no-face' | 'face-too-low'; cut: number } | null;
+  scope: import('./outfit-edit').OutfitEditScope;
+  footwear: import('./outfit-edit').OutfitEditFootwear;
+  face: import('./outfit-edit').OutfitEditFace;
+  description: string;
+  /** What she wore in the source image (named in the prompt so it gets removed). */
+  originalOutfit: string;
 }
 
 export interface AppSettings {

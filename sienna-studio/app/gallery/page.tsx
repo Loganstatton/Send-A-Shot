@@ -60,10 +60,11 @@ export default function GalleryPage() {
               <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-gradient-to-t from-black/80 to-transparent p-2 text-[11px]">
                 {r.favorite && <span className="text-accent">♥</span>}
                 {r.backend === 'mock' && <Badge tone="warn">MOCK</Badge>}
+                {r.outfitEdit && <Badge tone="accent">edited</Badge>}
                 {r.status === 'error' && <Badge tone="error">error</Badge>}
                 {issues > 0 && <Badge tone="warn">{issues} issue{issues > 1 ? 's' : ''}</Badge>}
                 {r.images.length > 1 && <Badge>{r.images.length}</Badge>}
-                <span className="ml-auto truncate text-ink-200">{r.presetName ?? 'Custom'}</span>
+                <span className="ml-auto truncate text-ink-200">{r.outfitEdit ? 'Outfit edit' : r.presetName ?? 'Custom'}</span>
               </div>
             </Link>
           );
