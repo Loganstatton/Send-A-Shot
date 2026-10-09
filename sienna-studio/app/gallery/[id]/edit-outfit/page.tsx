@@ -275,7 +275,7 @@ export default function EditOutfitPage() {
             disabled={!!avail.redrawMissing?.length}
             onChange={setRedraw}
             label="Change only the clothes"
-            description="Redraws just the area of her clothes (plus room for straps and ties) and keeps her face, body, pose and background pixel-for-pixel. Best when swapping one bikini for a smaller one."
+            description="Redraws only bands across her chest and hips (where clothes sit) and keeps her face, necklace, arms, pose and background pixel-for-pixel. The bands don’t show the old outfit’s shape, so the new one can be smaller. Best for swimwear."
           />
           {!!avail.redrawMissing?.length && <p className="text-xs text-amber-300">Needs on the GPU: {avail.redrawMissing.join('; ')}</p>}
         </div>

@@ -345,7 +345,8 @@ describe('garment-only redraw', () => {
 
   it('prompt tells the editor about the grey area only when redrawing', () => {
     const p = buildEditPrompt({ scope: 'full', description: 'black micro bikini', originalOutfit: '', footwear: 'barefoot', redraw: true });
-    expect(p).toContain('The flat grey area in image 1 is where her old outfit was.');
+    expect(p).toContain('The flat grey areas in image 1 hide her old outfit and the skin around it; they say nothing about the size of the new outfit.');
+    expect(p).toContain('it may cover much less than the grey areas');
     expect(buildEditPrompt({ scope: 'full', description: 'black micro bikini', originalOutfit: '', footwear: 'barefoot' })).not.toContain('grey area');
   });
 

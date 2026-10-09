@@ -141,9 +141,12 @@ export function redrawGrow(scope: OutfitEditScope, description: string): RedrawG
   return legs ? 'body' : torso ? 'torso' : 'garment';
 }
 
+// The grey areas are plain bands across her chest and hips, not the old garment's shape (GPU test: a garment-shaped
+// grey area gave the new bikini the old one's cup size).
 const REDRAW_TEXT =
-  'The flat grey area in image 1 is where her old outfit was. Draw the new outfit there, and her natural skin, matching the skin around it, ' +
-  'wherever the new outfit leaves her uncovered; no grey may remain. Do not change anything outside the grey area. ';
+  'The flat grey areas in image 1 hide her old outfit and the skin around it; they say nothing about the size of the new outfit. ' +
+  'Draw the new outfit inside them at exactly the size described — it may cover much less than the grey areas — and fill the rest of ' +
+  'the grey areas with her natural skin, matching the lighting and skin around them; no grey may remain. Do not change anything outside the grey areas. ';
 
 export interface EditPromptInput {
   scope: OutfitEditScope;

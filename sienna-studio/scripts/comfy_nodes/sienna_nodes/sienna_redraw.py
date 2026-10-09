@@ -163,10 +163,15 @@ def garment_region(
     include_feet: bool = False,
     dilate_frac: float = 0.018,
     feather_frac: float = 0.008,
+    shape: str = "band",
 ) -> Tuple[np.ndarray, np.ndarray, Dict]:
-    """(hard mask for sampling, feathered mask for the paste-back, info). Masks are float32 0..1 at image size."""
+    """(hard mask for sampling, feathered mask for the paste-back, info). Masks are float32 0..1 at image size.
+
+    shape="band" (default): the redraw area is plain chest / hip bands inside her silhouette, so neither the grey
+    fill nor its edges trace the old garment — a GPU test with garment-shaped masks ("outline") gave the new bikini
+    the old one's cup size. The new garment can then be smaller than the old one."""
     h, w = img.shape[:2]
-    info: Dict = {"scope": scope, "grow": grow, "source": "segmenter" if classes else "pose"}
+    info: Dict = {"scope": scope, "grow": grow, "shape": shape, "source": "segmenter" if classes else "pose"}
     person_m = (np.asarray(person) > 0.5) if person is not None and np.asarray(person).any() else None
     neck, sh_r, sh_l = _p(kp, NECK), _p(kp, R_SH), _p(kp, L_SH)
     hip = _mid(_p(kp, R_HIP), _p(kp, L_HIP))
@@ -200,26 +205,55 @@ def garment_region(
 
     # 2. strings and straps the segmenter misses (thin, often under hair)
     width = max(3.0, 0.045 * torso)
-    upper = clothes & _band(h, w, 0, split_y)
-    lower = clothes & _band(h, w, split_y, h)
+    upper = _pick_pieces(clothes, split_y, torso, upper=True)   # whole pieces, not a fixed waist line
+    lower = _pick_pieces(clothes, split_y, torso, upper=False)
     corridors = np.zeros((h, w), np.uint8)
     if scope in ("full", "top") and upper.any():
         ys, xs = np.where(upper)
         cx = (neck or shoulder or (w / 2, 0))[0]
-        for side in (xs < cx, xs >= cx):  # each cup's highest point → neck and that side's shoulder
+        for side in (xs < cx, xs >= cx):  # each cup's highest point → that side of the neck and that shoulder
             if side.any():
                 i = np.argmin(np.where(side, ys, h))
                 a = (float(xs[i]), float(ys[i]))
-                _line(corridors, a, neck, width)
-                _line(corridors, a, sh_r if a[0] < cx else sh_l, width)
+                left = a[0] < cx
+                neck_side = (neck[0] + (-1 if left else 1) * 0.11 * torso, neck[1]) if neck else None  # not over the sternum
+                _line(corridors, a, neck_side, width)
+                _line(corridors, a, sh_r if left else sh_l, width)
         bot_y = ys.max()
         corridors[int(max(0, bot_y - 0.06 * torso)):int(min(h, bot_y + 0.03 * torso))] = 1  # under-bust / back band
+    ties = np.zeros((h, w), bool)
     if scope in ("full", "bottom") and lower.any():
         ys, _ = np.where(lower)
-        corridors[int(max(0, ys.min() - 0.08 * torso)):int(min(h, ys.min() + 0.10 * torso))] = 1  # hip ties
+        corridors[int(max(0, ys.min() - 0.04 * torso)):int(min(h, ys.min() + 0.16 * torso))] = 1  # hip ties
+        if classes:  # tie ends hanging off the hips, outside the body outline, faintly detected
+            tie_rows = _band(h, w, ys.min() - 0.10 * torso, ys.min() + 0.30 * torso)
+            ties = (classes[CLOTHES] > 0.15) & tie_rows & (cv2.dilate(lower.astype(np.uint8), _disk(0.06 * h)) > 0)
+            ties = cv2.dilate(ties.astype(np.uint8), _disk(0.008 * h)) > 0
     # strictly on her body: the final dilation adds the edge margin, the background stays out
     body_ok = person_m if person_m is not None else (classes[BODY_SKIN] > 0.4) | clothes if classes else np.ones((h, w), bool)
     region |= (corridors > 0) & body_ok & _band(h, w, chin_y, h)
+    region |= ties
+
+    # 2b. no outline: the old garment's area becomes plain bands across her body (inside the silhouette, which is
+    # kept unless fabric touches it), so the editor can't copy the old cup size or coverage
+    if shape == "band" and person_m is not None:
+        inner = cv2.erode(person_m.astype(np.uint8), _disk(0.006 * h)) > 0
+        fabric = cv2.dilate(clothes.astype(np.uint8), _disk(0.01 * h)) > 0
+        trunk = np.zeros((h, w), np.uint8)  # shoulders → hips, a little wider than the hips: no arms
+        if sh_r and sh_l and _p(kp, R_HIP) and _p(kp, L_HIP):
+            pad = 0.12 * torso
+            quad = np.array([(min(sh_r[0], sh_l[0]) - 0.02 * torso, chin_y), (max(sh_r[0], sh_l[0]) + 0.02 * torso, chin_y),
+                             (max(_p(kp, R_HIP)[0], _p(kp, L_HIP)[0]) + pad, h), (min(_p(kp, R_HIP)[0], _p(kp, L_HIP)[0]) - pad, h)], np.int32)
+            cv2.fillPoly(trunk, [quad], 1)
+        else:
+            trunk[:] = 1
+        body = (inner & (trunk > 0)) | (fabric & person_m) | ties
+        for piece in (upper if scope in ("full", "top") else None, lower if scope in ("full", "bottom") else None):
+            if piece is not None and piece.any():
+                ys, _ = np.where(piece)
+                top, bot = ys.min(), ys.max()
+                region |= body & _band(h, w, top - 0.03 * torso, bot + 0.03 * torso)
+        region &= (trunk > 0) | fabric | ties  # strap / tie zones too: nothing on the arms or beside her
     if include_feet and ank and person_m is not None:  # shoes come off: the segmenter files them under "other"
         region |= person_m & _band(h, w, ank[1] - 0.1 * torso, ank[1] + 0.35 * torso)
 
@@ -238,11 +272,15 @@ def garment_region(
     keep_out = cv2.dilate(face.astype(np.uint8), _disk(0.02 * h)) > 0
     if classes:
         keep_out |= classes[HAIR] > 0.4
+        # accessories (necklaces, pendants, bracelets): the segmenter's "other" class away from the garment
+        acc = (classes[OTHERS] > 0.35) & ~(cv2.dilate(clothes.astype(np.uint8), _disk(0.004 * h)) > 0)
+        keep_out |= cv2.dilate(acc.astype(np.uint8), _disk(0.006 * h)) > 0
     arms = np.zeros((h, w), np.uint8)  # bare arms next to the hips or chest stay as they are; sleeves are clothes
     for a_, b_ in ((R_SH, R_EL), (R_EL, R_WR), (L_SH, L_EL), (L_EL, L_WR)):
         _line(arms, _p(kp, a_), _p(kp, b_), 0.16 * torso)
     # ties and strings hang next to the arms: the arm keep-out stops short of the old garment and its fringe
-    near_garment = cv2.dilate((clothes | (classes[CLOTHES] > 0.25 if classes else clothes)).astype(np.uint8), _disk(0.02 * h)) > 0
+    near_garment = cv2.dilate((clothes | ties | (classes[CLOTHES] > 0.25 if classes else clothes)).astype(np.uint8),
+                              _disk((0.02 if shape == "outline" else 0.006) * h)) > 0
     keep_out |= (arms > 0) & ~near_garment
     for wr in (_p(kp, R_WR), _p(kp, L_WR)):
         if wr:

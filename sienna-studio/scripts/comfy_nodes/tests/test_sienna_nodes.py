@@ -379,6 +379,26 @@ def test_redraw_mask_without_segmenter_falls_back_to_pose_zones():
     assert info["source"] == "pose" and hard[260, 300] and hard[480, 300] and not hard[100, 300]
 
 
+def test_band_redraw_mask_has_no_garment_outline_and_spares_accessories():
+    img, person, face, kp = figure()
+    cl = _classes(img, person, face)
+    pf = person.astype(np.float32)
+    outline, _, _ = rd.garment_region(img, cl, pf, face, kp, "full", "garment", shape="outline")
+    band, _, info = rd.garment_region(img, cl, pf, face, kp, "full", "garment", shape="band")
+    assert info["shape"] == "band" and info["uncovered"] < 0.02
+    # band rows are filled across her body: no cup/bottom silhouette for the editor to copy
+    row = (band > 0.5)[260, 240:360]
+    assert row.all()
+    assert (band > 0.5).sum() >= (outline > 0.5).sum()
+    assert not band[380, 300]                                 # midriff between the pieces is not redrawn
+    assert not band[30, 30] and not band[100, 300]            # background, face
+    # an accessory (segmenter "other" class) on the chest stays out of the mask
+    cl2 = [c.copy() for c in cl]
+    cl2[5][205:215, 295:305] = 1.0
+    band2, _, _ = rd.garment_region(img, cl2, pf, face, kp, "full", "garment", shape="band")
+    assert not band2[210, 300]
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):
