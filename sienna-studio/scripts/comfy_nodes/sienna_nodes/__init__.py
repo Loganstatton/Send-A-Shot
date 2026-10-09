@@ -4,8 +4,12 @@ Sienna Studio custom ComfyUI nodes (installed by scripts/comfyui-bootstrap.sh).
   SiennaPoseRetarget     POSE_KEYPOINT → OpenPose image with Sienna's proportions (angles kept)
   SiennaGarmentIsolate   photo + garment/person/face masks → garment-only crop for the outfit adapter
   SiennaChinCrop         clothing photo + face-box mask → crop below the chin (Edit Outfit reference)
+  SiennaGarmentOnly      clothing photo → garment pixels on grey, model's skin/figure removed (falls back to chin crop)
+  SiennaBodySheet        approved Sienna body references stitched into one image
+  SiennaBodyMeasure      image + DWPose keypoints + person mask → body proportions (JSON)
+  SiennaBodyCheck        source / result / reference measurements → body-consistency report (JSON)
 
-The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py (no ComfyUI imports; unit-tested).
+The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py / sienna_body.py (no ComfyUI imports; unit-tested).
 """
 
 import json
@@ -13,6 +17,7 @@ import json
 import numpy as np
 import torch
 
+from .sienna_body import SCENE_CHANGED, body_sheet, compare, garment_only, keypoints_from_pose, measure_body, scale_points, scene_change
 from .sienna_crop import chin_crop
 from .sienna_garment import garment_composite
 from .sienna_pose import DEFAULT_PROPORTIONS, retarget_openpose
@@ -122,13 +127,128 @@ class SiennaChinCrop:
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out))[None, ...], text)}
 
 
+def _kp_for(pose_keypoint, shape):
+    """DWPose points scaled to this image's pixels."""
+    kp, cw, ch = keypoints_from_pose(pose_keypoint) if pose_keypoint else ([], 0, 0)
+    h, w = shape[:2]
+    return scale_points(kp, w / cw, h / ch) if kp and cw and ch else kp
+
+
+class SiennaGarmentOnly:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "person_mask": ("MASK",),
+                "expect": ("STRING", {"default": "upper,lower"}),
+            },
+            "optional": {"face_mask": ("MASK",), "pose_keypoint": ("POSE_KEYPOINT",)},
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "info")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image, person_mask, expect, face_mask=None, pose_keypoint=None):
+        img = image[0].detach().cpu().numpy().astype(np.float32)
+        shape = img.shape[:2]
+        pieces = [p.strip() for p in expect.split(",") if p.strip() in ("upper", "lower")]
+        out, info = garment_only(img, _mask_np(person_mask, 0, shape), _mask_np(face_mask, 0, shape), _kp_for(pose_keypoint, shape), pieces)
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out))[None, ...], text)}
+
+
+class SiennaBodySheet:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {"image1": ("IMAGE",), "height": ("INT", {"default": 768, "min": 256, "max": 2048})},
+            "optional": {"image2": ("IMAGE",), "image3": ("IMAGE",), "image4": ("IMAGE",)},
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "run"
+    CATEGORY = "sienna"
+
+    def run(self, image1, height, image2=None, image3=None, image4=None):
+        ims = [i[0].detach().cpu().numpy().astype(np.float32) for i in (image1, image2, image3, image4) if i is not None]
+        return (torch.from_numpy(np.ascontiguousarray(body_sheet(ims, height)))[None, ...],)
+
+
+class SiennaBodyMeasure:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {"image": ("IMAGE",), "pose_keypoint": ("POSE_KEYPOINT",), "person_mask": ("MASK",)},
+            "optional": {"face_mask": ("MASK",)},
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("measurements",)
+    FUNCTION = "run"
+    CATEGORY = "sienna"
+
+    def run(self, image, pose_keypoint, person_mask, face_mask=None):
+        img = image[0].detach().cpu().numpy().astype(np.float32)
+        shape = img.shape[:2]
+        m = measure_body(img, _kp_for(pose_keypoint, shape), _mask_np(person_mask, 0, shape), _mask_np(face_mask, 0, shape))
+        return (json.dumps(m, default=lambda o: None),)
+
+
+class SiennaBodyCheck:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "source": ("STRING", {"forceInput": True}),
+                "result": ("STRING", {"forceInput": True}),
+                "footwear_changed": ("BOOLEAN", {"default": False}),
+                "legs_hidden": ("BOOLEAN", {"default": False}),
+            },
+            "optional": {
+                "source_image": ("IMAGE",),
+                "result_image": ("IMAGE",),
+                **{f"ref{i}": ("STRING", {"forceInput": True}) for i in range(1, 7)},
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("report",)
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, source, result, footwear_changed=False, legs_hidden=False, source_image=None, result_image=None, **refs):
+        try:
+            report = compare(json.loads(source), json.loads(result), [json.loads(v) for v in refs.values() if v],
+                             footwear_changed=footwear_changed, legs_hidden=legs_hidden)
+        except (ValueError, TypeError, KeyError) as e:
+            report = {"status": "insufficient", "flags": [], "checked": [], "skipped": [{"part": "all", "why": f"measurement failed: {e}"}]}
+        if source_image is not None and result_image is not None:
+            diff = scene_change(source_image[0].detach().cpu().numpy(), result_image[0].detach().cpu().numpy())
+            report["scene"] = {"diff": diff, "changed": diff > SCENE_CHANGED}
+        text = json.dumps(report)
+        return {"ui": {"text": [text]}, "result": (text,)}
+
+
 NODE_CLASS_MAPPINGS = {
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
     "SiennaChinCrop": SiennaChinCrop,
+    "SiennaGarmentOnly": SiennaGarmentOnly,
+    "SiennaBodySheet": SiennaBodySheet,
+    "SiennaBodyMeasure": SiennaBodyMeasure,
+    "SiennaBodyCheck": SiennaBodyCheck,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaPoseRetarget": "Sienna Pose Retarget",
     "SiennaGarmentIsolate": "Sienna Garment Isolate",
     "SiennaChinCrop": "Sienna Chin Crop",
+    "SiennaGarmentOnly": "Sienna Garment Only",
+    "SiennaBodySheet": "Sienna Body Sheet",
+    "SiennaBodyMeasure": "Sienna Body Measure",
+    "SiennaBodyCheck": "Sienna Body Check",
 }

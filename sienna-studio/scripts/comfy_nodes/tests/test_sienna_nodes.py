@@ -7,6 +7,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sienna_nodes"))
 from sienna_crop import chin_crop, topmost_face_band  # noqa: E402
+import sienna_body as sb  # noqa: E402
 from sienna_garment import garment_composite  # noqa: E402
 from sienna_pose import (  # noqa: E402
     BONES, angle_errors, measure_proportions, retarget_body, retarget_openpose, to_flat, to_points,
@@ -167,6 +168,136 @@ def test_chin_crop_uses_topmost_face_and_resizes_mask():
     img = np.zeros((1000, 600, 3), np.float32)
     out, info = chin_crop(img, m, margin=0.0)  # mask at half resolution
     assert info["mode"] == "cropped" and out.shape[0] == 1000 - 180
+
+
+# ── Edit Outfit body protection ──────────────────────────────────────────────
+
+SKIN = (0.80, 0.60, 0.48)
+RED = (0.85, 0.08, 0.10)
+GREY = (0.55, 0.55, 0.56)
+
+
+def figure(H=1000, W=600, leg_w=60, top=RED, bottom=RED, skin=SKIN, ties=True, legs_len=1.0):
+    """Synthetic standing figure: skin body, a top and a bottom, thin ties at the hips, a face patch.
+    Returns image, person mask, face mask, OpenPose-18 keypoints."""
+    img = np.full((H, W, 3), 0.9, np.float32)
+    person = np.zeros((H, W), bool)
+    cx = W // 2
+    kp = [None] * 18
+    kp[0] = (cx, 110); kp[14] = (cx - 15, 95); kp[15] = (cx + 15, 95)
+    kp[1] = (cx, 180); kp[2] = (cx - 70, 185); kp[5] = (cx + 70, 185)
+    kp[8] = (cx - 40, 480); kp[11] = (cx + 40, 480)
+    knee_y = 480 + int(240 * legs_len); ank_y = knee_y + int(230 * legs_len)
+    kp[9] = (cx - 40, knee_y); kp[12] = (cx + 40, knee_y); kp[10] = (cx - 40, ank_y); kp[13] = (cx + 40, ank_y)
+    kp[3] = (cx - 150, 330); kp[6] = (cx + 150, 330); kp[4] = (cx - 170, 450); kp[7] = (cx + 170, 450)
+    def fill(y0, y1, x0, x1, col):
+        img[y0:y1, x0:x1] = col; person[y0:y1, x0:x1] = True
+    fill(60, 160, cx - 45, cx + 45, skin)                     # head (face)
+    fill(160, 185, cx - 20, cx + 20, skin)                    # neck
+    fill(185, 500, cx - 75, cx + 75, skin)                    # torso
+    fill(500, min(H, ank_y + 20), cx - 40 - leg_w // 2, cx - 40 + leg_w // 2, skin)
+    fill(500, min(H, ank_y + 20), cx + 40 - leg_w // 2, cx + 40 + leg_w // 2, skin)
+    if top is not None:
+        fill(220, 300, cx - 75, cx + 75, top)
+    if bottom is not None:
+        fill(450, 520, cx - 75, cx + 75, bottom)
+        if ties:
+            img[470:560, cx - 78:cx - 76] = bottom; person[470:560, cx - 78:cx - 76] = True   # thin string tie
+    face = np.zeros((H, W), np.float32); face[60:160, cx - 45:cx + 45] = 1
+    return img, person, face, kp
+
+
+def test_skin_mask_separates_skin_from_garments():
+    img, person, face, kp = figure(top=GREY)
+    model = sb.skin_model(img, kp, face)
+    sk = sb.skin_mask(img, model)
+    assert sk[350, 300] and sk[700, 260]                      # belly, leg
+    assert not sk[250, 300] and not sk[480, 300]              # grey top, red bottom
+    assert not sk[30, 30]                                     # background
+
+
+def test_garment_only_keeps_every_piece_and_ties_and_removes_skin():
+    img, person, face, kp = figure()
+    out, info = sb.garment_only(img, person, face, kp, ["upper", "lower"])
+    assert info["mode"] == "garment-only", info
+    cut = int(round(info["cut"] * img.shape[0]))
+    o = lambda y, x: out[y - cut, x]
+    assert np.allclose(o(250, 300), RED, atol=0.02) and np.allclose(o(480, 300), RED, atol=0.02)
+    assert np.allclose(o(520, 223), RED, atol=0.02)          # the thin tie survives
+    bg = np.array(info["backdrop"])
+    assert np.allclose(o(350, 300), bg, atol=0.02)           # belly skin → backdrop
+    assert np.allclose(o(700, 260), bg, atol=0.02)           # leg skin → backdrop
+    assert cut > 60                                           # face removed
+
+
+def test_garment_only_falls_back_when_a_piece_is_missing_or_skin_coloured():
+    img, person, face, kp = figure(bottom=None)
+    out, info = sb.garment_only(img, person, face, kp, ["upper", "lower"])
+    assert info["mode"] == "fallback-chin-crop" and "bottom" in info["reason"]
+    img, person, face, kp = figure(top=SKIN, bottom=SKIN)
+    out, info = sb.garment_only(img, person, face, kp, ["upper", "lower"])
+    assert info["mode"] == "fallback-chin-crop"
+    img, person, face, kp = figure(bottom=None)
+    out, info = sb.garment_only(img, person, face, kp, ["upper"])   # top-only edit: no bottom needed
+    assert info["mode"] == "garment-only"
+
+
+def test_backdrop_contrasts_with_light_grey_garments():
+    assert sb.backdrop_for(np.tile(np.array([[0.5, 0.5, 0.5]], np.float32), (100, 1))) != (0.5, 0.5, 0.5)
+    assert sb.backdrop_for(np.tile(np.array([[0.85, 0.1, 0.1]], np.float32), (100, 1))) == (0.5, 0.5, 0.5)
+
+
+def test_body_sheet_stitches_at_one_height():
+    a, b = np.zeros((400, 200, 3), np.float32), np.ones((800, 300, 3), np.float32)
+    sheet = sb.body_sheet([a, b], height=200, gap=10)
+    assert sheet.shape == (200, 100 + 10 + 75, 3)
+
+
+def _m(**kw):
+    img, person, face, kp = figure(**kw)
+    return sb.measure_body(img, kp, person, face)
+
+
+def test_compare_same_body_is_ok_and_wider_or_longer_legs_warn():
+    base = _m(top=None, bottom=RED)
+    assert sb.compare(base, base, [])["status"] == "ok"
+    wider = sb.compare(base, _m(top=None, bottom=RED, leg_w=75), [])
+    assert wider["status"] == "warn" and any(f["part"].startswith("thigh width") for f in wider["flags"])
+    longer = sb.compare(base, _m(top=None, bottom=RED, legs_len=1.12), [])
+    assert any("thigh" in f["part"] and "length" in f["part"] for f in longer["flags"])
+
+
+def test_compare_guards_footwear_skirts_and_pose():
+    base, longer = _m(top=None, bottom=RED), _m(top=None, bottom=RED, legs_len=1.12)
+    r = sb.compare(base, longer, [], footwear_changed=True)
+    assert not any("shin" in f["part"] for f in r["flags"]) and any(s["why"].startswith("footwear") for s in r["skipped"])
+    r = sb.compare(base, longer, [], legs_hidden=True)
+    assert not any("length" in f["part"] for f in r["flags"])
+    turned = dict(base, view=base["view"] * 0.7)
+    assert sb.compare(base, turned, [])["status"] == "insufficient"
+
+
+def test_uncovered_parts_use_the_range_of_several_references_never_one():
+    clothed = _m(top=None, bottom=GREY)
+    clothed["widths"]["thigh"]["skin"] = 0.0                  # jeans in the original
+    bare = _m(top=None, bottom=RED)
+    one_ref = sb.compare(clothed, bare, [bare])
+    assert not any(c["part"] == "thigh width" for c in one_ref["checked"])     # one photo is not enough
+    refs = [_m(top=None, bottom=RED, leg_w=58), _m(top=None, bottom=RED, leg_w=64)]
+    ok = sb.compare(clothed, bare, refs)
+    assert any(c["part"] == "thigh width" and "references" in c["basis"] for c in ok["checked"])
+    assert not any(f["part"] == "thigh width" for f in ok["flags"])
+    much_wider = sb.compare(clothed, _m(top=None, bottom=RED, leg_w=90), refs)
+    assert any(f["part"] == "thigh width" for f in much_wider["flags"])
+
+
+def test_scene_change_separates_replaced_scenes():
+    room = np.zeros((960, 640, 3), np.float32); room[:, :320] = (0.9, 0.9, 0.85); room[:, 320:] = (0.25, 0.2, 0.15)
+    studio = np.full_like(room, 0.6)
+    assert sb.scene_change(room, room) < 1
+    assert sb.scene_change(room, studio) > sb.SCENE_CHANGED
+    lit = np.clip(room * 1.08, 0, 1)                           # same scene, a little brighter: not a replacement
+    assert sb.scene_change(room, lit) < sb.SCENE_CHANGED
 
 
 if __name__ == "__main__":
