@@ -237,6 +237,24 @@ draft), pick **Entire outfit / Top only / Bottom only**, footwear (**Keep curren
 The description matters: Qwen follows the **text over the photo** (a detail that isn't in the photo gets
 added). Needs a 24 GB+ GPU and ~30 GB of models: `comfyui-bootstrap.sh --with-qwen-edit`. The edit screen
 lists anything missing. Speed measured: ~100 s per edit on an L40S, ~7.5 min on an RTX 3090.
+
+**Body protection (experimental, `SIENNA_EXPERIMENTAL=true`, all off by default).** Qwen tends to give Sienna
+the clothing model's figure, or a generic one, where clothes come off. Three options in **Edit outfit → Body
+protection**, not yet proven on the GPU:
+
+- **Use Sienna's body references** — 3–4 approved images (Sienna page → *Body references*, added from the
+  gallery with *Use as body reference*; only `sienna_v2` generations made without an outfit reference, init
+  image or Edit Outfit are accepted) are stitched into one image and given to the editor as image 3, with an
+  instruction to keep her proportions.
+- **Clothing only** — `SiennaGarmentOnly` keeps every non-skin pixel on the person (so straps, ties and strings
+  survive), removes the model's skin, figure outline, feet and background, checks each expected piece (top /
+  bottom) is present, and otherwise falls back to the chin crop.
+- **Check her body afterwards** — `SiennaBodyMeasure` / `SiennaBodyCheck` (DWPose + person mask) compare leg
+  lengths and bare-skin widths before/after, skipping anything a pose change, camera angle, arms touching the
+  body, a footwear change or a skirt makes unfair; parts the edit uncovered are compared with the *range* of
+  the approved references (at least two, never one). It also flags edits that replaced the whole scene.
+
+They need `comfyui-bootstrap.sh --with-qwen-edit` (adds DWPose and the person segmenter).
 ---
 
 ## 6. Workflows

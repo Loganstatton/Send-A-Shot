@@ -170,3 +170,88 @@ describe('parseCropInfo', () => {
     expect(parseCropInfo(undefined)).toBeNull();
   });
 });
+
+// ── Experimental body protection ─────────────────────────────────────────────
+import { bodyCheckWarnings, expectedPieces, legsHidden, NO_PROTECT, parseBodyReport } from './outfit-edit';
+
+describe('body protection prompt', () => {
+  const base = { scope: 'full' as const, description: BIKINI, originalOutfit: ORIG, footwear: 'barefoot' as const };
+  it('is unchanged with protection off (the GPU-validated wording)', () => {
+    expect(buildEditPrompt({ ...base, protect: NO_PROTECT })).toBe(buildEditPrompt(base));
+  });
+  it('tells the editor not to copy the clothing model’s body', () => {
+    const p = buildEditPrompt({ ...base, protect: { ...NO_PROTECT, garmentOnly: true } });
+    expect(p).toContain('do not copy the body shape, figure, proportions, height or skin tone of the person in image 2');
+    expect(p).not.toContain('Image 3');
+  });
+  it('with body references, names image 3 as her body', () => {
+    const p = buildEditPrompt({ ...base, protect: { ...NO_PROTECT, bodyRef: true } });
+    expect(p).toContain('Image 3 shows the same woman as image 1');
+    expect(p).toMatch(/must stay exactly as in image 1 and image 3/);
+  });
+});
+
+describe('expected pieces and hidden legs', () => {
+  it('derives the pieces the isolation must find', () => {
+    expect(expectedPieces('full', BIKINI)).toEqual(['upper', 'lower']);
+    expect(expectedPieces('full', 'an orange one-piece swimsuit')).toEqual(['upper', 'lower']);
+    expect(expectedPieces('full', 'a white linen shirt and black trousers')).toEqual(['upper', 'lower']);
+    expect(expectedPieces('top', 'anything')).toEqual(['upper']);
+    expect(expectedPieces('bottom', 'anything')).toEqual(['lower']);
+  });
+  it('knows when a skirt or dress hides the legs', () => {
+    expect(legsHidden('an emerald satin midi skirt', ORIG)).toBe(true);
+    expect(legsHidden(BIKINI, ORIG)).toBe(false);
+  });
+});
+
+describe('graph with body protection', () => {
+  const fr = (production as any)['51'].inputs;
+  const base = {
+    sourceName: 'sienna/src.png', sourceSize: { width: 832, height: 1216 }, referenceName: 'sienna/ref.png', autoCrop: true,
+    prompt: 'P', seed: 1, faceRestore: null, bodyRefNames: ['sienna/b1.png', 'sienna/b2.png', 'sienna/b3.png'],
+  };
+  const linksOk = (g: Record<string, { inputs: Record<string, unknown> }>) => {
+    for (const [id, n] of Object.entries(g))
+      for (const v of Object.values(n.inputs))
+        if (Array.isArray(v) && typeof v[0] === 'string' && typeof v[1] === 'number') expect(g[v[0]], `${id} → ${v[0]}`).toBeDefined();
+  };
+  it('off: identical to the validated graph (no extra nodes)', () => {
+    expect(buildOutfitEditGraph({ ...base, protect: NO_PROTECT })).toEqual(buildOutfitEditGraph({ ...base, bodyRefNames: undefined }));
+  });
+  it('clothing only: garment isolation feeds image 2, with pose, person and face masks', () => {
+    const g = buildOutfitEditGraph({ ...base, protect: { ...NO_PROTECT, garmentOnly: true }, expect: ['upper', 'lower'], dropFeet: true });
+    expect(g.ref_crop.class_type).toBe('SiennaGarmentOnly');
+    expect(g.ref_crop.inputs).toMatchObject({ expect: 'upper,lower', drop_feet: true, person_mask: ['ref_person', 0], face_mask: ['ref_face', 0], pose_keypoint: ['ref_pose', 1] });
+    expect(g.q_pos.inputs.image2).toEqual(['ref_crop', 0]);
+    expect(g.body_sheet).toBeUndefined();
+    linksOk(g);
+  });
+  it('body references: stitched sheet is image 3 of both encoders', () => {
+    const g = buildOutfitEditGraph({ ...base, protect: { ...NO_PROTECT, bodyRef: true } });
+    expect(g.body_sheet.inputs).toMatchObject({ image1: ['body_ref_1', 0], image3: ['body_ref_3', 0] });
+    expect(g.q_pos.inputs.image3).toEqual(['body_sheet', 0]);
+    expect(g.q_neg.inputs.image3).toEqual(['body_sheet', 0]);
+    linksOk(g);
+  });
+  it('body check: measures source, result and each reference; flags passed through', () => {
+    const g = buildOutfitEditGraph({ ...base, faceRestore: { denoise: 0.3, checkpoint: 'c', lora: null, positive: 'p', negative: 'n', detailerInputs: Object.fromEntries(Object.entries(fr).filter(([, v]) => !Array.isArray(v))) },
+      protect: { ...NO_PROTECT, bodyCheck: true }, footwearChanged: true, legsHidden: false });
+    expect(g.body_check.inputs).toMatchObject({ source: ['m_src', 0], result: ['m_res', 0], ref1: ['m_bref1', 0], ref3: ['m_bref3', 0], footwear_changed: true, legs_hidden: false, result_image: ['fr_detail', 0] });
+    expect(g.m_res.inputs.image).toEqual(['fr_detail', 0]);
+    expect(g.q_pos.inputs.image3).toBeUndefined();          // check alone doesn't feed references to the editor
+    linksOk(g);
+  });
+});
+
+describe('body check report', () => {
+  it('parses and phrases warnings honestly', () => {
+    const r = parseBodyReport(JSON.stringify({ status: 'warn', flags: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06, severity: 'likely' }, { part: 'waist width', change: 0.05, basis: '3 references', tol: 0.1, severity: 'possible' }], checked: [], skipped: [], scene: { diff: 57, changed: true } }));
+    const w = bodyCheckWarnings(r);
+    expect(w[0]).toMatch(/replaced the whole scene/);
+    expect(w[1]).toContain('likely thigh (right) length −13% (vs the original)');
+    expect(w[1]).toContain('possibly waist width +5% (outside the range of her 3 references)');
+    expect(bodyCheckWarnings(parseBodyReport(JSON.stringify({ status: 'insufficient', flags: [], checked: [], skipped: [{ part: 'all', why: 'x' }] })))).toEqual([]);
+    expect(parseBodyReport('nope')).toBeNull();
+  });
+});

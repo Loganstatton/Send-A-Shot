@@ -18,7 +18,10 @@
 #   - models/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors (Comfy-Org/Qwen-Image-Edit_ComfyUI)
 #   - models/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors          (Comfy-Org/Qwen-Image_ComfyUI)
 #   - models/vae/qwen_image_vae.safetensors                               (Comfy-Org/Qwen-Image_ComfyUI)
-#   - custom_nodes/sienna_nodes (SiennaChinCrop)
+#   - custom_nodes/sienna_nodes (SiennaChinCrop + the experimental body-protection nodes)
+#   - for the experimental body protection (clothing-only isolation, body check):
+#     comfyui_controlnet_aux (DWPose, minimal deps) + its two DWPose models (yzd-v/DWPose, ~0.4 GB)
+#     and models/ultralytics/segm/person_yolov8m-seg.pt (Bingsu/adetailer, ~50 MB)
 #   Needs a GPU with 24 GB+ VRAM and ~48 GB system RAM.
 # Before downloading, it prints each model repo's declared license and stops
 # if one isn't on the expected list (override: OUTFIT_LICENSE_OK=1).
@@ -248,7 +251,16 @@ fi
 # ── Edit Outfit (Qwen-Image-Edit-2509, optional) ──────────────────────────────
 if (( QWEN )); then
   log "Edit Outfit model licenses (Hugging Face model cards)"
-  check_licenses "Comfy-Org/Qwen-Image-Edit_ComfyUI:apache-2.0" "Comfy-Org/Qwen-Image_ComfyUI:apache-2.0" "Qwen/Qwen-Image-Edit-2509:apache-2.0"
+  check_licenses "Comfy-Org/Qwen-Image-Edit_ComfyUI:apache-2.0" "Comfy-Org/Qwen-Image_ComfyUI:apache-2.0" "Qwen/Qwen-Image-Edit-2509:apache-2.0" \
+    "yzd-v/DWPose:apache-2.0" "Bingsu/adetailer:apache-2.0"
+  # Body protection: pose (DWPose) and person masks. Same minimal install as --with-pose, without its ControlNet.
+  install_repo comfyui_controlnet_aux https://github.com/Fannovel16/comfyui_controlnet_aux "$CNAUX_REF" noreqs
+  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check \
+    huggingface_hub opencv-python-headless scipy einops filelock scikit-image matplotlib pyyaml addict yacs omegaconf python-dateutil onnxruntime
+  for f in yolox_l.onnx dw-ll_ucoco_384.onnx; do
+    fetch_model "$HF/yzd-v/DWPose/resolve/main/$f" "$COMFYUI_DIR/custom_nodes/comfyui_controlnet_aux/ckpts/yzd-v/DWPose/$f" 100000000
+  done
+  fetch_model "$HF/Bingsu/adetailer/resolve/main/person_yolov8m-seg.pt" "$COMFYUI_DIR/models/ultralytics/segm/person_yolov8m-seg.pt" 40000000
   fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors" \
     "$COMFYUI_DIR/models/vae/qwen_image_vae.safetensors" 200000000
   fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" \
@@ -298,7 +310,8 @@ if (( RESTART )); then
     if (( ok )); then
       echo "ComfyUI restarted — FaceDetailer is loaded."
       if (( QWEN )); then
-        for cls in TextEncodeQwenImageEditPlus ModelSamplingAuraFlow CFGNorm SiennaChinCrop BboxDetectorCombined_v2; do
+        for cls in TextEncodeQwenImageEditPlus ModelSamplingAuraFlow CFGNorm SiennaChinCrop BboxDetectorCombined_v2 \
+                   SiennaGarmentOnly SiennaBodySheet SiennaBodyMeasure SiennaBodyCheck DWPreprocessor SegmDetectorCombined_v2; do
           if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — update ComfyUI (Qwen nodes need a 2025-09+ build) or check the log"; fi
         done
       fi

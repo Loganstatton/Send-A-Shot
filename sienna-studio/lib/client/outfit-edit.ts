@@ -2,7 +2,7 @@
 
 import { api, fileUrl, uploadImage } from './api';
 import { trackJob } from './jobs';
-import type { OutfitEditFace, OutfitEditFootwear, OutfitEditScope } from '../outfit-edit';
+import type { BodyProtect, OutfitEditFace, OutfitEditFootwear, OutfitEditScope } from '../outfit-edit';
 import type { GenerationRecord, StoredImage } from '../types';
 
 export interface OutfitEditAvailability {
@@ -10,6 +10,9 @@ export interface OutfitEditAvailability {
   available: boolean;
   backend: 'comfyui' | 'mock';
   missing: string[];
+  experiments: boolean;
+  protectMissing: Record<keyof BodyProtect, string[]>;
+  bodyRefCount: number;
 }
 
 export interface OutfitEditBody {
@@ -22,6 +25,7 @@ export interface OutfitEditBody {
   footwear: OutfitEditFootwear;
   face: OutfitEditFace;
   seed: number;
+  protect?: Partial<BodyProtect>;
 }
 
 export async function startOutfitEdit(body: OutfitEditBody): Promise<GenerationRecord> {
@@ -42,6 +46,7 @@ export function rerunOutfitEdit(rec: GenerationRecord, newSeed: boolean): Promis
     footwear: e.footwear,
     face: e.face,
     seed: newSeed ? -1 : rec.seed,
+    ...(e.protect ? { protect: e.protect } : {}),
   });
 }
 

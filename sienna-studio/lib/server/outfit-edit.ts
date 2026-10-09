@@ -16,7 +16,15 @@ import { builtinWorkflows, PRIMARY_WORKFLOW_ID } from '../comfy/builtin-workflow
 import { MIN_CHARACTER_AGE } from '../defaults';
 import { applyIdentityLock } from '../guard';
 import {
+  bodyCheckWarnings,
+  BodyProtect,
   buildEditPrompt,
+  expectedPieces,
+  legsHidden,
+  NO_PROTECT,
+  parseBodyReport,
+  PERSON_SEGM_FILE,
+  PROTECT_NODES,
   buildOutfitEditGraph,
   CROP_NOTES,
   EDIT_NODES,
@@ -31,12 +39,14 @@ import {
   resultOutfitText,
 } from '../outfit-edit';
 import { buildPrompt } from '../prompt';
+import { MIN_BODY_REFS } from '../body-refs';
 import { resolveLockedLora } from '../sienna-models';
 import type { ContentMode, GenerationRecord, StoredImage } from '../types';
 import { describeMissing, GenerationError } from './generate';
 import { preflight } from './jobs';
 import {
   adultContentAllowed,
+  experimentsEnabled,
   getCharacter,
   getComfyUrl,
   getRecord,
@@ -69,6 +79,8 @@ export interface OutfitEditRequest {
   face: OutfitEditFace;
   /** -1 = random */
   seed: number;
+  /** Experimental body protection; ignored unless SIENNA_EXPERIMENTAL=true. */
+  protect?: Partial<BodyProtect>;
 }
 
 export interface OutfitEditAvailability {
@@ -76,14 +88,38 @@ export interface OutfitEditAvailability {
   available: boolean;
   backend: 'comfyui' | 'mock';
   missing: string[];
+  /** Experimental body protection: whether shown at all, and what each option still needs. */
+  experiments: boolean;
+  protectMissing: Record<keyof BodyProtect, string[]>;
+  bodyRefCount: number;
 }
 
 /** What the GPU server lacks for Edit Outfit (node packages and model files). */
 export async function availability(): Promise<OutfitEditAvailability> {
   const enabled = outfitEditEnabled();
   const backend = createBackend(await getComfyUrl());
-  if (!enabled) return { enabled, available: false, backend: backend.kind, missing: [] };
-  if (backend.kind === 'mock') return { enabled, available: true, backend: 'mock', missing: [] };
+  const experiments = experimentsEnabled();
+  const bodyRefCount = (await getCharacter()).bodyReferences?.length ?? 0;
+  const protectMissing: Record<keyof BodyProtect, string[]> = { garmentOnly: [], bodyRef: [], bodyCheck: [] };
+  const base = { enabled, backend: backend.kind, experiments, bodyRefCount };
+  if (!enabled) return { ...base, available: false, missing: [], protectMissing };
+  if (bodyRefCount < MIN_BODY_REFS) protectMissing.bodyRef.push(`${MIN_BODY_REFS} approved body references (${bodyRefCount} chosen)`);
+  if (backend.kind === 'mock') return { ...base, available: true, missing: [], protectMissing };
+  if (experiments) {
+    for (const key of Object.keys(PROTECT_NODES) as (keyof BodyProtect)[]) {
+      const absent: string[] = [];
+      for (const c of PROTECT_NODES[key]) {
+        try {
+          if (!(await backend.nodeInfo(c))) absent.push(c);
+        } catch {}
+      }
+      if (absent.length) protectMissing[key].push(describeMissing(absent));
+    }
+    try {
+      const segm = await backend.inputChoices('UltralyticsDetectorProvider', 'model_name');
+      if (segm.length && !segm.includes(PERSON_SEGM_FILE)) for (const k of ['garmentOnly', 'bodyCheck'] as const) protectMissing[k].push(`model file ${PERSON_SEGM_FILE}`);
+    } catch {}
+  }
   const missing: string[] = [];
   try {
     const absent: string[] = [];
@@ -110,7 +146,7 @@ export async function availability(): Promise<OutfitEditAvailability> {
   } catch (e: any) {
     missing.push(`GPU server not reachable (${e.message})`);
   }
-  return { enabled, available: missing.length === 0, backend: backend.kind, missing };
+  return { ...base, available: missing.length === 0, missing, protectMissing };
 }
 
 const QWEN_CORE_NODES = ['TextEncodeQwenImageEditPlus', 'ModelSamplingAuraFlow', 'CFGNorm'];
@@ -163,7 +199,17 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
     throw new GenerationError(`Blocked: ${built.blocked.map((b) => `“${b.term}” — ${b.reason}`).join(' ')}`, 422, built.blocked);
   }
 
-  const prompt = buildEditPrompt({ scope: req.scope, description, originalOutfit, footwear: req.footwear });
+  // ── Experimental body protection ────────────────────────────────────────
+  const protect: BodyProtect = experimentsEnabled() ? { ...NO_PROTECT, ...(req.protect ?? {}) } : NO_PROTECT;
+  if (protect.garmentOnly && req.manualCrop) {
+    protect.garmentOnly = false;
+    warnings.push('Clothing-only isolation needs the uncropped photo (it learns the skin colour from the face) — skipped because the photo was cropped by hand.');
+  }
+  const bodyRefs = protect.bodyRef || protect.bodyCheck ? character.bodyReferences ?? [] : [];
+  if (protect.bodyRef && bodyRefs.length < MIN_BODY_REFS) {
+    throw new GenerationError(`“Use Sienna’s body references” needs at least ${MIN_BODY_REFS} approved body references (${bodyRefs.length} chosen on the Sienna page).`);
+  }
+  const prompt = buildEditPrompt({ scope: req.scope, description, originalOutfit, footwear: req.footwear, protect });
   const seed = req.seed >= 0 ? Math.floor(req.seed) : Math.floor(Math.random() * 2 ** 48);
 
   // ── Sienna FaceDetailer (production settings, Sienna LoRA) ──────────────
@@ -193,8 +239,15 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
   }
 
   const sourceSize = { width: sourceImage.width ?? source.params.width, height: sourceImage.height ?? source.params.height };
-  const graphFor = (sourceName: string, referenceName: string) =>
-    buildOutfitEditGraph({ sourceName, sourceSize, referenceName, autoCrop: !req.manualCrop, prompt, seed, faceRestore });
+  const graphExtras = {
+    protect,
+    expect: expectedPieces(req.scope, description),
+    dropFeet: req.footwear !== 'reference',
+    footwearChanged: req.footwear !== 'keep',
+    legsHidden: legsHidden(description, originalOutfit),
+  };
+  const graphFor = (sourceName: string, referenceName: string, bodyRefNames: string[] = bodyRefs.map((r) => `probe_${r.image.file}`)) =>
+    buildOutfitEditGraph({ sourceName, sourceSize, referenceName, autoCrop: !req.manualCrop, prompt, seed, faceRestore, bodyRefNames, ...graphExtras });
   if (backend.kind !== 'mock') {
     const avail = await availability();
     if (!avail.available) throw new GenerationError(`Edit Outfit can't run — the GPU server is missing ${avail.missing.join('; ')}.`);
@@ -203,7 +256,9 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
 
   let graph;
   try {
-    graph = graphFor(await upload(backend, sourceImage), await upload(backend, req.reference));
+    const refNames: string[] = [];
+    for (const r of bodyRefs) refNames.push(await upload(backend, r.image));
+    graph = graphFor(await upload(backend, sourceImage), await upload(backend, req.reference), refNames);
   } catch (e) {
     if (e instanceof ComfyError) throw new GenerationError(`Uploading images failed: ${e.message}`, e.status, e.details);
     throw e;
@@ -254,6 +309,7 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
       face: req.face,
       description,
       originalOutfit,
+      ...(protect.garmentOnly || protect.bodyRef || protect.bodyCheck ? { protect, bodyRefIds: bodyRefs.map((r) => r.image.id) } : {}),
     },
   };
   try {
@@ -311,14 +367,26 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
       const image = await fetchStore(finalRef, 'gen');
       const cropRef = state.images.find((i) => i.nodeId === EDIT_NODES.crop);
       const referenceCrop = cropRef ? await fetchStore(cropRef, 'up', 'Edit Outfit clothing crop') : null;
-      const crop = rec.outfitEdit.manualCrop ? null : parseCropInfo(state.texts?.[EDIT_NODES.cropInfo]?.[0]);
+      const infoText = state.texts?.[EDIT_NODES.cropInfo]?.[0];
+      let crop = rec.outfitEdit.manualCrop ? null : parseCropInfo(infoText);
+      let isolation: { mode: string; reason?: string } | null = null;
+      if (rec.outfitEdit.protect?.garmentOnly && infoText) {
+        try {
+          const j = JSON.parse(infoText);
+          isolation = { mode: String(j.mode), reason: j.reason };
+          crop = { mode: j.mode === 'garment-only' || j.chin === 'cropped' ? 'cropped' : j.chin === 'face-too-low' ? 'face-too-low' : 'no-face', cut: Number(j.cut) || 0 };
+        } catch {}
+      }
+      const bodyCheck = parseBodyReport(state.texts?.[EDIT_NODES.bodyCheck]?.[0]);
       const warnings = [...rec.warnings];
       if (crop && CROP_NOTES[crop.mode]) warnings.push(CROP_NOTES[crop.mode]);
+      if (isolation?.mode === 'fallback-chin-crop') warnings.push(`Clothing-only isolation fell back to the chin crop: ${isolation.reason}.`);
+      warnings.push(...bodyCheckWarnings(bodyCheck));
       return patchRecord(id, {
         status: 'done',
         images: [image],
         warnings,
-        outfitEdit: { ...rec.outfitEdit, referenceCrop, crop },
+        outfitEdit: { ...rec.outfitEdit, referenceCrop, crop, ...(rec.outfitEdit.protect ? { isolation, bodyCheck } : {}) },
         completedAt: new Date().toISOString(),
         queuePosition: 0,
       });

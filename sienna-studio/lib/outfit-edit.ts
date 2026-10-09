@@ -70,6 +70,56 @@ export const OUTFIT_EDIT_NODE_CLASSES = [
   'FaceDetailer',
 ] as const;
 
+// ── Body protection (experimental) ───────────────────────────────────────────
+// A: garmentOnly — the clothing photo's skin/figure/feet are removed, so there is no body to copy.
+// B: bodyRef     — Sienna's approved body references go to the editor as image 3.
+// C: bodyCheck   — her proportions are measured before/after (pose-, angle- and clothing-aware) + scene check.
+export interface BodyProtect {
+  garmentOnly: boolean;
+  bodyRef: boolean;
+  bodyCheck: boolean;
+}
+export const NO_PROTECT: BodyProtect = { garmentOnly: false, bodyRef: false, bodyCheck: false };
+export const PROTECT_LABELS: Record<keyof BodyProtect, { label: string; description: string }> = {
+  bodyRef: {
+    label: 'Use Sienna’s body references',
+    description: 'Shows the editor her approved body photos and tells it to keep her proportions.',
+  },
+  garmentOnly: {
+    label: 'Clothing only',
+    description: 'Removes the clothing model’s skin, figure and feet from the photo (falls back to the chin crop if a piece is missed).',
+  },
+  bodyCheck: {
+    label: 'Check her body afterwards',
+    description: 'Compares her proportions before and after; warns only where pose, angle and clothing allow a fair comparison.',
+  },
+};
+export const PERSON_SEGM_FILE = 'segm/person_yolov8m-seg.pt';
+const DWPOSE_FILES = { bbox_detector: 'yolox_l.onnx', pose_estimator: 'dw-ll_ucoco_384.onnx' };
+/** Extra node classes each option needs on the GPU server. */
+export const PROTECT_NODES: Record<keyof BodyProtect, string[]> = {
+  garmentOnly: ['SiennaGarmentOnly', 'DWPreprocessor', 'SegmDetectorCombined_v2'],
+  bodyRef: ['SiennaBodySheet'],
+  bodyCheck: ['SiennaBodyMeasure', 'SiennaBodyCheck', 'DWPreprocessor', 'SegmDetectorCombined_v2'],
+};
+
+const UPPER_RE = /\b(top|bra|bralette|bandeau|halter|shirt|blouse|tee|t-shirt|tank|camisole|cami|sweater|jumper|hoodie|cardigan|jacket|blazer|corset|bustier|vest)\b/i;
+const LOWER_RE = /\b(bottoms?|briefs|skirt|trousers|pants|jeans|shorts|leggings|culottes)\b/i;
+const WHOLE_RE = /\b(bikini|two-piece|one-piece|swimsuit|swim ?suit|monokini|dress|gown|jumpsuit|romper|playsuit|bodysuit|catsuit|overalls)\b/i;
+/** Which garment pieces the clothing photo must contain (the isolation step checks each one is found). */
+export function expectedPieces(scope: OutfitEditScope, description: string): ('upper' | 'lower')[] {
+  if (scope === 'top') return ['upper'];
+  if (scope === 'bottom') return ['lower'];
+  const d = description;
+  const up = UPPER_RE.test(d) || WHOLE_RE.test(d);
+  const low = LOWER_RE.test(d) || WHOLE_RE.test(d);
+  return up || low ? [...(up ? ['upper' as const] : []), ...(low ? ['lower' as const] : [])] : ['upper', 'lower'];
+}
+/** A skirt or dress hides the legs, so leg lengths can't be compared. */
+export function legsHidden(...texts: string[]): boolean {
+  return /\b(skirt|dress|gown|kaftan|caftan|sarong|robe|coat|maxi)\b/i.test(texts.join(' '));
+}
+
 export const SWIMWEAR_RE = /\b(bikini|swimsuit|swim ?suit|swimwear|one-piece|monokini|bathing suit|tankini)\b/i;
 
 export const MAX_DESCRIPTION = 600;
@@ -81,7 +131,15 @@ export interface EditPromptInput {
   /** What she wears in the source image (the record's outfit text), so it can be named for removal. */
   originalOutfit: string;
   footwear: OutfitEditFootwear;
+  protect?: BodyProtect;
 }
+
+const NOCOPY =
+  'Image 2 is only a clothing reference: do not copy the body shape, figure, proportions, height or skin tone of the person in image 2. ';
+const BODYREF =
+  'Image 3 shows the same woman as image 1 in approved reference photos: her body (shoulders, bust, waist, hips, thighs, legs and overall build) ' +
+  'must stay exactly as in image 1 and image 3. ';
+const protectText = (p?: BodyProtect) => (p && (p.garmentOnly || p.bodyRef) ? NOCOPY : '') + (p?.bodyRef ? BODYREF : '');
 
 const KEEP =
   'Keep her face, hair, skin, body shape and proportions (same leg length and limb thickness), pose, expression, ' +
@@ -98,7 +156,7 @@ export function defaultFootwear(scope: OutfitEditScope, description: string): Ou
  * The instruction sent to Qwen-Image-Edit. The 'full' wording is the one validated in the second GPU
  * test (old outfit named for removal, piece-by-piece match, nothing added).
  */
-export function buildEditPrompt({ scope, description, originalOutfit, footwear }: EditPromptInput): string {
+export function buildEditPrompt({ scope, description, originalOutfit, footwear, protect }: EditPromptInput): string {
   const desc = clean(description);
   const orig = clean(originalOutfit) || 'her current clothes';
   const swim = SWIMWEAR_RE.test(desc);
@@ -119,7 +177,7 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear }
       `Replace the woman's entire outfit in image 1 with the outfit shown in image 2. Completely remove all of her original ${removeWhat}; ` +
       `none of it may remain. She now wears only ${desc}${feet}. Match the garments in image 2 exactly: number of pieces, ` +
       'construction of the top and of the bottom, straps and ties, neckline, cut, leg line, fit, colour and how much skin is covered. ' +
-      `Do not add any other clothing.${keepShoes}${ignoreRefShoes} ${KEEP}`
+      `Do not add any other clothing.${keepShoes}${ignoreRefShoes} ${protectText(protect)}${KEEP}`
     );
   }
 
@@ -137,7 +195,7 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear }
     `Remove her original ${what} completely; none of it may remain. In image 1 she wears ${orig}. ` +
     `Keep her ${other} from image 1 exactly as it is.${feet} ` +
     `Match the ${what} in image 2 exactly: construction, straps and ties, neckline, cut, length, leg line, fit, colour and how much skin is covered. ` +
-    `Ignore every other garment shown in image 2 and do not add any other clothing.${ignoreRefShoes} ${KEEP}`
+    `Ignore every other garment shown in image 2 and do not add any other clothing.${ignoreRefShoes} ${protectText(protect)}${KEEP}`
   );
 }
 
@@ -165,7 +223,7 @@ export function editSize(width: number, height: number): { width: number; height
 }
 
 /** Node ids in the edit graph that the server reads back. */
-export const EDIT_NODES = { final: 'save_final', crop: 'save_crop', cropInfo: 'ref_crop' } as const;
+export const EDIT_NODES = { final: 'save_final', crop: 'save_crop', cropInfo: 'ref_crop', bodyCheck: 'body_check' } as const;
 
 export interface FaceRestoreSpec {
   denoise: number;
@@ -186,6 +244,16 @@ export interface EditGraphInput {
   prompt: string;
   seed: number;
   faceRestore: FaceRestoreSpec | null;
+  /** Experimental body protection (all off = the graph validated on the GPU). */
+  protect?: BodyProtect;
+  /** Uploaded names of Sienna's approved body references (used by bodyRef and bodyCheck). */
+  bodyRefNames?: string[];
+  /** Garment pieces the isolation step must find, e.g. ['upper', 'lower']. */
+  expect?: ('upper' | 'lower')[];
+  /** Footwear isn't taken from the photo: drop the photo's shoes in the isolation step. */
+  dropFeet?: boolean;
+  footwearChanged?: boolean;
+  legsHidden?: boolean;
 }
 
 export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
@@ -202,29 +270,71 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
     q_clip: { class_type: 'CLIPLoader', inputs: { clip_name: QWEN_EDIT_FILES.clip, type: 'qwen_image', device: 'default' } },
     q_vae: { class_type: 'VAELoader', inputs: { vae_name: QWEN_EDIT_FILES.vae } },
   };
+  const pr = i.protect ?? NO_PROTECT;
+  const refs = pr.bodyRef || pr.bodyCheck ? (i.bodyRefNames ?? []).slice(0, 4) : [];
+  // Shared detectors (each only added when something uses it).
+  const faceDet = (): [string, number] => {
+    g.ref_face_det ??= { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: FACE_DETECTOR_FILE } };
+    return ['ref_face_det', 0];
+  };
+  const faceOf = (id: string, img: [string, number]): [string, number] => {
+    g[`${id}_face`] ??= { class_type: 'BboxDetectorCombined_v2', inputs: { bbox_detector: faceDet(), image: img, threshold: 0.3, dilation: 0 } };
+    return [`${id}_face`, 0];
+  };
+  const personOf = (id: string, img: [string, number]): [string, number] => {
+    g.person_det ??= { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: PERSON_SEGM_FILE } };
+    g[`${id}_person`] ??= { class_type: 'SegmDetectorCombined_v2', inputs: { segm_detector: ['person_det', 1], image: img, threshold: 0.4, dilation: 0 } };
+    return [`${id}_person`, 0];
+  };
+  const poseOf = (id: string, img: [string, number]): [string, number] => {
+    g[`${id}_pose`] ??= {
+      class_type: 'DWPreprocessor',
+      inputs: { image: img, detect_hand: 'disable', detect_body: 'enable', detect_face: 'disable', resolution: 1024, ...DWPOSE_FILES, scale_stick_for_xinsr_cn: 'disable' },
+    };
+    return [`${id}_pose`, 1];
+  };
+  refs.forEach((name, k) => (g[`body_ref_${k + 1}`] = { class_type: 'LoadImage', inputs: { image: name }, _meta: { title: `Sienna body reference ${k + 1}` } }));
+
   let refOut: [string, number] = ['ref', 0];
   if (i.autoCrop) {
-    g.ref_face_det = { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: FACE_DETECTOR_FILE } };
-    g.ref_face = {
-      class_type: 'BboxDetectorCombined_v2',
-      inputs: { bbox_detector: ['ref_face_det', 0], image: ['ref', 0], threshold: 0.3, dilation: 0 },
-    };
-    g.ref_crop = {
-      class_type: 'SiennaChinCrop',
-      inputs: { image: ['ref', 0], face_mask: ['ref_face', 0], margin: 0.08, min_keep: 0.35 },
-      _meta: { title: 'Crop clothing photo below the chin' },
-    };
+    g.ref_crop = pr.garmentOnly
+      ? {
+          class_type: 'SiennaGarmentOnly',
+          inputs: {
+            image: ['ref', 0],
+            person_mask: personOf('ref', ['ref', 0]),
+            expect: (i.expect ?? ['upper', 'lower']).join(','),
+            drop_feet: !!i.dropFeet,
+            face_mask: faceOf('ref', ['ref', 0]),
+            pose_keypoint: poseOf('ref', ['ref', 0]),
+          },
+          _meta: { title: 'Clothing only (model’s body removed; falls back to the chin crop)' },
+        }
+      : {
+          class_type: 'SiennaChinCrop',
+          inputs: { image: ['ref', 0], face_mask: faceOf('ref', ['ref', 0]), margin: 0.08, min_keep: 0.35 },
+          _meta: { title: 'Crop clothing photo below the chin' },
+        };
     g.save_crop = { class_type: 'SaveImage', inputs: { images: ['ref_crop', 0], filename_prefix: 'sienna/outfit-ref' } };
     refOut = ['ref_crop', 0];
+  }
+  let sheet: { image3?: [string, number] } = {};
+  if (pr.bodyRef && refs.length) {
+    g.body_sheet = {
+      class_type: 'SiennaBodySheet',
+      inputs: { height: 768, ...Object.fromEntries(refs.map((_, k) => [`image${k + 1}`, [`body_ref_${k + 1}`, 0]])) },
+      _meta: { title: 'Sienna body references (image 3)' },
+    };
+    sheet = { image3: ['body_sheet', 0] };
   }
   Object.assign(g, {
     q_pos: {
       class_type: 'TextEncodeQwenImageEditPlus',
-      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: i.prompt },
+      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: i.prompt, ...sheet },
     },
     q_neg: {
       class_type: 'TextEncodeQwenImageEditPlus',
-      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: '' },
+      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: '', ...sheet },
     },
     q_shift: { class_type: 'ModelSamplingAuraFlow', inputs: { model: ['q_unet', 0], shift: QWEN_SAMPLING.shift } },
     q_cfgnorm: { class_type: 'CFGNorm', inputs: { model: ['q_shift', 0], strength: 1 } },
@@ -285,6 +395,28 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
     finalOut = ['fr_detail', 0];
   }
   g.save_final = { class_type: 'SaveImage', inputs: { images: finalOut, filename_prefix: 'sienna/outfit-edit' } };
+  if (pr.bodyCheck) {
+    const measure = (id: string, img: [string, number]): [string, number] => {
+      g[`m_${id}`] = {
+        class_type: 'SiennaBodyMeasure',
+        inputs: { image: img, pose_keypoint: poseOf(id, img), person_mask: personOf(id, img), face_mask: faceOf(id, img) },
+      };
+      return [`m_${id}`, 0];
+    };
+    g.body_check = {
+      class_type: 'SiennaBodyCheck',
+      inputs: {
+        source: measure('src', ['src', 0]),
+        result: measure('res', finalOut),
+        footwear_changed: !!i.footwearChanged,
+        legs_hidden: !!i.legsHidden,
+        source_image: ['src', 0],
+        result_image: finalOut,
+        ...Object.fromEntries(refs.map((_, k) => [`ref${k + 1}`, measure(`bref${k + 1}`, [`body_ref_${k + 1}`, 0])])),
+      },
+      _meta: { title: 'Body consistency check' },
+    };
+  }
   return g;
 }
 
@@ -302,3 +434,46 @@ export const CROP_NOTES: Record<string, string> = {
   'no-face': 'No face was found in the clothing photo, so it was used uncropped.',
   'face-too-low': 'The face in the clothing photo is too low for a below-the-chin crop, so it was used uncropped — crop it by hand if the result copies that person.',
 };
+
+// ── Body check report ────────────────────────────────────────────────────────
+
+export interface BodyCheckItem {
+  part: string;
+  change: number;
+  basis: string;
+  tol: number;
+  severity?: 'likely' | 'possible';
+  range?: [number, number];
+  value?: number;
+}
+export interface BodyCheckReport {
+  status: 'ok' | 'warn' | 'insufficient';
+  flags: BodyCheckItem[];
+  checked: BodyCheckItem[];
+  skipped: { part: string; why: string }[];
+  scene?: { diff: number; changed: boolean };
+}
+
+export function parseBodyReport(text: string | undefined): BodyCheckReport | null {
+  if (!text) return null;
+  try {
+    const j = JSON.parse(text);
+    if (['ok', 'warn', 'insufficient'].includes(j.status) && Array.isArray(j.flags)) return j as BodyCheckReport;
+  } catch {}
+  return null;
+}
+
+const pct = (x: number) => `${x > 0 ? '+' : '−'}${Math.round(Math.abs(x) * 100)}%`;
+/** Plain-language warnings for the result page (nothing for 'ok' / 'insufficient'). */
+export function bodyCheckWarnings(r: BodyCheckReport | null): string[] {
+  if (!r) return [];
+  const out: string[] = [];
+  if (r.scene?.changed) out.push('The editor replaced the whole scene (the background changed a lot) — this edit probably failed. Try 🎲 New seed.');
+  if (r.flags.length) {
+    const items = r.flags.map(
+      (f) => `${f.severity === 'likely' ? 'likely' : 'possibly'} ${f.part} ${pct(f.change)} (${f.basis === 'source' ? 'vs the original' : `outside the range of her ${f.basis}`})`,
+    );
+    out.push(`Body check: Sienna’s proportions may have changed — ${items.join('; ')}.`);
+  }
+  return out;
+}

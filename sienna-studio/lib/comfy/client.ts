@@ -303,6 +303,19 @@ const mockFiles: Map<string, Buffer> = (g.__siennaMockFiles ??= new Map());
 
 export { comboOptions };
 
+/** Example body-check report for mock mode (placeholder numbers, not a measurement). */
+const MOCK_BODY_CHECK = JSON.stringify({
+  status: 'ok',
+  flags: [],
+  checked: [
+    { part: 'thigh (right) length', change: 0.02, basis: 'source', tol: 0.06 },
+    { part: 'thigh (left) length', change: -0.01, basis: 'source', tol: 0.06 },
+    { part: 'waist width', change: 0, basis: '3 references', tol: 0.1, range: [0.81, 0.86], value: 0.83 },
+  ],
+  skipped: [{ part: 'shin_r', why: 'footwear changed — shoes move the ankle point' }],
+  scene: { diff: 5.2, changed: false },
+});
+
 const GPU_DOWN_STATUSES = [404, 502, 503, 504];
 
 const MOCK_CHOICES: Record<string, string[]> = {
@@ -379,6 +392,8 @@ export class MockComfy implements ComfyBackend {
       if (n.class_type === 'SiennaTextOutput') texts[id] = [MOCK_OUTFIT_CAPTION];
       if (n.class_type === 'SiennaGarmentIsolate') texts[id] = ['garment'];
       if (n.class_type === 'SiennaChinCrop') texts[id] = [JSON.stringify({ mode: 'cropped', cut: 0.2 })];
+      if (n.class_type === 'SiennaGarmentOnly') texts[id] = [JSON.stringify({ mode: 'garment-only', cut: 0.2, coverage: { upper: 0.2, lower: 0.35 } })];
+      if (n.class_type === 'SiennaBodyCheck') texts[id] = [MOCK_BODY_CHECK];
       if (n.class_type === 'DWPreprocessor' || n.class_type === 'SiennaPoseRetarget') poses[id] = [MOCK_POSE_JSON];
       if (n.class_type === 'SiennaPoseRetarget') texts[id] = [JSON.stringify([{ thigh: 0.93, shin: 0.95, forearm: 1.04 }])];
     }

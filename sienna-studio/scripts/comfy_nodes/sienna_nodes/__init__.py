@@ -142,6 +142,7 @@ class SiennaGarmentOnly:
                 "image": ("IMAGE",),
                 "person_mask": ("MASK",),
                 "expect": ("STRING", {"default": "upper,lower"}),
+                "drop_feet": ("BOOLEAN", {"default": False}),
             },
             "optional": {"face_mask": ("MASK",), "pose_keypoint": ("POSE_KEYPOINT",)},
         }
@@ -152,11 +153,11 @@ class SiennaGarmentOnly:
     OUTPUT_NODE = True
     CATEGORY = "sienna"
 
-    def run(self, image, person_mask, expect, face_mask=None, pose_keypoint=None):
+    def run(self, image, person_mask, expect, drop_feet=False, face_mask=None, pose_keypoint=None):
         img = image[0].detach().cpu().numpy().astype(np.float32)
         shape = img.shape[:2]
         pieces = [p.strip() for p in expect.split(",") if p.strip() in ("upper", "lower")]
-        out, info = garment_only(img, _mask_np(person_mask, 0, shape), _mask_np(face_mask, 0, shape), _kp_for(pose_keypoint, shape), pieces)
+        out, info = garment_only(img, _mask_np(person_mask, 0, shape), _mask_np(face_mask, 0, shape), _kp_for(pose_keypoint, shape), pieces, drop_feet=drop_feet)
         text = json.dumps(info)
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out))[None, ...], text)}
 

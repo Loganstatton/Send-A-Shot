@@ -23,6 +23,7 @@ export const POST = handle(async (req: Request) => {
       footwear: z.enum(['keep', 'barefoot', 'reference']).default('keep'),
       face: z.enum(['off', 'standard', 'strong']).default('standard'),
       seed: z.number().int().min(-1).max(2 ** 48).default(-1),
+      protect: z.object({ garmentOnly: z.boolean(), bodyRef: z.boolean(), bodyCheck: z.boolean() }).partial().optional(),
     }),
   );
   return json(await startOutfitEdit(body), 202);

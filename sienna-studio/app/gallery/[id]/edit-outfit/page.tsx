@@ -7,7 +7,10 @@ import { fileUrl, useApi } from '@/lib/client/api';
 import { cropTopAndUpload, OutfitEditAvailability, startOutfitEdit } from '@/lib/client/outfit-edit';
 import { runJob } from '@/lib/client/poll';
 import {
+  BodyProtect,
   buildEditPrompt,
+  NO_PROTECT,
+  PROTECT_LABELS,
   defaultFootwear,
   FACE_LABELS,
   FOOTWEAR_LABELS,
@@ -20,7 +23,7 @@ import {
 import type { OutfitAnalysis } from '@/lib/outfit';
 import type { GenerationRecord, StoredImage } from '@/lib/types';
 import { ImagePicker } from '@/components/ImagePicker';
-import { Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Slider, Spinner, TextArea, TextInput, Toggle, toast } from '@/components/ui';
+import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Slider, Spinner, TextArea, TextInput, Toggle, toast } from '@/components/ui';
 
 type AnalyzeStatus = { state: 'pending' | 'running' } | { state: 'error'; error: string } | ({ state: 'done' } & OutfitAnalysis);
 
@@ -47,6 +50,7 @@ export default function EditOutfitPage() {
   const [footwearTouched, setFootwearTouched] = useState(false);
   const [face, setFace] = useState<OutfitEditFace>('standard');
   const [seed, setSeed] = useState('');
+  const [protect, setProtect] = useState<BodyProtect>(NO_PROTECT);
   const [analysis, setAnalysis] = useState<AnalyzeStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const cancelled = useRef(false);
@@ -62,8 +66,8 @@ export default function EditOutfitPage() {
   const source = rec?.images[imageIndex] ?? null;
   const originalOutfit = rec?.fields.outfit ?? '';
   const prompt = useMemo(
-    () => buildEditPrompt({ scope, description: description || '…', originalOutfit, footwear }),
-    [scope, description, originalOutfit, footwear],
+    () => buildEditPrompt({ scope, description: description || '…', originalOutfit, footwear, protect }),
+    [scope, description, originalOutfit, footwear, protect],
   );
 
   if (error) return <p className="pt-20 text-center text-red-300">{error}</p>;
@@ -100,6 +104,7 @@ export default function EditOutfitPage() {
         footwear,
         face,
         seed: seed.trim() === '' ? -1 : Math.max(0, Math.floor(Number(seed)) || 0),
+        ...(avail?.experiments ? { protect } : {}),
       });
       toast(next.status === 'error' ? 'Edit failed — see details' : 'Edit queued');
       router.push(`/gallery/${next.id}`);
@@ -261,6 +266,43 @@ export default function EditOutfitPage() {
           </p>
         </div>
       </Card>
+
+      {avail.experiments && (
+        <div className="mt-3">
+          <Collapsible title="Body protection · experimental" defaultOpen badge={Object.values(protect).some(Boolean) ? <Badge tone="accent">on</Badge> : null}>
+            <p className="text-xs text-ink-400">
+              Keeps Sienna’s trained body instead of the clothing model’s. Not yet proven on the GPU — compare results with and without.
+            </p>
+            {(['bodyRef', 'garmentOnly', 'bodyCheck'] as (keyof BodyProtect)[]).map((k) => {
+              const missing = avail.protectMissing?.[k] ?? [];
+              const blocked = missing.length > 0 || (k === 'garmentOnly' && manualCrop);
+              return (
+                <div key={k}>
+                  <Toggle
+                    checked={protect[k] && !blocked}
+                    disabled={blocked}
+                    onChange={(v) => setProtect((p) => ({ ...p, [k]: v }))}
+                    label={PROTECT_LABELS[k].label + (k === 'bodyRef' ? ` (${avail.bodyRefCount} approved)` : '')}
+                    description={PROTECT_LABELS[k].description}
+                  />
+                  {missing.length > 0 && (
+                    <p className="text-xs text-amber-300">
+                      Needs: {missing.join('; ')}
+                      {k === 'bodyRef' && (
+                        <>
+                          {' '}
+                          — <Link href="/character" className="underline">Sienna page</Link>
+                        </>
+                      )}
+                    </p>
+                  )}
+                  {k === 'garmentOnly' && manualCrop && <p className="text-xs text-ink-400">Off while cropping by hand (it needs the face to learn the skin colour).</p>}
+                </div>
+              );
+            })}
+          </Collapsible>
+        </div>
+      )}
 
       <div className="mt-3 space-y-3">
         <Collapsible title="Advanced">

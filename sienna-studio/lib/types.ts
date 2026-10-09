@@ -37,6 +37,8 @@ export interface CharacterProfile {
   extraLockedTerms: string[];
   /** User confirmed reference images depict this fictional character, not a real person. */
   fictionalAttestation: boolean;
+  /** Approved Sienna images that define her body (experimental Edit Outfit body protection). */
+  bodyReferences?: import('./body-refs').BodyReference[];
   updatedAt: string;
 }
 
@@ -357,6 +359,13 @@ export interface OutfitEditInfo {
   description: string;
   /** What she wore in the source image (named in the prompt so it gets removed). */
   originalOutfit: string;
+  /** Experimental body protection used for this edit (absent = none). */
+  protect?: import('./outfit-edit').BodyProtect;
+  /** Body references given to the editor / checker (ids of the approved images). */
+  bodyRefIds?: string[];
+  /** Clothing-only isolation result ('garment-only', or 'fallback-chin-crop' with the reason). */
+  isolation?: { mode: string; reason?: string } | null;
+  bodyCheck?: import('./outfit-edit').BodyCheckReport | null;
 }
 
 export interface AppSettings {

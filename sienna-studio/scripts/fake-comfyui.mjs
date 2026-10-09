@@ -56,7 +56,7 @@ if (!arg('--no-ipadapter')) {
 }
 if (!arg('--no-face-refine')) {
   Object.assign(SPECS, {
-    UltralyticsDetectorProvider: { model_name: combo(['bbox/face_yolov8m.pt']) },
+    UltralyticsDetectorProvider: { model_name: combo(['bbox/face_yolov8m.pt', 'segm/person_yolov8m-seg.pt']) },
     FaceDetailer: {
       image: ['IMAGE'], model: ['MODEL'], clip: ['CLIP'], vae: ['VAE'], positive: ['CONDITIONING'], negative: ['CONDITIONING'],
       bbox_detector: ['BBOX_DETECTOR'], guide_size: ['FLOAT'], guide_size_for: ['BOOLEAN'], max_size: ['FLOAT'], seed: ['INT'],
@@ -76,6 +76,12 @@ if (arg('--qwen-edit')) {
     CFGNorm: { model: ['MODEL'], strength: ['FLOAT'] },
     BboxDetectorCombined_v2: { bbox_detector: ['BBOX_DETECTOR'], image: ['IMAGE'], threshold: ['FLOAT'], dilation: ['INT'] },
     SiennaChinCrop: { image: ['IMAGE'], margin: ['FLOAT'], min_keep: ['FLOAT'] },
+    SiennaGarmentOnly: { image: ['IMAGE'], person_mask: ['MASK'], expect: ['STRING'], drop_feet: ['BOOLEAN'] },
+    SiennaBodySheet: { image1: ['IMAGE'], height: ['INT'] },
+    SiennaBodyMeasure: { image: ['IMAGE'], pose_keypoint: ['POSE_KEYPOINT'], person_mask: ['MASK'] },
+    SiennaBodyCheck: { source: ['STRING'], result: ['STRING'], footwear_changed: ['BOOLEAN'], legs_hidden: ['BOOLEAN'] },
+    DWPreprocessor: { image: ['IMAGE'], detect_hand: combo(['enable', 'disable']), detect_body: combo(['enable', 'disable']), detect_face: combo(['enable', 'disable']), resolution: ['INT'], bbox_detector: combo(['yolox_l.onnx']), pose_estimator: combo(['dw-ll_ucoco_384.onnx']), scale_stick_for_xinsr_cn: combo(['enable', 'disable']) },
+    SegmDetectorCombined_v2: { segm_detector: ['SEGM_DETECTOR'], image: ['IMAGE'], threshold: ['FLOAT'], dilation: ['INT'] },
   });
 }
 // (PuLID-Flux deliberately absent, to exercise "missing custom node" paths.)
@@ -166,6 +172,8 @@ http
       for (const [k, n] of Object.entries(j.prompt)) {
         if (n.class_type === 'SaveImage') outputs[k] = { images: [{ filename: `${id}_${k}.png`, subfolder: 'sienna', type: 'output' }] };
         if (n.class_type === 'SiennaChinCrop') outputs[k] = { text: [JSON.stringify({ mode: 'cropped', cut: 0.21 })] };
+        if (n.class_type === 'SiennaGarmentOnly') outputs[k] = { text: [JSON.stringify({ mode: 'garment-only', cut: 0.21, coverage: { upper: 0.2, lower: 0.35 } })] };
+        if (n.class_type === 'SiennaBodyCheck') outputs[k] = { text: [JSON.stringify({ status: 'warn', flags: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06, severity: 'likely' }], checked: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06 }], skipped: [], scene: { diff: 6.1, changed: false } })] };
       }
       return send(res, 200, { [id]: { outputs, status: { status_str: 'success', completed: true, messages: [] } } });
     }

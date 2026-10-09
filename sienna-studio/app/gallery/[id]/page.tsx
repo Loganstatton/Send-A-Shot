@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { api, fileUrl, useApi } from '@/lib/client/api';
 import { regenerate } from '@/lib/client/jobs';
 import { OutfitEditAvailability, rerunOutfitEdit } from '@/lib/client/outfit-edit';
-import { FACE_LABELS, FOOTWEAR_LABELS, SCOPE_LABELS } from '@/lib/outfit-edit';
+import { FACE_LABELS, FOOTWEAR_LABELS, PROTECT_LABELS, SCOPE_LABELS } from '@/lib/outfit-edit';
+import { bodyReferenceProblem, BodyReference } from '@/lib/body-refs';
 import { shareImage } from '@/lib/client/share';
 import { REVIEW_INFO } from '@/lib/review';
 import type { GenerationRecord, ReviewItem, ReviewMark } from '@/lib/types';
@@ -22,6 +23,9 @@ export default function GenerationDetail() {
   const [notes, setNotes] = useState('');
   const { data: editAvail } = useApi<OutfitEditAvailability>('/api/outfit-edit');
   const [showBefore, setShowBefore] = useState(false);
+  const { data: settings } = useApi<{ env: { experiments?: boolean } }>('/api/settings');
+  const experiments = !!settings?.env.experiments;
+  const { data: bodyRefs, setData: setBodyRefs } = useApi<BodyReference[]>(experiments ? '/api/character/body-references' : null);
 
   useEffect(() => {
     if (rec) setNotes(rec.notes);
@@ -151,6 +155,7 @@ export default function GenerationDetail() {
             </Button>
           </Link>
         )}
+        {experiments && rec.images[0] && <BodyRefButton rec={rec} refs={bodyRefs} onChange={setBodyRefs} />}
         {!rec.outfitEdit && (
           <Link href={`/?from=${rec.id}`}>
             <Button className="w-full">✎ Edit & regenerate</Button>
@@ -297,11 +302,74 @@ function OutfitEditCard({ rec }: { rec: GenerationRecord }) {
                 ? '—'
                 : 'pending'}
         </dd>
+        {e.protect && (
+          <>
+            <dt className="text-ink-400">Body protection</dt>
+            <dd>
+              {(Object.keys(PROTECT_LABELS) as (keyof typeof PROTECT_LABELS)[])
+                .filter((k) => e.protect![k])
+                .map((k) => PROTECT_LABELS[k].label)
+                .join(' · ') || 'none'}
+              {e.isolation && <span className="block text-xs text-ink-400">Clothing only: {e.isolation.mode === 'garment-only' ? 'applied' : `fell back to chin crop (${e.isolation.reason})`}</span>}
+            </dd>
+          </>
+        )}
+        {e.bodyCheck && (
+          <>
+            <dt className="text-ink-400">Body check</dt>
+            <dd>
+              <Badge tone={e.bodyCheck.status === 'ok' ? 'ok' : e.bodyCheck.status === 'warn' ? 'warn' : 'neutral'}>
+                {e.bodyCheck.status === 'ok' ? 'consistent' : e.bodyCheck.status === 'warn' ? 'possible change' : 'not enough to compare'}
+              </Badge>
+              <ul className="mt-1 space-y-0.5 text-xs text-ink-400">
+                {e.bodyCheck.checked.map((c) => (
+                  <li key={c.part} className={e.bodyCheck!.flags.some((f) => f.part === c.part) ? 'text-amber-300' : ''}>
+                    {c.part}: {c.change === 0 ? 'within range' : `${c.change > 0 ? '+' : '−'}${Math.round(Math.abs(c.change) * 100)}%`} ({c.basis === 'source' ? 'vs original' : c.basis})
+                  </li>
+                ))}
+                {[...new Set(e.bodyCheck.skipped.map((x) => x.why))].map((w) => (
+                  <li key={w}>not checked: {w}</li>
+                ))}
+                {e.bodyCheck.scene && <li>background change: {e.bodyCheck.scene.diff}{e.bodyCheck.scene.changed ? ' — scene replaced' : ''}</li>}
+              </ul>
+            </dd>
+          </>
+        )}
         <dt className="text-ink-400">Description</dt>
         <dd className="break-words">{e.description}</dd>
         <dt className="text-ink-400">Was wearing</dt>
         <dd className="break-words text-ink-400">{e.originalOutfit || '—'}</dd>
       </dl>
     </Card>
+  );
+}
+
+function BodyRefButton({ rec, refs, onChange }: { rec: GenerationRecord; refs?: BodyReference[]; onChange: (r: BodyReference[]) => void }) {
+  const [busy, setBusy] = useState(false);
+  const imageId = rec.images[0]?.id;
+  const isRef = !!refs?.some((r) => r.image.id === imageId);
+  const problem = bodyReferenceProblem(rec, 0);
+  async function toggle() {
+    setBusy(true);
+    try {
+      onChange(
+        isRef
+          ? await api<BodyReference[]>(`/api/character/body-references?imageId=${encodeURIComponent(imageId)}`, { method: 'DELETE' })
+          : await api<BodyReference[]>('/api/character/body-references', { method: 'POST', json: { recordId: rec.id, imageIndex: 0 } }),
+      );
+      toast(isRef ? 'Removed from body references' : 'Added to Sienna’s body references');
+    } catch (e: any) {
+      toast(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="col-span-2">
+      <Button className="w-full" loading={busy} disabled={!isRef && !!problem} onClick={toggle}>
+        {isRef ? '✓ Body reference · remove' : '＋ Use as body reference'}
+      </Button>
+      {!isRef && problem && <p className="mt-1 text-xs text-ink-400">Not eligible as a body reference: {problem}.</p>}
+    </div>
   );
 }
