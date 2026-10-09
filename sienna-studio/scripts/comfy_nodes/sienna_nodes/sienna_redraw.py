@@ -40,22 +40,42 @@ def mp_model_path() -> Optional[str]:
 
 
 _SEGMENTER = None
+_SEG_ERROR: Optional[str] = None
+
+
+def _preload_gl_libs(model_path: str):
+    """MediaPipe dlopens libEGL/libGLESv2 even on CPU. GPU images often lack them and apt installs vanish with the
+    Pod, so copies kept next to the model (models/mediapipe/lib, on the network volume) are loaded first."""
+    import ctypes
+    lib = os.path.join(os.path.dirname(model_path), "lib")
+    for name in ("libGLdispatch.so.0", "libEGL.so.1", "libGLESv2.so.2"):
+        f = os.path.join(lib, name)
+        if os.path.isfile(f):
+            try:
+                ctypes.CDLL(f, mode=ctypes.RTLD_GLOBAL)
+            except OSError:
+                pass
 
 
 def segment_classes(img: np.ndarray) -> Optional[List[np.ndarray]]:
-    """Per-class confidence maps (bg, hair, body skin, face skin, clothes, other) at image size, or None."""
-    global _SEGMENTER
+    """Per-class confidence maps (bg, hair, body skin, face skin, clothes, other) at image size, or None
+    (segmenter unavailable — the caller falls back to pose zones; the reason is in segmenter_error())."""
+    global _SEGMENTER, _SEG_ERROR
     path = mp_model_path()
     if not path:
+        _SEG_ERROR = "segmenter model not found"
         return None
     try:
+        _preload_gl_libs(path)
         import mediapipe as mp
         from mediapipe.tasks.python import BaseOptions, vision
-    except Exception:
+
+        if _SEGMENTER is None:
+            _SEGMENTER = vision.ImageSegmenter.create_from_options(
+                vision.ImageSegmenterOptions(base_options=BaseOptions(model_asset_path=path), output_confidence_masks=True))
+    except Exception as e:  # missing package or system library: never fail the edit
+        _SEG_ERROR = f"{type(e).__name__}: {e}"[:200]
         return None
-    if _SEGMENTER is None:
-        _SEGMENTER = vision.ImageSegmenter.create_from_options(
-            vision.ImageSegmenterOptions(base_options=BaseOptions(model_asset_path=path), output_confidence_masks=True))
     rgb = np.ascontiguousarray((np.clip(img[..., :3], 0, 1) * 255).astype(np.uint8))
     res = _SEGMENTER.segment(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
     out = [np.squeeze(np.asarray(c.numpy_view(), np.float32)) for c in res.confidence_masks]
@@ -127,6 +147,10 @@ def _disk(r: int) -> np.ndarray:
 
 
 # ── the mask ─────────────────────────────────────────────────────────────────
+
+def segmenter_error() -> Optional[str]:
+    return _SEG_ERROR
+
 
 def garment_region(
     img: np.ndarray,

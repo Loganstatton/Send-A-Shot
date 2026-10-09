@@ -271,6 +271,17 @@ if (( QWEN )); then
   "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "absl-py>=2.1" "flatbuffers>=24" certifi || true
   fetch_model "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite" \
     "$COMFYUI_DIR/models/mediapipe/selfie_multiclass_256x256.tflite" 10000000
+  # MediaPipe dlopens libEGL/libGLESv2 even on CPU; GPU images often lack them and apt installs vanish with the Pod,
+  # so copies are kept next to the model (models/mediapipe/lib), where the Sienna node preloads them.
+  if [[ ! -f "$COMFYUI_DIR/models/mediapipe/lib/libEGL.so.1" ]] && command -v apt-get >/dev/null; then
+    tmp=$(mktemp -d)
+    (cd "$tmp" && { apt-get download libegl1 libgles2 libglvnd0 >/dev/null 2>&1 || { apt-get update -qq >/dev/null 2>&1 && apt-get download libegl1 libgles2 libglvnd0 >/dev/null 2>&1; }; } \
+      && for d in *.deb; do dpkg -x "$d" x; done \
+      && mkdir -p "$COMFYUI_DIR/models/mediapipe/lib" \
+      && cp -L x/usr/lib/x86_64-linux-gnu/{libEGL.so.1,libGLESv2.so.2,libGLdispatch.so.0} "$COMFYUI_DIR/models/mediapipe/lib/") \
+      || echo "could not fetch libEGL/libGLESv2 — garment-only redraw will estimate the clothing area from the pose"
+    rm -rf "$tmp"
+  fi
   "$COMFYUI_PYTHON" -c "from mediapipe.tasks.python import vision; print('mediapipe · ok')" \
     || echo "mediapipe import failed — garment-only redraw will estimate the clothing area from the pose"
   fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors" \

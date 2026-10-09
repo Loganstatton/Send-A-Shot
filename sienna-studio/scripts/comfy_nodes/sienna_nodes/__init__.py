@@ -19,7 +19,7 @@ import torch
 
 from .sienna_body import SCENE_CHANGED, body_sheet, compare, garment_only, keypoints_from_pose, measure_body, scale_points, scene_backdrop, scene_change
 from .sienna_crop import chin_crop
-from .sienna_redraw import GROW_MODES, erase, garment_region, overlay, segment_classes
+from .sienna_redraw import GROW_MODES, erase, garment_region, overlay, segment_classes, segmenter_error
 from .sienna_garment import garment_composite
 from .sienna_pose import DEFAULT_PROPORTIONS, retarget_openpose
 
@@ -270,8 +270,11 @@ class SiennaGarmentRedrawMask:
     def run(self, image, scope, grow, include_feet, person_mask=None, face_mask=None, pose_keypoint=None):
         img = image[0].detach().cpu().numpy().astype(np.float32)
         shape = img.shape[:2]
-        hard, soft, info = garment_region(img, segment_classes(img), _mask_np(person_mask, 0, shape), _mask_np(face_mask, 0, shape),
+        classes = segment_classes(img)
+        hard, soft, info = garment_region(img, classes, _mask_np(person_mask, 0, shape), _mask_np(face_mask, 0, shape),
                                           _kp_for(pose_keypoint, shape), scope, grow, include_feet)
+        if classes is None:
+            info["segmenter_error"] = segmenter_error()
         text = json.dumps(info)
         t = lambda a: torch.from_numpy(np.ascontiguousarray(a))[None, ...]
         return {"ui": {"text": [text]}, "result": (t(hard), t(soft), t(erase(img, hard)), t(overlay(img, hard)), text)}
