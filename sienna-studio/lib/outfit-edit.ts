@@ -137,8 +137,9 @@ export interface EditPromptInput {
 const NOCOPY =
   'Image 2 is only a clothing reference: do not copy the body shape, figure, proportions, height or skin tone of the person in image 2. ';
 const BODYREF =
-  'Image 3 shows the same woman as image 1 in approved reference photos: her body (shoulders, bust, waist, hips, thighs, legs and overall build) ' +
-  'must stay exactly as in image 1 and image 3. ';
+  'Image 3 is only a body reference: approved photos of the same woman as image 1, cut out on grey. Her body (shoulders, bust, waist, hips, ' +
+  'thighs, legs and overall build) must stay exactly as in image 1 and image 3. Take nothing else from image 3: the background, lighting, ' +
+  'framing and pose come from image 1, and the clothing from image 2. ';
 const protectText = (p?: BodyProtect) => (p && (p.garmentOnly || p.bodyRef) ? NOCOPY : '') + (p?.bodyRef ? BODYREF : '');
 
 const KEEP =
@@ -322,8 +323,13 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
   if (pr.bodyRef && refs.length) {
     g.body_sheet = {
       class_type: 'SiennaBodySheet',
-      inputs: { height: 768, ...Object.fromEntries(refs.map((_, k) => [`image${k + 1}`, [`body_ref_${k + 1}`, 0]])) },
-      _meta: { title: 'Sienna body references (image 3)' },
+      inputs: {
+        height: 768,
+        ...Object.fromEntries(refs.map((_, k) => [`image${k + 1}`, [`body_ref_${k + 1}`, 0]])),
+        // her body only, on grey: with the full photos the editor copied their studio background (GPU comparison)
+        ...Object.fromEntries(refs.map((_, k) => [`mask${k + 1}`, personOf(`bref${k + 1}`, [`body_ref_${k + 1}`, 0])])),
+      },
+      _meta: { title: 'Sienna body references (image 3, cut out)' },
     };
     sheet = { image3: ['body_sheet', 0] };
   }

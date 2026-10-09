@@ -157,7 +157,7 @@ class SiennaGarmentOnly:
         img = image[0].detach().cpu().numpy().astype(np.float32)
         shape = img.shape[:2]
         pieces = [p.strip() for p in expect.split(",") if p.strip() in ("upper", "lower")]
-        out, info = garment_only(img, _mask_np(person_mask, 0, shape), _mask_np(face_mask, 0, shape), _kp_for(pose_keypoint, shape), pieces, drop_feet=drop_feet)
+        out, info = garment_only(img, _mask_np(person_mask, 0, shape), _mask_np(face_mask, 0, shape), _kp_for(pose_keypoint, shape), pieces, drop_feet=drop_feet, shrink_frac=0.005)
         text = json.dumps(info)
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out))[None, ...], text)}
 
@@ -167,16 +167,19 @@ class SiennaBodySheet:
     def INPUT_TYPES(cls):
         return {
             "required": {"image1": ("IMAGE",), "height": ("INT", {"default": 768, "min": 256, "max": 2048})},
-            "optional": {"image2": ("IMAGE",), "image3": ("IMAGE",), "image4": ("IMAGE",)},
+            "optional": {"image2": ("IMAGE",), "image3": ("IMAGE",), "image4": ("IMAGE",),
+                         **{f"mask{i}": ("MASK",) for i in range(1, 5)}},
         }
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "run"
     CATEGORY = "sienna"
 
-    def run(self, image1, height, image2=None, image3=None, image4=None):
-        ims = [i[0].detach().cpu().numpy().astype(np.float32) for i in (image1, image2, image3, image4) if i is not None]
-        return (torch.from_numpy(np.ascontiguousarray(body_sheet(ims, height)))[None, ...],)
+    def run(self, image1, height, image2=None, image3=None, image4=None, mask1=None, mask2=None, mask3=None, mask4=None):
+        pairs = [(i, m) for i, m in ((image1, mask1), (image2, mask2), (image3, mask3), (image4, mask4)) if i is not None]
+        ims = [i[0].detach().cpu().numpy().astype(np.float32) for i, _ in pairs]
+        masks = [_mask_np(m, 0, im.shape[:2]) for (_, m), im in zip(pairs, ims)]
+        return (torch.from_numpy(np.ascontiguousarray(body_sheet(ims, height, masks=masks)))[None, ...],)
 
 
 class SiennaBodyMeasure:

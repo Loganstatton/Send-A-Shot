@@ -128,7 +128,7 @@ def backdrop_for(pixels: np.ndarray) -> Tuple[float, float, float]:
 
 
 def garment_only(img: np.ndarray, person: np.ndarray, face_mask: Optional[np.ndarray], kp, expect: Sequence[str],
-                 min_piece: float = 0.08, min_skin: float = 0.02, drop_feet: bool = False):
+                 min_piece: float = 0.08, min_skin: float = 0.02, drop_feet: bool = False, shrink_frac: float = 0.0):
     """Clothing photo → only the clothes, on flat grey, cropped below the chin.
 
     Everything on the person that is not skin is kept (so straps, ties and strings survive even where a
@@ -138,7 +138,12 @@ def garment_only(img: np.ndarray, person: np.ndarray, face_mask: Optional[np.nda
     Returns (image, info).
     """
     h = img.shape[0]
+    # The GPU's segmenter runs a few pixels wider than the body; shrink it slightly so the body's shaded edge
+    # falls in the edge band the cleanup below removes (a tight mask needs no shrink).
     person = np.asarray(person) > 0.5
+    shrink = int(shrink_frac * h)
+    if shrink > 0:
+        person = cv2.erode(person.astype(np.uint8), np.ones((2 * shrink + 1, 2 * shrink + 1), np.uint8)) > 0
     fallback_img, crop_info = chin_crop(img, face_mask)
     cut = int(round(crop_info["cut"] * h)) if crop_info["mode"] == "cropped" else 0
 
@@ -232,10 +237,23 @@ def garment_only(img: np.ndarray, person: np.ndarray, face_mask: Optional[np.nda
 
 # ── B: body reference sheet ──────────────────────────────────────────────────
 
-def body_sheet(images: List[np.ndarray], height: int = 768, gap: int = 16) -> np.ndarray:
-    """Approved Sienna references side by side at the same height (one image for Qwen's third input)."""
+def body_sheet(images: List[np.ndarray], height: int = 768, gap: int = 16, masks: Optional[List[Optional[np.ndarray]]] = None) -> np.ndarray:
+    """Approved Sienna references side by side at the same height (one image for Qwen's third input).
+
+    With person masks, each reference is cut to her body on flat grey: in the first GPU comparison the editor
+    copied the references' studio background into the edit, so only the body is shown."""
     tiles = []
-    for im in images:
+    for k, im in enumerate(images):
+        m = masks[k] if masks and k < len(masks) else None
+        if m is not None and (np.asarray(m) > 0.5).any():
+            m = np.asarray(m) > 0.5
+            if m.shape != im.shape[:2]:
+                m = cv2.resize(m.astype(np.uint8), (im.shape[1], im.shape[0]), interpolation=cv2.INTER_NEAREST) > 0
+            ys, xs = np.where(m)
+            pad = int(0.03 * im.shape[0])
+            y0, y1 = max(0, ys.min() - pad), min(im.shape[0], ys.max() + pad)
+            x0, x1 = max(0, xs.min() - pad), min(im.shape[1], xs.max() + pad)
+            im = np.where(m[..., None], im[..., :3], 0.5)[y0:y1, x0:x1]
         h, w = im.shape[:2]
         tiles.append(cv2.resize(im, (max(1, round(w * height / h)), height), interpolation=cv2.INTER_AREA))
     width = sum(t.shape[1] for t in tiles) + gap * (len(tiles) - 1)
@@ -347,12 +365,17 @@ def measure_body(img: np.ndarray, kp, person: np.ndarray, face_mask: Optional[np
                 d = ((pb[0] - pa[0]) / L, (pb[1] - pa[1]) / L)
                 pts.append(((pa[0] + f * (pb[0] - pa[0]), pa[1] + f * (pb[1] - pa[1])), (-d[1], d[0]), L / t))
         arm_contact = False
+        other_legs = [q[0] for q in pts] if spec not in ("torso", "hips") else []
         for p, d, bone in pts:
             wpx, sk, ends = _run_width(person, skin, p, d, max_len=0.9 * t)
             if not wpx:
                 continue
             # an elbow or hand at the end of the run means the arm is part of the measured width
             if any(_seg_dist(e, a, b) < 0.08 * t for a, b in arms for e in ends):
+                arm_contact = True
+                continue
+            # legs together: the run across one thigh reaches the other leg's centre line → both legs measured
+            if any(q is not p and _seg_dist(q, ends[0], ends[1]) < 0.05 * t for q in other_legs):
                 arm_contact = True
                 continue
             samples.append((wpx / t, sk, bone))

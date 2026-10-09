@@ -287,7 +287,7 @@ def test_uncovered_parts_use_the_range_of_several_references_never_one():
     ok = sb.compare(clothed, bare, refs)
     assert any(c["part"] == "thigh width" and "references" in c["basis"] for c in ok["checked"])
     assert not any(f["part"] == "thigh width" for f in ok["flags"])
-    much_wider = sb.compare(clothed, _m(top=None, bottom=RED, leg_w=90), refs)
+    much_wider = sb.compare(clothed, _m(top=None, bottom=RED, leg_w=76), refs)    # wider, legs still apart
     assert any(f["part"] == "thigh width" for f in much_wider["flags"])
 
 
@@ -298,6 +298,18 @@ def test_scene_change_separates_replaced_scenes():
     assert sb.scene_change(room, studio) > sb.SCENE_CHANGED
     lit = np.clip(room * 1.08, 0, 1)                           # same scene, a little brighter: not a replacement
     assert sb.scene_change(room, lit) < sb.SCENE_CHANGED
+
+
+def test_legs_together_are_not_measured_as_one_thigh():
+    together = _m(top=None, bottom=RED, leg_w=100)          # legs overlap: a run would span both
+    assert together["widths"].get("thigh", {}).get("arm_contact")
+
+
+def test_body_sheet_cuts_references_to_the_person_on_grey():
+    img = np.full((400, 200, 3), 0.9, np.float32); img[100:300, 60:140] = 0.2
+    m = np.zeros((400, 200), np.float32); m[100:300, 60:140] = 1
+    sheet = sb.body_sheet([img], height=200, masks=[m])
+    assert np.allclose(sheet[2, 2], 0.5) and sheet.mean() < 0.5      # studio background gone, body kept
 
 
 if __name__ == "__main__":
