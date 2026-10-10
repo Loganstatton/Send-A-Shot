@@ -75,7 +75,7 @@ export const STYLE_PACKS: StylePack[] = [
   {
     id: 'string_swimsuit',
     label: 'String swimsuit',
-    hint: 'Ultra-minimal string bikinis: tiny triangles on thin strings, string thong bottoms. More minimal than Micro bikini. Above 0.7 the bottoms become barely-there.',
+    hint: 'Ultra-minimal string bikinis: tiny triangles on thin strings, string thong bottoms. More minimal than Micro bikini. Above 0.7 the bottoms become barely-there. With Micro bikini on too she looks fuller but coverage drops — lower this to about 0.5.',
     file: 'pack_305655.safetensors',
     trigger: 'string swimsuit',
     max: 0.7,
@@ -92,6 +92,17 @@ export const STYLE_PACKS: StylePack[] = [
     max: 0.8,
     default: 0.6,
     source: 'https://civitai.com/models/1276176',
+    section: 'adult',
+  },
+  {
+    id: 'wet_tshirt',
+    label: 'Thin white shirt',
+    hint: 'Thin cotton t-shirts that cling naturally with real folds and a slightly damp look — not see-through at these strengths (0.5+ turns sheer). Describe the shirt as usual (e.g. “thin white cotton t-shirt, denim shorts”).',
+    file: 'pack_138252.safetensors',
+    trigger: 'w3t, wet tshirt',
+    max: 0.45,
+    default: 0.4,
+    source: 'https://civitai.com/models/138252',
     section: 'adult',
   },
 ];

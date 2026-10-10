@@ -85,3 +85,13 @@ describe('swimwear and fitted packs (GPU-tested with Sienna)', () => {
     expect(byId.natural_skin.trigger).toBe('detailed natural skin texture');
   });
 });
+
+describe('thin white shirt pack', () => {
+  it('is adult-only, defaults to 0.4 and stays below the sheer range', () => {
+    const p = STYLE_PACKS.find((x) => x.id === 'wet_tshirt')!;
+    expect(p.section).toBe('adult');
+    expect([p.default, p.max]).toEqual([0.4, 0.45]);
+    expect(activeStylePacks({ wet_tshirt: 0.7 }, 'adult')[0].strength).toBe(0.45);
+    expect(activeStylePacks({ wet_tshirt: 0.4 }, 'sfw')).toEqual([]);
+  });
+});
