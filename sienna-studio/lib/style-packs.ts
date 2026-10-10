@@ -21,7 +21,7 @@ export const STYLE_PACKS: StylePack[] = [
   {
     id: 'micro_bikini',
     label: 'Micro bikini',
-    hint: 'Shrinks bikinis toward a micro cut. 0.75–0.85 is the reliable range; higher also gives a fuller bust and can leave too little coverage.',
+    hint: 'Shrinks bikinis toward a micro cut. 0.75–0.85 is the reliable range; higher gives a fuller bust and can leave too little coverage. It also makes skin shiny — pair it with Natural skin (0.3) for matte, real-looking skin.',
     file: 'pack_143602.safetensors',
     trigger: 'microbikini',
     max: 0.9,
@@ -31,7 +31,7 @@ export const STYLE_PACKS: StylePack[] = [
   {
     id: 'real_photo',
     label: 'Real-photo look',
-    hint: 'Natural light and believable rooms, like a real phone photo. Above 0.6 it starts changing the outfit.',
+    hint: 'Natural light and believable rooms, like a real phone photo. Makes skin glossy — with Micro bikini, use Natural skin instead. Above 0.6 it starts changing the outfit.',
     file: 'pack_1368634.safetensors',
     trigger: 'IGMODEL',
     max: 0.6,
@@ -41,11 +41,11 @@ export const STYLE_PACKS: StylePack[] = [
   {
     id: 'natural_skin',
     label: 'Natural skin',
-    hint: 'Pores, freckles and a no-makeup look. Kept low — above 0.4 her face starts to change.',
+    hint: 'Matte skin with pores and freckles — removes the shiny, plastic look. 0.3 works well; above 0.4 her face starts to change.',
     file: 'pack_248951.safetensors',
     trigger: 'Detailed natural skin and blemishes without-makeup and acne',
     max: 0.4,
-    default: 0.2,
+    default: 0.3,
     source: 'https://civitai.com/models/248951',
   },
 ];
