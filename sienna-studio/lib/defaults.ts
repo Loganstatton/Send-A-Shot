@@ -91,7 +91,7 @@ export const FULL_BODY_FRAMING = 'full body head to toe, entire body visible inc
 
 /** Full-body mirror selfies: strengthen the reflected composition instead (no anti-selfie negative). */
 export const MIRROR_FULL_BODY_FRAMING =
-  'full-length mirror selfie, entire reflected body visible from head to toe including feet and shoes, tall mirror fully framing her body, phone visible in hand, camera far enough from the mirror to capture the entire reflection';
+  'full-length mirror selfie, entire reflected body visible head to toe including feet, phone visible in hand';
 /** Camera line for (non-mirror) full-body shots, replacing the default phone-camera line. */
 export const FULL_BODY_CAMERA = 'realistic iPhone photo taken by another person from several meters away, natural phone-camera processing';
 /** Negative for (non-mirror) full-body shots. */
@@ -105,6 +105,13 @@ export const EYE_TRAIT = 'natural hazel-green eyes with realistic muted iris col
 export const LEGACY_EYE_TRAIT = 'natural light hazel-green eyes, muted realistic iris color';
 
 export const SFW_NEGATIVE = 'nsfw, nude, nudity, topless, explicit, sexual, lingerie, see-through';
+
+/** Added (both modes) when the outfit has a top, so revealing packs and the bust emphasis can't drop it. */
+export const KEEP_TOP_NEGATIVE = '(topless, bare breasts, exposed nipples:1.3)';
+/** Outfit words that mean she wears something on top. */
+export const TOP_GARMENT_RE = /\b(bikini|bra|bralette|top|shirt|t-shirt|tee|tank|blouse|swimsuit|one-piece|bodysuit|leotard|dress|sweater|hoodie|jacket|corset|camisole|cami|crop)\b/i;
+/** Outfit words that ask for no top — the keep-top negative is skipped. */
+export const NO_TOP_RE = /\b(topless|nude|naked|bare[- ]chest(ed)?|no (top|bra|bikini top))\b/i;
 
 /** Added when Sienna Lock is on, to discourage identity drift. */
 export const LOCK_NEGATIVE = 'different person, altered face, different face shape, different hair color, different eye color';

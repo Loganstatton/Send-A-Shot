@@ -133,7 +133,7 @@ describe('automatic full-body framing', () => {
 
   it('full-body mirror selfie: mirror composition, no selfie negative, no phone-camera line', () => {
     const r = run({ extra: 'Sienna taking a full-body mirror selfie in her bedroom, phone visible in the mirror' });
-    expect(r.positive.startsWith('full-length mirror selfie, entire reflected body visible from head to toe including feet and shoes, tall mirror fully framing her body, phone visible in hand, camera far enough from the mirror to capture the entire reflection, ')).toBe(true);
+    expect(r.positive.startsWith('full-length mirror selfie, entire reflected body visible head to toe including feet, phone visible in hand, ')).toBe(true);
     expect(r.positive).not.toContain(FB);
     expect(r.positive).not.toContain(character.defaultCameraStyle);
     expect(r.positive).not.toContain('taken by another person');
@@ -162,5 +162,27 @@ describe('automatic full-body framing', () => {
 describe('joinParts', () => {
   it('dedupes and drops empties', () => {
     expect(joinParts(['a', '', ' A ', 'b', null])).toBe('a, b');
+  });
+});
+
+describe('keeping the top on', () => {
+  const base = { outfit: '', pose: '', bodyPresentation: '', expression: '', setting: '', lighting: '', camera: '', framing: '', realism: '', extra: '', avoid: '' };
+  const build = (fields: Partial<typeof base>, contentMode: 'sfw' | 'adult' = 'sfw') =>
+    buildPrompt({ fields: { ...base, ...fields }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode });
+
+  it('adds a weighted keep-top negative when the outfit has a top, in both modes', () => {
+    expect(build({ outfit: 'black micro string bikini' }).negative).toContain('(topless, bare breasts, exposed nipples:1.3)');
+    expect(build({ outfit: 'white lace bra and panties' }, 'adult').negative).toContain('(topless, bare breasts, exposed nipples:1.3)');
+  });
+
+  it('skips it when there is no top or the outfit asks for none', () => {
+    expect(build({ outfit: 'denim shorts' }).negative).not.toContain('exposed nipples:1.3');
+    expect(build({ outfit: 'topless, denim shorts' }, 'adult').negative).not.toContain('exposed nipples:1.3');
+  });
+
+  it('lets coverage words through Avoid even though "breasts" is one of her traits', () => {
+    const r = build({ outfit: 'bikini', avoid: 'bare breasts, small breasts' });
+    expect(r.negative).toContain('bare breasts');
+    expect(r.warnings.some((w) => w.includes('bare breasts'))).toBe(false);
   });
 });

@@ -85,16 +85,14 @@ const SDXL_PRODUCTION: WorkflowBindings = {
     { nodeId: '33', inputName: 'height' },
   ],
   batch_size: ref('33', 'batch_size'),
-  // Sampling values also drive the face-refinement pass (51), so it matches the first pass.
+  // Sampling values also drive the face-refinement pass (51), so it matches the first pass — except steps:
+  // at denoise 0.3 the face pass runs every step it is given, and 12 look the same as 30 (it ran ~30 s per face).
   seed: [
     { nodeId: '40', inputName: 'seed' },
     { nodeId: '51', inputName: 'seed' },
     { nodeId: '85', inputName: 'seed' },
   ],
-  steps: [
-    { nodeId: '40', inputName: 'steps' },
-    { nodeId: '51', inputName: 'steps' },
-  ],
+  steps: ref('40', 'steps'),
   cfg: [
     { nodeId: '40', inputName: 'cfg' },
     { nodeId: '51', inputName: 'cfg' },

@@ -10,6 +10,9 @@ import {
   FULL_BODY_CAMERA,
   FULL_BODY_FRAMING,
   FULL_BODY_NEGATIVE,
+  KEEP_TOP_NEGATIVE,
+  NO_TOP_RE,
+  TOP_GARMENT_RE,
   MIRROR_FULL_BODY_FRAMING,
   LEGACY_EYE_TRAIT,
   LOCK_NEGATIVE,
@@ -180,7 +183,9 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
       const res = applyIdentityLock(item, character.extraLockedTerms);
       for (const r of res.removed) warnings.push(`Sienna Lock removed “${r.term}” from Avoid (${r.category} is locked).`);
       const kept = res.text.trim();
-      const hit = (kept.toLowerCase().match(/[a-z]{4,}/g) ?? []).find((w) => traitWords.has(w) || traitWords.has(w.replace(/s$/, '')));
+      // "bare breasts" / "exposed nipples" ask for coverage, not a smaller bust — let those through
+      const coverage = /\b(bare|topless|nude|naked|exposed|nipples?|areolae?|uncovered|see-through)\b/i.test(kept);
+      const hit = coverage ? undefined : (kept.toLowerCase().match(/[a-z]{4,}/g) ?? []).find((w) => traitWords.has(w) || traitWords.has(w.replace(/s$/, '')));
       if (hit) warnings.push(`Sienna Lock removed “${kept}” from Avoid (it is one of her traits).`);
       return kept && !hit ? [kept] : [];
     });
@@ -194,6 +199,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     contentMode === 'sfw' ? SFW_NEGATIVE : '',
     siennaLock ? (cleanup ? AGE_DRIFT_NEGATIVE_CLEAN : AGE_DRIFT_NEGATIVE) : '',
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
+    TOP_GARMENT_RE.test(f.outfit) && !NO_TOP_RE.test(f.outfit) ? KEEP_TOP_NEGATIVE : '',
     avoidItems.join(', '),
   ]);
 

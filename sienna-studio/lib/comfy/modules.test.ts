@@ -151,10 +151,12 @@ describe('SDXL production: small-face refinement pass', () => {
     expect(w.graph['42'].inputs.images).toEqual([refine, 0]);
   });
 
-  it('shares seed/steps/cfg/sampler/scheduler with the first pass', () => {
-    for (const k of ['seed', 'steps', 'cfg', 'sampler', 'scheduler'] as const) {
+  it('shares seed/cfg/sampler/scheduler with the first pass, but keeps its own 12 steps', () => {
+    for (const k of ['seed', 'cfg', 'sampler', 'scheduler'] as const) {
       expect(w.bindings[k]!.map((r) => r.nodeId)).toEqual(['40', refine]);
     }
+    expect(w.bindings.steps!.map((r) => r.nodeId)).toEqual(['40']);
+    expect(w.graph[refine].inputs.steps).toBe(12);
   });
 
   it('bypassing it wires SaveImage to the decoder and drops the detector', () => {
