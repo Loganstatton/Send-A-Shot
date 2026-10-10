@@ -41,7 +41,8 @@
 #   --with-qwen-edit   also install the optional Edit Outfit editor (Qwen-Image-Edit-2509 fp8, ~30 GB)
 #   --with-style-packs also download the Create screen's style packs from Civitai (~2.5 GB):
 #                      Micro bikini (143602), Real-photo look (1368634), Natural skin (248951),
-#                      French lace lingerie (2903117, adult-fashion section).
+#                      Micro skirt (153820), and in the adult-fashion section French lace lingerie (2903117),
+#                      String swimsuit (305655) and Lace bodysuit (1276176).
 #                      All three allow commercial image use (checked 2026-10). Most Civitai
 #                      downloads need a token: set CIVITAI_TOKEN (e.g. from a RunPod secret).
 #   --restart          restart ComfyUI afterwards via ComfyUI-Manager (if installed)
@@ -318,7 +319,7 @@ fi
 # ── Style packs (optional; files named as lib/style-packs.ts expects) ──────────
 if (( PACKS )); then
   log "Style packs (Civitai)"
-  for id in 143602 1368634 248951 2903117; do
+  for id in 143602 1368634 248951 153820 2903117 305655 1276176; do
     dest="$COMFYUI_DIR/models/loras/pack_$id.safetensors"
     if [[ -s "$dest" ]]; then echo "  ✓ pack_$id already present"; continue; fi
     ver=$(curl -fsS --max-time 30 "https://civitai.com/api/v1/models/$id" | "$COMFYUI_PYTHON" -c \
