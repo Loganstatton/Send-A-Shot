@@ -15,6 +15,8 @@ export interface StylePack {
   max: number;
   default: number;
   source: string;
+  /** 'adult': only offered and applied in adult content mode (which the server can switch off entirely). */
+  section?: 'adult';
 }
 
 export const STYLE_PACKS: StylePack[] = [
@@ -48,6 +50,17 @@ export const STYLE_PACKS: StylePack[] = [
     default: 0.3,
     source: 'https://civitai.com/models/248951',
   },
+  {
+    id: 'french_lace',
+    label: 'French lace lingerie',
+    hint: 'Finer lace: floral pattern, scalloped edges, thin straps. Describe the lingerie as usual (e.g. “white lace bra and panties”). 0.6 is enough — higher looks the same.',
+    file: 'pack_2903117.safetensors',
+    trigger: 'french_lace_lingerie, delicate lace lingerie',
+    max: 0.8,
+    default: 0.6,
+    source: 'https://civitai.com/models/2903117',
+    section: 'adult',
+  },
 ];
 
 /** Stacking more than this many packs visibly changes Sienna's face (and pose) in testing. */
@@ -58,10 +71,15 @@ export interface ActiveStylePack {
   strength: number;
 }
 
+/** Packs offered in a content mode: adult-section packs only in adult mode. */
+export function stylePacksFor(contentMode: 'sfw' | 'adult'): StylePack[] {
+  return STYLE_PACKS.filter((p) => p.section !== 'adult' || contentMode === 'adult');
+}
+
 /** Packs switched on (strength > 0), clamped to each pack's max, in catalogue order. Unknown ids are ignored. */
-export function activeStylePacks(values: Record<string, number> | undefined): ActiveStylePack[] {
+export function activeStylePacks(values: Record<string, number> | undefined, contentMode: 'sfw' | 'adult' = 'sfw'): ActiveStylePack[] {
   if (!values) return [];
-  return STYLE_PACKS.flatMap((pack) => {
+  return stylePacksFor(contentMode).flatMap((pack) => {
     const v = Number(values[pack.id]);
     if (!Number.isFinite(v) || v <= 0) return [];
     return [{ pack, strength: Math.round(Math.min(pack.max, v) * 100) / 100 }];

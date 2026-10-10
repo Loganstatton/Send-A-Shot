@@ -130,7 +130,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     );
   }
   warnings.push(...built.warnings);
-  let stylePacks = activeStylePacks(req.params.stylePacks);
+  let stylePacks = activeStylePacks(req.params.stylePacks, contentMode);
+  const adultOnly = activeStylePacks(req.params.stylePacks, 'adult').filter((a) => !stylePacks.some((b) => b.pack.id === a.pack.id));
+  for (const a of adultOnly) warnings.push(`Style pack “${a.pack.label}” is adult-fashion only — skipped in SFW mode.`);
   if (stylePacks.length) {
     const available = await loraFiles(backend);
     const missing = available ? stylePacks.filter((a) => !available.includes(a.pack.file)) : [];
