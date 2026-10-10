@@ -21,10 +21,10 @@ export const STYLE_PACKS: StylePack[] = [
   {
     id: 'micro_bikini',
     label: 'Micro bikini',
-    hint: 'Shrinks bikinis toward a micro cut. Higher values also give a fuller bust and more defined abs.',
+    hint: 'Shrinks bikinis toward a micro cut. 0.75–0.85 is the reliable range; higher also gives a fuller bust and can leave too little coverage.',
     file: 'pack_143602.safetensors',
     trigger: 'microbikini',
-    max: 1,
+    max: 0.9,
     default: 0.75,
     source: 'https://civitai.com/models/143602',
   },
