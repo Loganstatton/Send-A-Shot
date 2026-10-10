@@ -45,7 +45,8 @@ export const STYLE_PACKS: StylePack[] = [
     label: 'Natural skin',
     hint: 'Matte skin with pores and freckles — removes the shiny, plastic look. 0.3 works well; above 0.4 her face starts to change.',
     file: 'pack_248951.safetensors',
-    trigger: 'Detailed natural skin and blemishes without-makeup and acne',
+    // Shortened from the pack's own trigger (“…without-makeup and acne”), which made her look younger and slimmer.
+    trigger: 'detailed natural skin texture',
     max: 0.4,
     default: 0.3,
     source: 'https://civitai.com/models/248951',
