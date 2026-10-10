@@ -118,7 +118,7 @@ export const DEFAULT_CHARACTER: CharacterProfile = {
   age: 24,
   faceReference: null,
   secondaryReferences: [],
-  appearanceTraits: `fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, ${EYE_TRAIT}, (large round natural breasts:1.1), slim toned waist with defined abs, curvy hips`,
+  appearanceTraits: `fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, ${EYE_TRAIT}, (large round natural breasts:1.2), slim toned waist with defined abs, curvy hips`,
   defaultRealismPrompt: DEFAULT_REALISM_PROMPT,
   defaultNegativePrompt: DEFAULT_NEGATIVE_PROMPT,
   defaultCameraStyle: 'shot on iPhone 15 Pro, 24mm main camera, natural phone processing',
