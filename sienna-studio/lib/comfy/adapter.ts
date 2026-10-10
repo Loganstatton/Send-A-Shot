@@ -245,6 +245,27 @@ export function injectLora(
 }
 
 /**
+ * Splice a LoraLoader right after `afterId` (a LoraLoader), so everything that
+ * used its model/CLIP now goes through the new LoRA too. Used for style packs.
+ */
+export function chainLora(graph: ComfyGraph, afterId: string, loraName: string, strength: number, title: string): { graph: ComfyGraph; nodeId: string } {
+  const g = cloneGraph(graph);
+  if (g[afterId]?.class_type !== 'LoraLoader') throw new Error(`Cannot chain a LoRA after node ${afterId}: not a LoraLoader.`);
+  const newId = nextNodeId(g);
+  for (const node of Object.values(g)) {
+    for (const [k, v] of Object.entries(node.inputs)) {
+      if (isLink(v) && v[0] === afterId) node.inputs[k] = [newId, v[1]];
+    }
+  }
+  g[newId] = {
+    class_type: 'LoraLoader',
+    inputs: { model: [afterId, 0], clip: [afterId, 1], lora_name: loraName, strength_model: strength, strength_clip: strength },
+    _meta: { title },
+  };
+  return { graph: g, nodeId: newId };
+}
+
+/**
  * Remove a LoraLoader / LoraLoaderModelOnly node, reconnecting its consumers
  * straight to the LoRA's own model/clip inputs. Used when no LoRA is chosen.
  */

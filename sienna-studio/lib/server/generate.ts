@@ -15,7 +15,7 @@
  */
 
 import 'server-only';
-import { applyBindings, bypassLora, capabilities, ControlValue, injectLora, validateBindings } from '../comfy/adapter';
+import { applyBindings, bypassLora, capabilities, chainLora, ControlValue, injectLora, validateBindings } from '../comfy/adapter';
 import { ComfyBackend, ComfyError, createBackend } from '../comfy/client';
 import { missingModelFile } from '../comfy/model-files';
 import {
@@ -36,6 +36,7 @@ import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt } from '../prompt';
 import { resolveLockedLora } from '../sienna-models';
+import { activeStylePacks, STYLE_PACK_STACK_LIMIT, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
@@ -129,6 +130,16 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     );
   }
   warnings.push(...built.warnings);
+  let stylePacks = activeStylePacks(req.params.stylePacks);
+  if (stylePacks.length) {
+    const available = await loraFiles(backend);
+    const missing = available ? stylePacks.filter((a) => !available.includes(a.pack.file)) : [];
+    for (const m of missing) warnings.push(`Style pack “${m.pack.label}” skipped — ${m.pack.file} is not on the server.`);
+    stylePacks = stylePacks.filter((a) => !missing.includes(a));
+  }
+  if (stylePacks.length > STYLE_PACK_STACK_LIMIT) {
+    warnings.push(`${stylePacks.length} style packs are on — with more than ${STYLE_PACK_STACK_LIMIT}, Sienna's face starts to change.`);
+  }
 
   // ── Workflow ───────────────────────────────────────────────────────────
   const preset = req.presetId ? presets.find((p) => p.id === req.presetId) ?? null : null;
@@ -332,8 +343,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
 
   // ── Seed & values ──────────────────────────────────────────────────────
   const seed = p.seed >= 0 ? Math.floor(p.seed) : Math.floor(Math.random() * 2 ** 48);
+  const positive = withTriggers(built.positive, stylePacks);
   const values: Partial<Record<ControlKey, ControlValue | undefined>> = {
-    positive_prompt: built.positive,
+    positive_prompt: positive,
     negative_prompt: built.negative,
     checkpoint: p.checkpoint || undefined,
     lora_name: lora?.name,
@@ -379,6 +391,19 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
   graph = applyBindings(graph, bindings, values).graph;
 
+  // ── Style packs: stacked after Sienna's LoRA (trigger words were added to the prompt above) ──
+  if (stylePacks.length) {
+    let after = bindings.lora_name?.[0]?.nodeId;
+    if (after && graph[after]?.class_type !== 'LoraLoader') after = undefined;
+    for (const a of stylePacks) {
+      const title = `Style pack: ${a.pack.label}`;
+      const spliced = after ? chainLora(graph, after, a.pack.file, a.strength, title) : injectLora(graph, a.pack.file, a.strength, a.strength);
+      graph = spliced.graph;
+      graph[spliced.nodeId]._meta = { title };
+      if (graph[spliced.nodeId].class_type === 'LoraLoader') after = spliced.nodeId;
+    }
+  }
+
   return {
     backend,
     graph,
@@ -393,7 +418,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       fields: req.fields,
       params: { ...p, loraName: lora?.name ?? '' },
       seed,
-      positivePrompt: built.positive,
+      positivePrompt: positive,
+      stylePacks: stylePacks.map((a) => ({ id: a.pack.id, label: a.pack.label, file: a.pack.file, strength: a.strength })),
       negativePrompt: built.negative,
       lora,
       faceReference,
@@ -411,6 +437,18 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       parentId: req.parentId,
     },
   };
+}
+
+/** LoRA files the server has, or null if it can't be asked. */
+async function loraFiles(backend: ComfyBackend): Promise<string[] | null> {
+  try {
+    const spec: any = (await backend.nodeInfo('LoraLoader'))?.input?.required?.lora_name;
+    if (!Array.isArray(spec)) return null;
+    const list = Array.isArray(spec[0]) ? spec[0] : spec[1]?.options;
+    return Array.isArray(list) ? list.map(String) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function startGeneration(req: GenerateRequest): Promise<GenerationRecord> {

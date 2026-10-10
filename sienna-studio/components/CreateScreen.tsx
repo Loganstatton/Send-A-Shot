@@ -12,6 +12,7 @@ import { DEFAULT_PARAMS, EMPTY_FIELDS, SIZE_PRESETS } from '@/lib/defaults';
 import { applyIdentityLock, findHardBlocks } from '@/lib/guard';
 import { buildPrompt } from '@/lib/prompt';
 import { SIENNA_MODELS, resolveLockedLora } from '@/lib/sienna-models';
+import { STYLE_PACKS, STYLE_PACK_STACK_LIMIT } from '@/lib/style-packs';
 import type { AppSettings, CharacterProfile, GenerationRecord, Preset, PromptFields, WorkflowTemplate } from '@/lib/types';
 import { PROMPT_FIELD_LABELS } from '@/lib/types';
 import { ImagePicker } from './ImagePicker';
@@ -481,6 +482,24 @@ export function CreateScreen() {
               </Notice>
             ))}
           </div>
+        )}
+      </Card>
+
+      {/* ── Style packs ── */}
+      <SectionTitle right={<span className="text-xs text-ink-400">optional</span>}>Style packs</SectionTitle>
+      <Card className="space-y-4">
+        {STYLE_PACKS.map((pack) => {
+          const v = draft.params.stylePacks?.[pack.id] ?? 0;
+          const set = (n: number) => update((d) => ({ ...d, params: { ...d.params, stylePacks: { ...d.params.stylePacks, [pack.id]: n } } }));
+          return (
+            <div key={pack.id} className="space-y-2">
+              <Toggle checked={v > 0} onChange={(on) => set(on ? pack.default : 0)} label={pack.label} description={pack.hint} />
+              {v > 0 && <Slider label="Strength" value={v} min={0.05} max={pack.max} step={0.05} onChange={set} />}
+            </div>
+          );
+        })}
+        {STYLE_PACKS.filter((p) => (draft.params.stylePacks?.[p.id] ?? 0) > 0).length > STYLE_PACK_STACK_LIMIT && (
+          <Notice kind="warn">More than {STYLE_PACK_STACK_LIMIT} packs at once starts to change Sienna’s face. Turn one off, or lower the strengths.</Notice>
         )}
       </Card>
 

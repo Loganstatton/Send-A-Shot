@@ -39,6 +39,10 @@
 #                      extractor, minimal deps) + models/controlnet/sdxl_openpose.safetensors
 #                      (xinsir/controlnet-openpose-sdxl-1.0, ~2.5 GB)
 #   --with-qwen-edit   also install the optional Edit Outfit editor (Qwen-Image-Edit-2509 fp8, ~30 GB)
+#   --with-style-packs also download the Create screen's style packs from Civitai (~2.5 GB):
+#                      Micro bikini (143602), Real-photo look (1368634), Natural skin (248951).
+#                      All three allow commercial image use (checked 2026-10). Most Civitai
+#                      downloads need a token: set CIVITAI_TOKEN (e.g. from a RunPod secret).
 #   --restart          restart ComfyUI afterwards via ComfyUI-Manager (if installed)
 #   COMFYUI_DIR        ComfyUI folder (default: auto-detect)
 #   COMFYUI_PYTHON     Python used by ComfyUI (default: auto-detect its venv)
@@ -61,12 +65,14 @@ RESTART=0
 OUTFIT=0
 POSE=0
 QWEN=0
+PACKS=0
 for arg in "$@"; do
   case "$arg" in
     --restart) RESTART=1 ;;
     --with-outfit) OUTFIT=1 ;;
     --with-pose) POSE=1 ;;
     --with-qwen-edit) QWEN=1 ;;
+    --with-style-packs) PACKS=1 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -306,6 +312,25 @@ if (( OUTFIT || POSE || QWEN )); then
   else
     echo "not found at $src — pose retargeting and garment-only isolation will be unavailable (set SIENNA_NODES_DIR)"
   fi
+fi
+
+# ── Style packs (optional; files named as lib/style-packs.ts expects) ──────────
+if (( PACKS )); then
+  log "Style packs (Civitai)"
+  for id in 143602 1368634 248951; do
+    dest="$COMFYUI_DIR/models/loras/pack_$id.safetensors"
+    if [[ -s "$dest" ]]; then echo "  ✓ pack_$id already present"; continue; fi
+    ver=$(curl -fsS --max-time 30 "https://civitai.com/api/v1/models/$id" | "$COMFYUI_PYTHON" -c \
+      'import json,sys; m=json.load(sys.stdin); v=[v for v in m["modelVersions"] if v.get("baseModel","").startswith("SDXL")][0]; print(v["id"])') \
+      || die "could not look up Civitai model $id"
+    url="https://civitai.com/api/download/models/$ver"
+    if [[ -n "${CIVITAI_TOKEN:-}" ]]; then
+      curl -fsSL --max-time 900 -H "Authorization: Bearer $CIVITAI_TOKEN" -o "$dest.part" "$url" || { rm -f "$dest.part"; die "download of pack $id failed"; }
+    else
+      curl -fsSL --max-time 900 -o "$dest.part" "$url" || { rm -f "$dest.part"; die "download of pack $id failed — Civitai wants a token: set CIVITAI_TOKEN"; }
+    fi
+    mv "$dest.part" "$dest"; echo "  ✓ pack_$id"
+  done
 fi
 
 # ── Check the Python side imports ─────────────────────────────────────────────

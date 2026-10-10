@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyBindings, autoDetectBindings, bypassLora, capabilities, injectLora, parseWorkflowJson, validateBindings } from './adapter';
+import { applyBindings, autoDetectBindings, bypassLora, capabilities, chainLora, injectLora, parseWorkflowJson, validateBindings } from './adapter';
 import { builtinWorkflows } from './builtin-workflows';
 import type { ComfyGraph } from '../types';
 
@@ -87,6 +87,26 @@ describe('injectLora / bypassLora', () => {
     };
     const { graph, nodeId } = injectLora(g, 'l', 1, 1);
     expect(graph[nodeId].class_type).toBe('LoraLoaderModelOnly');
+  });
+});
+
+describe('chainLora', () => {
+  it('stacks LoRAs after Sienna in order, keeping the VAE on the checkpoint', () => {
+    const sienna = injectLora(NO_LORA, 'sienna.safetensors', 1, 1);
+    const a = chainLora(sienna.graph, sienna.nodeId, 'micro.safetensors', 0.75, 'Style pack: Micro bikini');
+    const b = chainLora(a.graph, a.nodeId, 'real.safetensors', 0.4, 'Style pack: Real-photo look');
+    const g = b.graph;
+    expect(g[a.nodeId].inputs).toMatchObject({ model: [sienna.nodeId, 0], clip: [sienna.nodeId, 1], lora_name: 'micro.safetensors', strength_model: 0.75, strength_clip: 0.75 });
+    expect(g[b.nodeId].inputs).toMatchObject({ model: [a.nodeId, 0], clip: [a.nodeId, 1] });
+    expect(g['3'].inputs.model).toEqual([b.nodeId, 0]);
+    expect(g['6'].inputs.clip).toEqual([b.nodeId, 1]);
+    expect(g['7'].inputs.clip).toEqual([b.nodeId, 1]);
+    expect(g['8'].inputs.vae).toEqual(['4', 2]);
+    expect(g[sienna.nodeId].inputs.model).toEqual(['4', 0]);
+  });
+
+  it('refuses to chain after a node that is not a LoraLoader', () => {
+    expect(() => chainLora(NO_LORA, '4', 'x', 1, 't')).toThrow(/not a LoraLoader/);
   });
 });
 

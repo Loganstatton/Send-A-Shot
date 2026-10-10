@@ -47,6 +47,7 @@ export function GenerationMeta({ rec, showPrompt = true }: { rec: GenerationReco
         <Meta k="Sienna Lock" v={rec.siennaLock ? 'On' : 'Off'} />
         <Meta k="Content" v={rec.contentMode === 'adult' ? 'Adult 18+' : 'SFW'} />
         <Meta k="LoRA" v={rec.lora ? `${rec.lora.name} @ ${rec.lora.strength} (clip ${rec.lora.clipStrength})${rec.lora.injected ? ' · injected' : ''}` : 'none'} />
+        {!!rec.stylePacks?.length && <Meta k="Style packs" v={rec.stylePacks.map((p) => `${p.label} @ ${p.strength}`).join(' · ')} />}
         <Meta k="Model" v={rec.params.checkpoint || '(workflow default)'} />
         <Meta k="Size" v={`${rec.params.width}×${rec.params.height} · batch ${rec.params.batchSize}`} />
         <Meta k="Steps / CFG" v={`${rec.params.steps} / ${rec.params.cfg}`} />

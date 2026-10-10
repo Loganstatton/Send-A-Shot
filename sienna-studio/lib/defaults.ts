@@ -154,6 +154,7 @@ export const DEFAULT_PARAMS: GenerationParams = {
   hiresSteps: 20,
   promptCleanup: false,
   outfitIsolation: 'person',
+  stylePacks: {},
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {

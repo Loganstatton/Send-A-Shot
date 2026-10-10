@@ -60,6 +60,7 @@ export const paramsSchema = z.object({
   hiresSteps: z.number().int().min(4).max(60).default(20),
   promptCleanup: z.boolean().default(false),
   outfitIsolation: z.enum(['person', 'garment']).default('person'),
+  stylePacks: z.record(z.string().max(40), z.number().min(0).max(2)).default({}),
 });
 
 export const generateSchema = z.object({

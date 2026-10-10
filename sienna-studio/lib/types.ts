@@ -154,6 +154,8 @@ export interface GenerationParams {
    * 'garment': the garment-only crop from outfit analysis (skin replaced by a flat silhouette).
    */
   outfitIsolation?: 'person' | 'garment';
+  /** Style pack strengths by pack id (see lib/style-packs.ts); 0 or missing = off. */
+  stylePacks?: Record<string, number>;
 }
 
 export type OutfitMode = 'design' | 'close';
@@ -324,6 +326,8 @@ export interface GenerationRecord {
   poseImage: StoredImage | null;
   /** Outfit reference used for this run, with the conditioning that was applied. */
   outfitReference?: { image: StoredImage; strength: number; mode: OutfitMode } | null;
+  /** Style packs that were applied, after availability checks. */
+  stylePacks?: { id: string; label: string; file: string; strength: number }[];
   warnings: string[];
   /** Optional modules removed for this run (unused or missing nodes). */
   prunedModules?: string[];
