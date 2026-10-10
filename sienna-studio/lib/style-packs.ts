@@ -52,16 +52,6 @@ export const STYLE_PACKS: StylePack[] = [
     source: 'https://civitai.com/models/248951',
   },
   {
-    id: 'micro_skirt',
-    label: 'Micro skirt',
-    hint: 'Short micro skirts and micro dresses that keep the colour and fabric you describe (e.g. “black pleated micro skirt with a white crop top”).',
-    file: 'pack_153820.safetensors',
-    trigger: 'microskirt',
-    max: 0.8,
-    default: 0.6,
-    source: 'https://civitai.com/models/153820',
-  },
-  {
     id: 'french_lace',
     label: 'French lace lingerie',
     hint: 'Finer lace: floral pattern, scalloped edges, thin straps. Describe the lingerie as usual (e.g. “white lace bra and panties”). 0.6 is enough — higher looks the same.',

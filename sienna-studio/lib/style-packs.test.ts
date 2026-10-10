@@ -64,22 +64,20 @@ describe('adult-fashion packs', () => {
 
 describe('swimwear and fitted packs (GPU-tested with Sienna)', () => {
   const byId = Object.fromEntries(STYLE_PACKS.map((p) => [p.id, p]));
-  it('Micro skirt is SFW; String swimsuit and Lace bodysuit are adult-only', () => {
-    expect(stylePacksFor('sfw').map((p) => p.id)).toContain('micro_skirt');
+  it('String swimsuit and Lace bodysuit are adult-only; Micro skirt is not offered (ignored colours in testing)', () => {
+    expect(STYLE_PACKS.map((p) => p.id)).not.toContain('micro_skirt');
     for (const id of ['string_swimsuit', 'lace_bodysuit']) {
       expect(stylePacksFor('sfw').map((p) => p.id)).not.toContain(id);
       expect(stylePacksFor('adult').map((p) => p.id)).toContain(id);
     }
   });
   it('defaults and caps match the test results', () => {
-    expect([byId.micro_skirt.default, byId.micro_skirt.max]).toEqual([0.6, 0.8]);
     expect([byId.string_swimsuit.default, byId.string_swimsuit.max]).toEqual([0.6, 0.7]);
     expect([byId.lace_bodysuit.default, byId.lace_bodysuit.max]).toEqual([0.6, 0.8]);
     expect(activeStylePacks({ string_swimsuit: 0.8 }, 'adult')[0].strength).toBe(0.7);
   });
   it('natural descriptions get the trigger words automatically', () => {
     expect(withTriggers('tiny white string bikini', activeStylePacks({ string_swimsuit: 0.6 }, 'adult'))).toBe('string swimsuit, tiny white string bikini');
-    expect(withTriggers('black pleated micro skirt', activeStylePacks({ micro_skirt: 0.6 }, 'sfw'))).toBe('microskirt, black pleated micro skirt');
   });
   it('Natural skin uses the shortened trigger', () => {
     expect(byId.natural_skin.trigger).toBe('detailed natural skin texture');
