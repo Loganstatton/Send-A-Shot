@@ -31,10 +31,10 @@ export const STYLE_PACKS: StylePack[] = [
   {
     id: 'real_photo',
     label: 'Real-photo look',
-    hint: 'Natural light and believable rooms, like a real phone photo.',
+    hint: 'Natural light and believable rooms, like a real phone photo. Above 0.6 it starts changing the outfit.',
     file: 'pack_1368634.safetensors',
     trigger: 'IGMODEL',
-    max: 0.7,
+    max: 0.6,
     default: 0.4,
     source: 'https://civitai.com/models/1368634',
   },
@@ -45,12 +45,12 @@ export const STYLE_PACKS: StylePack[] = [
     file: 'pack_248951.safetensors',
     trigger: 'Detailed natural skin and blemishes without-makeup and acne',
     max: 0.4,
-    default: 0.3,
+    default: 0.2,
     source: 'https://civitai.com/models/248951',
   },
 ];
 
-/** Stacking more than this many packs visibly changes Sienna's face in testing. */
+/** Stacking more than this many packs visibly changes Sienna's face (and pose) in testing. */
 export const STYLE_PACK_STACK_LIMIT = 2;
 
 export interface ActiveStylePack {
