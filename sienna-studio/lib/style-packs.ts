@@ -24,6 +24,9 @@ export interface StylePack {
   coverage?: { positive?: string; negative?: string };
   /** 'adult': only offered and applied in adult content mode (which the server can switch off entirely). */
   section?: 'adult';
+  /** Only applied when the outfit has no top: with a dress or top on, the pack undressed her (and the top check
+   * missed it). */
+  nudeOnly?: boolean;
 }
 
 export const STYLE_PACKS: StylePack[] = [
@@ -203,13 +206,14 @@ export const STYLE_PACKS: StylePack[] = [
   {
     id: 'realistic_nudes',
     label: 'Realistic nude body',
-    hint: 'More photographic nude skin and body detail. At 0.6 it lowered her face match (avg 0.78) and once made her bust larger and lower, so it defaults lower; turn it down if she looks off.',
+    hint: 'More photographic nude skin and body detail, for nude shots only — it is skipped when the outfit has a top or dress. At 0.6 it lowered her face match (avg 0.78) and once made her bust larger and lower, so it defaults lower; turn it down if she looks off.',
     file: 'pack_1838378.safetensors',
     trigger: 'r39lb00bs',
     max: 0.6,
     default: 0.4,
     source: 'https://civitai.com/models/1838378',
     section: 'adult',
+    nudeOnly: true,
   },
 ];
 

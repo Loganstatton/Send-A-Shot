@@ -1,3 +1,4 @@
+import { outfitHasTop } from './exposure';
 import { describe, expect, it } from 'vitest';
 import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives, packCoverage, withPackOutfit } from './style-packs';
 
@@ -101,6 +102,15 @@ describe('pose packs', () => {
       expect(activeStylePacks({ [id]: 0.6 }, 'sfw')).toEqual([]);
     }
     expect(activeStylePacks({ sink_selfie: 0.9 }, 'adult')[0].strength).toBe(0.6);
+  });
+});
+
+describe('nude-only packs', () => {
+  it('realistic nude body is nude-only, and a dress counts as a top', () => {
+    expect(STYLE_PACKS.find((p) => p.id === 'realistic_nudes')?.nudeOnly).toBe(true);
+    expect(STYLE_PACKS.filter((p) => p.nudeOnly).map((p) => p.id)).toEqual(['realistic_nudes']);
+    expect(outfitHasTop('fitted bright red bodycon dress')).toBe(true);
+    expect(outfitHasTop('completely nude')).toBe(false);
   });
 });
 

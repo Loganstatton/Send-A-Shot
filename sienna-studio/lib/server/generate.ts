@@ -139,7 +139,10 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
   // Packs with outfit wording add it to the Outfit field (if the pack's file turns out to be missing below, the pack
   // is skipped but this wording stays — harmless).
-  const packOutfit = withPackOutfit(req.fields.outfit, activeStylePacks(req.params.stylePacks, contentMode));
+  // Nude-only packs are dropped when the outfit has a top (one undressed her in a red dress).
+  const outfitTop = outfitHasTop(req.fields.outfit);
+  const usable = (active: ReturnType<typeof activeStylePacks>) => active.filter((a) => !(a.pack.nudeOnly && outfitTop));
+  const packOutfit = withPackOutfit(req.fields.outfit, usable(activeStylePacks(req.params.stylePacks, contentMode)));
   const built = buildPrompt({ fields: { ...req.fields, outfit: packOutfit }, character, siennaLock: req.siennaLock, contentMode, cleanup: !!req.params.promptCleanup });
   if (built.blocked.length) {
     throw new GenerationError(
@@ -150,6 +153,10 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
   warnings.push(...built.warnings);
   let stylePacks = activeStylePacks(req.params.stylePacks, contentMode);
+  for (const a of stylePacks.filter((x) => x.pack.nudeOnly && outfitTop)) {
+    warnings.push(`Style pack “${a.pack.label}” is for nude shots only — skipped because the outfit has a top or dress.`);
+  }
+  stylePacks = usable(stylePacks);
   const adultOnly = activeStylePacks(req.params.stylePacks, 'adult').filter((a) => !stylePacks.some((b) => b.pack.id === a.pack.id));
   for (const a of adultOnly) warnings.push(`Style pack “${a.pack.label}” is adult-fashion only — skipped in SFW mode.`);
   if (stylePacks.length) {
