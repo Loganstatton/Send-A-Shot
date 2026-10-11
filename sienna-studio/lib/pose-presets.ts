@@ -23,6 +23,8 @@ export const POSE_PRESET_LABELS: Record<string, string> = {
   hand_in_hair: 'Hand in hair',
   mirror_selfie: 'Mirror selfie',
   lying_on_stomach: 'Lying on stomach',
+  bending_forward: 'Bending forward',
+  bending_side: 'Bending over (side)',
 };
 
 export function posePreset(id: string | undefined | null): PosePreset | undefined {
