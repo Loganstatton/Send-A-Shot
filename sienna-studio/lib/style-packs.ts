@@ -17,6 +17,8 @@ export interface StylePack {
   source: string;
   /** Added to the negative prompt when the pack is on (for packs that tend to show more than the outfit asks for). */
   negative?: string;
+  /** Added to the end of the Outfit field when the pack is on (wording works much better there than up front). */
+  outfit?: string;
   /** Used only when the top check redoes a photo that showed a nipple: extra wording that keeps this pack's top over
    * her chest. The first attempt keeps the pack's full look. */
   coverage?: { positive?: string; negative?: string };
@@ -28,11 +30,15 @@ export const STYLE_PACKS: StylePack[] = [
   {
     id: 'micro_bikini',
     label: 'Micro bikini',
-    hint: 'Shrinks bikinis toward a micro cut. 0.75–0.85 is the reliable range; higher can leave too little coverage. Adds a little shine — add Natural skin (0.3) if you want matte, real-looking skin.',
+    hint: 'Tiny micro triangle bikinis — it adds the micro wording to your outfit, so “black micro bikini” is enough. 0.85 gives the smallest cups; the top check redoes any photo where they miss. Adds a little shine — add Natural skin (0.3) for matte skin.',
     file: 'pack_143602.safetensors',
     trigger: 'microbikini',
+    // The approved micro look came from this outfit wording. Up front (with the trigger) it barely worked — the cups
+    // stayed regular-sized. The top check redoes any photo where the tiny cups miss.
+    outfit: 'tiny micro triangle bikini, very small triangle cups on thin string halter ties, tiny string bottoms tied at the hips',
+    negative: 'sports bra, wide cups, padded cups, thick straps, full coverage',
     max: 0.9,
-    default: 0.75,
+    default: 0.85,
     source: 'https://civitai.com/models/143602',
   },
   {
@@ -193,6 +199,12 @@ export function packCoverage(ids: string[]): { positive: string; negative: strin
     positive: packs.map((p) => p.coverage!.positive ?? '').filter(Boolean).join(', '),
     negative: packs.map((p) => p.coverage!.negative ?? '').filter(Boolean).join(', '),
   };
+}
+
+/** Outfit text with the active packs' outfit wording added (once). */
+export function withPackOutfit(outfit: string, active: ActiveStylePack[]): string {
+  const extra = active.map((a) => a.pack.outfit ?? '').filter((o) => o && !outfit.includes(o));
+  return extra.length ? [outfit.trim().replace(/[,.\s]+$/, ''), ...extra].filter(Boolean).join(', ') : outfit;
 }
 
 /** Negative prompt with the active packs' own negatives added. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives, packCoverage } from './style-packs';
+import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives, packCoverage, withPackOutfit } from './style-packs';
 
 describe('activeStylePacks', () => {
   it('keeps packs above zero, clamps to each max, ignores unknown ids, in catalogue order', () => {
@@ -26,9 +26,9 @@ describe('activeStylePacks', () => {
 
 describe('withTriggers', () => {
   it('puts trigger words first and does not repeat one already in the prompt', () => {
-    const active = activeStylePacks({ micro_bikini: 0.75, real_photo: 0.4 });
-    expect(withTriggers('photo of sienna', active)).toBe('microbikini, IGMODEL, photo of sienna');
-    expect(withTriggers('microbikini, photo', active)).toBe('IGMODEL, microbikini, photo');
+    const active = activeStylePacks({ natural_skin: 0.3, real_photo: 0.4 });
+    expect(withTriggers('photo of sienna', active)).toBe('IGMODEL, detailed natural skin texture, photo of sienna');
+    expect(withTriggers('IGMODEL, photo', active)).toBe('detailed natural skin texture, IGMODEL, photo');
     expect(withTriggers('photo', [])).toBe('photo');
   });
 });
@@ -53,9 +53,9 @@ describe('adult-fashion packs', () => {
     );
   });
 
-  it('the recommended Micro bikini 0.75 + Natural skin 0.3 combination is unchanged', () => {
+  it('the recommended Micro bikini 0.85 + Natural skin 0.3 combination', () => {
     const byId = Object.fromEntries(STYLE_PACKS.map((p) => [p.id, p]));
-    expect(byId.micro_bikini.default).toBe(0.75);
+    expect(byId.micro_bikini.default).toBe(0.85);
     expect(byId.natural_skin.default).toBe(0.3);
     expect(byId.micro_bikini.section).toBeUndefined();
     expect(byId.natural_skin.section).toBeUndefined();
@@ -117,5 +117,15 @@ describe('round-3 adult packs', () => {
     const [a] = activeStylePacks({ monokini: 0.9 }, 'adult');
     expect(a.strength).toBe(0.6);
     expect(withTriggers('x', [a])).toBe('monokini, x');
+  });
+});
+
+describe('pack outfit wording', () => {
+  it('micro bikini adds its micro wording to the Outfit field once', () => {
+    const a = activeStylePacks({ micro_bikini: 0.75 });
+    expect(withPackOutfit('black micro bikini', a)).toBe('black micro bikini, tiny micro triangle bikini, very small triangle cups on thin string halter ties, tiny string bottoms tied at the hips');
+    expect(withPackOutfit(withPackOutfit('black micro bikini.', a), a)).toBe(withPackOutfit('black micro bikini', a));
+    expect(withPackOutfit('', a)).toBe('tiny micro triangle bikini, very small triangle cups on thin string halter ties, tiny string bottoms tied at the hips');
+    expect(withPackOutfit('jeans', [])).toBe('jeans');
   });
 });

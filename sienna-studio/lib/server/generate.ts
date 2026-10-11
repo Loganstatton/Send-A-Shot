@@ -37,7 +37,7 @@ import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALIN
 import { buildPrompt } from '../prompt';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { resolveLockedLora } from '../sienna-models';
-import { activeStylePacks, packCoverage, STYLE_PACK_STACK_LIMIT, withPackNegatives, withTriggers } from '../style-packs';
+import { activeStylePacks, packCoverage, STYLE_PACK_STACK_LIMIT, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
@@ -122,7 +122,10 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   if (!experimentsEnabled()) {
     req = { ...req, params: { ...req.params, poseRetarget: 0, outfitIsolation: 'person', promptCleanup: false } };
   }
-  const built = buildPrompt({ fields: req.fields, character, siennaLock: req.siennaLock, contentMode, cleanup: !!req.params.promptCleanup });
+  // Packs with outfit wording add it to the Outfit field (if the pack's file turns out to be missing below, the pack
+  // is skipped but this wording stays — harmless).
+  const packOutfit = withPackOutfit(req.fields.outfit, activeStylePacks(req.params.stylePacks, contentMode));
+  const built = buildPrompt({ fields: { ...req.fields, outfit: packOutfit }, character, siennaLock: req.siennaLock, contentMode, cleanup: !!req.params.promptCleanup });
   if (built.blocked.length) {
     throw new GenerationError(
       `Prompt blocked: ${built.blocked.map((b) => `“${b.term}” — ${b.reason}`).join(' ')}`,
