@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exposureNode, softenPacks, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed } from './exposure';
+import { addCoverage, exposureNode, softenPacks, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed } from './exposure';
 import type { ComfyGraph } from './types';
 
 const graph: ComfyGraph = {
@@ -60,5 +60,21 @@ describe('softenPacks', () => {
     expect(s['2'].inputs.strength_model).toBe(1);
     expect(s.p1.inputs.strength_model).toBe(0.24);
     expect(softenPacks(s).p1.inputs.strength_clip).toBe(0.19);
+  });
+});
+
+describe('addCoverage', () => {
+  it('adds the coverage wording to the prompt nodes once', () => {
+    const g: ComfyGraph = {
+      '3': { class_type: 'CLIPTextEncode', inputs: { text: 'monokini, sienna_v1 woman' } },
+      '4': { class_type: 'CLIPTextEncode', inputs: { text: 'lowres' } },
+    };
+    const prompts = { positive: 'monokini, sienna_v1 woman', negative: 'lowres' };
+    const c = addCoverage(g, prompts, { positive: '(wide straps:1.4)', negative: 'nipples' });
+    expect(c.graph['3'].inputs.text).toBe('(wide straps:1.4), monokini, sienna_v1 woman');
+    expect(c.graph['4'].inputs.text).toBe('lowres, nipples');
+    const again = addCoverage(c.graph, { positive: c.positive, negative: c.negative }, { positive: '(wide straps:1.4)', negative: 'nipples' });
+    expect(again.graph['3'].inputs.text).toBe(c.positive);
+    expect(addCoverage(g, prompts, { positive: '', negative: '' }).graph).toEqual(g);
   });
 });

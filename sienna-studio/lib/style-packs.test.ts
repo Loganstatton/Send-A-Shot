@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives } from './style-packs';
+import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives, packCoverage } from './style-packs';
 
 describe('activeStylePacks', () => {
   it('keeps packs above zero, clamps to each max, ignores unknown ids, in catalogue order', () => {
@@ -72,12 +72,12 @@ describe('swimwear and fitted packs (GPU-tested with Sienna)', () => {
     }
   });
   it('defaults and caps match the test results', () => {
-    expect([byId.string_swimsuit.default, byId.string_swimsuit.max]).toEqual([0.5, 0.7]);
+    expect([byId.string_swimsuit.default, byId.string_swimsuit.max]).toEqual([0.6, 0.7]);
     expect([byId.lace_bodysuit.default, byId.lace_bodysuit.max]).toEqual([0.6, 0.8]);
     expect(activeStylePacks({ string_swimsuit: 0.8 }, 'adult')[0].strength).toBe(0.7);
   });
   it('natural descriptions get the trigger words automatically', () => {
-    expect(withTriggers('tiny white string bikini', activeStylePacks({ string_swimsuit: 0.6 }, 'adult'))).toBe('string swimsuit, triangle cups fully covering her chest, tiny white string bikini');
+    expect(withTriggers('tiny white string bikini', activeStylePacks({ string_swimsuit: 0.6 }, 'adult'))).toBe('string swimsuit, tiny white string bikini');
   });
   it('Natural skin uses the shortened trigger', () => {
     expect(byId.natural_skin.trigger).toBe('detailed natural skin texture');
@@ -102,18 +102,20 @@ describe('round-3 adult packs', () => {
     }
   });
 
-  it('underboob shirt defaults to 0.5, caps at 0.6 and adds its own negatives', () => {
+  it('revealing packs keep their full look and carry coverage wording for retries only', () => {
     const [a] = activeStylePacks({ underboob_shirt: 0.9 }, 'adult');
-    expect(a.strength).toBe(0.6);
-    expect(STYLE_PACKS.find((p) => p.id === 'underboob_shirt')?.default).toBe(0.5);
-    expect(withPackNegatives('lowres', [a])).toBe('lowres, nipples, topless');
-    expect(withPackNegatives('lowres, nipples, topless', [a])).toBe('lowres, nipples, topless');
+    expect(a.strength).toBe(0.7);
+    expect(STYLE_PACKS.find((p) => p.id === 'underboob_shirt')?.default).toBe(0.6);
+    expect(withPackNegatives('lowres', [a])).toBe('lowres');
+    expect(packCoverage(['underboob_shirt', 'monokini', 'string_swimsuit', 'micro_bikini'])).toEqual({
+      positive: 'triangle cups fully covering her chest, (wide straps covering her chest:1.4), (large round natural breasts:1.3)',
+      negative: 'nipples, topless, (nipples, areola:1.6), exposed breasts',
+    });
   });
 
-  it('monokini stays low and carries its coverage wording', () => {
-    const [a] = activeStylePacks({ monokini: 0.6 }, 'adult');
-    expect(a.strength).toBe(0.35);
-    expect(withTriggers('x', [a])).toContain('(wide straps covering her chest:1.4)');
-    expect(withPackNegatives('lowres', [a])).toBe('lowres, (nipples, areola:1.6), exposed breasts');
+  it('monokini is back at its full strength with a plain trigger', () => {
+    const [a] = activeStylePacks({ monokini: 0.9 }, 'adult');
+    expect(a.strength).toBe(0.6);
+    expect(withTriggers('x', [a])).toBe('monokini, x');
   });
 });

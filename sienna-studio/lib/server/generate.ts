@@ -35,9 +35,9 @@ import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt } from '../prompt';
-import { EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { resolveLockedLora } from '../sienna-models';
-import { activeStylePacks, STYLE_PACK_STACK_LIMIT, withPackNegatives, withTriggers } from '../style-packs';
+import { activeStylePacks, packCoverage, STYLE_PACK_STACK_LIMIT, withPackNegatives, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
@@ -545,12 +545,21 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         } else if (report) {
           const attempts = [...guard.attempts, { seed: rec.seed, exposed: report.exposed, score: report.score, images: state.images }];
           if (report.exposed && attempts.length < guard.maxAttempts && rec.submittedGraph) {
-            // Showed a nipple although the outfit has a top: same graph, new seed, style packs a notch lower.
+            // Showed a nipple although the outfit has a top: new seed, style packs a notch lower, and the packs'
+            // coverage wording (the first attempt keeps each pack's full look).
             const seed = Math.floor(Math.random() * 2 ** 48);
-            const graph = softenPacks(reseed(rec.submittedGraph, rec.seed, seed));
+            const cov = addCoverage(
+              softenPacks(reseed(rec.submittedGraph, rec.seed, seed)),
+              { positive: rec.positivePrompt, negative: rec.negativePrompt },
+              packCoverage((rec.stylePacks ?? []).map((p) => p.id)),
+            );
+            const graph = cov.graph;
             try {
               const { promptId } = await backend.queuePrompt(graph, rec.clientId ?? newId('sienna-'));
-              return patchRecord(id, { status: 'queued', promptId, seed, submittedGraph: graph, exposureGuard: { ...guard, attempts }, queuePosition: 0 });
+              return patchRecord(id, {
+                status: 'queued', promptId, seed, submittedGraph: graph, exposureGuard: { ...guard, attempts }, queuePosition: 0,
+                positivePrompt: cov.positive, negativePrompt: cov.negative,
+              });
             } catch {
               // couldn't queue the retry: keep what we have
             }

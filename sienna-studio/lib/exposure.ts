@@ -9,8 +9,8 @@ import type { ComfyGraph } from './types';
 
 export const EXPOSURE_NODE_ID = 'sienna_exposure';
 export const EXPOSURE_NODE_CLASS = 'SiennaExposureCheck';
-/** Photos tried in all (the first + up to 2 retries); each costs one more generation. */
-export const EXPOSURE_MAX_ATTEMPTS = 3;
+/** Photos tried in all (the first + up to 3 retries); each costs one more generation. */
+export const EXPOSURE_MAX_ATTEMPTS = 4;
 export const EXPOSURE_THRESHOLD = 0.45;
 
 export interface ExposureReport {
@@ -80,6 +80,25 @@ export function softenPacks(graph: ComfyGraph): ComfyGraph {
     out[id] = { ...node, inputs };
   }
   return out;
+}
+
+/** The graph with coverage wording added to the prompt texts (once): positive in front, negative at the end. */
+export function addCoverage(
+  graph: ComfyGraph,
+  prompts: { positive: string; negative: string },
+  coverage: { positive: string; negative: string },
+): { graph: ComfyGraph; positive: string; negative: string } {
+  const positive = coverage.positive && !prompts.positive.includes(coverage.positive) ? `${coverage.positive}, ${prompts.positive}` : prompts.positive;
+  const negative = coverage.negative && !prompts.negative.includes(coverage.negative) ? `${prompts.negative}, ${coverage.negative}` : prompts.negative;
+  const out: ComfyGraph = {};
+  for (const [id, node] of Object.entries(graph)) {
+    const text = node.inputs.text;
+    out[id] =
+      text === prompts.positive && positive !== text ? { ...node, inputs: { ...node.inputs, text: positive } }
+      : text === prompts.negative && negative !== text ? { ...node, inputs: { ...node.inputs, text: negative } }
+      : node;
+  }
+  return { graph: out, positive, negative };
 }
 
 /** The attempt to keep: the last one if it's covered, else the least exposed. */

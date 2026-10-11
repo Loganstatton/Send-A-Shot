@@ -17,6 +17,9 @@ export interface StylePack {
   source: string;
   /** Added to the negative prompt when the pack is on (for packs that tend to show more than the outfit asks for). */
   negative?: string;
+  /** Used only when the top check redoes a photo that showed a nipple: extra wording that keeps this pack's top over
+   * her chest. The first attempt keeps the pack's full look. */
+  coverage?: { positive?: string; negative?: string };
   /** 'adult': only offered and applied in adult content mode (which the server can switch off entirely). */
   section?: 'adult';
 }
@@ -69,11 +72,11 @@ export const STYLE_PACKS: StylePack[] = [
     label: 'String swimsuit',
     hint: 'Ultra-minimal string bikinis: tiny triangles on thin strings, string thong bottoms. More minimal than Micro bikini. Above 0.7 the bottoms become barely-there. With Micro bikini on too she looks fuller but coverage drops — lower this to about 0.5.',
     file: 'pack_305655.safetensors',
-    // the coverage wording keeps her covered with the top check (3/3 hard seeds vs 2/3 without; a "nipples" negative made it
-    // worse, and so did a lower strength — at her bust size the base model itself drops "tiny" string tops)
-    trigger: 'string swimsuit, triangle cups fully covering her chest',
+    trigger: 'string swimsuit',
+    // on a retry: 3/3 hard seeds ended covered with this (a "nipples" negative made it worse)
+    coverage: { positive: 'triangle cups fully covering her chest' },
     max: 0.7,
-    default: 0.5,
+    default: 0.6,
     source: 'https://civitai.com/models/305655',
     section: 'adult',
   },
@@ -124,27 +127,26 @@ export const STYLE_PACKS: StylePack[] = [
   {
     id: 'underboob_shirt',
     label: 'Underboob shirt',
-    hint: 'Short crop tees cut high so the underside of her bust shows (e.g. “white underboob shirt, cropped short-sleeve tee, denim shorts”). 0.5 is enough; the pack keeps the shirt on by itself.',
+    hint: 'Short crop tees cut high so the underside of her bust shows (e.g. “white underboob shirt, cropped short-sleeve tee, denim shorts”).',
     file: 'pack_706722.safetensors',
     trigger: 'underboob shirt',
-    // without these it came out topless in 1 of 2 test photos; with them, 6 of 6 kept the shirt
-    negative: 'nipples, topless',
-    max: 0.6,
-    default: 0.5,
+    // on a retry (it came out topless in 1 of 2 first tests; with these, 6 of 6 kept the shirt)
+    coverage: { negative: 'nipples, topless' },
+    max: 0.7,
+    default: 0.6,
     source: 'https://civitai.com/models/706722',
     section: 'adult',
   },
   {
     id: 'monokini',
     label: 'Monokini',
-    hint: 'One-piece slingshot swimsuits: a deep V to the navel and high-cut legs (e.g. “black plunging monokini, high-cut legs”). Kept low on purpose — above 0.3 the straps stop covering her.',
+    hint: 'One-piece slingshot swimsuits: a deep V to the navel and high-cut legs (e.g. “black plunging monokini, high-cut legs”). The narrow straps often miss her chest — the top check then redoes the photo with more coverage.',
     file: 'pack_385723.safetensors',
-    // the straps are narrow for her bust: these keep them over her chest (3 of 3 covered vs 0 of 9 without) and
-    // the bust line stops the wide-strap wording from shrinking her
-    trigger: 'monokini, (wide straps covering her chest:1.4), (large round natural breasts:1.3)',
-    negative: '(nipples, areola:1.6), exposed breasts',
-    max: 0.35,
-    default: 0.3,
+    trigger: 'monokini',
+    // the straps are narrow for her bust; on a retry these kept them over her chest (3/3 at 0.3) without shrinking her
+    coverage: { positive: '(wide straps covering her chest:1.4), (large round natural breasts:1.3)', negative: '(nipples, areola:1.6), exposed breasts' },
+    max: 0.6,
+    default: 0.5,
     source: 'https://civitai.com/models/385723',
     section: 'adult',
   },
@@ -182,6 +184,15 @@ export function activeStylePacks(values: Record<string, number> | undefined, con
     if (!Number.isFinite(v) || v <= 0) return [];
     return [{ pack, strength: Math.round(Math.min(pack.max, v) * 100) / 100 }];
   });
+}
+
+/** Retry-only coverage wording of the given packs (by id), joined. */
+export function packCoverage(ids: string[]): { positive: string; negative: string } {
+  const packs = STYLE_PACKS.filter((p) => ids.includes(p.id) && p.coverage);
+  return {
+    positive: packs.map((p) => p.coverage!.positive ?? '').filter(Boolean).join(', '),
+    negative: packs.map((p) => p.coverage!.negative ?? '').filter(Boolean).join(', '),
+  };
 }
 
 /** Negative prompt with the active packs' own negatives added. */
