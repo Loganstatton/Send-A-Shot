@@ -333,6 +333,13 @@ export interface GenerationRecord {
   prunedModules?: string[];
   /** Small-face refinement pass: whether it was in the graph and with which settings. */
   faceRefine?: { status: 'on' | 'off' | 'skipped'; denoise?: number; threshold?: number; reason?: string };
+  /** Top check: when the outfit has a top, each photo is checked for exposed nipples and redone with a new seed. */
+  exposureGuard?: {
+    status: 'on' | 'unavailable';
+    reason?: string;
+    maxAttempts: number;
+    attempts: { seed: number; exposed: boolean; score: number; images: { filename: string; subfolder: string; type: string; nodeId: string }[] }[];
+  };
   /** The exact API-format graph sent to ComfyUI (for debugging). */
   submittedGraph?: ComfyGraph;
   /** Structured ComfyUI error details (node_errors / execution_error). */

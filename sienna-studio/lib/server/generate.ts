@@ -35,6 +35,7 @@ import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt } from '../prompt';
+import { EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { resolveLockedLora } from '../sienna-models';
 import { activeStylePacks, STYLE_PACK_STACK_LIMIT, withPackNegatives, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
@@ -407,6 +408,22 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
   }
 
+  // ── Top check: the outfit has a top, so check the result for exposed nipples (the retry happens in doRefresh) ──
+  let exposureGuard: GenerationRecord['exposureGuard'];
+  if (outfitHasTop(req.fields.outfit)) {
+    const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
+    const node = saveId ? exposureNode(graph, saveId) : null;
+    if (node) {
+      const missing = await missingClasses(backend, { [EXPOSURE_NODE_ID]: node }, [EXPOSURE_NODE_ID]);
+      if (missing.length) {
+        exposureGuard = { status: 'unavailable', reason: `server is missing ${describeMissing(missing)}`, maxAttempts: 1, attempts: [] };
+      } else {
+        graph = { ...graph, [EXPOSURE_NODE_ID]: node };
+        exposureGuard = { status: 'on', maxAttempts: EXPOSURE_MAX_ATTEMPTS, attempts: [] };
+      }
+    }
+  }
+
   return {
     backend,
     graph,
@@ -432,6 +449,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       warnings,
       prunedModules,
       faceRefine,
+      exposureGuard,
       submittedGraph: graph,
       images: [],
       favorite: false,
@@ -516,12 +534,41 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
       if (state.images.length === 0) {
         return patchRecord(id, { status: 'error', error: 'Workflow finished but produced no images. Does it have a SaveImage node?' });
       }
+      let refs = state.images;
+      const extra: Partial<GenerationRecord> = {};
+      const guard = rec.exposureGuard;
+      if (guard?.status === 'on') {
+        const report = parseExposure(state.texts?.[EXPOSURE_NODE_ID]);
+        if (report && !report.available) {
+          extra.exposureGuard = { ...guard, status: 'unavailable', reason: report.error ?? 'detector not installed' };
+          extra.warnings = [...rec.warnings, `Top check didn't run on the GPU (${report.error ?? 'detector not installed'}).`];
+        } else if (report) {
+          const attempts = [...guard.attempts, { seed: rec.seed, exposed: report.exposed, score: report.score, images: state.images }];
+          if (report.exposed && attempts.length < guard.maxAttempts && rec.submittedGraph) {
+            // Showed a nipple although the outfit has a top: same graph, new seed, style packs a notch lower.
+            const seed = Math.floor(Math.random() * 2 ** 48);
+            const graph = softenPacks(reseed(rec.submittedGraph, rec.seed, seed));
+            try {
+              const { promptId } = await backend.queuePrompt(graph, rec.clientId ?? newId('sienna-'));
+              return patchRecord(id, { status: 'queued', promptId, seed, submittedGraph: graph, exposureGuard: { ...guard, attempts }, queuePosition: 0 });
+            } catch {
+              // couldn't queue the retry: keep what we have
+            }
+          }
+          const kept = pickAttempt(attempts);
+          refs = kept.images;
+          extra.seed = kept.seed;
+          extra.exposureGuard = { ...guard, attempts };
+          const note = exposureWarning(attempts, kept);
+          if (note) extra.warnings = [...rec.warnings, note];
+        }
+      }
       const images: StoredImage[] = [];
-      for (const ref of state.images) {
+      for (const ref of refs) {
         const { bytes, mime } = await backend.fetchImage(ref);
         images.push(await storeImage(bytes, mimeFromBytes(bytes) ?? mime, 'gen'));
       }
-      return patchRecord(id, { status: 'done', images, completedAt: new Date().toISOString(), queuePosition: 0 });
+      return patchRecord(id, { ...extra, status: 'done', images, completedAt: new Date().toISOString(), queuePosition: 0 });
     }
   }
 }
