@@ -189,6 +189,17 @@ export const STYLE_PACKS: StylePack[] = [
     source: 'https://civitai.com/models/2406389',
     section: 'adult',
   },
+  {
+    id: 'real_innie',
+    label: 'Natural anatomy (innie)',
+    hint: 'More natural, detailed intimate anatomy in nude shots. In testing her face, bust and skin stayed the same; above 0.6 is untested.',
+    file: 'pack_1385637.safetensors',
+    trigger: 'innie',
+    max: 0.6,
+    default: 0.5,
+    source: 'https://civitai.com/models/1385637',
+    section: 'adult',
+  },
 ];
 
 /** Stacking more than this many packs visibly changes Sienna's face (and pose) in testing. */
