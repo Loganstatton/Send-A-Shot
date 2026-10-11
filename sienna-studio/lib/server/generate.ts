@@ -41,7 +41,7 @@ import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { FACE_NODE_ID, faceNode, framingOk, parseFace } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
-import { activeStylePacks, packCoverage, STYLE_PACK_STACK_LIMIT, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
+import { activeStylePacks, nudeOnlyAllowed, packCoverage, STYLE_PACK_STACK_LIMIT, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
@@ -139,10 +139,12 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
   // Packs with outfit wording add it to the Outfit field (if the pack's file turns out to be missing below, the pack
   // is skipped but this wording stays — harmless).
-  // Nude-only packs are dropped when the outfit has a top (one undressed her in a red dress).
-  const outfitTop = outfitHasTop(req.fields.outfit);
-  const usable = (active: ReturnType<typeof activeStylePacks>) => active.filter((a) => !(a.pack.nudeOnly && outfitTop));
-  const packOutfit = withPackOutfit(req.fields.outfit, usable(activeStylePacks(req.params.stylePacks, contentMode)));
+  // Nude-only packs run only on an explicitly nude request (one undressed her in a red dress); the check is
+  // fail-closed and sees the outfit as built, including other packs' outfit wording.
+  const requested = activeStylePacks(req.params.stylePacks, contentMode);
+  const packOutfit = withPackOutfit(req.fields.outfit, requested.filter((a) => !a.pack.nudeOnly));
+  const nudeOk = nudeOnlyAllowed(contentMode, { ...req.fields, outfit: packOutfit });
+  const usable = (active: typeof requested) => active.filter((a) => !a.pack.nudeOnly || nudeOk);
   const built = buildPrompt({ fields: { ...req.fields, outfit: packOutfit }, character, siennaLock: req.siennaLock, contentMode, cleanup: !!req.params.promptCleanup });
   if (built.blocked.length) {
     throw new GenerationError(
@@ -153,11 +155,11 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
   warnings.push(...built.warnings);
   let stylePacks = activeStylePacks(req.params.stylePacks, contentMode);
-  for (const a of stylePacks.filter((x) => x.pack.nudeOnly && outfitTop)) {
-    warnings.push(`Style pack “${a.pack.label}” is for nude shots only — skipped because the outfit has a top or dress.`);
+  for (const a of stylePacks.filter((x) => x.pack.nudeOnly && !nudeOk)) {
+    warnings.push(`Style pack “${a.pack.label}” is for nude shots only — skipped. It runs only when the Outfit says “completely nude” (jewellery is fine) and nothing in the request mentions clothing.`);
   }
   stylePacks = usable(stylePacks);
-  const adultOnly = activeStylePacks(req.params.stylePacks, 'adult').filter((a) => !stylePacks.some((b) => b.pack.id === a.pack.id));
+  const adultOnly = activeStylePacks(req.params.stylePacks, 'adult').filter((a) => !requested.some((b) => b.pack.id === a.pack.id));
   for (const a of adultOnly) warnings.push(`Style pack “${a.pack.label}” is adult-fashion only — skipped in SFW mode.`);
   if (stylePacks.length) {
     const available = await loraFiles(backend);

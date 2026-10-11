@@ -255,6 +255,34 @@ export function withPackOutfit(outfit: string, active: ActiveStylePack[]): strin
   return extra.length ? [outfit.trim().replace(/[,.\s]+$/, ''), ...extra].filter(Boolean).join(', ') : outfit;
 }
 
+/** Outfit items that mean "no clothes at all". */
+const NUDE_ITEM_RE = /^(?:(?:completely|fully|totally|entirely)\s+)?(?:nude|naked|unclothed)$|^(?:wearing nothing|nothing on|no clothes|no clothing)$/i;
+/** Items allowed alongside nudity: jewellery and the like, nothing that covers her body. */
+const ACCESSORY_ITEM_RE = /^(?:(?:a|an|thin|small|big|large|delicate|dainty|simple|gold|silver|pearl|diamond|layered|hoop|stud|her)\s+)*(?:necklace|pendant|chain|earrings?|hoops?|studs|bracelets?|bangles?|rings?|anklet|watch|jewelry|jewellery|glasses|sunglasses|hair clip|hair tie|scrunchie)s?$/i;
+/** Any clothing, covering or garment word anywhere in the request. */
+const CLOTHING_RE =
+  /\b(bikinis?|bra|bralette|top|shirt|t-shirt|tee|tank|blouse|swimsuit|swimwear|monokini|one-piece|bodysuit|leotard|dress|gown|nightgown|nightie|slip|teddy|babydoll|sweater|hoodie|jacket|coat|blazer|robe|kimono|towel|corset|bustier|camisole|cami|crop|lingerie|underwear|panties|thong|g-string|briefs|boyshorts|knickers|garter|stockings|tights|pantyhose|fishnets?|socks|leggings|skirt|shorts|pants|trousers|jeans|overalls|apron|uniform|costume|outfit|clothes|clothing|clothed|dressed|wearing|lace|mesh|sheer|latex|leather|silk|satin|harness|pasties|tape|heels|shoes|boots|sneakers|sandals|scarf|sheet|blanket|covered|covering|topless|bottomless|half-naked|partially|semi-nude|see-through)\b/i;
+
+/**
+ * Whether a nude-only pack may run. Fail-closed: adult mode only, the Outfit must explicitly ask for no clothes
+ * ("completely nude", "naked", …) with nothing but jewellery beside it, and no clothing or covering word may appear
+ * in the outfit (including other packs' outfit wording), pose, body or extra fields. An empty outfit is not nude.
+ */
+export function nudeOnlyAllowed(
+  contentMode: 'sfw' | 'adult',
+  fields: { outfit?: string; pose?: string; bodyPresentation?: string; extra?: string },
+): boolean {
+  if (contentMode !== 'adult') return false;
+  const items = (fields.outfit ?? '')
+    .split(/,|;|\band\b|\bwith\b|\+/i)
+    .map((s) => s.trim().replace(/[.!]+$/, ''))
+    .filter(Boolean);
+  if (!items.some((i) => NUDE_ITEM_RE.test(i))) return false;
+  if (!items.every((i) => NUDE_ITEM_RE.test(i) || ACCESSORY_ITEM_RE.test(i))) return false;
+  const rest = [fields.pose, fields.bodyPresentation, fields.extra].filter(Boolean).join(' ');
+  return !CLOTHING_RE.test(rest);
+}
+
 /** Negative prompt with the active packs' own negatives added. */
 export function withPackNegatives(negative: string, active: ActiveStylePack[]): string {
   const extra = active.map((a) => a.pack.negative ?? '').filter((n) => n && !negative.includes(n));

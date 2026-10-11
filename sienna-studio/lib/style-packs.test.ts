@@ -1,6 +1,5 @@
-import { outfitHasTop } from './exposure';
 import { describe, expect, it } from 'vitest';
-import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives, packCoverage, withPackOutfit } from './style-packs';
+import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives, packCoverage, withPackOutfit, nudeOnlyAllowed } from './style-packs';
 
 describe('activeStylePacks', () => {
   it('keeps packs above zero, clamps to each max, ignores unknown ids, in catalogue order', () => {
@@ -106,11 +105,44 @@ describe('pose packs', () => {
 });
 
 describe('nude-only packs', () => {
-  it('realistic nude body is nude-only, and a dress counts as a top', () => {
-    expect(STYLE_PACKS.find((p) => p.id === 'realistic_nudes')?.nudeOnly).toBe(true);
+  const ok = (outfit: string, rest: { pose?: string; bodyPresentation?: string; extra?: string } = {}) =>
+    nudeOnlyAllowed('adult', { outfit, ...rest });
+
+  it('only realistic nude body is nude-only', () => {
     expect(STYLE_PACKS.filter((p) => p.nudeOnly).map((p) => p.id)).toEqual(['realistic_nudes']);
-    expect(outfitHasTop('fitted bright red bodycon dress')).toBe(true);
-    expect(outfitHasTop('completely nude')).toBe(false);
+  });
+
+  it('runs on explicit nudity, with jewellery at most', () => {
+    for (const o of ['completely nude', 'Naked', 'fully naked', 'nude', 'completely nude, gold necklace', 'nude with small hoop earrings', 'wearing nothing']) {
+      expect(ok(o), o).toBe(true);
+    }
+  });
+
+  it('never runs in SFW mode', () => {
+    expect(nudeOnlyAllowed('sfw', { outfit: 'completely nude' })).toBe(false);
+  });
+
+  it('never runs on an empty or vague outfit', () => {
+    for (const o of ['', '   ', 'casual', 'something cute', 'her usual look', 'summer vibes']) expect(ok(o), o).toBe(false);
+  });
+
+  it('never runs on clothed outfits', () => {
+    for (const o of [
+      'fitted bright red bodycon dress', 'black micro bikini', 'white bodysuit', 'black lace lingerie', 'red thong',
+      'oversized hoodie', 'denim shorts', 'silk robe', 'towel wrapped around her', 'sheer mesh top', 'topless, denim shorts',
+      'topless', 'nude bikini', 'nude-colored dress', 'nude lingerie', 'nude heels', 'completely nude, thigh-high stockings',
+      'completely nude, high heels', 'naked except for a garter belt', 'nude, white socks', 'semi-nude', 'half-naked',
+      'leather harness', 'nude with a sheet covering her', 'pasties',
+    ]) {
+      expect(ok(o), o).toBe(false);
+    }
+  });
+
+  it('is blocked by clothing anywhere else in the request', () => {
+    expect(ok('completely nude', { pose: 'holding a towel against her chest' })).toBe(false);
+    expect(ok('completely nude', { extra: 'wearing a silk robe' })).toBe(false);
+    expect(ok('completely nude', { bodyPresentation: 'partially covered' })).toBe(false);
+    expect(ok('completely nude', { pose: 'standing, full body, front view', extra: 'soft window light' })).toBe(true);
   });
 });
 
