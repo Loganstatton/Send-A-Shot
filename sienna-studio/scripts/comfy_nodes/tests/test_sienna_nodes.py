@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sienna_nodes")
 from sienna_crop import chin_crop, topmost_face_band  # noqa: E402
 import sienna_body as sb  # noqa: E402
 import sienna_redraw as rd  # noqa: E402
+import sienna_exposure as ex  # noqa: E402
 from sienna_garment import garment_composite  # noqa: E402
 from sienna_pose import (  # noqa: E402
     BONES, angle_errors, measure_proportions, retarget_body, retarget_openpose, to_flat, to_points,
@@ -408,3 +409,13 @@ if __name__ == "__main__":
             except Exception as e:  # noqa: BLE001
                 fails += 1; print("FAIL", name, repr(e))
     sys.exit(1 if fails else 0)
+
+
+def test_exposure_summary_flags_exposed_breasts_above_threshold_only():
+    covered = [{"class": "FEMALE_BREAST_COVERED", "score": 0.8}, {"class": "FACE_FEMALE", "score": 0.9}]
+    assert ex.summarize(covered) == {"exposed": False, "score": 0.0, "classes": []}
+    faint = covered + [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.3}]
+    assert ex.summarize(faint)["exposed"] is False and ex.summarize(faint)["score"] == 0.3
+    shown = covered + [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.63}]
+    assert ex.summarize(shown) == {"exposed": True, "score": 0.63, "classes": ["FEMALE_BREAST_EXPOSED"]}
+    assert ex.summarize(faint, threshold=0.25)["exposed"] is True
