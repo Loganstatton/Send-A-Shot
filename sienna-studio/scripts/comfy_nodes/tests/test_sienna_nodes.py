@@ -10,6 +10,7 @@ from sienna_crop import chin_crop, topmost_face_band  # noqa: E402
 import sienna_body as sb  # noqa: E402
 import sienna_redraw as rd  # noqa: E402
 import sienna_exposure as ex  # noqa: E402
+import sienna_face as sf  # noqa: E402
 from sienna_garment import garment_composite  # noqa: E402
 from sienna_pose import (  # noqa: E402
     BONES, angle_errors, measure_proportions, retarget_body, retarget_openpose, to_flat, to_points,
@@ -419,3 +420,16 @@ def test_exposure_summary_flags_exposed_breasts_above_threshold_only():
     shown = covered + [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.63}]
     assert ex.summarize(shown) == {"exposed": True, "score": 0.63, "classes": ["FEMALE_BREAST_EXPOSED"]}
     assert ex.summarize(faint, threshold=0.25)["exposed"] is True
+
+
+def test_face_reference_and_check():
+    a = np.array([1, 0, 0], np.float32); b = np.array([0.8, 0.6, 0], np.float32)
+    ref = sf.reference_embedding([a, b])
+    assert abs(np.linalg.norm(ref) - 1) < 1e-5
+    assert sf.check([], ref, 0.5) == {"found": False, "similarity": None, "ok": True, "faces": 0}
+    good = sf.check([{"embedding": a}], ref, 0.5)
+    assert good["found"] and good["ok"] and good["similarity"] > 0.9
+    far = sf.check([{"embedding": np.array([0, 0, 1], np.float32), "size": 120}, {"embedding": a}], ref, 0.5, min_size=64)
+    assert far["ok"] is False and far["faces"] == 2 and far["size"] == 120
+    tiny = sf.check([{"embedding": np.array([0, 0, 1], np.float32), "size": 40}], ref, 0.5, min_size=64)
+    assert tiny["ok"] is True and tiny["similarity"] < 0.5

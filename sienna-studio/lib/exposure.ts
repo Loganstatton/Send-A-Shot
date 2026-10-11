@@ -24,7 +24,15 @@ export interface ExposureAttempt<Ref = unknown> {
   seed: number;
   exposed: boolean;
   score: number;
+  /** Face check result (absent when the face check isn't running). */
+  similarity?: number | null;
+  faceOk?: boolean;
   images: Ref[];
+}
+
+/** This attempt needs redoing: a nipple showed, or her face drifted. */
+export function failed(a: ExposureAttempt): boolean {
+  return a.exposed || a.faceOk === false;
 }
 
 /** The outfit describes something on top (and doesn't ask for none). */
@@ -101,19 +109,25 @@ export function addCoverage(
   return { graph: out, positive, negative };
 }
 
-/** The attempt to keep: the last one if it's covered, else the least exposed. */
+/** The attempt to keep: the last one if it passed; else, among covered ones, the closest face; else the least exposed. */
 export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAttempt<Ref> {
   const last = attempts[attempts.length - 1];
-  if (!last.exposed) return last;
+  if (!failed(last)) return last;
+  const covered = attempts.filter((a) => !a.exposed);
+  if (covered.length) return covered.reduce((a, b) => ((b.similarity ?? -1) > (a.similarity ?? -1) ? b : a));
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));
 }
 
-/** What to tell the user once the guard has finished. */
+/** What to tell the user once the checks have finished (null if the first photo passed). */
 export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttempt): string | null {
-  const retried = attempts.length - 1;
   if (kept.exposed) {
     return `Top check: all ${attempts.length} attempts showed a nipple — this is the least exposed one. Try a lower style-pack strength or describe more coverage.`;
   }
-  if (!retried) return null;
-  return `Top check: ${retried} photo${retried > 1 ? 's' : ''} showed a nipple and ${retried > 1 ? 'were' : 'was'} redone with a new seed (now ${kept.seed}).`;
+  const redone = attempts.filter((a) => a !== kept && failed(a));
+  if (!redone.length) return null;
+  const nip = redone.filter((a) => a.exposed).length;
+  const face = redone.filter((a) => !a.exposed && a.faceOk === false).length;
+  const why = [nip ? `${nip} showed a nipple` : '', face ? `${face} didn't look enough like Sienna` : ''].filter(Boolean).join(', ');
+  const tail = kept.faceOk === false ? ` None matched her face closely; kept the closest (similarity ${kept.similarity}).` : '';
+  return `Photo checks: redid ${redone.length} photo${redone.length > 1 ? 's' : ''} (${why}); kept seed ${kept.seed}.${tail}`;
 }

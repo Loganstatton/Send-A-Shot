@@ -153,6 +153,8 @@ export const DEFAULT_PARAMS: GenerationParams = {
   controlnetModel: '',
   batchSize: 1,
   faceRefine: true,
+  handRefine: true,
+  faceCheck: true,
   faceRefineDenoise: 0.3,
   faceRefineThreshold: 384,
   outfitStrength: 0.7,

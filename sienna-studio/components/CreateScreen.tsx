@@ -682,6 +682,14 @@ export function CreateScreen() {
                   onChange={(v) => setParam('faceRefineDenoise', v)}
                 />
               )}
+              {(draft.params.faceRefine ?? DEFAULT_PARAMS.faceRefine) && (
+                <Toggle
+                  checked={draft.params.handRefine ?? DEFAULT_PARAMS.handRefine ?? true}
+                  onChange={(v) => setParam('handRefine', v)}
+                  label="Hand touch-up"
+                  description="Finds her hands and redraws them in more detail (fingers, nails). Adds a few seconds."
+                />
+              )}
             </>
           )}
           <div>

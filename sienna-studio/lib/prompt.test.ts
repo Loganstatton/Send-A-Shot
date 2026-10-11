@@ -12,7 +12,7 @@ describe('buildPrompt', () => {
       siennaLock: true,
       contentMode: 'sfw',
     });
-    expect(r.positive.startsWith('full body head to toe, entire body visible including feet and shoes, wide shot, camera several meters away, red hoodie, park path, holding coffee, sienna_v1 woman, 24-year-old adult woman, ')).toBe(true);
+    expect(r.positive.startsWith('full body head to toe, entire body visible including feet and shoes, wide shot, camera several meters away, (red hoodie:1.1), park path, holding coffee, sienna_v1 woman, 24-year-old adult woman, ')).toBe(true);
     expect(r.positive.indexOf('taken by another person')).toBeGreaterThan(r.positive.indexOf('sienna_v1 woman'));
     expect(r.positive.endsWith(', natural hazel-green eyes with realistic muted iris color')).toBe(true);
     expect(r.positive.match(/hazel-green|iris/g)).toHaveLength(2);
@@ -184,5 +184,15 @@ describe('keeping the top on', () => {
     const r = build({ outfit: 'bikini', avoid: 'bare breasts, small breasts' });
     expect(r.negative).toContain('bare breasts');
     expect(r.warnings.some((w) => w.includes('bare breasts'))).toBe(false);
+  });
+});
+
+describe('pose and colour emphasis', () => {
+  const base = { outfit: '', pose: '', bodyPresentation: '', expression: '', setting: '', lighting: '', camera: '', framing: '', realism: '', extra: '', avoid: '' };
+  it('weights coloured outfit items 1.1, leaves the pose and already-weighted text alone', () => {
+    const r = buildPrompt({ fields: { ...base, pose: 'lying on her stomach, propped on her elbows', outfit: 'red string bikini, gold anklet, (black:1.3) sandals' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw' });
+    expect(r.positive).toContain('lying on her stomach, propped on her elbows, (red string bikini:1.1), (gold anklet:1.1), (black:1.3) sandals');
+    const w = buildPrompt({ fields: { ...base, pose: '(sitting:1.5)', outfit: 'string bikini' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw' });
+    expect(w.positive).toContain('(sitting:1.5), string bikini');
   });
 });

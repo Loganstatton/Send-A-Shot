@@ -9,6 +9,7 @@ Sienna Studio custom ComfyUI nodes (installed by scripts/comfyui-bootstrap.sh).
   SiennaBodyMeasure      image + DWPose keypoints + person mask → body proportions (JSON)
   SiennaBodyCheck        source / result / reference measurements → body-consistency report (JSON)
   SiennaExposureCheck    image(s) → did a nipple show? (NudeNet; JSON per image, for the app's retry)
+  SiennaFaceCheck        image(s) + reference embedding → how close the face is to Sienna (OpenCV SFace; JSON)
 
 The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py / sienna_body.py (no ComfyUI imports; unit-tested).
 """
@@ -21,6 +22,7 @@ import torch
 from .sienna_body import SCENE_CHANGED, body_sheet, compare, garment_only, keypoints_from_pose, measure_body, scale_points, scene_backdrop, scene_change
 from .sienna_crop import chin_crop
 from .sienna_exposure import DEFAULT_THRESHOLD, detector, detector_error, summarize
+from . import sienna_face
 from .sienna_redraw import GROW_MODES, erase, garment_region, overlay, segment_classes, segmenter_error
 from .sienna_garment import garment_composite
 from .sienna_pose import DEFAULT_PROPORTIONS, retarget_openpose
@@ -320,6 +322,50 @@ class SiennaExposureCheck:
         return {"ui": {"text": [text]}, "result": (text,)}
 
 
+class SiennaFaceCheck:
+    """Cosine similarity of the main face to Sienna's approved-face embedding (the app redoes photos below threshold)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "reference": ("STRING", {"default": "[]", "multiline": True}),
+                "threshold": ("FLOAT", {"default": 0.74, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "min_face": ("INT", {"default": 64, "min": 0, "max": 1024}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("report",)
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, images, reference, threshold, min_face):
+        import os
+
+        import cv2
+        import folder_paths
+
+        m = sienna_face.models(os.path.join(folder_paths.models_dir, "sienna"))
+        try:
+            ref = sienna_face.reference_embedding([json.loads(reference)])
+        except (ValueError, TypeError):
+            ref = None
+        if m is None or ref is None or ref.size == 0:
+            text = json.dumps({"available": False, "error": sienna_face.model_error() or "no reference embedding"})
+            return {"ui": {"text": [text]}, "result": (text,)}
+        results = []
+        for i in range(images.shape[0]):
+            rgb = (np.clip(images[i].detach().cpu().numpy(), 0, 1) * 255).astype(np.uint8)
+            results.append(sienna_face.check(sienna_face.faces(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), *m), ref, threshold, min_face))
+        sims = [r["similarity"] for r in results if r["found"]]
+        report = {"available": True, "ok": all(r["ok"] for r in results), "similarity": min(sims) if sims else None, "images": results}
+        text = json.dumps(report)
+        return {"ui": {"text": [text]}, "result": (text,)}
+
+
 NODE_CLASS_MAPPINGS = {
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
@@ -330,6 +376,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaBodyCheck": SiennaBodyCheck,
     "SiennaGarmentRedrawMask": SiennaGarmentRedrawMask,
     "SiennaExposureCheck": SiennaExposureCheck,
+    "SiennaFaceCheck": SiennaFaceCheck,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaPoseRetarget": "Sienna Pose Retarget",
@@ -341,4 +388,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaBodyCheck": "Sienna Body Check",
     "SiennaGarmentRedrawMask": "Sienna Garment Redraw Mask",
     "SiennaExposureCheck": "Sienna Exposure Check",
+    "SiennaFaceCheck": "Sienna Face Check",
 }

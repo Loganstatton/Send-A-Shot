@@ -44,7 +44,7 @@ describe('exposure guard helpers', () => {
     const c = { seed: 3, exposed: false, score: 0, images: ['c'] };
     expect(pickAttempt([a, c]).seed).toBe(3);
     expect(pickAttempt([a, b]).seed).toBe(2);
-    expect(exposureWarning([a, c], c)).toContain('1 photo showed a nipple and was redone');
+    expect(exposureWarning([a, c], c)).toContain('redid 1 photo (1 showed a nipple)');
     expect(exposureWarning([a, b], b)).toContain('all 2 attempts');
     expect(exposureWarning([c], c)).toBeNull();
   });

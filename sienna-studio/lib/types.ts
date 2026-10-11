@@ -123,6 +123,10 @@ export interface GenerationParams {
   faceRefineDenoise: number;
   /** Faces smaller than this (px, shorter bbox side) are enlarged to it and redrawn. */
   faceRefineThreshold: number;
+  /** Hand touch-up: finds hands after the face pass and redraws them in more detail (needs the face pass). */
+  handRefine?: boolean;
+  /** Face check: redo photos whose face doesn't look enough like Sienna (Sienna Lock only). */
+  faceCheck?: boolean;
   /** Outfit-reference conditioning weight (independent of the LoRA strength). */
   outfitStrength?: number;
   /**
@@ -333,12 +337,23 @@ export interface GenerationRecord {
   prunedModules?: string[];
   /** Small-face refinement pass: whether it was in the graph and with which settings. */
   faceRefine?: { status: 'on' | 'off' | 'skipped'; denoise?: number; threshold?: number; reason?: string };
-  /** Top check: when the outfit has a top, each photo is checked for exposed nipples and redone with a new seed. */
+  handRefine?: { status: 'on' | 'off' | 'skipped'; reason?: string };
+  /** Photo checks: each photo is checked (top check when the outfit has a top, face check with Sienna Lock) and
+   * redone with a new seed when one fails. Named for the first check it had. */
   exposureGuard?: {
     status: 'on' | 'unavailable';
     reason?: string;
+    /** Which checks are running. Missing = top check only (records from before the face check). */
+    checks?: { top: boolean; face: boolean };
     maxAttempts: number;
-    attempts: { seed: number; exposed: boolean; score: number; images: { filename: string; subfolder: string; type: string; nodeId: string }[] }[];
+    attempts: {
+      seed: number;
+      exposed: boolean;
+      score: number;
+      similarity?: number | null;
+      faceOk?: boolean;
+      images: { filename: string; subfolder: string; type: string; nodeId: string }[];
+    }[];
   };
   /** The exact API-format graph sent to ComfyUI (for debugging). */
   submittedGraph?: ComfyGraph;

@@ -86,6 +86,27 @@ export function fullBodyFraming(f: PromptFields): { add: boolean; conflict: bool
 }
 
 /** Join comma-separated fragments, dropping blanks and exact duplicates. */
+/** Colour words that get extra weight in the Outfit field (the model drifted to olive/beige without it). */
+const COLOUR_RE = /\b(black|white|red|pink|blue|navy|green|olive|yellow|orange|purple|lilac|lavender|beige|nude|tan|brown|grey|gray|silver|gold|cream|ivory|burgundy|maroon|teal|turquoise|coral|denim|light-wash|dark-wash|khaki)\b/i;
+
+/** Wrap text in a prompt weight, unless it is empty or already weighted. */
+export function emphasize(text: string, weight: number): string {
+  const t = text.trim().replace(/[,.\s]+$/, '');
+  if (!t || /^\(.*:\d(\.\d+)?\)$/.test(t) || t.includes('(')) return t;
+  return `(${t}:${weight})`;
+}
+
+export const COLOUR_WEIGHT = 1.1;
+
+/** Outfit with each comma-separated item that names a colour weighted COLOUR_WEIGHT, so the colour sticks. */
+export function emphasizeColours(outfit: string): string {
+  return outfit
+    .split(',')
+    .map((item) => (COLOUR_RE.test(item) && !item.includes('(') ? ` ${emphasize(item, COLOUR_WEIGHT)}` : item))
+    .join(',')
+    .trim();
+}
+
 export function joinParts(parts: (string | undefined | null)[]): string {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -160,7 +181,9 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     addedFraming,
     framing,
     f.pose,
-    f.outfit,
+    // outfit colours get a little extra weight: in the audit "red bikini" came out beige/green. 1.1 keeps her face
+    // (1.2 cost likeness, and so did weighting the pose)
+    emphasizeColours(f.outfit),
     f.bodyPresentation,
     f.expression,
     f.setting,

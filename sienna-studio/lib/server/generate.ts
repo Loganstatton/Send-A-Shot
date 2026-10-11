@@ -35,7 +35,9 @@ import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt } from '../prompt';
-import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
+import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { FACE_NODE_ID, faceNode, parseFace } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
 import { activeStylePacks, packCoverage, STYLE_PACK_STACK_LIMIT, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
@@ -411,19 +413,57 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
   }
 
-  // ── Top check: the outfit has a top, so check the result for exposed nipples (the retry happens in doRefresh) ──
+  // ── Hand touch-up: after the face pass, before the top check (which reads the final image) ──
+  let handRefine: GenerationRecord['handRefine'];
+  if (p.handRefine === false) {
+    handRefine = { status: 'off' };
+  } else if (faceRefine?.status === 'on' && refineId) {
+    let reason: string | null = null;
+    try {
+      const models = await backend.inputChoices('UltralyticsDetectorProvider', 'model_name');
+      if (models.length && !models.includes(HAND_DETECTOR_MODEL)) reason = `${HAND_DETECTOR_MODEL} is not on the server`;
+    } catch {
+      // can't ask: let /prompt report it
+    }
+    const withHands = reason ? null : addHandRefine(graph, refineId);
+    if (withHands) {
+      graph = withHands;
+      handRefine = { status: 'on' };
+    } else {
+      handRefine = { status: 'skipped', reason: reason ?? 'no face pass to copy settings from' };
+      if (reason) warnings.push(`Hand touch-up skipped — ${reason}.`);
+    }
+  } else {
+    handRefine = { status: 'skipped', reason: 'needs face refinement on' };
+  }
+
+  // ── Photo checks (retries happen in doRefresh): top check when the outfit has a top, face check with Sienna Lock ──
   let exposureGuard: GenerationRecord['exposureGuard'];
-  if (outfitHasTop(req.fields.outfit)) {
+  {
     const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
-    const node = saveId ? exposureNode(graph, saveId) : null;
-    if (node) {
-      const missing = await missingClasses(backend, { [EXPOSURE_NODE_ID]: node }, [EXPOSURE_NODE_ID]);
-      if (missing.length) {
-        exposureGuard = { status: 'unavailable', reason: `server is missing ${describeMissing(missing)}`, maxAttempts: 1, attempts: [] };
-      } else {
-        graph = { ...graph, [EXPOSURE_NODE_ID]: node };
-        exposureGuard = { status: 'on', maxAttempts: EXPOSURE_MAX_ATTEMPTS, attempts: [] };
+    const wanted: [string, ComfyGraph[string] | null][] = [];
+    if (saveId && outfitHasTop(req.fields.outfit)) wanted.push([EXPOSURE_NODE_ID, exposureNode(graph, saveId)]);
+    if (saveId && req.siennaLock && p.faceCheck !== false) wanted.push([FACE_NODE_ID, faceNode(graph, saveId)]);
+    const added: string[] = [];
+    const missingAll: string[] = [];
+    for (const [nodeId, node] of wanted) {
+      if (!node) continue;
+      const missing = await missingClasses(backend, { [nodeId]: node }, [nodeId]);
+      if (missing.length) missingAll.push(...missing);
+      else {
+        graph = { ...graph, [nodeId]: node };
+        added.push(nodeId);
       }
+    }
+    if (added.length) {
+      exposureGuard = {
+        status: 'on',
+        checks: { top: added.includes(EXPOSURE_NODE_ID), face: added.includes(FACE_NODE_ID) },
+        maxAttempts: EXPOSURE_MAX_ATTEMPTS,
+        attempts: [],
+      };
+    } else if (missingAll.length) {
+      exposureGuard = { status: 'unavailable', reason: `server is missing ${describeMissing(missingAll)}`, maxAttempts: 1, attempts: [] };
     }
   }
 
@@ -452,6 +492,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       warnings,
       prunedModules,
       faceRefine,
+      handRefine,
       exposureGuard,
       submittedGraph: graph,
       images: [],
@@ -541,27 +582,42 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
       const extra: Partial<GenerationRecord> = {};
       const guard = rec.exposureGuard;
       if (guard?.status === 'on') {
-        const report = parseExposure(state.texts?.[EXPOSURE_NODE_ID]);
-        if (report && !report.available) {
-          extra.exposureGuard = { ...guard, status: 'unavailable', reason: report.error ?? 'detector not installed' };
-          extra.warnings = [...rec.warnings, `Top check didn't run on the GPU (${report.error ?? 'detector not installed'}).`];
-        } else if (report) {
-          const attempts = [...guard.attempts, { seed: rec.seed, exposed: report.exposed, score: report.score, images: state.images }];
-          if (report.exposed && attempts.length < guard.maxAttempts && rec.submittedGraph) {
-            // Showed a nipple although the outfit has a top: new seed, style packs a notch lower, and the packs'
-            // coverage wording (the first attempt keeps each pack's full look).
+        const checks = guard.checks ?? { top: true, face: false };
+        const top = checks.top ? parseExposure(state.texts?.[EXPOSURE_NODE_ID]) : null;
+        const face = checks.face ? parseFace(state.texts?.[FACE_NODE_ID]) : null;
+        const notes: string[] = [];
+        if (top && !top.available) notes.push(`Top check didn't run on the GPU (${top.error ?? 'detector not installed'}).`);
+        if (face && !face.available) notes.push(`Face check didn't run on the GPU (${face.error ?? 'models not installed'}).`);
+        const topOn = !!top?.available;
+        const faceOn = !!face?.available;
+        if (topOn || faceOn) {
+          const attempts = [
+            ...guard.attempts,
+            {
+              seed: rec.seed,
+              exposed: topOn ? top!.exposed : false,
+              score: topOn ? top!.score : 0,
+              ...(faceOn ? { similarity: face!.similarity, faceOk: face!.ok } : {}),
+              images: state.images,
+            },
+          ];
+          const latest = attempts[attempts.length - 1];
+          if (failed(latest) && attempts.length < guard.maxAttempts && rec.submittedGraph) {
+            // New seed. If a nipple showed although the outfit has a top, also turn the style packs a notch lower and
+            // add their coverage wording (the first attempt keeps each pack's full look); a face miss only needs the seed.
             const seed = Math.floor(Math.random() * 2 ** 48);
-            const cov = addCoverage(
-              softenPacks(reseed(rec.submittedGraph, rec.seed, seed)),
-              { positive: rec.positivePrompt, negative: rec.negativePrompt },
-              packCoverage((rec.stylePacks ?? []).map((p) => p.id)),
-            );
-            const graph = cov.graph;
+            let graph = reseed(rec.submittedGraph, rec.seed, seed);
+            let prompts = { positive: rec.positivePrompt, negative: rec.negativePrompt };
+            if (latest.exposed) {
+              const cov = addCoverage(softenPacks(graph), prompts, packCoverage((rec.stylePacks ?? []).map((p) => p.id)));
+              graph = cov.graph;
+              prompts = { positive: cov.positive, negative: cov.negative };
+            }
             try {
               const { promptId } = await backend.queuePrompt(graph, rec.clientId ?? newId('sienna-'));
               return patchRecord(id, {
                 status: 'queued', promptId, seed, submittedGraph: graph, exposureGuard: { ...guard, attempts }, queuePosition: 0,
-                positivePrompt: cov.positive, negativePrompt: cov.negative,
+                positivePrompt: prompts.positive, negativePrompt: prompts.negative,
               });
             } catch {
               // couldn't queue the retry: keep what we have
@@ -582,8 +638,11 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           extra.seed = kept.seed;
           extra.exposureGuard = { ...guard, attempts };
           const note = exposureWarning(attempts, kept);
-          if (note) extra.warnings = [...rec.warnings, note];
+          if (note) notes.push(note);
+        } else if (notes.length) {
+          extra.exposureGuard = { ...guard, status: 'unavailable', reason: notes.join(' ') };
         }
+        if (notes.length) extra.warnings = [...rec.warnings, ...notes];
       }
       const images: StoredImage[] = [];
       for (const ref of refs) {
