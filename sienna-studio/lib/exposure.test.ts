@@ -99,3 +99,36 @@ describe('framingOk', () => {
     expect(framingOk(true, null, 1216)).toBe(true);
   });
 });
+
+describe('pose-aware face check in the retry loop', () => {
+  const att = (seed: number, identity: 'verified' | 'mismatch' | 'inconclusive', similarity: number) => ({
+    seed, exposed: false, score: 0, similarity, identity,
+    ...(identity === 'verified' ? { faceOk: true } : identity === 'mismatch' ? { faceOk: false } : { identityReason: 'her face is turned away' }),
+    images: [],
+  });
+
+  it('an inconclusive face is not redone, and is never reported as a match', () => {
+    const a = att(1, 'inconclusive', 0.62);
+    expect(failed(a)).toBe(false);
+    expect(pickAttempt([a]).seed).toBe(1);
+    const note = exposureWarning([a], a)!;
+    expect(note).toContain('Face check inconclusive: her face is turned away (similarity 0.62)');
+    expect(note).toContain('not confirmed as Sienna');
+  });
+
+  it('a mismatch is still redone, and a verified face beats an unjudged one when picking', () => {
+    const miss = att(1, 'mismatch', 0.41);
+    const unsure = att(2, 'inconclusive', 0.7);
+    const sure = att(3, 'verified', 0.76);
+    expect(failed(miss)).toBe(true);
+    const miss2 = att(4, 'mismatch', 0.45);
+    expect(pickAttempt([sure, unsure, miss, miss2]).seed).toBe(3);
+    expect(pickAttempt([unsure, miss, miss2]).seed).toBe(2);
+    expect(exposureWarning([miss, unsure], unsure)).toMatch(/redid 1 photo \(1 didn't look enough like Sienna\); kept seed 2\. Face check inconclusive/);
+  });
+
+  it('a verified first photo needs no note', () => {
+    const ok = att(1, 'verified', 0.85);
+    expect(exposureWarning([ok], ok)).toBeNull();
+  });
+});

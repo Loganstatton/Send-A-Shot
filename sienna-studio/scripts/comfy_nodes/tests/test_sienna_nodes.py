@@ -433,3 +433,19 @@ def test_face_reference_and_check():
     assert far["ok"] is False and far["faces"] == 2 and far["size"] == 120
     tiny = sf.check([{"embedding": np.array([0, 0, 1], np.float32), "size": 40}], ref, 0.5, min_size=64)
     assert tiny["ok"] is True and tiny["similarity"] < 0.5
+
+
+def test_face_head_turn_from_landmarks():
+    # box x, y, w, h, then right eye, left eye, nose, mouth corners, score
+    frontal = [0, 0, 100, 120, 30, 50, 70, 50, 50, 75, 35, 95, 65, 95, 0.95]
+    turned = [0, 0, 100, 120, 40, 50, 66, 50, 70, 75, 50, 95, 70, 95, 0.9]
+    f, t = sf.head_turn(frontal), sf.head_turn(turned)
+    assert f["yaw"] < 0.05 and abs(f["eye_ratio"] - 0.4) < 1e-3
+    assert t["yaw"] > 0.6 and t["eye_ratio"] < 0.3
+
+
+def test_face_check_reports_head_turn():
+    a = np.array([1, 0, 0], np.float32)
+    r = sf.check([{"embedding": a, "size": 150, "yaw": 0.4123, "eye_ratio": 0.351, "score": 0.93}], a, 0.74, min_size=64)
+    assert (r["yaw"], r["eye_ratio"], r["detector_score"]) == (0.412, 0.351, 0.93)
+    assert "yaw" not in sf.check([{"embedding": a}], a, 0.74)

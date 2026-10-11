@@ -27,6 +27,8 @@ export interface StylePack {
   /** Only applied when the outfit has no top: with a dress or top on, the pack undressed her (and the top check
    * missed it). */
   nudeOnly?: boolean;
+  /** The pack turns her away from the camera, so the face check treats a middling score as inconclusive. */
+  rearPose?: boolean;
 }
 
 export const STYLE_PACKS: StylePack[] = [
@@ -180,6 +182,7 @@ export const STYLE_PACKS: StylePack[] = [
     default: 0.8,
     source: 'https://civitai.com/models/530095',
     section: 'adult',
+    rearPose: true,
   },
   {
     id: 'sink_selfie',
@@ -191,6 +194,7 @@ export const STYLE_PACKS: StylePack[] = [
     default: 0.5,
     source: 'https://civitai.com/models/2406389',
     section: 'adult',
+    rearPose: true,
   },
   {
     id: 'real_innie',

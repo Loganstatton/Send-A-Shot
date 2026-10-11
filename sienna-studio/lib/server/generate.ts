@@ -39,9 +39,9 @@ import { posePreset } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
-import { FACE_NODE_ID, faceNode, framingOk, parseFace } from '../identity';
+import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, parseFace, rearRequest, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
-import { activeStylePacks, nudeOnlyAllowed, packCoverage, STYLE_PACK_STACK_LIMIT, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
+import { activeStylePacks, nudeOnlyAllowed, packCoverage, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
@@ -629,9 +629,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               seed: rec.seed,
               exposed: topOn ? top!.exposed : false,
               score: topOn ? top!.score : 0,
-              ...(faceOn
-                ? { similarity: face!.similarity, faceOk: face!.ok, framingOk: framingOk(fullBodyFraming(rec.fields).add, face!.size, rec.params.height) }
-                : {}),
+              ...(faceOn ? identityFields(face!, rec) : {}),
               images: state.images,
             },
           ];
@@ -686,4 +684,18 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
       return patchRecord(id, { ...extra, status: 'done', images, completedAt: new Date().toISOString(), queuePosition: 0 });
     }
   }
+}
+
+/** Face-check fields of one attempt: the pose-aware verdict (only a verified face counts as a match). */
+function identityFields(face: FaceReport, rec: GenerationRecord) {
+  const rearPack = (rec.stylePacks ?? []).some((p) => STYLE_PACKS.find((sp) => sp.id === p.id)?.rearPose);
+  const rear = rearRequest(`${rec.fields.pose} ${rec.fields.extra}`, rec.params.posePreset, rearPack);
+  const v = faceVerdict(face, rear);
+  return {
+    similarity: face.similarity,
+    identity: v.status,
+    ...(v.status === 'verified' ? { faceOk: true } : v.status === 'mismatch' ? { faceOk: false } : {}),
+    ...(v.reason ? { identityReason: v.reason } : {}),
+    framingOk: framingOk(fullBodyFraming(rec.fields).add, face.size, rec.params.height),
+  };
 }

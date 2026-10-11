@@ -26,7 +26,11 @@ export interface ExposureAttempt<Ref = unknown> {
   score: number;
   /** Face check result (absent when the face check isn't running). */
   similarity?: number | null;
+  /** True only when the face was verified as Sienna's; false when it clearly wasn't; unset when it couldn't be judged. */
   faceOk?: boolean;
+  /** Pose-aware verdict (lib/identity.ts) and, when not verified, why. */
+  identity?: 'verified' | 'mismatch' | 'inconclusive';
+  identityReason?: string;
   /** False when a full-body request came back as a closer shot. */
   framingOk?: boolean;
   images: Ref[];
@@ -117,8 +121,9 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
   if (!failed(last)) return last;
   const covered = attempts.filter((a) => !a.exposed);
   if (covered.length) {
-    // right framing first, then the closest face
-    const rank = (a: ExposureAttempt<Ref>) => (a.framingOk === false ? 0 : 10) + (a.similarity ?? -1);
+    // right framing first, then a verified face over one that couldn't be judged over a mismatch, then the closest
+    const idRank = (a: ExposureAttempt<Ref>) => (a.identity === 'verified' ? 4 : a.identity === 'inconclusive' ? 2 : 0);
+    const rank = (a: ExposureAttempt<Ref>) => (a.framingOk === false ? 0 : 10) + idRank(a) + (a.similarity ?? -1);
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));
@@ -130,13 +135,18 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
     return `Top check: all ${attempts.length} attempts showed a nipple — this is the least exposed one. Try a lower style-pack strength or describe more coverage.`;
   }
   const redone = attempts.filter((a) => a !== kept && failed(a));
-  if (!redone.length) return null;
+  // never let an unjudged face read as a match
+  const unverified =
+    kept.identity === 'inconclusive'
+      ? `Face check inconclusive: ${kept.identityReason ?? 'her face could not be judged'}${typeof kept.similarity === 'number' ? ` (similarity ${kept.similarity})` : ''}, so this photo is not confirmed as Sienna. Other checks passed.`
+      : '';
+  if (!redone.length) return unverified || null;
   const nip = redone.filter((a) => a.exposed).length;
   const face = redone.filter((a) => !a.exposed && a.faceOk === false).length;
   const frame = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk === false).length;
   const why = [nip ? `${nip} showed a nipple` : '', face ? `${face} didn't look enough like Sienna` : '', frame ? `${frame} came out closer than full body` : '']
     .filter(Boolean)
     .join(', ');
-  const tail = kept.faceOk === false ? ` None matched her face closely; kept the closest (similarity ${kept.similarity}).` : '';
+  const tail = kept.faceOk === false ? ` None matched her face closely; kept the closest (similarity ${kept.similarity}).` : unverified ? ` ${unverified}` : '';
   return `Photo checks: redid ${redone.length} photo${redone.length > 1 ? 's' : ''} (${why}); kept seed ${kept.seed}.${tail}`;
 }

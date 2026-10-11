@@ -38,8 +38,19 @@ def model_error() -> Optional[str]:
     return _error
 
 
+def head_turn(f: Sequence[float]) -> Dict[str, float]:
+    """How far a YuNet face is turned, from its box and five landmarks (right eye, left eye, nose, mouth corners).
+    yaw: the nose's sideways offset from the eye midpoint, in eye-distances (about 0 facing the camera, 0.5+ in a
+    strong three-quarter view). eye_ratio: eye distance over box width (about 0.45-0.5 facing the camera, smaller as
+    the head turns)."""
+    re, le, nose = np.asarray(f[4:6], np.float32), np.asarray(f[6:8], np.float32), np.asarray(f[8:10], np.float32)
+    eye_d = float(np.linalg.norm(le - re))
+    mid = (re + le) / 2
+    return {"yaw": abs(float(nose[0] - mid[0])) / (eye_d + 1e-6), "eye_ratio": eye_d / (float(f[2]) + 1e-6)}
+
+
 def faces(bgr: np.ndarray, det, rec) -> List[Dict]:
-    """Every face found: box area, detector score and normalised embedding, largest first."""
+    """Every face found: box area, detector score, head turn and normalised embedding, largest first."""
     h, w = bgr.shape[:2]
     det.setInputSize((w, h))
     _, found = det.detect(bgr)
@@ -47,7 +58,7 @@ def faces(bgr: np.ndarray, det, rec) -> List[Dict]:
     for f in found if found is not None else []:
         aligned = rec.alignCrop(bgr, f)
         e = np.asarray(rec.feature(aligned), dtype=np.float32).ravel()
-        out.append({"area": float(f[2] * f[3]), "size": float(min(f[2], f[3])), "score": float(f[14]), "embedding": e / (np.linalg.norm(e) + 1e-9)})
+        out.append({"area": float(f[2] * f[3]), "size": float(min(f[2], f[3])), "score": float(f[14]), **head_turn(f), "embedding": e / (np.linalg.norm(e) + 1e-9)})
     return sorted(out, key=lambda d: -d["area"])
 
 
@@ -68,4 +79,9 @@ def check(found: List[Dict], reference: np.ndarray, threshold: float, min_size: 
         return {"found": False, "similarity": None, "ok": True, "faces": 0}
     s = similarity(found[0]["embedding"], reference)
     size = found[0].get("size", min_size)
-    return {"found": True, "similarity": round(s, 3), "size": round(size), "ok": s >= threshold or size < min_size, "faces": len(found)}
+    out = {"found": True, "similarity": round(s, 3), "size": round(size), "ok": s >= threshold or size < min_size, "faces": len(found)}
+    # head turn and detector confidence, for the app's pose-aware verdict (older apps ignore them)
+    for k in ("yaw", "eye_ratio", "score"):
+        if k in found[0]:
+            out["detector_score" if k == "score" else k] = round(float(found[0][k]), 3)
+    return out

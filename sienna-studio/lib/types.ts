@@ -354,6 +354,8 @@ export interface GenerationRecord {
       score: number;
       similarity?: number | null;
       faceOk?: boolean;
+      identity?: 'verified' | 'mismatch' | 'inconclusive';
+      identityReason?: string;
       framingOk?: boolean;
       images: { filename: string; subfolder: string; type: string; nodeId: string }[];
     }[];
