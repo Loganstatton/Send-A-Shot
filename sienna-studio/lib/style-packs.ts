@@ -69,9 +69,11 @@ export const STYLE_PACKS: StylePack[] = [
     label: 'String swimsuit',
     hint: 'Ultra-minimal string bikinis: tiny triangles on thin strings, string thong bottoms. More minimal than Micro bikini. Above 0.7 the bottoms become barely-there. With Micro bikini on too she looks fuller but coverage drops — lower this to about 0.5.',
     file: 'pack_305655.safetensors',
-    trigger: 'string swimsuit',
+    // the coverage wording keeps her covered with the top check (3/3 hard seeds vs 2/3 without; a "nipples" negative made it
+    // worse, and so did a lower strength — at her bust size the base model itself drops "tiny" string tops)
+    trigger: 'string swimsuit, triangle cups fully covering her chest',
     max: 0.7,
-    default: 0.6,
+    default: 0.5,
     source: 'https://civitai.com/models/305655',
     section: 'adult',
   },

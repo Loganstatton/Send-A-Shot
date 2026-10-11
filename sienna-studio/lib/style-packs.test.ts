@@ -72,12 +72,12 @@ describe('swimwear and fitted packs (GPU-tested with Sienna)', () => {
     }
   });
   it('defaults and caps match the test results', () => {
-    expect([byId.string_swimsuit.default, byId.string_swimsuit.max]).toEqual([0.6, 0.7]);
+    expect([byId.string_swimsuit.default, byId.string_swimsuit.max]).toEqual([0.5, 0.7]);
     expect([byId.lace_bodysuit.default, byId.lace_bodysuit.max]).toEqual([0.6, 0.8]);
     expect(activeStylePacks({ string_swimsuit: 0.8 }, 'adult')[0].strength).toBe(0.7);
   });
   it('natural descriptions get the trigger words automatically', () => {
-    expect(withTriggers('tiny white string bikini', activeStylePacks({ string_swimsuit: 0.6 }, 'adult'))).toBe('string swimsuit, tiny white string bikini');
+    expect(withTriggers('tiny white string bikini', activeStylePacks({ string_swimsuit: 0.6 }, 'adult'))).toBe('string swimsuit, triangle cups fully covering her chest, tiny white string bikini');
   });
   it('Natural skin uses the shortened trigger', () => {
     expect(byId.natural_skin.trigger).toBe('detailed natural skin texture');
