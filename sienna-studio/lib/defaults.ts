@@ -109,7 +109,7 @@ export const SFW_NEGATIVE = 'nsfw, nude, nudity, topless, explicit, sexual, ling
 /** Added (both modes) when the outfit has a top, so revealing packs and the bust emphasis can't drop it. */
 export const KEEP_TOP_NEGATIVE = '(topless, bare breasts, exposed nipples:1.3)';
 /** Outfit words that mean she wears something on top. */
-export const TOP_GARMENT_RE = /\b(bikini|bra|bralette|top|shirt|t-shirt|tee|tank|blouse|swimsuit|monokini|one-piece|bodysuit|leotard|dress|sweater|hoodie|jacket|corset|camisole|cami|crop)\b/i;
+export const TOP_GARMENT_RE = /\b(bikini|bra|bralette|top|shirt|t-shirt|tee|tank|blouse|swimsuit|one-piece|bodysuit|leotard|dress|sweater|hoodie|jacket|corset|camisole|cami|crop)\b/i;
 /** Outfit words that ask for no top — the keep-top negative is skipped. */
 export const NO_TOP_RE = /\b(topless|nude|naked|bare[- ]chest(ed)?|no (top|bra|bikini top))\b/i;
 

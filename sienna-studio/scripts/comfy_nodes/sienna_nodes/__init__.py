@@ -8,7 +8,6 @@ Sienna Studio custom ComfyUI nodes (installed by scripts/comfyui-bootstrap.sh).
   SiennaBodySheet        approved Sienna body references stitched into one image
   SiennaBodyMeasure      image + DWPose keypoints + person mask → body proportions (JSON)
   SiennaBodyCheck        source / result / reference measurements → body-consistency report (JSON)
-  SiennaExposureCheck    image(s) → did a nipple show? (NudeNet; JSON per image, for the app's retry)
 
 The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py / sienna_body.py (no ComfyUI imports; unit-tested).
 """
@@ -20,7 +19,6 @@ import torch
 
 from .sienna_body import SCENE_CHANGED, body_sheet, compare, garment_only, keypoints_from_pose, measure_body, scale_points, scene_backdrop, scene_change
 from .sienna_crop import chin_crop
-from .sienna_exposure import DEFAULT_THRESHOLD, detector, detector_error, summarize
 from .sienna_redraw import GROW_MODES, erase, garment_region, overlay, segment_classes, segmenter_error
 from .sienna_garment import garment_composite
 from .sienna_pose import DEFAULT_PROPORTIONS, retarget_openpose
@@ -282,44 +280,6 @@ class SiennaGarmentRedrawMask:
         return {"ui": {"text": [text]}, "result": (t(hard), t(soft), t(erase(img, hard)), t(overlay(img, hard)), text)}
 
 
-class SiennaExposureCheck:
-    """Reports whether each image shows exposed nipples (the app regenerates with a new seed if the outfit had a top)."""
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {"required": {"images": ("IMAGE",), "threshold": ("FLOAT", {"default": DEFAULT_THRESHOLD, "min": 0.05, "max": 0.95, "step": 0.05})}}
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("report",)
-    FUNCTION = "run"
-    OUTPUT_NODE = True
-    CATEGORY = "sienna"
-
-    def run(self, images, threshold):
-        import os
-        import tempfile
-
-        import cv2
-
-        det = detector()
-        if det is None:
-            text = json.dumps({"available": False, "error": detector_error()})
-            return {"ui": {"text": [text]}, "result": (text,)}
-        results = []
-        for i in range(images.shape[0]):
-            rgb = (np.clip(images[i].detach().cpu().numpy(), 0, 1) * 255).astype(np.uint8)
-            fd, path = tempfile.mkstemp(suffix=".png")
-            os.close(fd)
-            try:
-                cv2.imwrite(path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
-                results.append(summarize(det.detect(path), threshold))
-            finally:
-                os.remove(path)
-        report = {"available": True, "exposed": any(r["exposed"] for r in results), "score": max(r["score"] for r in results), "images": results}
-        text = json.dumps(report)
-        return {"ui": {"text": [text]}, "result": (text,)}
-
-
 NODE_CLASS_MAPPINGS = {
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
@@ -329,7 +289,6 @@ NODE_CLASS_MAPPINGS = {
     "SiennaBodyMeasure": SiennaBodyMeasure,
     "SiennaBodyCheck": SiennaBodyCheck,
     "SiennaGarmentRedrawMask": SiennaGarmentRedrawMask,
-    "SiennaExposureCheck": SiennaExposureCheck,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaPoseRetarget": "Sienna Pose Retarget",
@@ -340,5 +299,4 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaBodyMeasure": "Sienna Body Measure",
     "SiennaBodyCheck": "Sienna Body Check",
     "SiennaGarmentRedrawMask": "Sienna Garment Redraw Mask",
-    "SiennaExposureCheck": "Sienna Exposure Check",
 }

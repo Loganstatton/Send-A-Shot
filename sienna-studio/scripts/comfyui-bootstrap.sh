@@ -300,10 +300,10 @@ if (( QWEN )); then
     "$COMFYUI_DIR/models/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors" 20000000000
 fi
 
-# ── Sienna custom nodes (pose retargeting, garment-only isolation, chin crop, top check) ──
+# ── Sienna custom nodes (pose retargeting, garment-only isolation, chin crop) ──
 # Shipped in this repo (scripts/comfy_nodes/sienna_nodes). Copied when the script runs from
 # a checkout, or when SIENNA_NODES_DIR points at an uploaded copy.
-if (( OUTFIT || POSE || QWEN || PACKS )); then
+if (( OUTFIT || POSE || QWEN )); then
   log "sienna_nodes"
   src="${SIENNA_NODES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/comfy_nodes/sienna_nodes}"
   if [[ -f "$src/__init__.py" ]]; then
@@ -311,9 +311,6 @@ if (( OUTFIT || POSE || QWEN || PACKS )); then
     cp -r "$src" "$COMFYUI_DIR/custom_nodes/sienna_nodes"
     rm -rf "$COMFYUI_DIR/custom_nodes/sienna_nodes/__pycache__"
     echo "installed from $src"
-    # Top check (SiennaExposureCheck): NudeNet, MIT, ships its own small ONNX detector.
-    "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "nudenet==3.4.2" \
-      || echo "nudenet install failed — the top check will be skipped (photos are still made)"
   else
     echo "not found at $src — pose retargeting and garment-only isolation will be unavailable (set SIENNA_NODES_DIR)"
   fi

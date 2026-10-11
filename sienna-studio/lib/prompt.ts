@@ -11,6 +11,8 @@ import {
   FULL_BODY_FRAMING,
   FULL_BODY_NEGATIVE,
   KEEP_TOP_NEGATIVE,
+  NO_TOP_RE,
+  TOP_GARMENT_RE,
   MIRROR_FULL_BODY_FRAMING,
   LEGACY_EYE_TRAIT,
   LOCK_NEGATIVE,
@@ -18,7 +20,6 @@ import {
   NON_STUDIO_NEGATIVE,
   SFW_NEGATIVE,
 } from './defaults';
-import { outfitHasTop } from './exposure';
 import { applyIdentityLock, findHardBlocks, GuardHit, tidy } from './guard';
 import { splitAvoid } from './outfit-edit';
 import type { CharacterProfile, ContentMode, PromptFields } from './types';
@@ -198,7 +199,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     contentMode === 'sfw' ? SFW_NEGATIVE : '',
     siennaLock ? (cleanup ? AGE_DRIFT_NEGATIVE_CLEAN : AGE_DRIFT_NEGATIVE) : '',
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
-    outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
+    TOP_GARMENT_RE.test(f.outfit) && !NO_TOP_RE.test(f.outfit) ? KEEP_TOP_NEGATIVE : '',
     avoidItems.join(', '),
   ]);
 
