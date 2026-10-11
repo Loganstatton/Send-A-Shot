@@ -28,17 +28,10 @@
   "strength": 0.85
  },
  {
-  "id": "bending_forward",
+  "id": "looking_back",
   "width": 832,
   "height": 1216,
-  "pose": "leaning forward toward the camera, bending at the waist, hands resting on her knees",
-  "strength": 0.85
- },
- {
-  "id": "bending_side",
-  "width": 832,
-  "height": 1216,
-  "pose": "bending over at the waist, side view, hands resting on her knees, looking at the camera",
+  "pose": "seen from behind, leaning forward slightly, looking back over her shoulder at the camera",
   "strength": 0.85
  },
  {

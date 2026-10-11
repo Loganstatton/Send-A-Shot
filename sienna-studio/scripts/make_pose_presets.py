@@ -26,11 +26,13 @@ P = {
   'hand_in_hair': (832, 1216, 'close-up, one hand raised running through her hair', merge(face(416, 470, 2.2), {1: (416, 740), 2: (210, 830), 5: (622, 830), 3: (130, 520), 4: (250, 290), 6: (700, 1180)})),
   'mirror_selfie': (832, 1216, 'mirror selfie, holding a phone up in front of her chest with one hand, other hand on her hip', merge(face(416, 270), {1: (416, 380), 2: (320, 400), 5: (512, 400), 3: (250, 560), 4: (330, 470), 6: (600, 570), 7: (520, 700),
       8: (366, 790), 11: (466, 790), 9: (360, 1070), 12: (472, 1070)})),
-  'bending_forward': (832, 1216, 'leaning forward toward the camera, bending at the waist, hands resting on her knees', merge(face(416, 390, 1.15), {1: (416, 490), 2: (300, 510), 5: (532, 510),
-      3: (275, 690), 6: (557, 690), 4: (335, 850), 7: (497, 850), 8: (378, 700), 11: (454, 700), 9: (345, 880), 12: (487, 880), 10: (352, 1150), 13: (480, 1150)})),
-  'bending_side': (832, 1216, 'bending over at the waist, side view, hands resting on her knees, looking at the camera', merge(
-      {0: (215, 480), 15: (232, 458), 17: (285, 462)}, {1: (320, 505), 2: (332, 515), 5: (348, 500), 3: (365, 655), 6: (385, 645),
-      4: (450, 770), 7: (465, 760), 8: (600, 520), 11: (612, 512), 9: (560, 805), 12: (575, 798), 10: (585, 1110), 13: (600, 1105)})),
+  # rear view: her right side is on the image's right; head turned to look back over her right shoulder.
+  # Drawn bent at the waist, but SDXL's pose ControlNet gives a standing look-back with a slight lean (5/5);
+  # true bending-over (front/side/back) was ignored in 11 tests — she knelt, crouched or stood.
+  'looking_back': (832, 1216, 'seen from behind, leaning forward slightly, looking back over her shoulder at the camera', merge(
+      {0: (478, 668), 14: (492, 650), 15: (462, 648), 17: (420, 660)}, {1: (416, 640), 2: (512, 628), 5: (320, 628),
+      3: (530, 740), 6: (302, 740), 4: (488, 815), 7: (344, 815), 8: (468, 515), 11: (364, 515), 9: (478, 805), 12: (354, 805),
+      10: (490, 1125), 13: (342, 1125)})),
   'lying_on_stomach': (1216, 832, 'lying on her stomach on the bed, propped up on her elbows, chin resting on her hands, feet up behind her', merge(
       {0: (300, 330), 14: (285, 305), 15: (310, 300), 17: (345, 315)}, {1: (390, 380), 2: (380, 400), 5: (420, 390),
       3: (360, 570), 6: (420, 575), 4: (290, 460), 7: (320, 470), 8: (720, 470), 11: (730, 480), 9: (930, 520), 12: (940, 530),
@@ -40,6 +42,7 @@ P = {
 # pose ControlNet strength for presets: 0.85 followed arms-crossed 4/4 and hand-in-hair 2/2 (0.65: 2/4, 1/2).
 # Kneeling was dropped: its skeleton produced a ghost second body or a standing pose in 2 of 4 tests.
 STRENGTH = 0.85
+STRENGTHS = {}
 
 out = os.path.join(os.path.dirname(__file__), '..', 'public', 'pose-presets')
 os.makedirs(out, exist_ok=True)
@@ -49,6 +52,6 @@ for pid, (w, h, prompt, kp) in P.items():
     canvas = draw_body(np.zeros((h, w, 3), np.uint8), body)
     import cv2
     cv2.imwrite(os.path.join(out, f'{pid}.png'), cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
-    meta.append({'id': pid, 'width': w, 'height': h, 'pose': prompt, 'strength': STRENGTH})
+    meta.append({'id': pid, 'width': w, 'height': h, 'pose': prompt, 'strength': STRENGTHS.get(pid, STRENGTH)})
 json.dump(meta, open(os.path.join(out, 'presets.json'), 'w'), indent=1)
 print('wrote', [m['id'] for m in meta])
