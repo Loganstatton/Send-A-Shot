@@ -98,3 +98,34 @@ Pass criteria for deploying:
 4. Fewer generations on from-behind cases.
 
 If (2) fails, raise the floor (0.70) or keep the deployed rule.
+
+## Real-GPU A/B result (run 2026-10-11, RTX 4090)
+
+204 photos (5 from-behind cases × 6 seeds × 6 attempts, 2 facing-camera cases × 3 seeds × 4 attempts), every
+photo labelled **blind** (random codes, no score, case or policy shown) as Sienna / different woman / can't judge,
+then both rules replayed on the same photos (first 4 attempts). GPU cost ≈ $0.64 (incl. one failed start).
+
+- Blind labels: 171 Sienna, **2 different women** (scores 0.65 and 0.63, both kneel-on-bed), 31 can't judge
+  (strict profile / face hidden).
+- **Neither rule delivered a different woman** (0 of 36 each). Both rejected the two lookalikes. With 36 photos
+  this rules out a high error rate but not a rare one (95 % upper bound ≈ 8 %).
+- The earlier 11.4 % estimate was too pessimistic for today's pipeline: only 1 % of all photos in this run were
+  a different woman. But the deployed rule still sent **16 of 30** from-behind photos to the gallery unverified
+  (closest-of-4); the pose-aware rule 19 of 30 (inconclusive).
+
+| | Current 0.74 | Pose-aware 0.68 |
+|---|---|---|
+| From-behind generations (30 photos) | 100 (3.33 / photo) | 73 (2.43 / photo) |
+| GPU time per from-behind photo | ≈ 40 s | ≈ 29 s |
+| Verified photos | 14 / 30 | 11 / 30 |
+| Unverified (→ Needs Review) | 16 / 30 | 19 / 30 |
+| Different woman delivered | 0 | 0 |
+| Facing-camera (6 photos) | 6 verified, 6 generations | identical |
+
+- Where the rules disagreed (5 of 30), both kept Sienna; in 2 of those the current rule found a *verified*
+  photo by trying longer.
+- 6 attempts instead of 4 (current rule): +31 % generations for 2 more verified photos — not worth it.
+- **Hair/skin colour signal misfired** on 15 of 171 blind-confirmed Sienna photos (backlit beach, white sheets
+  behind her hair), far above the offline 0.3 %. It changed no decision here, but it fails the "lighting must not
+  fail legitimate photos" bar for from-behind shots, so it should not gate decisions.
+- Only 21 % of from-behind attempts of the real Sienna reach 0.74; 58 % score below 0.68.
