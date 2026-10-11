@@ -94,6 +94,16 @@ describe('thin white shirt pack', () => {
   });
 });
 
+describe('pose packs', () => {
+  it('are adult-only, and the sink selfie is capped so it cannot enlarge her hips', () => {
+    for (const id of ['all_fours', 'sink_selfie']) {
+      expect(STYLE_PACKS.find((p) => p.id === id)?.section).toBe('adult');
+      expect(activeStylePacks({ [id]: 0.6 }, 'sfw')).toEqual([]);
+    }
+    expect(activeStylePacks({ sink_selfie: 0.9 }, 'adult')[0].strength).toBe(0.6);
+  });
+});
+
 describe('round-3 adult packs', () => {
   it('are adult-only and off in SFW mode', () => {
     for (const id of ['belly_cutout_dress', 'mesh_top', 'underboob_shirt', 'lace_bandeau']) {

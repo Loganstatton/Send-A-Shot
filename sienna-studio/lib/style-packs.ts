@@ -167,6 +167,28 @@ export const STYLE_PACKS: StylePack[] = [
     source: 'https://civitai.com/models/602417',
     section: 'adult',
   },
+  {
+    id: 'all_fours',
+    label: 'Kneeling from behind',
+    hint: 'Kneeling with her back arched, seen from behind, looking back over her shoulder. Her face is turned away, so the face check often keeps the closest match instead of a perfect one.',
+    file: 'pack_530095.safetensors',
+    trigger: 'all fours, arching4s',
+    max: 0.9,
+    default: 0.8,
+    source: 'https://civitai.com/models/530095',
+    section: 'adult',
+  },
+  {
+    id: 'sink_selfie',
+    label: 'Sink selfie (from behind)',
+    hint: 'Mirror selfie from behind, sitting on the bathroom sink and looking back. Above 0.6 it enlarges her hips, so it is capped there.',
+    file: 'pack_2406389.safetensors',
+    trigger: 'Bo0ty_s3lfie_p0se',
+    max: 0.6,
+    default: 0.5,
+    source: 'https://civitai.com/models/2406389',
+    section: 'adult',
+  },
 ];
 
 /** Stacking more than this many packs visibly changes Sienna's face (and pose) in testing. */

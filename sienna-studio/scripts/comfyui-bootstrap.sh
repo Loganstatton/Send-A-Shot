@@ -326,7 +326,7 @@ fi
 # ── Style packs (optional; files named as lib/style-packs.ts expects) ──────────
 if (( PACKS )); then
   log "Style packs (Civitai)"
-  for id in 143602 1368634 248951 2903117 305655 1276176 138252 733289 883770 706722 602417 385723; do
+  for id in 143602 1368634 248951 2903117 305655 1276176 138252 733289 883770 706722 602417 385723 530095 2406389; do
     dest="$COMFYUI_DIR/models/loras/pack_$id.safetensors"
     if [[ -s "$dest" ]]; then echo "  ✓ pack_$id already present"; continue; fi
     ver=$(curl -fsS --max-time 30 "https://civitai.com/api/v1/models/$id" | "$COMFYUI_PYTHON" -c \
