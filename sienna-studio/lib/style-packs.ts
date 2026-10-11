@@ -133,6 +133,20 @@ export const STYLE_PACKS: StylePack[] = [
     section: 'adult',
   },
   {
+    id: 'monokini',
+    label: 'Monokini',
+    hint: 'One-piece slingshot swimsuits: a deep V to the navel and high-cut legs (e.g. “black plunging monokini, high-cut legs”). Kept low on purpose — above 0.3 the straps stop covering her.',
+    file: 'pack_385723.safetensors',
+    // the straps are narrow for her bust: these keep them over her chest (3 of 3 covered vs 0 of 9 without) and
+    // the bust line stops the wide-strap wording from shrinking her
+    trigger: 'monokini, (wide straps covering her chest:1.4), (large round natural breasts:1.3)',
+    negative: '(nipples, areola:1.6), exposed breasts',
+    max: 0.35,
+    default: 0.3,
+    source: 'https://civitai.com/models/385723',
+    section: 'adult',
+  },
+  {
     id: 'lace_bandeau',
     label: 'Lace bandeau top',
     hint: 'Strapless lace tube tops. It tends to pair them with lace bottoms; for shorts or jeans, name them plainly — weighting them, e.g. “(denim shorts:1.2)”, turns the top into denim too.',

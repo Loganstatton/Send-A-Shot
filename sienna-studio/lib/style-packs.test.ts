@@ -110,7 +110,10 @@ describe('round-3 adult packs', () => {
     expect(withPackNegatives('lowres, nipples, topless', [a])).toBe('lowres, nipples, topless');
   });
 
-  it('monokini was not added (exposed her in every test photo)', () => {
-    expect(STYLE_PACKS.some((p) => p.file === 'pack_385723.safetensors')).toBe(false);
+  it('monokini stays low and carries its coverage wording', () => {
+    const [a] = activeStylePacks({ monokini: 0.6 }, 'adult');
+    expect(a.strength).toBe(0.35);
+    expect(withTriggers('x', [a])).toContain('(wide straps covering her chest:1.4)');
+    expect(withPackNegatives('lowres', [a])).toBe('lowres, (nipples, areola:1.6), exposed breasts');
   });
 });
