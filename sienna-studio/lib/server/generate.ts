@@ -668,6 +668,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           }
           refs = kept.images;
           extra.seed = kept.seed;
+          if (faceOn) extra.identityCheck = identitySummary(kept);
           extra.exposureGuard = { ...guard, attempts };
           const note = exposureWarning(attempts, kept);
           if (note) notes.push(note);
@@ -694,8 +695,17 @@ function identityFields(face: FaceReport, rec: GenerationRecord) {
   return {
     similarity: face.similarity,
     identity: v.status,
+    colour: v.colour.status,
     ...(v.status === 'verified' ? { faceOk: true } : v.status === 'mismatch' ? { faceOk: false } : {}),
     ...(v.reason ? { identityReason: v.reason } : {}),
     framingOk: framingOk(fullBodyFraming(rec.fields).add, face.size, rec.params.height),
   };
+}
+
+/** What the gallery shows about the kept photo's face: only a verified face counts as Sienna's. */
+function identitySummary(kept: { identity?: string; similarity?: number | null; identityReason?: string; faceOk?: boolean }): NonNullable<GenerationRecord['identityCheck']> {
+  const similarity = kept.similarity ?? null;
+  if (kept.identity === 'verified' || (kept.identity === undefined && kept.faceOk === true)) return { status: 'verified', similarity };
+  if (kept.identity === 'inconclusive') return { status: 'inconclusive', similarity, reason: kept.identityReason };
+  return { status: 'unconfirmed', similarity, reason: kept.identityReason ?? "didn't look enough like Sienna" };
 }

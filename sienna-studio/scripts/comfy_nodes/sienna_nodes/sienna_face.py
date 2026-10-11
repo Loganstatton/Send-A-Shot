@@ -49,6 +49,45 @@ def head_turn(f: Sequence[float]) -> Dict[str, float]:
     return {"yaw": abs(float(nose[0] - mid[0])) / (eye_d + 1e-6), "eye_ratio": eye_d / (float(f[2]) + 1e-6)}
 
 
+def appearance(bgr: np.ndarray, f: Sequence[float]) -> Dict[str, float]:
+    """Secondary, lighting-tolerant colour signals around a YuNet face (never proof of identity):
+    hair_rel: hair brightness over skin brightness in the same photo (Sienna's dark-brown hair: 0.14-0.65 in 99%
+      of photos, whatever the light; blonde/grey hair: about 1 or more). Hair is sampled above and beside the face;
+      a bright sky or white wall right behind her hair can push it up (0.3% of her photos).
+    skin_hue: hue angle of the cheek skin in Lab, degrees (Sienna 40-56 from shade to golden hour).
+    skin_l: cheek lightness 0-100; mono: true for black-and-white photos (no colour to judge)."""
+    import cv2
+
+    H, W = bgr.shape[:2]
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+    lab[..., 0] *= 100.0 / 255.0
+    lab[..., 1:] -= 128.0
+    bx, by, bw, bh = (float(v) for v in f[:4])
+    re, le = np.asarray(f[4:6], np.float32), np.asarray(f[6:8], np.float32)
+    ed = float(np.linalg.norm(le - re)) + 1e-6
+
+    def patch(x0, y0, x1, y1):
+        x0, y0, x1, y1 = (int(round(v)) for v in (max(0, x0), max(0, y0), min(W, x1), min(H, y1)))
+        return lab[y0:y1, x0:x1].reshape(-1, 3) if x1 - x0 >= 3 and y1 - y0 >= 3 else None
+
+    cheeks = [patch(c[0] - .25 * ed, c[1] + .35 * ed, c[0] + .25 * ed, c[1] + .75 * ed) for c in (re, le)]
+    cheeks = [c for c in cheeks if c is not None]
+    if not cheeks:
+        return {}
+    skin = np.median(np.concatenate(cheeks), 0)
+    out = {"skin_l": round(float(skin[0]), 1), "skin_hue": round(float(np.degrees(np.arctan2(skin[2], skin[1]))), 1),
+           "mono": bool(np.hypot(skin[1], skin[2]) < 3)}
+    bands = [patch(bx + .1 * bw, by - .35 * bh, bx + .9 * bw, by - .02 * bh),
+             patch(bx - .35 * bw, by + .15 * bh, bx - .05 * bw, by + .9 * bh),
+             patch(bx + 1.05 * bw, by + .15 * bh, bx + 1.35 * bw, by + .9 * bh)]
+    bands = [b for b in bands if b is not None]
+    if bands and skin[0] >= 5:
+        px = np.concatenate(bands)
+        darkest = px[np.argsort(px[:, 0])][: max(10, int(len(px) * .7))]  # drop background highlights
+        out["hair_rel"] = round(float(np.median(darkest[len(darkest) // 2:, 0]) / skin[0]), 3)
+    return out
+
+
 def faces(bgr: np.ndarray, det, rec) -> List[Dict]:
     """Every face found: box area, detector score, head turn and normalised embedding, largest first."""
     h, w = bgr.shape[:2]
@@ -58,7 +97,8 @@ def faces(bgr: np.ndarray, det, rec) -> List[Dict]:
     for f in found if found is not None else []:
         aligned = rec.alignCrop(bgr, f)
         e = np.asarray(rec.feature(aligned), dtype=np.float32).ravel()
-        out.append({"area": float(f[2] * f[3]), "size": float(min(f[2], f[3])), "score": float(f[14]), **head_turn(f), "embedding": e / (np.linalg.norm(e) + 1e-9)})
+        out.append({"area": float(f[2] * f[3]), "size": float(min(f[2], f[3])), "score": float(f[14]), **head_turn(f), **appearance(bgr, f),
+                    "embedding": e / (np.linalg.norm(e) + 1e-9)})
     return sorted(out, key=lambda d: -d["area"])
 
 
@@ -81,7 +121,9 @@ def check(found: List[Dict], reference: np.ndarray, threshold: float, min_size: 
     size = found[0].get("size", min_size)
     out = {"found": True, "similarity": round(s, 3), "size": round(size), "ok": s >= threshold or size < min_size, "faces": len(found)}
     # head turn and detector confidence, for the app's pose-aware verdict (older apps ignore them)
-    for k in ("yaw", "eye_ratio", "score"):
+    for k in ("yaw", "eye_ratio", "score", "hair_rel", "skin_hue", "skin_l"):
         if k in found[0]:
             out["detector_score" if k == "score" else k] = round(float(found[0][k]), 3)
+    if "mono" in found[0]:
+        out["mono"] = bool(found[0]["mono"])
     return out

@@ -449,3 +449,30 @@ def test_face_check_reports_head_turn():
     r = sf.check([{"embedding": a, "size": 150, "yaw": 0.4123, "eye_ratio": 0.351, "score": 0.93}], a, 0.74, min_size=64)
     assert (r["yaw"], r["eye_ratio"], r["detector_score"]) == (0.412, 0.351, 0.93)
     assert "yaw" not in sf.check([{"embedding": a}], a, 0.74)
+
+
+def _portrait(hair_bgr, skin_bgr=(120, 150, 215)):
+    """Synthetic 400x400 photo: hair-coloured head area with a skin-coloured face box at (150,150)-(250,270)."""
+    img = np.full((400, 400, 3), 235, np.uint8)
+    img[60:330, 90:310] = hair_bgr
+    img[150:270, 150:250] = skin_bgr
+    f = [150, 150, 100, 120, 175, 190, 225, 190, 200, 220, 180, 245, 220, 245, 0.95]
+    return img, f
+
+
+def test_face_appearance_hair_and_skin():
+    dark, f = _portrait((20, 30, 45))      # dark brown hair
+    blonde, _ = _portrait((140, 200, 225))  # blonde hair, same skin
+    a, b = sf.appearance(dark, f), sf.appearance(blonde, f)
+    assert a["hair_rel"] < 0.4 and b["hair_rel"] > 1.0
+    assert 30 < a["skin_hue"] < 65 and a["mono"] is False
+    grey, _ = _portrait((60, 60, 60), (150, 150, 150))
+    assert sf.appearance(grey, f)["mono"] is True
+
+
+def test_face_appearance_is_lighting_relative():
+    img, f = _portrait((20, 30, 45))
+    dim = (img.astype(np.float32) * 0.55).astype(np.uint8)   # same photo, much darker light
+    a, b = sf.appearance(img, f), sf.appearance(dim, f)
+    assert abs(a["hair_rel"] - b["hair_rel"]) < 0.15
+    assert abs(a["skin_hue"] - b["skin_hue"]) < 6

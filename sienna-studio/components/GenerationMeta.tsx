@@ -42,6 +42,21 @@ export function GenerationMeta({ rec, showPrompt = true }: { rec: GenerationReco
         <Meta k="Backend" v={rec.backend === 'mock' ? <Badge tone="warn">MOCK</Badge> : 'ComfyUI'} />
         <Meta k="Prompt ID" v={<span className="select-all break-all font-mono text-xs">{rec.promptId ?? '—'}</span>} />
         <Meta k="Seed" v={<span className="select-all">{rec.seed}</span>} />
+        {rec.identityCheck && (
+          <Meta
+            k="Face check"
+            v={
+              rec.identityCheck.status === 'verified' ? (
+                <Badge tone="ok">verified as Sienna{typeof rec.identityCheck.similarity === 'number' ? ` · ${rec.identityCheck.similarity.toFixed(2)}` : ''}</Badge>
+              ) : (
+                <Badge tone="warn">
+                  {rec.identityCheck.status === 'inconclusive' ? 'not verified' : "didn't match"}
+                  {typeof rec.identityCheck.similarity === 'number' ? ` · ${rec.identityCheck.similarity.toFixed(2)}` : ''}
+                </Badge>
+              )
+            }
+          />
+        )}
         <Meta k="Workflow" v={rec.workflowName} />
         <Meta k="Preset" v={rec.presetName ?? 'Custom'} />
         <Meta k="Sienna Lock" v={rec.siennaLock ? 'On' : 'Off'} />

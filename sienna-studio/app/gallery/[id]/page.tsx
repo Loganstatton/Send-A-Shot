@@ -14,6 +14,7 @@ import type { GenerationRecord, ReviewItem, ReviewMark } from '@/lib/types';
 import { PROMPT_FIELD_LABELS, REVIEW_ITEMS } from '@/lib/types';
 import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Spinner, TextArea, cx, toast } from '@/components/ui';
 import { GenerationMeta } from '@/components/GenerationMeta';
+import { identityNotice } from '@/lib/identity-notice';
 
 export default function GenerationDetail() {
   const { id } = useParams<{ id: string }>();
@@ -122,6 +123,8 @@ export default function GenerationDetail() {
           {rec.status === 'error' ? <Notice kind="error">{rec.error}</Notice> : <Spinner className="h-8 w-8" />}
         </Card>
       )}
+
+      <IdentityReview rec={rec} onMark={(mark) => setMark('face_drift', mark)} />
 
       {/* Primary actions */}
       <div className="mt-3 grid grid-cols-4 gap-2">
@@ -391,5 +394,30 @@ function BodyRefButton({ rec, refs, onChange }: { rec: GenerationRecord; refs?: 
       </Button>
       {!isRef && problem && <p className="mt-1 text-xs text-ink-400">Not eligible as a body reference: {problem}.</p>}
     </div>
+  );
+}
+
+/** Shown when the face wasn't verified as Sienna's: the user decides whether the photo looks like her. */
+function IdentityReview({ rec, onMark }: { rec: GenerationRecord; onMark: (mark: 'ok' | 'issue' | null) => void }) {
+  const n = identityNotice(rec);
+  if (!n) return null;
+  return (
+    <Notice kind="warn">
+      <p className="font-medium">{n.title}</p>
+      <p className="mt-1">{n.detail}</p>
+      {n.userCall ? (
+        <p className="mt-2 text-xs">
+          {n.userCall === 'looks_like_her' ? 'You checked it: looks like Sienna (your call — not a verified match).' : 'You marked it: not Sienna.'}{' '}
+          <button className="text-accent underline" onClick={() => onMark(null)}>
+            Undo
+          </button>
+        </p>
+      ) : (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <Button onClick={() => onMark('ok')}>Looks like Sienna</Button>
+          <Button onClick={() => onMark('issue')}>Not her</Button>
+        </div>
+      )}
+    </Notice>
   );
 }

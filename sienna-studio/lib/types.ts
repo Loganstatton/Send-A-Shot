@@ -356,9 +356,19 @@ export interface GenerationRecord {
       faceOk?: boolean;
       identity?: 'verified' | 'mismatch' | 'inconclusive';
       identityReason?: string;
+      /** Secondary hair/skin colour signal (never proof of identity). */
+      colour?: 'consistent' | 'differs' | 'unknown';
       framingOk?: boolean;
       images: { filename: string; subfolder: string; type: string; nodeId: string }[];
     }[];
+  };
+  /** Face check of the photo that was kept. Only 'verified' means the face was confirmed as Sienna's; the gallery
+   * flags anything else so the user can decide whether to keep the image. */
+  identityCheck?: {
+    status: 'verified' | 'inconclusive' | 'unconfirmed';
+    similarity: number | null;
+    reason?: string;
+    colourNotes?: string[];
   };
   /** The exact API-format graph sent to ComfyUI (for debugging). */
   submittedGraph?: ComfyGraph;

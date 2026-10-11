@@ -4,14 +4,15 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { fileUrl, useApi } from '@/lib/client/api';
 import type { GenerationRecord } from '@/lib/types';
+import { needsIdentityReview } from '@/lib/identity-notice';
 import { Badge, Chip, EmptyState, PageHeader, Spinner, cx } from '@/components/ui';
 
 export default function GalleryPage() {
-  const [filter, setFilter] = useState<'all' | 'fav' | 'issues'>('all');
+  const [filter, setFilter] = useState<'all' | 'fav' | 'issues' | 'face'>('all');
   const { data, loading, error } = useApi<GenerationRecord[]>('/api/history?limit=500');
 
   const list = (data ?? []).filter((r) =>
-    filter === 'fav' ? r.favorite : filter === 'issues' ? Object.values(r.review).includes('issue') : true,
+    filter === 'fav' ? r.favorite : filter === 'issues' ? Object.values(r.review).includes('issue') : filter === 'face' ? needsIdentityReview(r) : true,
   );
 
   return (
@@ -26,6 +27,9 @@ export default function GalleryPage() {
         </Chip>
         <Chip active={filter === 'issues'} onClick={() => setFilter('issues')}>
           ⚠ Flagged
+        </Chip>
+        <Chip active={filter === 'face'} onClick={() => setFilter('face')}>
+          ? Unverified face
         </Chip>
       </div>
       {loading && !data && (
@@ -63,6 +67,7 @@ export default function GalleryPage() {
                 {r.outfitEdit && <Badge tone="accent">edited</Badge>}
                 {r.status === 'error' && <Badge tone="error">error</Badge>}
                 {issues > 0 && <Badge tone="warn">{issues} issue{issues > 1 ? 's' : ''}</Badge>}
+                {needsIdentityReview(r) && <Badge tone="warn">face unverified</Badge>}
                 {r.images.length > 1 && <Badge>{r.images.length}</Badge>}
                 <span className="ml-auto truncate text-ink-200">{r.outfitEdit ? 'Outfit edit' : r.presetName ?? 'Custom'}</span>
               </div>

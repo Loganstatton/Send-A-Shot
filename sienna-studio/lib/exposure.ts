@@ -31,6 +31,7 @@ export interface ExposureAttempt<Ref = unknown> {
   /** Pose-aware verdict (lib/identity.ts) and, when not verified, why. */
   identity?: 'verified' | 'mismatch' | 'inconclusive';
   identityReason?: string;
+  colour?: 'consistent' | 'differs' | 'unknown';
   /** False when a full-body request came back as a closer shot. */
   framingOk?: boolean;
   images: Ref[];
