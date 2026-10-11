@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CHARACTER, EMPTY_FIELDS } from './defaults';
-import { buildPrompt, joinParts } from './prompt';
+import { buildPrompt, colourDriftNegative, joinParts } from './prompt';
 
 const character = { ...DEFAULT_CHARACTER, triggerToken: 'sienna_v1', loraFilename: 'sienna_v1.safetensors' };
 
@@ -194,5 +194,18 @@ describe('pose and colour emphasis', () => {
     expect(r.positive).toContain('lying on her stomach, propped on her elbows, (red string bikini:1.1), (gold anklet:1.1), (black:1.3) sandals');
     const w = buildPrompt({ fields: { ...base, pose: '(sitting:1.5)', outfit: 'string bikini' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw' });
     expect(w.positive).toContain('(sitting:1.5), string bikini');
+  });
+});
+
+describe('colourDriftNegative', () => {
+  it('avoids the drift colours the outfit did not ask for', () => {
+    expect(colourDriftNegative('fitted red bodycon dress')).toBe('olive green clothing, sage green clothing, brown clothing, beige clothing');
+    expect(colourDriftNegative('olive green cargo pants, white tank top')).toBe('brown clothing, beige clothing');
+    expect(colourDriftNegative('beige trench coat')).toBe('olive green clothing, sage green clothing, brown clothing');
+  });
+
+  it('adds nothing when the outfit names no colour', () => {
+    expect(colourDriftNegative('cozy knit sweater')).toBe('');
+    expect(colourDriftNegative('completely nude')).toBe('');
   });
 });

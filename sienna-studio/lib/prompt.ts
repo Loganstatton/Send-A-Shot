@@ -107,6 +107,26 @@ export function emphasizeColours(outfit: string): string {
     .trim();
 }
 
+/**
+ * Clothing colours the model drifts to (her green eyes and brown hair bleed into the outfit): in testing a
+ * "red bodycon dress" came out green, brown or beige in 13 of 15 photos. When the outfit names a colour, the
+ * drift colours it didn't ask for go in the negative prompt — as clothing, so her hair and eyes are untouched.
+ */
+const DRIFT_COLOURS: { phrase: string; family: RegExp }[] = [
+  { phrase: 'olive green clothing, sage green clothing', family: /\b(green|olive|sage|khaki|teal|turquoise)\b/i },
+  { phrase: 'brown clothing', family: /\b(brown|chocolate|tan|camel|khaki|burgundy|maroon)\b/i },
+  { phrase: 'beige clothing', family: /\b(beige|nude|tan|cream|ivory|camel|khaki)\b/i },
+];
+
+export function colourDriftNegative(outfit: string): string {
+  // "completely nude" is not a clothing colour
+  const clothing = outfit.replace(/\b(completely|fully|totally)\s+nude\b/gi, '').replace(/^\s*nude\s*$/i, '');
+  if (!COLOUR_RE.test(clothing)) return '';
+  return DRIFT_COLOURS.filter((d) => !d.family.test(clothing))
+    .map((d) => d.phrase)
+    .join(', ');
+}
+
 export function joinParts(parts: (string | undefined | null)[]): string {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -222,6 +242,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     siennaLock ? (cleanup ? AGE_DRIFT_NEGATIVE_CLEAN : AGE_DRIFT_NEGATIVE) : '',
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
+    colourDriftNegative(f.outfit),
     avoidItems.join(', '),
   ]);
 
