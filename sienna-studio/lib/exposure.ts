@@ -1,7 +1,7 @@
 /**
  * Exposure guard. When the outfit has a top, SiennaExposureCheck (NudeNet, on the GPU) reports whether a
  * nipple showed anyway; the server then regenerates with a new seed, up to EXPOSURE_MAX_ATTEMPTS photos in all,
- * and keeps the first covered one (or the least exposed if none is). Prompt wording alone kept the top on in
+ * and keeps the first covered one (none, with an error, if every attempt showed a nipple). Prompt wording alone kept the top on in
  * only about half the Monokini photos at Sienna's bust size; the detector caught every exposed test photo.
  */
 import { NO_TOP_RE, TOP_GARMENT_RE } from './defaults';

@@ -565,6 +565,16 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
             }
           }
           const kept = pickAttempt(attempts);
+          if (kept.exposed) {
+            // Never hand over a photo with a nipple showing when the outfit has a top.
+            return patchRecord(id, {
+              status: 'error',
+              error: `Top check: all ${attempts.length} attempts showed a nipple, so no photo was kept. Generate again (new seed) or lower the style-pack strength.`,
+              exposureGuard: { ...guard, attempts },
+              completedAt: new Date().toISOString(),
+              queuePosition: 0,
+            });
+          }
           refs = kept.images;
           extra.seed = kept.seed;
           extra.exposureGuard = { ...guard, attempts };
