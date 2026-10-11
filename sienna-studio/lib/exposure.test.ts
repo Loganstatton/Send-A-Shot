@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addCoverage, exposureNode, softenPacks, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed } from './exposure';
+import { addCoverage, exposureNode, failed, softenPacks, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed } from './exposure';
 import type { ComfyGraph } from './types';
 
 const graph: ComfyGraph = {
@@ -76,5 +76,26 @@ describe('addCoverage', () => {
     const again = addCoverage(c.graph, { positive: c.positive, negative: c.negative }, { positive: '(wide straps:1.4)', negative: 'nipples' });
     expect(again.graph['3'].inputs.text).toBe(c.positive);
     expect(addCoverage(g, prompts, { positive: '', negative: '' }).graph).toEqual(g);
+  });
+});
+
+describe('framing in the photo checks', () => {
+  it('redoes a full-body shot that came out close, and keeps the right framing over a slightly closer face', () => {
+    const close = { seed: 1, exposed: false, score: 0, similarity: 0.84, faceOk: true, framingOk: false, images: ['a'] };
+    const right = { seed: 2, exposed: false, score: 0, similarity: 0.78, faceOk: true, framingOk: true, images: ['b'] };
+    expect(failed(close)).toBe(true);
+    expect(pickAttempt([close, right]).seed).toBe(2);
+    expect(pickAttempt([right, close]).seed).toBe(2);
+    expect(exposureWarning([close, right], right)).toContain('1 came out closer than full body');
+  });
+});
+
+describe('framingOk', () => {
+  it('only judges full-body requests', async () => {
+    const { framingOk } = await import('./identity');
+    expect(framingOk(true, 150, 1216)).toBe(false);
+    expect(framingOk(true, 100, 1216)).toBe(true);
+    expect(framingOk(false, 400, 1216)).toBe(true);
+    expect(framingOk(true, null, 1216)).toBe(true);
   });
 });

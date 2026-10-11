@@ -129,3 +129,13 @@ describe('pack outfit wording', () => {
     expect(withPackOutfit('jeans', [])).toBe('jeans');
   });
 });
+
+describe('generate request schema', () => {
+  it('keeps the hand, face-check and pose-preset settings', async () => {
+    const { generateSchema } = await import('./schemas');
+    const shape: any = (generateSchema as any).shape.params;
+    const parsed = shape.safeParse({ ...(await import('./defaults')).DEFAULT_PARAMS, handRefine: false, faceCheck: false, posePreset: 'arms_crossed' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toMatchObject({ handRefine: false, faceCheck: false, posePreset: 'arms_crossed' });
+  });
+});

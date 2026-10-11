@@ -13,6 +13,7 @@ import { applyIdentityLock, findHardBlocks } from '@/lib/guard';
 import { buildPrompt } from '@/lib/prompt';
 import { SIENNA_MODELS, resolveLockedLora } from '@/lib/sienna-models';
 import { STYLE_PACK_STACK_LIMIT, StylePack, stylePacksFor } from '@/lib/style-packs';
+import { POSE_PRESET_LABELS, POSE_PRESETS } from '@/lib/pose-presets';
 import type { AppSettings, CharacterProfile, GenerationRecord, Preset, PromptFields, WorkflowTemplate } from '@/lib/types';
 import { PROMPT_FIELD_LABELS } from '@/lib/types';
 import { ImagePicker } from './ImagePicker';
@@ -554,6 +555,28 @@ export function CreateScreen() {
             hint={caps.img2img ? undefined : 'Not in this workflow'}
           />
         </div>
+        {caps.pose && !draft.images.poseImage && (
+          <div>
+            <p className="mb-1 text-sm text-ink-200">Pose preset</p>
+            <div className="flex flex-wrap gap-2">
+              {POSE_PRESETS.map((p) => (
+                <Chip
+                  key={p.id}
+                  active={draft.params.posePreset === p.id}
+                  onClick={() => setParam('posePreset', draft.params.posePreset === p.id ? null : p.id)}
+                >
+                  {POSE_PRESET_LABELS[p.id] ?? p.id}
+                </Chip>
+              ))}
+            </div>
+            {draft.params.posePreset && (
+              <p className="mt-1 text-xs text-ink-400">
+                Places her body in this pose (a tested skeleton — never a face or body).
+                {draft.fields.pose.trim() ? '' : ' The Pose text is filled in for you.'} Output size follows the pose.
+              </p>
+            )}
+          </div>
+        )}
         {!draft.images.outfitImage && !draft.images.poseImage && !draft.images.initImage && (
           <p className="text-xs text-ink-400">
             <b className="text-ink-200">Outfit</b> copies the clothes. <b className="text-ink-200">Pose</b> copies only the body position (a stick-figure

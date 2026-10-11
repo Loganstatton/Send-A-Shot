@@ -27,12 +27,14 @@ export interface ExposureAttempt<Ref = unknown> {
   /** Face check result (absent when the face check isn't running). */
   similarity?: number | null;
   faceOk?: boolean;
+  /** False when a full-body request came back as a closer shot. */
+  framingOk?: boolean;
   images: Ref[];
 }
 
-/** This attempt needs redoing: a nipple showed, or her face drifted. */
+/** This attempt needs redoing: a nipple showed, her face drifted, or a full-body shot came out too close. */
 export function failed(a: ExposureAttempt): boolean {
-  return a.exposed || a.faceOk === false;
+  return a.exposed || a.faceOk === false || a.framingOk === false;
 }
 
 /** The outfit describes something on top (and doesn't ask for none). */
@@ -114,7 +116,11 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
   const last = attempts[attempts.length - 1];
   if (!failed(last)) return last;
   const covered = attempts.filter((a) => !a.exposed);
-  if (covered.length) return covered.reduce((a, b) => ((b.similarity ?? -1) > (a.similarity ?? -1) ? b : a));
+  if (covered.length) {
+    // right framing first, then the closest face
+    const rank = (a: ExposureAttempt<Ref>) => (a.framingOk === false ? 0 : 10) + (a.similarity ?? -1);
+    return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
+  }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));
 }
 
@@ -127,7 +133,10 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
   if (!redone.length) return null;
   const nip = redone.filter((a) => a.exposed).length;
   const face = redone.filter((a) => !a.exposed && a.faceOk === false).length;
-  const why = [nip ? `${nip} showed a nipple` : '', face ? `${face} didn't look enough like Sienna` : ''].filter(Boolean).join(', ');
+  const frame = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk === false).length;
+  const why = [nip ? `${nip} showed a nipple` : '', face ? `${face} didn't look enough like Sienna` : '', frame ? `${frame} came out closer than full body` : '']
+    .filter(Boolean)
+    .join(', ');
   const tail = kept.faceOk === false ? ` None matched her face closely; kept the closest (similarity ${kept.similarity}).` : '';
   return `Photo checks: redid ${redone.length} photo${redone.length > 1 ? 's' : ''} (${why}); kept seed ${kept.seed}.${tail}`;
 }

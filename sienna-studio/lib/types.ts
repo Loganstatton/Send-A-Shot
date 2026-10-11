@@ -127,6 +127,8 @@ export interface GenerationParams {
   handRefine?: boolean;
   /** Face check: redo photos whose face doesn't look enough like Sienna (Sienna Lock only). */
   faceCheck?: boolean;
+  /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */
+  posePreset?: string | null;
   /** Outfit-reference conditioning weight (independent of the LoRA strength). */
   outfitStrength?: number;
   /**
@@ -352,6 +354,7 @@ export interface GenerationRecord {
       score: number;
       similarity?: number | null;
       faceOk?: boolean;
+      framingOk?: boolean;
       images: { filename: string; subfolder: string; type: string; nodeId: string }[];
     }[];
   };

@@ -311,6 +311,10 @@ if (( OUTFIT || POSE || QWEN || PACKS )); then
     cp -r "$src" "$COMFYUI_DIR/custom_nodes/sienna_nodes"
     rm -rf "$COMFYUI_DIR/custom_nodes/sienna_nodes/__pycache__"
     echo "installed from $src"
+    # Face check (SiennaFaceCheck): OpenCV YuNet (MIT) + SFace (Apache-2.0). Hand touch-up: Bingsu/adetailer hand_yolov8s (Apache-2.0).
+    fetch_model "$HF/opencv/face_detection_yunet/resolve/main/face_detection_yunet_2023mar.onnx" "$COMFYUI_DIR/models/sienna/face_detection_yunet_2023mar.onnx" 100000
+    fetch_model "$HF/opencv/face_recognition_sface/resolve/main/face_recognition_sface_2021dec.onnx" "$COMFYUI_DIR/models/sienna/face_recognition_sface_2021dec.onnx" 30000000
+    fetch_model "$HF/Bingsu/adetailer/resolve/main/hand_yolov8s.pt" "$COMFYUI_DIR/models/ultralytics/bbox/hand_yolov8s.pt" 20000000
     # Top check (SiennaExposureCheck): NudeNet, MIT, ships its own small ONNX detector.
     "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "nudenet==3.4.2" \
       || echo "nudenet install failed — the top check will be skipped (photos are still made)"

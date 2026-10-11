@@ -1,0 +1,37 @@
+[
+ {
+  "id": "sitting_crosslegged",
+  "width": 832,
+  "height": 1216,
+  "pose": "sitting cross-legged, hands resting on her knees",
+  "strength": 0.85
+ },
+ {
+  "id": "arms_crossed",
+  "width": 832,
+  "height": 1216,
+  "pose": "standing with her arms folded across her chest, each hand on the opposite upper arm",
+  "strength": 0.85
+ },
+ {
+  "id": "hand_in_hair",
+  "width": 832,
+  "height": 1216,
+  "pose": "close-up, one hand raised running through her hair",
+  "strength": 0.85
+ },
+ {
+  "id": "mirror_selfie",
+  "width": 832,
+  "height": 1216,
+  "pose": "mirror selfie, holding a phone up in front of her chest with one hand, other hand on her hip",
+  "strength": 0.85
+ },
+ {
+  "id": "lying_on_stomach",
+  "width": 1216,
+  "height": 832,
+  "pose": "lying on her stomach on the bed, propped up on her elbows, chin resting on her hands, feet up behind her",
+  "strength": 0.85
+ }
+]

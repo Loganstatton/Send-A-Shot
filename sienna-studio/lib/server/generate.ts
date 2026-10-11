@@ -34,10 +34,12 @@ import { MIN_CHARACTER_AGE } from '../defaults';
 import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
-import { buildPrompt } from '../prompt';
+import { buildPrompt, fullBodyFraming } from '../prompt';
+import { posePreset } from '../pose-presets';
+import { presetImage } from './pose-preset';
 import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
-import { FACE_NODE_ID, faceNode, parseFace } from '../identity';
+import { FACE_NODE_ID, faceNode, framingOk, parseFace } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
 import { activeStylePacks, packCoverage, STYLE_PACK_STACK_LIMIT, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
@@ -120,6 +122,17 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
 
   // ── Prompt ─────────────────────────────────────────────────────────────
+  // ── Pose preset: its skeleton stands in for a pose photo (wired straight to the ControlNet below) ──
+  const posePre = !req.images.poseImage ? posePreset(req.params.posePreset) : undefined;
+  if (posePre) {
+    req = {
+      ...req,
+      images: { ...req.images, poseImage: await presetImage(posePre.id) },
+      fields: req.fields.pose.trim() ? req.fields : { ...req.fields, pose: posePre.pose },
+      params: { ...req.params, width: posePre.width, height: posePre.height, poseRetarget: 0, controlStrength: posePre.strength },
+    };
+  }
+
   // Experiments not approved for production are ignored unless SIENNA_EXPERIMENTAL=true.
   if (!experimentsEnabled()) {
     req = { ...req, params: { ...req.params, poseRetarget: 0, outfitIsolation: 'person', promptCleanup: false } };
@@ -400,6 +413,16 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
   graph = applyBindings(graph, bindings, values).graph;
 
+  // A preset is already a skeleton: feed it to the pose ControlNet directly instead of through DWPose.
+  const poseLoadId = bindings.pose_image?.[0]?.nodeId;
+  if (posePre && poseImage && poseLoadId && graph[poseLoadId]) {
+    for (const node of Object.values(graph)) {
+      if (/^ControlNetApply/.test(node.class_type) && Array.isArray(node.inputs.image)) node.inputs.image = [poseLoadId, 0];
+    }
+    graph = garbageCollect(graph);
+    bindings = filterBindings(graph, bindings);
+  }
+
   // ── Style packs: stacked after Sienna's LoRA (trigger words were added to the prompt above) ──
   if (stylePacks.length) {
     let after = bindings.lora_name?.[0]?.nodeId;
@@ -597,7 +620,9 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               seed: rec.seed,
               exposed: topOn ? top!.exposed : false,
               score: topOn ? top!.score : 0,
-              ...(faceOn ? { similarity: face!.similarity, faceOk: face!.ok } : {}),
+              ...(faceOn
+                ? { similarity: face!.similarity, faceOk: face!.ok, framingOk: framingOk(fullBodyFraming(rec.fields).add, face!.size, rec.params.height) }
+                : {}),
               images: state.images,
             },
           ];
