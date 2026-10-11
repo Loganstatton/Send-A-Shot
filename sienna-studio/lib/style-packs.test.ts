@@ -96,7 +96,7 @@ describe('thin white shirt pack', () => {
 
 describe('pose packs', () => {
   it('are adult-only, and the sink selfie is capped so it cannot enlarge her hips', () => {
-    for (const id of ['all_fours', 'sink_selfie', 'real_innie']) {
+    for (const id of ['all_fours', 'sink_selfie', 'real_innie', 'realistic_nudes']) {
       expect(STYLE_PACKS.find((p) => p.id === id)?.section).toBe('adult');
       expect(activeStylePacks({ [id]: 0.6 }, 'sfw')).toEqual([]);
     }

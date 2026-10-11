@@ -200,6 +200,17 @@ export const STYLE_PACKS: StylePack[] = [
     source: 'https://civitai.com/models/1385637',
     section: 'adult',
   },
+  {
+    id: 'realistic_nudes',
+    label: 'Realistic nude body',
+    hint: 'More photographic nude skin and body detail. At 0.6 it lowered her face match (avg 0.78) and once made her bust larger and lower, so it defaults lower; turn it down if she looks off.',
+    file: 'pack_1838378.safetensors',
+    trigger: 'r39lb00bs',
+    max: 0.6,
+    default: 0.4,
+    source: 'https://civitai.com/models/1838378',
+    section: 'adult',
+  },
 ];
 
 /** Stacking more than this many packs visibly changes Sienna's face (and pose) in testing. */
