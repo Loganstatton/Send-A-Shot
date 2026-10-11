@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers } from './style-packs';
+import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives } from './style-packs';
 
 describe('activeStylePacks', () => {
   it('keeps packs above zero, clamps to each max, ignores unknown ids, in catalogue order', () => {
@@ -91,5 +91,26 @@ describe('thin white shirt pack', () => {
     expect([p.default, p.max]).toEqual([0.4, 0.45]);
     expect(activeStylePacks({ wet_tshirt: 0.7 }, 'adult')[0].strength).toBe(0.45);
     expect(activeStylePacks({ wet_tshirt: 0.4 }, 'sfw')).toEqual([]);
+  });
+});
+
+describe('round-3 adult packs', () => {
+  it('are adult-only and off in SFW mode', () => {
+    for (const id of ['belly_cutout_dress', 'mesh_top', 'underboob_shirt', 'lace_bandeau']) {
+      expect(STYLE_PACKS.find((p) => p.id === id)?.section).toBe('adult');
+      expect(activeStylePacks({ [id]: 0.6 }, 'sfw')).toEqual([]);
+    }
+  });
+
+  it('underboob shirt defaults to 0.5, caps at 0.6 and adds its own negatives', () => {
+    const [a] = activeStylePacks({ underboob_shirt: 0.9 }, 'adult');
+    expect(a.strength).toBe(0.6);
+    expect(STYLE_PACKS.find((p) => p.id === 'underboob_shirt')?.default).toBe(0.5);
+    expect(withPackNegatives('lowres', [a])).toBe('lowres, nipples, topless');
+    expect(withPackNegatives('lowres, nipples, topless', [a])).toBe('lowres, nipples, topless');
+  });
+
+  it('monokini was not added (exposed her in every test photo)', () => {
+    expect(STYLE_PACKS.some((p) => p.file === 'pack_385723.safetensors')).toBe(false);
   });
 });

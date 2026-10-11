@@ -1,6 +1,6 @@
 /**
  * Style packs: extra LoRAs stacked after Sienna's own LoRA, each with a dial.
- * All three were licence-checked on Civitai (commercial image use allowed) and
+ * All were licence-checked on Civitai (commercial image use allowed) and
  * tested with Sienna on the RTX 4090 pod — see the max/default notes below.
  */
 
@@ -15,6 +15,8 @@ export interface StylePack {
   max: number;
   default: number;
   source: string;
+  /** Added to the negative prompt when the pack is on (for packs that tend to show more than the outfit asks for). */
+  negative?: string;
   /** 'adult': only offered and applied in adult content mode (which the server can switch off entirely). */
   section?: 'adult';
 }
@@ -95,6 +97,52 @@ export const STYLE_PACKS: StylePack[] = [
     source: 'https://civitai.com/models/138252',
     section: 'adult',
   },
+  {
+    id: 'belly_cutout_dress',
+    label: 'Belly cut-out dress',
+    hint: 'Dresses with an open cut-out from the chest to the navel. Describe the dress as usual (e.g. “black belly cut-out dress, short, thin straps”) — the pack also keeps the colour you ask for. Add “long” or “short”.',
+    file: 'pack_733289.safetensors',
+    trigger: 'belly cut-out dress',
+    max: 0.8,
+    default: 0.6,
+    source: 'https://civitai.com/models/733289',
+    section: 'adult',
+  },
+  {
+    id: 'mesh_top',
+    label: 'Shiny mesh top',
+    hint: 'Metallic chain-mesh tops with a draped cowl or halter neckline (e.g. “silver shiny mesh top with deep neckline, low-rise jeans”). Add “backless” for an open back.',
+    file: 'pack_883770.safetensors',
+    trigger: 'shiny mesh top',
+    max: 0.8,
+    default: 0.6,
+    source: 'https://civitai.com/models/883770',
+    section: 'adult',
+  },
+  {
+    id: 'underboob_shirt',
+    label: 'Underboob shirt',
+    hint: 'Short crop tees cut high so the underside of her bust shows (e.g. “white underboob shirt, cropped short-sleeve tee, denim shorts”). 0.5 is enough; the pack keeps the shirt on by itself.',
+    file: 'pack_706722.safetensors',
+    trigger: 'underboob shirt',
+    // without these it came out topless in 1 of 2 test photos; with them, 6 of 6 kept the shirt
+    negative: 'nipples, topless',
+    max: 0.6,
+    default: 0.5,
+    source: 'https://civitai.com/models/706722',
+    section: 'adult',
+  },
+  {
+    id: 'lace_bandeau',
+    label: 'Lace bandeau top',
+    hint: 'Strapless lace tube tops. It tends to pair them with lace bottoms; for shorts or jeans, name them plainly — weighting them, e.g. “(denim shorts:1.2)”, turns the top into denim too.',
+    file: 'pack_602417.safetensors',
+    trigger: 'lace bandeau top',
+    max: 0.8,
+    default: 0.6,
+    source: 'https://civitai.com/models/602417',
+    section: 'adult',
+  },
 ];
 
 /** Stacking more than this many packs visibly changes Sienna's face (and pose) in testing. */
@@ -118,6 +166,12 @@ export function activeStylePacks(values: Record<string, number> | undefined, con
     if (!Number.isFinite(v) || v <= 0) return [];
     return [{ pack, strength: Math.round(Math.min(pack.max, v) * 100) / 100 }];
   });
+}
+
+/** Negative prompt with the active packs' own negatives added. */
+export function withPackNegatives(negative: string, active: ActiveStylePack[]): string {
+  const extra = active.map((a) => a.pack.negative ?? '').filter((n) => n && !negative.includes(n));
+  return extra.length ? `${negative}, ${extra.join(', ')}` : negative;
 }
 
 /** Positive prompt with the active packs' trigger words in front. */

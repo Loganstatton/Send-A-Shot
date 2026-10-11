@@ -36,7 +36,7 @@ import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt } from '../prompt';
 import { resolveLockedLora } from '../sienna-models';
-import { activeStylePacks, STYLE_PACK_STACK_LIMIT, withTriggers } from '../style-packs';
+import { activeStylePacks, STYLE_PACK_STACK_LIMIT, withPackNegatives, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
@@ -346,9 +346,10 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // ── Seed & values ──────────────────────────────────────────────────────
   const seed = p.seed >= 0 ? Math.floor(p.seed) : Math.floor(Math.random() * 2 ** 48);
   const positive = withTriggers(built.positive, stylePacks);
+  const negative = withPackNegatives(built.negative, stylePacks);
   const values: Partial<Record<ControlKey, ControlValue | undefined>> = {
     positive_prompt: positive,
-    negative_prompt: built.negative,
+    negative_prompt: negative,
     checkpoint: p.checkpoint || undefined,
     lora_name: lora?.name,
     lora_strength: lora?.strength,
@@ -422,7 +423,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       seed,
       positivePrompt: positive,
       stylePacks: stylePacks.map((a) => ({ id: a.pack.id, label: a.pack.label, file: a.pack.file, strength: a.strength })),
-      negativePrompt: built.negative,
+      negativePrompt: negative,
       lora,
       faceReference,
       initImage,
