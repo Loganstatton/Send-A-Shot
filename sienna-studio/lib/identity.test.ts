@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { identityNotice, needsIdentityReview } from './identity-notice';
+import { galleryState, identityNotice, needsIdentityReview } from './identity-notice';
 import { colourCheck, FACE_THRESHOLD, FACE_TURNED_FLOOR, faceVerdict, parseFace, rearRequest } from './identity';
 
 const face = (similarity: number | null, more: Partial<Parameters<typeof faceVerdict>[0]> = {}) => ({
@@ -97,5 +97,29 @@ describe('identityNotice (gallery)', () => {
     expect(identityNotice(rec)!.userCall).toBe('looks_like_her');
     expect(needsIdentityReview(rec)).toBe(false);
     expect(needsIdentityReview({ ...rec, review: { face_drift: 'issue' as const } })).toBe(true);
+  });
+});
+
+describe('galleryState (Needs Review)', () => {
+  const rec = (status: 'verified' | 'inconclusive' | 'unconfirmed' | null, face_drift?: 'ok' | 'issue') => ({
+    identityCheck: status ? { status, similarity: 0.7 } : undefined,
+    review: face_drift ? { face_drift } : {},
+  });
+  it('only a verified face (or no face check) is approved automatically', () => {
+    expect(galleryState(rec('verified'))).toBe('approved');
+    expect(galleryState(rec(null))).toBe('approved');
+  });
+  it('unverified photos, including the closest-of-four fallback, wait in Needs Review', () => {
+    expect(galleryState(rec('inconclusive'))).toBe('needs_review');
+    expect(galleryState(rec('unconfirmed'))).toBe('needs_review');
+  });
+  it("the user's approval moves it to the gallery as theirs, never as a verified face", () => {
+    expect(galleryState(rec('inconclusive', 'ok'))).toBe('approved_by_you');
+    expect(identityNotice(rec('inconclusive', 'ok'))!.title).toBe('Face not verified');
+    expect(galleryState(rec('unconfirmed', 'issue'))).toBe('rejected');
+    expect(needsIdentityReview(rec('unconfirmed', 'issue'))).toBe(true);
+  });
+  it("a verified photo's review mark doesn't change where it is filed", () => {
+    expect(galleryState(rec('verified', 'issue'))).toBe('approved');
   });
 });

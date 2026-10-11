@@ -29,6 +29,8 @@ TURNED_EYE_RATIO = 0.38
 HAIR_REL_MAX = 1.0
 SKIN_HUE_RANGE = (30.0, 65.0)
 ATTEMPTS = 4
+# from-behind cases get two extra photos so a longer fallback (6 tries) can be studied; the A/B uses the first 4
+EXTRA_REAR = 2
 
 # (id, from-behind?, style packs, fields). From-behind cases are what the new rule changes; facing-camera cases
 # must come out identical under both rules.
@@ -57,39 +59,48 @@ def _req(app, path, body=None):
         return json.loads(f.read())
 
 
-def generate(app, out):
+def generate(app, out, workers=6):
+    """Every photo, several in flight at once so the GPU never waits on the network."""
+    from concurrent.futures import ThreadPoolExecutor
+
     os.makedirs(out, exist_ok=True)
     params = _req(app, "/api/settings")["settings"]["defaultParams"]
+    jobs = []
     for case, rear, packs, fields in CASES:
         for seed in REAR_SEEDS if rear else FRONT_SEEDS:
-            for k in range(ATTEMPTS):
-                fn = os.path.join(out, name(case, seed, k))
-                if os.path.exists(fn):
-                    continue
-                t = time.time()
-                rec = _req(app, "/api/generate", {
-                    "presetId": None, "workflowId": "sienna-sdxl-production", "siennaLock": True, "contentMode": "adult",
-                    "fields": dict(EMPTY, **fields),
-                    # the app's own retries off: every attempt is made here, with a fixed seed
-                    "params": dict(params, batchSize=1, seed=seed + k, stylePacks=packs, faceCheck=False),
-                    "images": {"initImage": None, "poseImage": None, "faceReferenceId": None}})
-                while time.time() - t < 900:
-                    time.sleep(2)
-                    st = _req(app, f"/api/history/{rec['id']}/status")
-                    if st.get("status") in ("done", "error"):
-                        break
-                full = _req(app, f"/api/history/{rec['id']}")
-                full = full.get("record", full)
-                if full.get("seed") != seed + k:
-                    # the top check redid it with a random seed; both rules still judge this same photo
-                    print(f"note: top check redid {case} s{seed} a{k} (seed {full.get('seed')})", flush=True)
-                img = (full.get("images") or [{}])[0].get("file")
-                if not img:
-                    print("FAILED", case, seed, k, (full.get("error") or "")[:120], flush=True)
-                    continue
-                with urllib.request.urlopen(f"{app}/api/files/{img}", timeout=120) as f, open(fn, "wb") as o:
-                    o.write(f.read())
-                print(f"{case} s{seed} a{k} {round(time.time() - t)}s", flush=True)
+            for k in range(ATTEMPTS + (EXTRA_REAR if rear else 0)):
+                if not os.path.exists(os.path.join(out, name(case, seed, k))):
+                    jobs.append((case, packs, fields, seed, k))
+
+    def one(job):
+        case, packs, fields, seed, k = job
+        t = time.time()
+        rec = _req(app, "/api/generate", {
+            "presetId": None, "workflowId": "sienna-sdxl-production", "siennaLock": True, "contentMode": "adult",
+            "fields": dict(EMPTY, **fields),
+            # the app's own face retries off: every attempt is made here, with a fixed seed
+            "params": dict(params, batchSize=1, seed=seed + k, stylePacks=packs, faceCheck=False),
+            "images": {"initImage": None, "poseImage": None, "faceReferenceId": None}})
+        while time.time() - t < 1800:
+            time.sleep(2)
+            st = _req(app, f"/api/history/{rec['id']}/status")
+            if st.get("status") in ("done", "error"):
+                break
+        full = _req(app, f"/api/history/{rec['id']}")
+        full = full.get("record", full)
+        if full.get("seed") != seed + k:
+            # the top check redid it with a random seed; both rules still judge this same photo
+            print(f"note: top check redid {case} s{seed} a{k} (seed {full.get('seed')})", flush=True)
+        img = (full.get("images") or [{}])[0].get("file")
+        if not img:
+            print("FAILED", case, seed, k, (full.get("error") or "")[:120], flush=True)
+            return
+        with urllib.request.urlopen(f"{app}/api/files/{img}", timeout=120) as f, open(os.path.join(out, name(case, seed, k)), "wb") as o:
+            o.write(f.read())
+        print(f"{case} s{seed} a{k} {round(time.time() - t)}s", flush=True)
+
+    with ThreadPoolExecutor(workers) as ex:
+        list(ex.map(one, jobs))
 
 
 def score(out, models_dir, ref_path):

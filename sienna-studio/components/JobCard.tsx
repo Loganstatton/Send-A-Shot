@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { fileUrl } from '@/lib/client/api';
 import { shareImage } from '@/lib/client/share';
 import type { GenerationRecord } from '@/lib/types';
+import { galleryState } from '@/lib/identity-notice';
 import { Badge, Button, Card, Notice, Spinner, toast } from './ui';
 
 export function JobCard({ job, onDismiss }: { job: GenerationRecord; onDismiss: () => void }) {
@@ -41,6 +42,9 @@ export function JobCard({ job, onDismiss }: { job: GenerationRecord; onDismiss: 
           {job.images.length > 1 && <span>· {job.images.length} images</span>}
         </div>
         {job.error && <Notice kind="error">{job.error}</Notice>}
+        {job.status === 'done' && galleryState(job) === 'needs_review' && (
+          <Notice kind="warn">Face not verified as Sienna — this photo went to Needs Review, not the gallery. Open it to decide.</Notice>
+        )}
         {visibleWarnings(job.warnings).slice(0, 2).map((w, i) => (
           <p key={i} className="text-xs text-amber-300">
             {w}

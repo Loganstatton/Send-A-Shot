@@ -407,14 +407,16 @@ function IdentityReview({ rec, onMark }: { rec: GenerationRecord; onMark: (mark:
       <p className="mt-1">{n.detail}</p>
       {n.userCall ? (
         <p className="mt-2 text-xs">
-          {n.userCall === 'looks_like_her' ? 'You checked it: looks like Sienna (your call — not a verified match).' : 'You marked it: not Sienna.'}{' '}
+          {n.userCall === 'looks_like_her'
+            ? 'You approved it: it is in the gallery as your approval. The face check still did not verify it.'
+            : 'You marked it: not Sienna. It stays in Needs Review — delete it if you do not want it.'}{' '}
           <button className="text-accent underline" onClick={() => onMark(null)}>
             Undo
           </button>
         </p>
       ) : (
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <Button onClick={() => onMark('ok')}>Looks like Sienna</Button>
+          <Button onClick={() => onMark('ok')}>Looks like Sienna — approve</Button>
           <Button onClick={() => onMark('issue')}>Not her</Button>
         </div>
       )}
