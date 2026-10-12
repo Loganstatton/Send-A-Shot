@@ -16,7 +16,8 @@ export interface IdentityNotice {
 
 export function identityNotice(rec: Pick<GenerationRecord, 'identityCheck' | 'review'>): IdentityNotice | null {
   const c = rec.identityCheck;
-  if (!c || c.status === 'verified') return null;
+  // 'unchecked' (no face to compare) keeps the old behaviour: it stays in the gallery
+  if (!c || c.status === 'verified' || c.status === 'unchecked') return null;
   const sim = typeof c.similarity === 'number' ? ` (similarity ${c.similarity.toFixed(2)}; 0.74 or more confirms her face)` : '';
   const mark = rec.review?.face_drift;
   const userCall = mark === 'ok' ? 'looks_like_her' : mark === 'issue' ? 'not_her' : undefined;

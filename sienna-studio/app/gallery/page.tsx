@@ -21,7 +21,7 @@ export default function GalleryPage() {
   return (
     <div className="pb-nav">
       <PageHeader title="Gallery" subtitle={data ? `${data.length} generations` : undefined} />
-      <div className="mb-3 flex gap-2">
+      <div className="mb-3 flex flex-wrap gap-2">
         <Chip active={filter === 'all'} onClick={() => setFilter('all')}>
           All
         </Chip>

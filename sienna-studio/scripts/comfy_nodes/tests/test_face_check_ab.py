@@ -20,8 +20,6 @@ def test_thresholds_match_the_app():
     assert float(_ts_const("FACE_MIN_SIZE")) == ab.FACE_MIN_SIZE
     assert float(_ts_const("TURNED_YAW")) == ab.TURNED_YAW
     assert float(_ts_const("TURNED_EYE_RATIO")) == ab.TURNED_EYE_RATIO
-    assert float(_ts_const("HAIR_REL_MAX")) == ab.HAIR_REL_MAX
-    assert tuple(float(x) for x in _ts_const("SKIN_HUE_RANGE").strip("[]").split(",")) == ab.SKIN_HUE_RANGE
 
 
 def face(sim, **kw):
@@ -33,7 +31,7 @@ def test_rules():
     assert ab.verdict_new(face(0.7), True) == "inconclusive"
     assert ab.verdict_new(face(0.7), False) == "mismatch"
     assert ab.verdict_new(face(0.66), True) == "mismatch"
-    assert ab.verdict_new(dict(face(0.7), hair_rel=1.3), True) == "mismatch"
+    assert ab.verdict_new(dict(face(0.7), hair_rel=1.3), True) == "inconclusive"  # colour never decides
     assert ab.verdict_old(face(0.7), True) == "mismatch"
 
 

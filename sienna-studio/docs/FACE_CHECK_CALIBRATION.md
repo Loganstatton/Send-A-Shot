@@ -129,3 +129,14 @@ then both rules replayed on the same photos (first 4 attempts). GPU cost ≈ $0.
   behind her hair), far above the offline 0.3 %. It changed no decision here, but it fails the "lighting must not
   fail legitimate photos" bar for from-behind shots, so it should not gate decisions.
 - Only 21 % of from-behind attempts of the real Sienna reach 0.74; 58 % score below 0.68.
+
+## Production decision (owner, 2026-10-12)
+
+- **Strict 0.74 rule stays** for every photo: below 0.74 is redone, up to four photos.
+- **If none verifies, the closest goes to Needs Review**, never the approved gallery.
+- **Manual review:** "Looks like Sienna — approve" moves a photo into the gallery as the owner's approval; it stays
+  labelled "face unverified" and its automated status never changes. "Not her" keeps it out.
+- **Hair/skin colour** is measured by the node but used in no decision.
+- **Pose-aware 0.68** is kept for future consideration, active only with `SIENNA_EXPERIMENTAL=true` (unset on Render).
+- **No face to compare** (none found, or too small) keeps the deployed behaviour: not retried, stays in the gallery,
+  shown as "not checked" in the photo details.

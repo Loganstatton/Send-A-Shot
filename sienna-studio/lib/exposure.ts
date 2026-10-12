@@ -29,9 +29,8 @@ export interface ExposureAttempt<Ref = unknown> {
   /** True only when the face was verified as Sienna's; false when it clearly wasn't; unset when it couldn't be judged. */
   faceOk?: boolean;
   /** Pose-aware verdict (lib/identity.ts) and, when not verified, why. */
-  identity?: 'verified' | 'mismatch' | 'inconclusive';
+  identity?: 'verified' | 'mismatch' | 'inconclusive' | 'unchecked';
   identityReason?: string;
-  colour?: 'consistent' | 'differs' | 'unknown';
   /** False when a full-body request came back as a closer shot. */
   framingOk?: boolean;
   images: Ref[];
@@ -139,7 +138,7 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
   // never let an unjudged face read as a match
   const unverified =
     kept.identity === 'inconclusive'
-      ? `Face check inconclusive: ${kept.identityReason ?? 'her face could not be judged'}${typeof kept.similarity === 'number' ? ` (similarity ${kept.similarity})` : ''}, so this photo is not confirmed as Sienna. Other checks passed.`
+      ? `Face check inconclusive: ${kept.identityReason ?? 'her face could not be judged'}${typeof kept.similarity === 'number' ? ` (similarity ${kept.similarity})` : ''}, so this photo is not confirmed as Sienna and is in Needs Review.`
       : '';
   if (!redone.length) return unverified || null;
   const nip = redone.filter((a) => a.exposed).length;
@@ -148,6 +147,11 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
   const why = [nip ? `${nip} showed a nipple` : '', face ? `${face} didn't look enough like Sienna` : '', frame ? `${frame} came out closer than full body` : '']
     .filter(Boolean)
     .join(', ');
-  const tail = kept.faceOk === false ? ` None matched her face closely; kept the closest (similarity ${kept.similarity}).` : unverified ? ` ${unverified}` : '';
+  const tail =
+    kept.faceOk === false
+      ? ` None matched her face closely; the closest (similarity ${kept.similarity}) is in Needs Review, not the gallery.`
+      : unverified
+        ? ` ${unverified}`
+        : '';
   return `Photo checks: redid ${redone.length} photo${redone.length > 1 ? 's' : ''} (${why}); kept seed ${kept.seed}.${tail}`;
 }

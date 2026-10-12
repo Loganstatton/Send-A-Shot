@@ -39,7 +39,7 @@ import { posePreset } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
-import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, parseFace, rearRequest, type FaceReport } from '../identity';
+import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
 import { activeStylePacks, nudeOnlyAllowed, packCoverage, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
@@ -687,25 +687,28 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
   }
 }
 
-/** Face-check fields of one attempt: the pose-aware verdict (only a verified face counts as a match). */
+/** Face-check fields of one attempt. Production uses the strict rule; the pose-aware rule only runs with
+ * SIENNA_EXPERIMENTAL=true (see lib/identity.ts). Only a verified face sets faceOk. */
 function identityFields(face: FaceReport, rec: GenerationRecord) {
+  const policy: FacePolicy = experimentsEnabled() ? 'pose-aware' : 'strict';
   const rearPack = (rec.stylePacks ?? []).some((p) => STYLE_PACKS.find((sp) => sp.id === p.id)?.rearPose);
   const rear = rearRequest(`${rec.fields.pose} ${rec.fields.extra}`, rec.params.posePreset, rearPack);
-  const v = faceVerdict(face, rear);
+  const v = faceVerdict(face, rear, policy);
   return {
     similarity: face.similarity,
     identity: v.status,
-    colour: v.colour.status,
     ...(v.status === 'verified' ? { faceOk: true } : v.status === 'mismatch' ? { faceOk: false } : {}),
     ...(v.reason ? { identityReason: v.reason } : {}),
     framingOk: framingOk(fullBodyFraming(rec.fields).add, face.size, rec.params.height),
   };
 }
 
-/** What the gallery shows about the kept photo's face: only a verified face counts as Sienna's. */
+/** What the gallery shows about the kept photo's face: only a verified face counts as Sienna's. A face that couldn't
+ * be compared ('unchecked': none found, or too small) keeps the old behaviour and is not filed for review. */
 function identitySummary(kept: { identity?: string; similarity?: number | null; identityReason?: string; faceOk?: boolean }): NonNullable<GenerationRecord['identityCheck']> {
   const similarity = kept.similarity ?? null;
   if (kept.identity === 'verified' || (kept.identity === undefined && kept.faceOk === true)) return { status: 'verified', similarity };
+  if (kept.identity === 'unchecked') return { status: 'unchecked', similarity, reason: kept.identityReason };
   if (kept.identity === 'inconclusive') return { status: 'inconclusive', similarity, reason: kept.identityReason };
   return { status: 'unconfirmed', similarity, reason: kept.identityReason ?? "didn't look enough like Sienna" };
 }

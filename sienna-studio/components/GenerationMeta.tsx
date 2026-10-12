@@ -46,7 +46,9 @@ export function GenerationMeta({ rec, showPrompt = true }: { rec: GenerationReco
           <Meta
             k="Face check"
             v={
-              rec.identityCheck.status === 'verified' ? (
+              rec.identityCheck.status === 'unchecked' ? (
+                <Badge>not checked · {rec.identityCheck.reason ?? 'no face to compare'}</Badge>
+              ) : rec.identityCheck.status === 'verified' ? (
                 <Badge tone="ok">verified as Sienna{typeof rec.identityCheck.similarity === 'number' ? ` · ${rec.identityCheck.similarity.toFixed(2)}` : ''}</Badge>
               ) : (
                 <Badge tone="warn">

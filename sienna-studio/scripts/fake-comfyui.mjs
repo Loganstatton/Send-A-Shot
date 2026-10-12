@@ -87,6 +87,16 @@ if (arg('--qwen-edit')) {
     ImageCompositeMasked: { destination: ['IMAGE'], source: ['IMAGE'], x: ['INT'], y: ['INT'], resize_source: ['BOOLEAN'] },
   });
 }
+if (arg('--face-check')) {
+  // Photo checks: the face check answers with FAKE_FACE_SIMS (comma-separated, one per generation, cycling), e.g.
+  // "0.6,0.7,0.65,0.71" = four failures in a row; "0.8" = always verified; "none" = no face found.
+  Object.assign(SPECS, {
+    SiennaFaceCheck: { images: ['IMAGE'], reference: ['STRING'], threshold: ['FLOAT'], min_face: ['INT'] },
+    SiennaExposureCheck: { images: ['IMAGE'], threshold: ['FLOAT'] },
+  });
+}
+const FACE_SIMS = (process.env.FAKE_FACE_SIMS || '0.8').split(',').map((s) => s.trim());
+let faceCalls = 0;
 // (PuLID-Flux deliberately absent, to exercise "missing custom node" paths.)
 
 const uploads = new Set();
@@ -177,6 +187,13 @@ http
         if (n.class_type === 'SiennaChinCrop') outputs[k] = { text: [JSON.stringify({ mode: 'cropped', cut: 0.21 })] };
         if (n.class_type === 'SiennaGarmentOnly') outputs[k] = { text: [JSON.stringify({ mode: 'garment-only', cut: 0.21, coverage: { upper: 0.2, lower: 0.35 } })] };
         if (n.class_type === 'SiennaGarmentRedrawMask') outputs[k] = { text: [JSON.stringify({ scope: 'full', grow: 'garment', source: 'segmenter', grown: false, uncovered: 0.011, old_garment: 0.047, mask: 0.157, empty: false })] };
+        if (n.class_type === 'SiennaFaceCheck') {
+          const v = FACE_SIMS[faceCalls++ % FACE_SIMS.length];
+          const sim = v === 'none' ? null : Number(v);
+          const img = sim === null ? { found: false, similarity: null, ok: true, faces: 0 } : { found: true, similarity: sim, size: 150, ok: sim >= 0.74, faces: 1 };
+          outputs[k] = { text: [JSON.stringify({ available: true, ok: img.ok, similarity: sim, images: [img] })] };
+        }
+        if (n.class_type === 'SiennaExposureCheck') outputs[k] = { text: [JSON.stringify({ available: true, exposed: false, score: 0 })] };
         if (n.class_type === 'SiennaBodyCheck') outputs[k] = { text: [JSON.stringify({ status: 'warn', flags: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06, severity: 'likely' }], checked: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06 }], skipped: [], scene: { diff: 6.1, changed: false } })] };
       }
       return send(res, 200, { [id]: { outputs, status: { status_str: 'success', completed: true, messages: [] } } });

@@ -26,6 +26,7 @@ FACE_TURNED_FLOOR = 0.68
 FACE_MIN_SIZE = 64
 TURNED_YAW = 0.35
 TURNED_EYE_RATIO = 0.38
+# hair/skin colour: measured, reported for analysis only (colour()), never used in a verdict
 HAIR_REL_MAX = 1.0
 SKIN_HUE_RANGE = (30.0, 65.0)
 ATTEMPTS = 4
@@ -133,7 +134,7 @@ def colour(r):
 
 
 def verdict_new(r, rear):
-    """Mirror of faceVerdict in lib/identity.ts."""
+    """Mirror of faceVerdict(..., 'pose-aware') in lib/identity.ts (experimental, dev only)."""
     sim = r.get("similarity")
     if not r.get("found") or sim is None:
         return "inconclusive"
@@ -143,7 +144,7 @@ def verdict_new(r, rear):
         return "verified"
     turned = rear or r.get("yaw", 0) > TURNED_YAW or r.get("eye_ratio", 1) < TURNED_EYE_RATIO
     if turned and sim >= FACE_TURNED_FLOOR:
-        return "mismatch" if colour(r) == "differs" else "inconclusive"
+        return "inconclusive"  # hair/skin colour no longer gates anything (lib/identity.ts)
     return "mismatch"
 
 

@@ -27,7 +27,7 @@ export interface StylePack {
   /** Only applied when the outfit has no top: with a dress or top on, the pack undressed her (and the top check
    * missed it). */
   nudeOnly?: boolean;
-  /** The pack turns her away from the camera, so the face check treats a middling score as inconclusive. */
+  /** The pack turns her away from the camera (used only by the experimental pose-aware face check). */
   rearPose?: boolean;
 }
 

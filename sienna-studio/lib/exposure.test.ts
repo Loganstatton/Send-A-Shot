@@ -113,7 +113,7 @@ describe('pose-aware face check in the retry loop', () => {
     expect(pickAttempt([a]).seed).toBe(1);
     const note = exposureWarning([a], a)!;
     expect(note).toContain('Face check inconclusive: her face is turned away (similarity 0.62)');
-    expect(note).toContain('not confirmed as Sienna');
+    expect(note).toContain('not confirmed as Sienna and is in Needs Review');
   });
 
   it('a mismatch is still redone, and a verified face beats an unjudged one when picking', () => {
@@ -130,5 +130,15 @@ describe('pose-aware face check in the retry loop', () => {
   it('a verified first photo needs no note', () => {
     const ok = att(1, 'verified', 0.85);
     expect(exposureWarning([ok], ok)).toBeNull();
+  });
+});
+
+describe('four failed face checks (production)', () => {
+  it('keeps the closest and says it went to Needs Review, not the gallery', () => {
+    const miss = (seed: number, similarity: number) => ({ seed, exposed: false, score: 0, similarity, identity: 'mismatch' as const, faceOk: false, images: [] });
+    const all = [miss(1, 0.6), miss(2, 0.71), miss(3, 0.5), miss(4, 0.66)];
+    const kept = pickAttempt(all);
+    expect(kept.seed).toBe(2);
+    expect(exposureWarning(all, kept)).toContain('the closest (similarity 0.71) is in Needs Review, not the gallery');
   });
 });

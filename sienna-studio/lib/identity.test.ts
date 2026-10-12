@@ -1,60 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import { galleryState, identityNotice, needsIdentityReview } from './identity-notice';
-import { colourCheck, FACE_THRESHOLD, FACE_TURNED_FLOOR, faceVerdict, parseFace, rearRequest } from './identity';
+import { FACE_THRESHOLD, FACE_TURNED_FLOOR, faceVerdict, parseFace, rearRequest } from './identity';
 
 const face = (similarity: number | null, more: Partial<Parameters<typeof faceVerdict>[0]> = {}) => ({
   available: true, ok: true, similarity, size: 150, found: similarity !== null, ...more,
 });
 
-describe('faceVerdict', () => {
-  it('verifies a close face whatever the pose', () => {
-    expect(faceVerdict(face(0.8), false).status).toBe('verified');
-    expect(faceVerdict(face(FACE_THRESHOLD), true).status).toBe('verified');
-  });
-
-  it('a facing-the-camera face below the threshold is a mismatch (redone as before)', () => {
-    expect(faceVerdict(face(0.7, { yaw: 0.05, eyeRatio: 0.47 }), false)).toMatchObject({ status: 'mismatch', reason: "didn't look enough like Sienna" });
-  });
-
-  it('a turned face in the unreliable band is inconclusive, not a match', () => {
-    expect(faceVerdict(face(0.7), true)).toMatchObject({ status: 'inconclusive', reason: 'her face is turned away' });
-    expect(faceVerdict(face(0.7, { yaw: 0.5 }), false).status).toBe('inconclusive');
-    expect(faceVerdict(face(0.7, { eyeRatio: 0.3 }), false).status).toBe('inconclusive');
-  });
-
-  it('the floor sits at 0.68: drifted lookalikes reach 0.74, unrelated women 0.63', () => {
-    expect(FACE_TURNED_FLOOR).toBe(0.68);
-    expect(faceVerdict(face(0.67), true).status).toBe('mismatch');
-    expect(faceVerdict(face(0.6, { yaw: 0.9 }), false).status).toBe('mismatch');
-  });
-
-  it('hair or skin colour that clearly differs stops a turned face from skipping its retry', () => {
-    const v = faceVerdict(face(0.7, { hairRel: 1.3, skinHue: 47 }), true);
-    expect(v.status).toBe('mismatch');
-    expect(v.reason).toBe("her face is turned away and her hair looks much lighter than Sienna's dark brown");
-    expect(faceVerdict(face(0.7, { hairRel: 0.3, skinHue: 15 }), true).status).toBe('mismatch');
-    expect(faceVerdict(face(0.7, { hairRel: 0.3, skinHue: 47 }), true).status).toBe('inconclusive');
-  });
-
-  it('colour never verifies a face, and never fails a verified one', () => {
-    expect(faceVerdict(face(0.6, { hairRel: 0.3, skinHue: 47 }), false).status).toBe('mismatch');
-    expect(faceVerdict(face(0.8, { hairRel: 1.5 }), false).status).toBe('verified');
-  });
-
-  it('colour is lighting-tolerant: Sienna from shade to golden hour stays consistent; black-and-white is not judged', () => {
-    for (const [hairRel, skinHue] of [[0.14, 40], [0.65, 56], [0.94, 52]]) expect(colourCheck(face(0.7, { hairRel, skinHue })).status).toBe('consistent');
-    expect(colourCheck(face(0.7, { hairRel: 1.4, skinHue: 0, mono: true })).status).toBe('unknown');
-  });
-
-  it('a turned face that is clearly someone else is still a mismatch', () => {
-    expect(faceVerdict(face(FACE_TURNED_FLOOR - 0.01), true).status).toBe('mismatch');
-    expect(faceVerdict(face(0.3, { yaw: 0.9 }), true).status).toBe('mismatch');
+describe('faceVerdict — production (strict 0.74)', () => {
+  it('verifies 0.74 or more, in any pose', () => {
     expect(FACE_THRESHOLD).toBe(0.74);
+    expect(faceVerdict(face(0.8), false).status).toBe('verified');
+    expect(faceVerdict(face(0.74), true).status).toBe('verified');
   });
 
-  it('no face, or one too small to read, is inconclusive', () => {
-    expect(faceVerdict(face(null), false)).toMatchObject({ status: 'inconclusive', reason: 'no face was found' });
-    expect(faceVerdict(face(0.2, { size: 40 }), false).status).toBe('inconclusive');
+  it('anything below 0.74 is a mismatch and is redone — including turned faces', () => {
+    expect(faceVerdict(face(0.73), false)).toEqual({ status: 'mismatch', reason: "didn't look enough like Sienna" });
+    expect(faceVerdict(face(0.72), true).status).toBe('mismatch');
+    expect(faceVerdict(face(0.7, { yaw: 0.9, eyeRatio: 0.2 }), true, 'strict').status).toBe('mismatch');
+  });
+
+  it('a face that cannot be compared keeps the old behaviour (unchecked, not a match, not a retry)', () => {
+    expect(faceVerdict(face(null), false)).toEqual({ status: 'unchecked', reason: 'no face was found' });
+    expect(faceVerdict(face(0.2, { size: 40 }), false).status).toBe('unchecked');
+  });
+
+  it('hair and skin colour never change a decision', () => {
+    expect(faceVerdict(face(0.8, { hairRel: 2.5, skinHue: 10 }), true).status).toBe('verified');
+    expect(faceVerdict(face(0.6, { hairRel: 0.3, skinHue: 47 }), true).status).toBe('mismatch');
+    expect(faceVerdict(face(0.7, { hairRel: 2.5 }), true, 'pose-aware').status).toBe('inconclusive');
+  });
+});
+
+describe('faceVerdict — experimental pose-aware 0.68 (dev only)', () => {
+  it('a turned face between 0.68 and 0.74 is inconclusive, never a match', () => {
+    expect(FACE_TURNED_FLOOR).toBe(0.68);
+    expect(faceVerdict(face(0.7), true, 'pose-aware')).toEqual({ status: 'inconclusive', reason: 'her face is turned away' });
+    expect(faceVerdict(face(0.7, { yaw: 0.5 }), false, 'pose-aware').status).toBe('inconclusive');
+    expect(faceVerdict(face(0.67), true, 'pose-aware').status).toBe('mismatch');
+    expect(faceVerdict(face(0.7, { yaw: 0.05, eyeRatio: 0.47 }), false, 'pose-aware').status).toBe('mismatch');
+    expect(faceVerdict(face(null), false, 'pose-aware').status).toBe('inconclusive');
   });
 });
 
@@ -101,13 +85,14 @@ describe('identityNotice (gallery)', () => {
 });
 
 describe('galleryState (Needs Review)', () => {
-  const rec = (status: 'verified' | 'inconclusive' | 'unconfirmed' | null, face_drift?: 'ok' | 'issue') => ({
+  const rec = (status: 'verified' | 'inconclusive' | 'unconfirmed' | 'unchecked' | null, face_drift?: 'ok' | 'issue') => ({
     identityCheck: status ? { status, similarity: 0.7 } : undefined,
     review: face_drift ? { face_drift } : {},
   });
-  it('only a verified face (or no face check) is approved automatically', () => {
+  it('only a verified face (or no face check, or no face to compare) is approved automatically', () => {
     expect(galleryState(rec('verified'))).toBe('approved');
     expect(galleryState(rec(null))).toBe('approved');
+    expect(galleryState(rec('unchecked'))).toBe('approved');
   });
   it('unverified photos, including the closest-of-four fallback, wait in Needs Review', () => {
     expect(galleryState(rec('inconclusive'))).toBe('needs_review');
