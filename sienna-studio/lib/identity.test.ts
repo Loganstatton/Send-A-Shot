@@ -19,7 +19,7 @@ describe('faceVerdict — production (strict 0.74)', () => {
     expect(faceVerdict(face(0.7, { yaw: 0.9, eyeRatio: 0.2 }), true, 'strict').status).toBe('mismatch');
   });
 
-  it('a face that cannot be compared keeps the old behaviour (unchecked, not a match, not a retry)', () => {
+  it('a face that cannot be compared is unchecked: not a match, and not a retry', () => {
     expect(faceVerdict(face(null), false)).toEqual({ status: 'unchecked', reason: 'no face was found' });
     expect(faceVerdict(face(0.2, { size: 40 }), false).status).toBe('unchecked');
   });
@@ -89,10 +89,24 @@ describe('galleryState (Needs Review)', () => {
     identityCheck: status ? { status, similarity: 0.7 } : undefined,
     review: face_drift ? { face_drift } : {},
   });
-  it('only a verified face (or no face check, or no face to compare) is approved automatically', () => {
+  it('only a verified face (or a photo the face check never ran on) is approved automatically', () => {
     expect(galleryState(rec('verified'))).toBe('approved');
     expect(galleryState(rec(null))).toBe('approved');
-    expect(galleryState(rec('unchecked'))).toBe('approved');
+  });
+
+  it('no face to compare goes to Needs Review, labelled for manual review — not rejected', () => {
+    expect(galleryState(rec('unchecked'))).toBe('needs_review');
+    const n = identityNotice({ identityCheck: { status: 'unchecked', similarity: null, reason: 'no face was found' }, review: {} })!;
+    expect(n.title).toBe('Face not verified — manual review required');
+    expect(n.detail).toContain('no face was found');
+    expect(n.detail).toContain('not retried');
+    expect(n.detail).toContain('approve or reject');
+  });
+
+  it('a no-face photo can be approved or rejected manually; approval never becomes verification', () => {
+    expect(galleryState(rec('unchecked', 'ok'))).toBe('approved_by_you');
+    expect(identityNotice(rec('unchecked', 'ok'))!.title).toBe('Face not verified — manual review required');
+    expect(galleryState(rec('unchecked', 'issue'))).toBe('rejected');
   });
   it('unverified photos, including the closest-of-four fallback, wait in Needs Review', () => {
     expect(galleryState(rec('inconclusive'))).toBe('needs_review');

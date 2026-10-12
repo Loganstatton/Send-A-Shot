@@ -137,7 +137,9 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
   const redone = attempts.filter((a) => a !== kept && failed(a));
   // never let an unjudged face read as a match
   const unverified =
-    kept.identity === 'inconclusive'
+    kept.identity === 'unchecked'
+      ? `Face not verified — manual review required: ${kept.identityReason ?? 'no face was found'}, so it was not retried and is in Needs Review.`
+      : kept.identity === 'inconclusive'
       ? `Face check inconclusive: ${kept.identityReason ?? 'her face could not be judged'}${typeof kept.similarity === 'number' ? ` (similarity ${kept.similarity})` : ''}, so this photo is not confirmed as Sienna and is in Needs Review.`
       : '';
   if (!redone.length) return unverified || null;

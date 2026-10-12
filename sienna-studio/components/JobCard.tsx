@@ -43,7 +43,7 @@ export function JobCard({ job, onDismiss }: { job: GenerationRecord; onDismiss: 
         </div>
         {job.error && <Notice kind="error">{job.error}</Notice>}
         {job.status === 'done' && galleryState(job) === 'needs_review' && (
-          <Notice kind="warn">Face not verified as Sienna — this photo went to Needs Review, not the gallery. Open it to decide.</Notice>
+          <Notice kind="warn">Face not verified — manual review required. This photo went to Needs Review, not the gallery. Open it to approve or reject it.</Notice>
         )}
         {visibleWarnings(job.warnings).slice(0, 2).map((w, i) => (
           <p key={i} className="text-xs text-amber-300">

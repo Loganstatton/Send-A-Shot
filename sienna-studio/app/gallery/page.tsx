@@ -43,7 +43,7 @@ export default function GalleryPage() {
       {error && <p className="text-red-300">{error}</p>}
       {filter === 'review' && list.length > 0 && (
         <p className="mb-3 text-sm text-amber-300">
-          These photos did not pass the face check, so they are not approved. Open one and choose “Looks like Sienna” to move it into the
+          These photos did not pass the face check, or her face couldn't be checked, so they are not approved. Open one and choose “Looks like Sienna” to move it into the
           gallery as your approval (it stays marked as unverified), or delete it.
         </p>
       )}

@@ -138,5 +138,5 @@ then both rules replayed on the same photos (first 4 attempts). GPU cost ≈ $0.
   labelled "face unverified" and its automated status never changes. "Not her" keeps it out.
 - **Hair/skin colour** is measured by the node but used in no decision.
 - **Pose-aware 0.68** is kept for future consideration, active only with `SIENNA_EXPERIMENTAL=true` (unset on Render).
-- **No face to compare** (none found, or too small) keeps the deployed behaviour: not retried, stays in the gallery,
-  shown as "not checked" in the photo details.
+- **No face to compare** (none found, or too small — often hidden or turned away on purpose): not retried, never a
+  match, filed in Needs Review as "Face not verified — manual review required" (owner's follow-up decision).

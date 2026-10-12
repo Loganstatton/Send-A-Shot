@@ -40,7 +40,8 @@ export interface FaceReport {
  * Production ('strict', the deployed rule, chosen after the blind-labelled GPU A/B in
  * docs/FACE_CHECK_CALIBRATION.md): similarity >= FACE_THRESHOLD is verified; anything below is a mismatch and is
  * redone with a new seed, up to four photos; if none verifies, the closest is kept and filed in Needs Review, never
- * the gallery. A face that can't be compared (none found, or too small) is 'unchecked' and handled as before.
+ * the gallery. A face that can't be compared (none found, or too small — often hidden or turned away on purpose) is
+ * 'unchecked': not retried (another seed wouldn't help), never a match, filed in Needs Review.
  *
  * Experimental ('pose-aware', only with SIENNA_EXPERIMENTAL=true): a turned face scoring between FACE_TURNED_FLOOR
  * and FACE_THRESHOLD is 'inconclusive' — not retried, filed in Needs Review. Faster on from-behind shots but it

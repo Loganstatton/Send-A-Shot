@@ -704,7 +704,8 @@ function identityFields(face: FaceReport, rec: GenerationRecord) {
 }
 
 /** What the gallery shows about the kept photo's face: only a verified face counts as Sienna's. A face that couldn't
- * be compared ('unchecked': none found, or too small) keeps the old behaviour and is not filed for review. */
+ * be compared ('unchecked': none found, or too small) is not retried but is filed in Needs Review like any other
+ * unverified photo. */
 function identitySummary(kept: { identity?: string; similarity?: number | null; identityReason?: string; faceOk?: boolean }): NonNullable<GenerationRecord['identityCheck']> {
   const similarity = kept.similarity ?? null;
   if (kept.identity === 'verified' || (kept.identity === undefined && kept.faceOk === true)) return { status: 'verified', similarity };

@@ -142,3 +142,21 @@ describe('four failed face checks (production)', () => {
     expect(exposureWarning(all, kept)).toContain('the closest (similarity 0.71) is in Needs Review, not the gallery');
   });
 });
+
+describe('no face to compare (production)', () => {
+  const att = (seed: number, identity: 'mismatch' | 'unchecked', similarity: number | null) => ({
+    seed, exposed: false, score: 0, similarity, identity, ...(identity === 'mismatch' ? { faceOk: false } : { identityReason: 'no face was found' }), images: [],
+  });
+  it('is not retried, so no GPU time is spent redoing a hidden or turned-away face', () => {
+    const none = att(1, 'unchecked', null);
+    expect(failed(none)).toBe(false);
+    expect(pickAttempt([none]).seed).toBe(1);
+    expect(exposureWarning([none], none)).toBe('Face not verified — manual review required: no face was found, so it was not retried and is in Needs Review.');
+  });
+  it('stops the retries when it comes after a mismatch', () => {
+    const seq = [att(1, 'mismatch', 0.6), att(2, 'unchecked', null)];
+    expect(failed(seq[0])).toBe(true);
+    expect(pickAttempt(seq).seed).toBe(2);
+    expect(exposureWarning(seq, seq[1])).toContain('kept seed 2. Face not verified — manual review required');
+  });
+});

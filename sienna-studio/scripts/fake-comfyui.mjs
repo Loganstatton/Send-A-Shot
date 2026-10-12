@@ -13,8 +13,11 @@ const PORT = Number(process.argv[process.argv.indexOf('--port') + 1]) || 8188;
 const MODELS = {
   ckpt_name: ['realvisxlV50.safetensors', 'sd_xl_base_1.0.safetensors', 'RealVisXL_V5.0_fp16.safetensors'],
   unet_name: ['flux1-dev-fp8.safetensors'],
-  lora_name: arg('--no-lora') ? ['other_style.safetensors'] : ['sienna_v1.safetensors', 'sienna_v2.safetensors', 'other_style.safetensors'],
-  control_net_name: ['OpenPoseXL2.safetensors'],
+  lora_name: (arg('--no-lora') ? ['other_style.safetensors'] : ['sienna_v1.safetensors', 'sienna_v2.safetensors', 'other_style.safetensors']).concat(
+    // extra LoRA files to report, e.g. style packs: FAKE_LORAS=pack_530095.safetensors,pack_2406389.safetensors
+    (process.env.FAKE_LORAS || '').split(',').filter(Boolean),
+  ),
+  control_net_name: ['OpenPoseXL2.safetensors'].concat((process.env.FAKE_CONTROLNETS || '').split(',').filter(Boolean)),
   vae_name: ['ae.safetensors'],
   clip_name: ['clip_l.safetensors', 't5xxl_fp8_e4m3fn.safetensors'],
 };
