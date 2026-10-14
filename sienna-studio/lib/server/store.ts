@@ -15,7 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { builtinPresets, DEFAULT_CHARACTER, DEFAULT_PARAMS, DEFAULT_SETTINGS } from '../defaults';
 import { builtinWorkflows, LEGACY_WORKFLOW_IDS } from '../comfy/builtin-workflows';
-import type { AppSettings, CharacterProfile, GenerationRecord, Preset, StoredImage, WorkflowTemplate } from '../types';
+import type { AppSettings, CharacterProfile, GenerationRecord, Preset, StoredImage, StoredVideo, WorkflowTemplate } from '../types';
 import { imageSize } from './png';
 
 export const DATA_DIR = path.resolve(process.env.DATA_DIR || './data');
@@ -286,6 +286,12 @@ export function deleteRecord(id: string, deleteFiles = true): Promise<void> {
     await saveHistory(list.filter((r) => r.id !== id));
     if (rec && deleteFiles) {
       for (const img of rec.images) await fs.rm(path.join(IMAGES_DIR, img.file), { force: true });
+      if (rec.video?.result) await fs.rm(path.join(IMAGES_DIR, rec.video.result.file), { force: true });
+      // the driving video (and its poster) can be shared by re-runs: remove it with the last record using it
+      const drive = rec.video?.drive;
+      if (drive && !list.some((r) => r.id !== rec.id && r.video?.drive?.video.file === drive.video.file)) {
+        for (const f of [drive.video.file, drive.poster.file]) await fs.rm(path.join(IMAGES_DIR, f), { force: true });
+      }
     }
   });
 }
@@ -300,6 +306,32 @@ const EXT_BY_MIME: Record<string, string> = {
 };
 
 export const SAFE_FILE_RE = /^[a-z0-9_-]+\.(png|jpg|webp)$/i;
+/** Video Studio files: vid_* (results) and mot_* (driving videos), MP4 only. */
+export const SAFE_VIDEO_RE = /^(vid|mot)_[a-z0-9]+\.mp4$/i;
+
+/** Absolute path of a stored image or video, or null for an unsafe name. */
+export function storedFilePath(file: string): string | null {
+  return SAFE_FILE_RE.test(file) || SAFE_VIDEO_RE.test(file) ? path.join(IMAGES_DIR, file) : null;
+}
+
+/** Move a finished MP4 into storage. */
+export async function storeVideoFile(src: string, prefix: 'vid' | 'mot', info: Omit<StoredVideo, 'id' | 'file' | 'bytes' | 'createdAt'>): Promise<StoredVideo> {
+  await fs.mkdir(IMAGES_DIR, { recursive: true });
+  const id = newId();
+  const file = `${prefix}_${id}.mp4`;
+  const dest = path.join(IMAGES_DIR, file);
+  // copy (not rename): the scratch file may be on another filesystem than the persistent disk
+  await fs.copyFile(src, dest);
+  const { size } = await fs.stat(dest);
+  return { id, file, bytes: size, createdAt: now(), ...info };
+}
+
+export async function readVideo(file: string): Promise<Buffer> {
+  if (!SAFE_VIDEO_RE.test(file)) throw new Error('Invalid file name');
+  return fs.readFile(path.join(IMAGES_DIR, file)).catch((e) => {
+    throw e?.code === 'ENOENT' ? new MissingImageError(file) : e;
+  });
+}
 
 export async function storeImage(bytes: Buffer, mime: string, prefix: 'ref' | 'gen' | 'up', label?: string): Promise<StoredImage> {
   const ext = EXT_BY_MIME[mime.toLowerCase()];

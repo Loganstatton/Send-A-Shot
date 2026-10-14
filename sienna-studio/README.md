@@ -83,6 +83,7 @@ See [`.env.example`](.env.example). **None of these reach the browser.**
 | `DATA_DIR` | Storage folder (default `./data`). Must be persistent in production. |
 | `INSECURE_COOKIES` | `true` only if you serve production over plain HTTP (e.g. a LAN or Tailscale IP). |
 | `SIENNA_OUTFIT_EDIT` | `true` turns on the optional **Edit Outfit** button (Qwen-Image-Edit-2509). Default off. See §5. |
+| `SIENNA_VIDEO` | `true` turns on the **Video** tab (Wan2.2 Animate Image + Copy Motion). Default off. See docs/VIDEO_STUDIO.md. |
 
 ---
 

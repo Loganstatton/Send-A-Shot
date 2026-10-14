@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useApi } from '@/lib/client/api';
 import { cx } from './ui';
 
 const TABS = [
   { href: '/', label: 'Create', icon: '✦' },
   { href: '/gallery', label: 'Gallery', icon: '▦' },
+  { href: '/video', label: 'Video', icon: '▶', video: true },
   { href: '/character', label: 'Sienna', icon: '◉' },
   { href: '/library', label: 'Library', icon: '☰' },
   { href: '/settings', label: 'Settings', icon: '⚙' },
@@ -16,11 +18,14 @@ const HIDDEN_ON = ['/login', '/setup'];
 
 export function BottomNav() {
   const path = usePathname();
-  if (HIDDEN_ON.some((p) => path.startsWith(p))) return null;
+  const hidden = HIDDEN_ON.some((p) => path.startsWith(p));
+  // the Video tab only exists when Video Studio is switched on (SIENNA_VIDEO=true)
+  const { data } = useApi<{ env: { video?: boolean } }>(hidden ? null : '/api/settings');
+  if (hidden) return null;
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-ink-800 bg-ink-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
       <ul className="mx-auto flex max-w-xl">
-        {TABS.map((t) => {
+        {TABS.filter((t) => !('video' in t) || data?.env.video).map((t) => {
           const active = t.href === '/' ? path === '/' : path.startsWith(t.href);
           return (
             <li key={t.href} className="flex-1">

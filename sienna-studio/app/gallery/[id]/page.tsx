@@ -9,6 +9,8 @@ import { OutfitEditAvailability, rerunOutfitEdit } from '@/lib/client/outfit-edi
 import { FACE_LABELS, FOOTWEAR_LABELS, PROTECT_LABELS, SCOPE_LABELS } from '@/lib/outfit-edit';
 import { bodyReferenceProblem, BodyReference } from '@/lib/body-refs';
 import { shareImage } from '@/lib/client/share';
+import { rerunVideo, shareVideo } from '@/lib/client/video';
+import { CAMERA_LABELS, VIDEO_MODE_LABELS } from '@/lib/video';
 import { REVIEW_INFO } from '@/lib/review';
 import type { GenerationRecord, ReviewItem, ReviewMark } from '@/lib/types';
 import { PROMPT_FIELD_LABELS, REVIEW_ITEMS } from '@/lib/types';
@@ -24,7 +26,7 @@ export default function GenerationDetail() {
   const [notes, setNotes] = useState('');
   const { data: editAvail } = useApi<OutfitEditAvailability>('/api/outfit-edit');
   const [showBefore, setShowBefore] = useState(false);
-  const { data: settings } = useApi<{ env: { experiments?: boolean } }>('/api/settings');
+  const { data: settings } = useApi<{ env: { experiments?: boolean; video?: boolean } }>('/api/settings');
   const experiments = !!settings?.env.experiments;
   const { data: bodyRefs, setData: setBodyRefs } = useApi<BodyReference[]>(experiments ? '/api/character/body-references' : null);
 
@@ -58,6 +60,11 @@ export default function GenerationDetail() {
   async function rerun(newSeed: boolean) {
     setBusy(newSeed ? 'var' : 'regen');
     try {
+      if (rec!.video) {
+        const next = await rerunVideo(rec!, newSeed);
+        router.push(`/gallery/${next.id}`);
+        return;
+      }
       if (rec!.outfitEdit) {
         const next = await rerunOutfitEdit(rec!, newSeed);
         router.push(`/gallery/${next.id}`);
@@ -94,18 +101,48 @@ export default function GenerationDetail() {
         }
       />
 
-      {rec.outfitEdit && rec.images.length > 0 && (
+      {(rec.outfitEdit || rec.video) && rec.images.length > 0 && (
         <div className="mb-2 flex gap-2">
           <Chip active={!showBefore} onClick={() => setShowBefore(false)}>
-            After
+            {rec.video ? 'Video' : 'After'}
           </Chip>
           <Chip active={showBefore} onClick={() => setShowBefore(true)}>
-            Before
+            {rec.video ? 'Photo' : 'Before'}
           </Chip>
         </div>
       )}
       {/* Images: horizontal swipe when there are several */}
-      {rec.outfitEdit && showBefore ? (
+      {rec.video && showBefore ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={fileUrl(rec.video.sourceImage.file)} alt="The photo the video was made from" className="max-h-[75vh] w-full rounded-2xl bg-black object-contain" />
+      ) : rec.video?.result ? (
+        <video
+          key={rec.video.result.file}
+          src={fileUrl(rec.video.result.file)}
+          poster={rec.images[0] ? fileUrl(rec.images[0].file) : undefined}
+          controls
+          autoPlay
+          muted
+          loop
+          playsInline
+          className="max-h-[75vh] w-full rounded-2xl bg-black object-contain"
+        />
+      ) : rec.video ? (
+        <Card className="flex aspect-[3/4] flex-col items-center justify-center gap-3 text-center text-sm text-ink-400">
+          {rec.status === 'error' ? (
+            <Notice kind="error">{rec.error}</Notice>
+          ) : (
+            <>
+              <Spinner className="h-8 w-8" />
+              <span>
+                {rec.status === 'queued' ? (rec.queuePosition ? `Queued · #${rec.queuePosition}` : 'Queued') : 'Making the video…'}
+                <br />
+                usually about {rec.video.estimateMinutes} min — you can leave this page
+              </span>
+            </>
+          )}
+        </Card>
+      ) : rec.outfitEdit && showBefore ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={fileUrl(rec.outfitEdit.sourceImage.file)} alt="Before the edit" className="max-h-[75vh] w-full rounded-2xl bg-black object-contain" />
       ) : rec.images.length > 0 ? (
@@ -134,8 +171,13 @@ export default function GenerationDetail() {
         <Button
           variant="primary"
           className="col-span-3"
-          disabled={!rec.images[0]}
+          disabled={rec.video ? !rec.video.result : !rec.images[0]}
           onClick={async () => {
+            if (rec.video?.result) {
+              const r = await shareVideo(fileUrl(rec.video.result.file), `sienna_${rec.seed}.mp4`);
+              if (r === 'downloaded') toast('Downloaded');
+              return;
+            }
             const img = rec.images[0];
             const r = await shareImage(fileUrl(img.file), `sienna_${rec.seed}.${img.file.split('.').pop()}`);
             if (r === 'downloaded') toast('Downloaded');
@@ -146,33 +188,46 @@ export default function GenerationDetail() {
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <Button onClick={() => rerun(false)} loading={busy === 'regen'}>
-          {rec.outfitEdit ? '↻ Re-run edit' : '↻ Regenerate'}
+          {rec.video ? '↻ Make again' : rec.outfitEdit ? '↻ Re-run edit' : '↻ Regenerate'}
         </Button>
         <Button onClick={() => rerun(true)} loading={busy === 'var'}>
           🎲 New seed
         </Button>
-        {editAvail?.enabled && (
+        {settings?.env.video && !rec.video && rec.images[0] && (
+          <>
+            <Link href={`/video?photo=${rec.id}`}>
+              <Button className="w-full">🎬 Animate</Button>
+            </Link>
+            <Link href={`/video?mode=motion&photo=${rec.id}`}>
+              <Button className="w-full">🕺 Copy motion</Button>
+            </Link>
+          </>
+        )}
+        {editAvail?.enabled && !rec.video && (
           <Link href={`/gallery/${rec.id}/edit-outfit`} className="col-span-2">
             <Button className="w-full" disabled={!rec.images[0]}>
               👗 Edit outfit
             </Button>
           </Link>
         )}
-        {experiments && rec.images[0] && <BodyRefButton rec={rec} refs={bodyRefs} onChange={setBodyRefs} />}
-        {!rec.outfitEdit && (
+        {experiments && rec.images[0] && !rec.video && <BodyRefButton rec={rec} refs={bodyRefs} onChange={setBodyRefs} />}
+        {!rec.outfitEdit && !rec.video && (
           <Link href={`/?from=${rec.id}`}>
             <Button className="w-full">✎ Edit & regenerate</Button>
           </Link>
         )}
-        <Link href={`/?init=${rec.id}`}>
-          <Button className="w-full" disabled={!rec.images[0]}>
-            ⇢ Use as init
-          </Button>
-        </Link>
+        {!rec.video && (
+          <Link href={`/?init=${rec.id}`}>
+            <Button className="w-full" disabled={!rec.images[0]}>
+              ⇢ Use as init
+            </Button>
+          </Link>
+        )}
       </div>
       {rec.images.length > 1 && <p className="mt-1 text-xs text-ink-400">Share saves the first image; long-press others to save.</p>}
 
       {rec.outfitEdit && <OutfitEditCard rec={rec} />}
+      {rec.video && <VideoCard rec={rec} />}
 
       <div className="mt-5 space-y-3">
         {/* Quality review */}
@@ -222,7 +277,7 @@ export default function GenerationDetail() {
           <GenerationMeta rec={rec} />
           {rec.parentId && (
             <Link href={`/gallery/${rec.parentId}`} className="block text-sm text-accent">
-              {rec.outfitEdit ? '← Original image' : '← Derived from an earlier generation'}
+              {rec.video ? '← The photo it was made from' : rec.outfitEdit ? '← Original image' : '← Derived from an earlier generation'}
             </Link>
           )}
         </Collapsible>
@@ -247,7 +302,7 @@ export default function GenerationDetail() {
         variant="danger"
         className="mt-6 w-full"
         onClick={async () => {
-          if (!confirm('Delete this generation and its images?')) return;
+          if (!confirm(rec.video ? 'Delete this video?' : 'Delete this generation and its images?')) return;
           await api(`/api/history/${rec.id}`, { method: 'DELETE' });
           router.replace('/gallery');
         }}
@@ -362,6 +417,79 @@ function OutfitEditCard({ rec }: { rec: GenerationRecord }) {
         <dd className="break-words">{e.description}</dd>
         <dt className="text-ink-400">Was wearing</dt>
         <dd className="break-words text-ink-400">{e.originalOutfit || '—'}</dd>
+      </dl>
+    </Card>
+  );
+}
+
+function VideoCard({ rec }: { rec: GenerationRecord }) {
+  const v = rec.video!;
+  const faces = v.frameFaces ?? [];
+  return (
+    <Card className="mt-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="font-medium">{VIDEO_MODE_LABELS[v.mode]}</p>
+        <Link href={`/gallery/${v.sourceId}`} className="text-sm text-accent">
+          Open photo →
+        </Link>
+      </div>
+      {v.drive && (
+        <div className="flex items-center gap-3 text-xs text-ink-400">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={fileUrl(v.drive.poster.file)} alt="Movement video" className="h-24 w-[72px] rounded-lg bg-black object-cover" />
+          <span>
+            Movement copied from {v.drive.start > 0 ? `${v.drive.start} s` : 'the start'} of the video, {v.drive.seconds} s
+            {v.chunks && v.chunks > 1 ? ` (made in ${v.chunks} parts)` : ''}.
+          </span>
+        </div>
+      )}
+      <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
+        <dt className="text-ink-400">Model</dt>
+        <dd>{v.model === 'wan2.2-i2v-14b' ? 'Wan2.2 image-to-video 14B' : 'Wan2.2 Animate 14B'}</dd>
+        <dt className="text-ink-400">Length</dt>
+        <dd>
+          {v.result ? `${v.result.seconds} s · ${v.result.frames} frames` : `${v.seconds} s`} at 16 fps
+        </dd>
+        <dt className="text-ink-400">Size</dt>
+        <dd>
+          {v.width}×{v.height} ({v.resolution}){v.mode === 'animate' ? ` · ${v.quality === 'fast' ? 'fast, 4 steps' : 'quality, 20 steps'}` : ''}
+        </dd>
+        {v.motion !== undefined && (
+          <>
+            <dt className="text-ink-400">Motion</dt>
+            <dd className="break-words">{v.motion || '—'}</dd>
+          </>
+        )}
+        {v.camera && (
+          <>
+            <dt className="text-ink-400">Camera</dt>
+            <dd>{CAMERA_LABELS[v.camera].label}</dd>
+          </>
+        )}
+        {v.scene !== undefined && v.mode === 'motion' && (
+          <>
+            <dt className="text-ink-400">Scene</dt>
+            <dd className="break-words">{v.scene || '—'}</dd>
+          </>
+        )}
+        <dt className="text-ink-400">Face check</dt>
+        <dd>
+          {v.faceCheck.status === 'unavailable' ? (
+            <span className="text-amber-300">not run — {v.faceCheck.reason}</span>
+          ) : faces.length ? (
+            <span className="text-xs">
+              {faces.map((f, i) => (
+                <span key={i} className={`mr-2 inline-block ${f.found && (f.similarity ?? 0) >= 0.74 ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  frame {i + 1}: {f.found && f.similarity !== null ? f.similarity.toFixed(2) : 'no face'}
+                </span>
+              ))}
+            </span>
+          ) : rec.status === 'done' ? (
+            'no result'
+          ) : (
+            'pending'
+          )}
+        </dd>
       </dl>
     </Card>
   );

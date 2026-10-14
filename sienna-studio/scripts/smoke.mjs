@@ -112,6 +112,72 @@ if (avail.status === 200 && avail.body.enabled) {
   console.log('– Edit Outfit is off on this server (SIENNA_OUTFIT_EDIT), skipped');
 }
 
+// ── Video Studio (only when SIENNA_VIDEO=true on the server) ──
+const vAvail = await call('/api/video');
+if (vAvail.status === 200 && vAvail.body.enabled) {
+  assert(vAvail.body.modes.animate.available && vAvail.body.modes.motion.available, `Video Studio available (missing: ${[...vAvail.body.modes.animate.missing, ...vAvail.body.modes.motion.missing].join(', ') || 'none'})`);
+  const before = (await call(`/api/history/${rec.id}/status`)).body;
+  const poll = async (r) => {
+    for (let i = 0; i < 180 && r.status !== 'done' && r.status !== 'error'; i++) {
+      await new Promise((res) => setTimeout(res, 1000));
+      r = (await call(`/api/history/${r.id}/status`)).body;
+    }
+    return r;
+  };
+  const checkVideo = async (v, label) => {
+    assert(v.status === 'done' && v.video?.result?.file?.endsWith('.mp4') && v.images.length === 1, `${label}: finished with a video and a poster (${v.error ?? v.video?.result?.seconds + ' s'})`);
+    assert(v.parentId === rec.id && v.video.sourceId === rec.id && v.identityPolicy === 1, `${label}: new record linked to its photo`);
+    assert(!!v.identityCheck && v.identityCheck.status !== 'verified', `${label}: face check outcome recorded, never verified in mock mode (${v.identityCheck?.status})`);
+    const full = await fetch(`${BASE}/api/files/${v.video.result.file}`, { headers });
+    assert(full.ok && full.headers.get('content-type') === 'video/mp4' && full.headers.get('accept-ranges') === 'bytes', `${label}: served as video/mp4 with byte ranges`);
+    const part = await fetch(`${BASE}/api/files/${v.video.result.file}`, { headers: { ...headers, Range: 'bytes=0-1023' } });
+    const partBytes = Buffer.from(await part.arrayBuffer());
+    assert(part.status === 206 && partBytes.length === 1024 && /^bytes 0-1023\/\d+$/.test(part.headers.get('content-range') ?? ''), `${label}: Range request answered with 206 (iPhone playback)`);
+    assert(partBytes.indexOf(Buffer.from('moov')) > 0 && partBytes.indexOf(Buffer.from('moov')) < partBytes.indexOf(Buffer.from('mdat')) || partBytes.indexOf(Buffer.from('mdat')) < 0, `${label}: MP4 index at the front (fast start)`);
+  };
+
+  // Animate Image
+  const an = await call('/api/video', { method: 'POST', body: JSON.stringify({ mode: 'animate', sourceId: rec.id, seed: 11, quality: 'fast', resolution: '480p', motion: 'she smiles and waves', camera: 'push_in', seconds: 2 }) });
+  assert(an.status === 202 && an.body.video?.frames === 33 && an.body.submittedGraph?.v_i2v?.inputs?.length === 33, 'Animate Image queued (2 s = 33 frames)');
+  await checkVideo(await poll(an.body), 'Animate Image');
+
+  const bad = await call('/api/video', { method: 'POST', body: JSON.stringify({ mode: 'animate', sourceId: rec.id, seed: 1, motion: 'she dances like a schoolgirl' }) });
+  assert(bad.status === 422, 'minor-coded motion text blocked');
+
+  // Copy Motion: a 3 s, 30 fps, 1280×720 clip stands in for a phone video
+  const { execFileSync } = await import('node:child_process');
+  const { default: ffmpeg } = await import('ffmpeg-static');
+  const { mkdtempSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const clip = join(mkdtempSync(join(tmpdir(), 'smoke-')), 'clip.mp4');
+  execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=1280x720:rate=30', '-t', '3', '-pix_fmt', 'yuv420p', clip]);
+  const upH = { ...headers, 'Content-Type': 'video/mp4' };
+  const up = await (await fetch(`${BASE}/api/video/upload`, { method: 'POST', headers: upH, body: readFileSync(clip) })).json();
+  assert(up.video?.fps === 16 && up.video.frames === 48 && Math.max(up.video.width, up.video.height) <= 832 && !!up.poster?.file, `driving video normalised (${up.error ?? `${up.video?.frames} frames, ${up.video?.width}×${up.video?.height}`})`);
+  const junk = await fetch(`${BASE}/api/video/upload`, { method: 'POST', headers: upH, body: 'not a video' });
+  assert(junk.status === 415, 'non-video upload rejected');
+
+  const mo = await call('/api/video', { method: 'POST', body: JSON.stringify({ mode: 'motion', sourceId: rec.id, seed: 12, quality: 'fast', resolution: '480p', drive: up, start: 0.5, seconds: 2, scene: 'in a sunny kitchen' }) });
+  assert(mo.status === 202 && mo.body.video?.frames === 32 && mo.body.submittedGraph?.v_drive_part?.inputs?.batch_index === 8, 'Copy Motion queued (0.5 s → 2.5 s of the clip)');
+  assert(mo.body.submittedGraph?.v_anim_0?.inputs?.background_video === undefined, 'Copy Motion uses move mode (the person in the video never appears)');
+  const moDone = await poll(mo.body);
+  await checkVideo(moDone, 'Copy Motion');
+
+  const after = (await call(`/api/history/${rec.id}/status`)).body;
+  assert(after.images[0].file === before.images[0].file && JSON.stringify(after.identityCheck) === JSON.stringify(before.identityCheck) && JSON.stringify(after.review) === JSON.stringify(before.review), 'photo record untouched by videos');
+
+  const del = await call(`/api/history/${moDone.id}`, { method: 'DELETE' });
+  const gone = await fetch(`${BASE}/api/files/${moDone.video.result.file}`, { headers });
+  const driveGone = await fetch(`${BASE}/api/files/${up.video.file}`, { headers });
+  const photoKept = await fetch(`${BASE}/api/files/${rec.images[0].file}`, { headers });
+  assert(del.status < 300 && gone.status === 404 && driveGone.status === 404 && photoKept.ok, 'deleting a video removes its files, never the photo');
+} else {
+  console.log('– Video Studio is off on this server (SIENNA_VIDEO), skipped');
+  const off = await call('/api/video', { method: 'POST', body: JSON.stringify({ mode: 'animate', sourceId: rec.id, seed: 1, motion: 'smile' }) });
+  assert(off.status === 403, 'video API refuses requests while Video Studio is off');
+}
+
 const trav = await fetch(`${BASE}/api/files/..%2Fconfig.json`, { headers });
 assert(trav.status === 400, 'path traversal rejected');
 console.log('\nAll smoke checks passed.');

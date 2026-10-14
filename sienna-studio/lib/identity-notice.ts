@@ -14,7 +14,7 @@ export interface IdentityNotice {
   userCall?: 'looks_like_her' | 'not_her';
 }
 
-type NoticeRec = Pick<GenerationRecord, 'identityCheck' | 'review'> & Partial<Pick<GenerationRecord, 'status' | 'images' | 'identityPolicy'>>;
+type NoticeRec = Pick<GenerationRecord, 'identityCheck' | 'review'> & Partial<Pick<GenerationRecord, 'status' | 'images' | 'identityPolicy' | 'video'>>;
 
 /**
  * A finished photo made before face verification existed: no identityCheck and no identityPolicy marker. It keeps
@@ -47,6 +47,20 @@ export function identityNotice(rec: NoticeRec): IdentityNotice | null {
   const c = rec.identityCheck ?? (rec.status === 'done' && rec.images?.length ? { status: 'unavailable' as const, similarity: null, reason: 'no face-check result was recorded' } : undefined);
   if (!c || c.status === 'verified' || c.status === 'not_applicable') return null;
   const sim = typeof c.similarity === 'number' ? ` (similarity ${c.similarity.toFixed(2)}; 0.74 or more confirms her face)` : '';
+  if (rec.video) {
+    // Videos: frames are checked, nothing is retried, and the whole clip needs every checked frame to pass.
+    const detail =
+      c.status === 'unconfirmed'
+        ? `Some frames don't match Sienna's face closely enough: ${c.reason ?? 'a checked frame scored below 0.74'}${typeof c.similarity === 'number' ? ` (lowest ${c.similarity.toFixed(2)})` : ''}.`
+        : c.status === 'unchecked'
+          ? `Face not detected: ${c.reason ?? "her face wasn't found in the checked frames"}, so it couldn't be compared with Sienna.`
+          : `Face check unavailable: ${c.reason ?? 'the face check could not run'}. Verification did not happen.`;
+    return {
+      title: 'Face not verified — manual review required',
+      detail: `${detail} The video has not been counted as Sienna and is waiting in Needs Review for you to approve or reject.`,
+      userCall,
+    };
+  }
   if (c.status === 'unchecked') {
     // her face couldn't be found or was too small to compare (often hidden or turned away on purpose): not retried,
     // not rejected — the user decides

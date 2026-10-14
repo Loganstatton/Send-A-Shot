@@ -60,7 +60,8 @@ export interface ComfyBackend {
   inputChoices(nodeClass: string, inputName: string): Promise<string[]>;
   /** /object_info entry for a node class, or null if the class is not installed. */
   nodeInfo(nodeClass: string): Promise<NodeInfo | null>;
-  uploadImage(bytes: Buffer, filename: string, mime: string): Promise<string>;
+  /** Upload into ComfyUI's input folder; images go to input/sienna/, videos to input/ (LoadVideo lists only that). */
+  uploadImage(bytes: Buffer, filename: string, mime: string, subfolder?: string): Promise<string>;
   queuePrompt(graph: ComfyGraph, clientId: string): Promise<{ promptId: string }>;
   jobState(promptId: string, outputNodeIds: string[]): Promise<JobState>;
   fetchImage(ref: OutputImageRef): Promise<{ bytes: Buffer; mime: string }>;
@@ -196,11 +197,11 @@ export class RealComfy implements ComfyBackend {
     return comboOptions(spec);
   }
 
-  async uploadImage(bytes: Buffer, filename: string, mime: string): Promise<string> {
+  async uploadImage(bytes: Buffer, filename: string, mime: string, subfolder = 'sienna'): Promise<string> {
     const form = new FormData();
     form.append('image', new Blob([new Uint8Array(bytes)], { type: mime }), filename);
     form.append('type', 'input');
-    form.append('subfolder', 'sienna');
+    form.append('subfolder', subfolder);
     form.append('overwrite', 'true');
     const r = await this.json<{ name: string; subfolder?: string }>('/upload/image', { method: 'POST', body: form, timeoutMs: 60000 });
     // LoadImage expects "subfolder/name" when a subfolder is used.
@@ -271,7 +272,8 @@ export class RealComfy implements ComfyBackend {
     const qs = new URLSearchParams({ filename: ref.filename, subfolder: ref.subfolder, type: ref.type });
     const res = await this.req(`/view?${qs}`, { timeoutMs: 60000 });
     if (!res.ok) throw new ComfyError(`Could not download ${ref.filename} from ComfyUI (HTTP ${res.status}).`);
-    return { bytes: Buffer.from(await res.arrayBuffer()), mime: res.headers.get('content-type') || 'image/png' };
+    const fallback = /\.mp4$/i.test(ref.filename) ? 'video/mp4' : 'image/png';
+    return { bytes: Buffer.from(await res.arrayBuffer()), mime: res.headers.get('content-type') || fallback };
   }
 
   async interrupt() {
@@ -295,6 +297,8 @@ interface MockJob {
   at: number;
   graph: ComfyGraph;
   images?: { name: string; bytes: Buffer }[];
+  /** Video graphs: a slow zoom over the uploaded photo (made with the app server's ffmpeg). */
+  video?: { name: string; bytes: Buffer } | { error: string };
 }
 
 const g = globalThis as unknown as { __siennaMockJobs?: Map<string, MockJob>; __siennaMockFiles?: Map<string, Buffer> };
@@ -358,9 +362,9 @@ export class MockComfy implements ComfyBackend {
   async nodeInfo(_cls: string): Promise<NodeInfo | null> {
     return { input: { required: {} }, python_module: 'mock' };
   }
-  async uploadImage(bytes: Buffer, filename: string) {
+  async uploadImage(bytes: Buffer, filename: string, _mime?: string, subfolder = 'sienna') {
     mockFiles.set(filename, bytes);
-    return `sienna/${filename}`;
+    return subfolder ? `${subfolder}/${filename}` : filename;
   }
   async queuePrompt(graph: ComfyGraph) {
     const id = `mock-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -373,6 +377,8 @@ export class MockComfy implements ComfyBackend {
     const elapsed = Date.now() - job.at;
     if (elapsed < 1200) return { state: 'pending', position: 1 };
     if (elapsed < 3500) return { state: 'running' };
+    const saveVideo = Object.entries(job.graph).find(([, n]) => n.class_type === 'SaveVideo');
+    if (saveVideo) return this.videoJobState(promptId, job, saveVideo[0]);
     if (!job.images) {
       const latent = Object.values(job.graph).find((n) => /Latent|ImageScale/.test(n.class_type) && typeof n.inputs.width === 'number');
       const sampler = Object.values(job.graph).find((n) => typeof n.inputs.seed === 'number' || typeof n.inputs.noise_seed === 'number');
@@ -413,14 +419,65 @@ export class MockComfy implements ComfyBackend {
       ...(Object.keys(poses).length ? { poses } : {}),
     };
   }
+  /** Video graphs finish with the poster frame (SaveImage), the frame face check and the video (SaveVideo). */
+  private async videoJobState(promptId: string, job: MockJob, saveId: string): Promise<JobState> {
+    const sizeNode = Object.values(job.graph).find((n) => /^Wan(Image|Animate)ToVideo$/.test(n.class_type));
+    const w = Number(sizeNode?.inputs.width ?? 480);
+    const h = Number(sizeNode?.inputs.height ?? 704);
+    const cut = job.graph.v_frames?.inputs.length;
+    const frames = Number(typeof cut === 'number' ? cut : sizeNode?.inputs.length ?? 49);
+    if (!job.images) {
+      const img = mockPortrait(w, h, 7);
+      job.images = [{ name: `mock_${promptId}_poster.png`, bytes: encodePng(img.width, img.height, img.rgb) }];
+    }
+    if (!job.video) {
+      const photoName = String(Object.values(job.graph).find((n) => n.class_type === 'LoadImage')?.inputs.image ?? '');
+      const photo = mockFiles.get(photoName.split('/').pop() ?? '') ?? job.images[0].bytes;
+      job.video = await mockVideo(photo, w, h, frames).then(
+        (bytes) => ({ name: `mock_${promptId}.mp4`, bytes }),
+        (e: any) => ({ error: e.message }),
+      );
+    }
+    if ('error' in job.video) return { state: 'error', message: `Mock video failed: ${job.video.error}` };
+    const texts: Record<string, string[]> = {};
+    for (const [id, n] of Object.entries(job.graph)) {
+      if (n.class_type === 'SiennaFaceCheck') texts[id] = [JSON.stringify({ available: false, error: 'mock backend: no face check runs' })];
+    }
+    const posterId = Object.entries(job.graph).find(([, n]) => n.class_type === 'SaveImage')?.[0] ?? 'mock';
+    return {
+      state: 'done',
+      images: [
+        { filename: job.images[0].name, subfolder: '', type: 'output', nodeId: posterId },
+        { filename: job.video.name, subfolder: 'video', type: 'output', nodeId: saveId },
+      ],
+      ...(Object.keys(texts).length ? { texts } : {}),
+    };
+  }
   async fetchImage(ref: OutputImageRef) {
     for (const job of mockJobs.values()) {
+      if (job.video && 'name' in job.video && job.video.name === ref.filename) return { bytes: job.video.bytes, mime: 'video/mp4' };
       const img = job.images?.find((i) => i.name === ref.filename);
       if (img) return { bytes: img.bytes, mime: 'image/png' };
     }
     throw new ComfyError('Mock image not found (server restarted?).', 404);
   }
   async interrupt() {}
+}
+
+/** Mock video: a slow zoom over the photo (needs the app server's ffmpeg). */
+async function mockVideo(photo: Buffer, width: number, height: number, frames: number): Promise<Buffer> {
+  const { stillToVideo, withTempDir } = await import('../server/ffmpeg');
+  const { promises: fs } = await import('node:fs');
+  const path = await import('node:path');
+  return withTempDir(async (dir) => {
+    // ffmpeg picks the image decoder from the extension
+    const ext = photo[0] === 0xff ? 'jpg' : photo.toString('ascii', 8, 12) === 'WEBP' ? 'webp' : 'png';
+    const src = path.join(dir, `photo.${ext}`);
+    const out = path.join(dir, 'out.mp4');
+    await fs.writeFile(src, photo);
+    await stillToVideo(src, out, width, height, Math.max(2, frames), 16);
+    return fs.readFile(out);
+  });
 }
 
 export function isMockUrl(url: string) {

@@ -388,6 +388,47 @@ export interface GenerationRecord {
   parentId?: string;
   /** Set when this image was made by Edit Outfit (Qwen-Image-Edit) from another record's image. */
   outfitEdit?: OutfitEditInfo;
+  /** Set for Video Studio results: `images` holds the poster frame, the video is `video.result`. */
+  video?: VideoInfo;
+}
+
+/** A video file inside DATA_DIR/images (H.264 MP4, served with byte ranges at /api/files/<file>). */
+export interface StoredVideo {
+  id: string;
+  file: string;
+  width: number;
+  height: number;
+  fps: number;
+  frames: number;
+  seconds: number;
+  bytes: number;
+  createdAt: string;
+}
+
+/** How a Video Studio result was made. The source photo's record is never modified. */
+export interface VideoInfo {
+  mode: import('./video').VideoMode;
+  model: 'wan2.2-i2v-14b' | 'wan2.2-animate-14b';
+  sourceId: string;
+  sourceImage: StoredImage;
+  quality: import('./video').VideoQuality;
+  resolution: import('./video').VideoResolution;
+  width: number;
+  height: number;
+  frames: number;
+  seconds: number;
+  /** Animate Image: what she does and how the camera moves. */
+  motion?: string;
+  camera?: import('./video').CameraMove;
+  /** Copy Motion: the driving video (normalised to 16 fps) and the part of it that was copied. */
+  drive?: { video: StoredVideo; poster: StoredImage; start: number; seconds: number };
+  scene?: string;
+  chunks?: number;
+  estimateMinutes: number;
+  /** Whether the frame face check was in the graph, or why not. */
+  faceCheck: { status: 'on' } | { status: 'unavailable'; reason: string };
+  frameFaces?: import('./video').FrameFace[];
+  result?: StoredVideo | null;
 }
 
 /** How an Edit Outfit result was made. The source record and its image are never modified. */

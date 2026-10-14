@@ -25,6 +25,13 @@
 #     comfyui_controlnet_aux (DWPose, minimal deps) + its two DWPose models (yzd-v/DWPose, ~0.4 GB)
 #     and models/ultralytics/segm/person_yolov8m-seg.pt (Bingsu/adetailer, ~50 MB)
 #   Needs a GPU with 24 GB+ VRAM and ~48 GB system RAM.
+# With --with-wan-video it also installs Video Studio (Wan2.2, ~62 GB; ComfyUI 2025-09+ for the video nodes):
+#   - Animate Image: Wan2.2 I2V 14B fp8 high/low-noise experts + their 4-step lightx2v LoRAs (Comfy-Org/Wan_2.2_ComfyUI_Repackaged)
+#   - Copy Motion:   Wan2.2 Animate 14B fp8 (Kijai/WanVideo_comfy_fp8_scaled) + lightx2v 480p and relight LoRAs
+#                    (Kijai/WanVideo_comfy), clip_vision_h, comfyui_controlnet_aux (DWPose) + its batch-5 TorchScript
+#                    pose model (hr16/DWPose-TorchScript-BatchSize5) and yolox_l (yzd-v/DWPose)
+#   - shared: umt5_xxl_fp8 text encoder, wan_2.1_vae (Comfy-Org/Wan_2.1/2.2 repackaged), sienna_nodes (frame face check)
+#   Needs a GPU with 24 GB+ VRAM (48 GB+ is faster for 720p / long Copy Motion), ~64 GB RAM and ~80 GB free disk.
 # Before downloading, it prints each model repo's declared license and stops
 # if one isn't on the expected list (override: OUTFIT_LICENSE_OK=1).
 #
@@ -39,6 +46,7 @@
 #                      extractor, minimal deps) + models/controlnet/sdxl_openpose.safetensors
 #                      (xinsir/controlnet-openpose-sdxl-1.0, ~2.5 GB)
 #   --with-qwen-edit   also install the optional Edit Outfit editor (Qwen-Image-Edit-2509 fp8, ~30 GB)
+#   --with-wan-video   also install Video Studio: Wan2.2 image-to-video + Wan2.2 Animate (~62 GB)
 #   --with-style-packs also download the Create screen's style packs from Civitai (~2.5 GB):
 #                      Micro bikini (143602), Real-photo look (1368634), Natural skin (248951),
 #                      and in the adult-fashion section French lace lingerie (2903117),
@@ -67,6 +75,7 @@ RESTART=0
 OUTFIT=0
 POSE=0
 QWEN=0
+WAN=0
 PACKS=0
 for arg in "$@"; do
   case "$arg" in
@@ -74,6 +83,7 @@ for arg in "$@"; do
     --with-outfit) OUTFIT=1 ;;
     --with-pose) POSE=1 ;;
     --with-qwen-edit) QWEN=1 ;;
+    --with-wan-video) WAN=1 ;;
     --with-style-packs) PACKS=1 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -300,10 +310,47 @@ if (( QWEN )); then
     "$COMFYUI_DIR/models/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors" 20000000000
 fi
 
+# ── Video Studio (Wan2.2, optional) ────────────────────────────────────────────
+if (( WAN )); then
+  log "Video Studio model licenses (Hugging Face model cards)"
+  # The upstream Wan2.2 models; the repackaged/fp8 copies below are conversions of these.
+  check_licenses "Wan-AI/Wan2.2-I2V-A14B:apache-2.0" "Wan-AI/Wan2.2-Animate-14B:apache-2.0" "yzd-v/DWPose:apache-2.0"
+  for cls in WanImageToVideo WanAnimateToVideo CreateVideo SaveVideo LoadVideo GetVideoComponents TrimVideoLatent; do
+    grep -rqs "\"$cls\"" "$COMFYUI_DIR/comfy_extras" "$COMFYUI_DIR/nodes.py" \
+      || echo "  ! $cls not found in this ComfyUI — update ComfyUI (video nodes need a 2025-09+ build)"
+  done
+  install_repo comfyui_controlnet_aux https://github.com/Fannovel16/comfyui_controlnet_aux "$CNAUX_REF" noreqs
+  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check \
+    huggingface_hub opencv-python-headless scipy einops filelock scikit-image matplotlib pyyaml addict yacs omegaconf python-dateutil onnxruntime
+  fetch_model "$HF/yzd-v/DWPose/resolve/main/yolox_l.onnx" "$COMFYUI_DIR/custom_nodes/comfyui_controlnet_aux/ckpts/yzd-v/DWPose/yolox_l.onnx" 100000000
+  # batch-of-5 TorchScript pose model on the GPU: much faster than ONNX on CPU for hundreds of video frames
+  fetch_model "$HF/hr16/DWPose-TorchScript-BatchSize5/resolve/main/dw-ll_ucoco_384_bs5.torchscript.pt" \
+    "$COMFYUI_DIR/custom_nodes/comfyui_controlnet_aux/ckpts/hr16/DWPose-TorchScript-BatchSize5/dw-ll_ucoco_384_bs5.torchscript.pt" 100000000
+  W22="$HF/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files"
+  W21="$HF/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files"
+  fetch_model "$W21/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" "$COMFYUI_DIR/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" 6000000000
+  fetch_model "$W22/vae/wan_2.1_vae.safetensors" "$COMFYUI_DIR/models/vae/wan_2.1_vae.safetensors" 200000000
+  fetch_model "$W21/clip_vision/clip_vision_h.safetensors" "$COMFYUI_DIR/models/clip_vision/clip_vision_h.safetensors" 1000000000
+  # Animate Image
+  for f in wan2.2_i2v_high_noise_14B_fp8_scaled wan2.2_i2v_low_noise_14B_fp8_scaled; do
+    fetch_model "$W22/diffusion_models/$f.safetensors" "$COMFYUI_DIR/models/diffusion_models/$f.safetensors" 13000000000
+  done
+  for f in wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise; do
+    fetch_model "$W22/loras/$f.safetensors" "$COMFYUI_DIR/models/loras/$f.safetensors" 100000000
+  done
+  # Copy Motion
+  fetch_model "$HF/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/Wan22Animate/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors" \
+    "$COMFYUI_DIR/models/diffusion_models/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors" 15000000000
+  fetch_model "$HF/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" \
+    "$COMFYUI_DIR/models/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" 300000000
+  fetch_model "$HF/Kijai/WanVideo_comfy/resolve/main/LoRAs/Wan22_relight/WanAnimate_relight_lora_fp16.safetensors" \
+    "$COMFYUI_DIR/models/loras/WanAnimate_relight_lora_fp16.safetensors" 100000000
+fi
+
 # ── Sienna custom nodes (pose retargeting, garment-only isolation, chin crop, top check) ──
 # Shipped in this repo (scripts/comfy_nodes/sienna_nodes). Copied when the script runs from
 # a checkout, or when SIENNA_NODES_DIR points at an uploaded copy.
-if (( OUTFIT || POSE || QWEN || PACKS )); then
+if (( OUTFIT || POSE || QWEN || PACKS || WAN )); then
   log "sienna_nodes"
   src="${SIENNA_NODES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/comfy_nodes/sienna_nodes}"
   if [[ -f "$src/__init__.py" ]]; then
@@ -370,6 +417,11 @@ if (( RESTART )); then
         for cls in TextEncodeQwenImageEditPlus ModelSamplingAuraFlow CFGNorm SiennaChinCrop BboxDetectorCombined_v2 \
                    SiennaGarmentOnly SiennaBodySheet SiennaBodyMeasure SiennaBodyCheck DWPreprocessor SegmDetectorCombined_v2; do
           if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — update ComfyUI (Qwen nodes need a 2025-09+ build) or check the log"; fi
+        done
+      fi
+      if (( WAN )); then
+        for cls in WanImageToVideo WanAnimateToVideo CreateVideo SaveVideo LoadVideo GetVideoComponents TrimVideoLatent ImageFromBatch DWPreprocessor SiennaFaceCheck; do
+          if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — update ComfyUI (video nodes need a 2025-09+ build) or check the log"; fi
         done
       fi
       if (( OUTFIT || POSE )); then

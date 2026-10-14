@@ -3,7 +3,7 @@
 // /history/{id}, /view). For exercising the real HTTP client + diagnostics
 // without a GPU. NOT used in production.
 //
-//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-face-refine] [--no-lora] [--fail-exec] [--qwen-edit]
+//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-face-refine] [--no-lora] [--fail-exec] [--qwen-edit] [--wan-video]
 import http from 'node:http';
 import { deflateSync } from 'node:zlib';
 
@@ -99,6 +99,56 @@ if (arg('--face-check')) {
     SiennaExposureCheck: { images: ['IMAGE'], threshold: ['FLOAT'] },
   });
 }
+if (arg('--wan-video')) {
+  // Video Studio: Wan2.2 I2V + Animate files and the core video nodes (ComfyUI ≥ 0.3.6x), DWPose for Copy Motion.
+  MODELS.unet_name.push('wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors', 'wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors', 'Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors');
+  MODELS.lora_name.push(
+    'wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors',
+    'wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors',
+    'lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors',
+    'WanAnimate_relight_lora_fp16.safetensors',
+  );
+  MODELS.vae_name.push('wan_2.1_vae.safetensors');
+  const clipNames = [...(SPECS.CLIPLoader?.clip_name?.[0] ?? []), 'umt5_xxl_fp8_e4m3fn_scaled.safetensors'];
+  Object.assign(SPECS, {
+    CLIPLoader: { clip_name: combo(clipNames), type: combo(['wan', 'qwen_image', 'sdxl']), device: combo(['default', 'cpu']) },
+    CLIPVisionLoader: { clip_name: combo(['CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors', 'clip_vision_h.safetensors']) },
+    CLIPVisionEncode: { clip_vision: ['CLIP_VISION'], image: ['IMAGE'], crop: combo(['none', 'center']) },
+    LoraLoaderModelOnly: { model: ['MODEL'], lora_name: combo(MODELS.lora_name), strength_model: ['FLOAT'] },
+    ModelSamplingSD3: { model: ['MODEL'], shift: ['FLOAT'] },
+    WanImageToVideo: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], vae: ['VAE'], width: ['INT'], height: ['INT'], length: ['INT'], batch_size: ['INT'] },
+    WanAnimateToVideo: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], vae: ['VAE'], width: ['INT'], height: ['INT'], length: ['INT'], batch_size: ['INT'], continue_motion_max_frames: ['INT'], video_frame_offset: ['INT'] },
+    KSamplerAdvanced: {
+      model: ['MODEL'], add_noise: combo(['enable', 'disable']), noise_seed: ['INT'], steps: ['INT'], cfg: ['FLOAT'], sampler_name: combo(['euler', 'dpmpp_2m']),
+      scheduler: combo(['simple', 'normal']), positive: ['CONDITIONING'], negative: ['CONDITIONING'], latent_image: ['LATENT'], start_at_step: ['INT'], end_at_step: ['INT'],
+      return_with_leftover_noise: combo(['disable', 'enable']),
+    },
+    TrimVideoLatent: { samples: ['LATENT'], trim_amount: ['INT'] },
+    ImageFromBatch: { image: ['IMAGE'], batch_index: ['INT'], length: ['INT'] },
+    ImageBatch: { image1: ['IMAGE'], image2: ['IMAGE'] },
+    CreateVideo: { images: ['IMAGE'], fps: ['FLOAT'] },
+    SaveVideo: { video: ['VIDEO'], filename_prefix: ['STRING'], format: combo(['auto', 'mp4', 'mkv', 'webm']) },
+    LoadVideo: { file: [['example.mp4'], { video_upload: true }] },
+    GetVideoComponents: { video: ['VIDEO'] },
+    DWPreprocessor: {
+      image: ['IMAGE'], detect_hand: combo(['enable', 'disable']), detect_body: combo(['enable', 'disable']), detect_face: combo(['enable', 'disable']), resolution: ['INT'],
+      bbox_detector: combo(['None', 'yolox_l.torchscript.pt', 'yolox_l.onnx']), pose_estimator: combo(['dw-ll_ucoco_384_bs5.torchscript.pt', 'dw-ll_ucoco_384.onnx']),
+      scale_stick_for_xinsr_cn: combo(['disable', 'enable']),
+    },
+  });
+}
+// A real H.264 MP4 for /view of video outputs (made once with the bundled ffmpeg).
+let mp4 = null;
+if (arg('--wan-video')) {
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, readFileSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { default: ffmpeg } = await import('ffmpeg-static');
+  const out = join(mkdtempSync(join(tmpdir(), 'fake-comfy-')), 'v.mp4');
+  execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=480x704:rate=16', '-t', '2', '-pix_fmt', 'yuv420p', out]);
+  mp4 = readFileSync(out);
+}
 const FACE_SIMS = (process.env.FAKE_FACE_SIMS || '0.8').split(',').map((s) => s.trim());
 let faceCalls = 0;
 // (PuLID-Flux deliberately absent, to exercise "missing custom node" paths.)
@@ -140,8 +190,9 @@ http
     if (p === '/upload/image' && req.method === 'POST') {
       const body = (await readBody(req)).toString('latin1');
       const name = /filename="([^"]+)"/.exec(body)?.[1] ?? 'upload.png';
-      uploads.add(`sienna/${name}`);
-      return send(res, 200, { name, subfolder: 'sienna', type: 'input' });
+      const subfolder = /name="subfolder"\r\n\r\n([^\r]*)/.exec(body)?.[1] ?? 'sienna';
+      uploads.add(subfolder ? `${subfolder}/${name}` : name);
+      return send(res, 200, { name, subfolder, type: 'input' });
     }
     if (p === '/prompt' && req.method === 'POST') {
       const { prompt } = JSON.parse((await readBody(req)).toString());
@@ -155,6 +206,7 @@ http
           const v = n.inputs[k];
           if (v === undefined) errs.push({ type: 'required_input_missing', message: 'Required input is missing', details: k });
           else if (n.class_type === 'LoadImage' && k === 'image') { if (!uploads.has(v)) errs.push({ type: 'custom_validation_failed', message: 'Custom validation failed for node', details: `image - Invalid image file: ${v}` }); }
+          else if (n.class_type === 'LoadVideo' && k === 'file') { if (!uploads.has(v)) errs.push({ type: 'custom_validation_failed', message: 'Custom validation failed for node', details: `Invalid video file: ${v}` }); }
           else if (Array.isArray(spec[0]) && !spec[0].includes(v)) errs.push({ type: 'value_not_in_list', message: 'Value not in list', details: `${k}: '${v}' not in ${JSON.stringify(spec[0])}` });
         }
         if (errs.length) node_errors[id] = { errors: errs, dependent_outputs: [], class_type: n.class_type };
@@ -188,6 +240,7 @@ http
       const outputs = {};
       for (const [k, n] of Object.entries(j.prompt)) {
         if (n.class_type === 'SaveImage') outputs[k] = { images: [{ filename: `${id}_${k}.png`, subfolder: 'sienna', type: 'output' }] };
+        if (n.class_type === 'SaveVideo') outputs[k] = { images: [{ filename: `${id}_${k}.mp4`, subfolder: 'video', type: 'output' }], animated: [true] };
         if (n.class_type === 'SiennaChinCrop') outputs[k] = { text: [JSON.stringify({ mode: 'cropped', cut: 0.21 })] };
         if (n.class_type === 'SiennaGarmentOnly') outputs[k] = { text: [JSON.stringify({ mode: 'garment-only', cut: 0.21, coverage: { upper: 0.2, lower: 0.35 } })] };
         if (n.class_type === 'SiennaGarmentRedrawMask') outputs[k] = { text: [JSON.stringify({ scope: 'full', grow: 'garment', source: 'segmenter', grown: false, uncovered: 0.011, old_garment: 0.047, mask: 0.157, empty: false })] };
@@ -196,16 +249,20 @@ http
           // 'down' = models failed to load; 'empty' = the node returned nothing
           if (v === 'down') { outputs[k] = { text: [JSON.stringify({ available: false, error: 'face models failed to load' })] }; continue; }
           if (v === 'empty') continue;
-          const sim = v === 'none' ? null : Number(v);
-          const img = sim === null ? { found: false, similarity: null, ok: true, faces: 0 } : { found: true, similarity: sim, size: 150, ok: sim >= 0.74, faces: 1 };
-          outputs[k] = { text: [JSON.stringify({ available: true, ok: img.ok, similarity: sim, images: [img] })] };
+          // video graphs check several frames (v_fc_*): one value per frame, continuing through the list
+          const frames = Math.max(1, Object.keys(j.prompt).filter((x) => x.startsWith('v_fc_')).length);
+          const vals = [v, ...Array.from({ length: frames - 1 }, () => FACE_SIMS[faceCalls++ % FACE_SIMS.length])];
+          const imgs = vals.map((x) => (x === 'none' || x === 'down' || x === 'empty' ? null : Number(x))).map((sim) =>
+            sim === null ? { found: false, similarity: null, ok: true, faces: 0 } : { found: true, similarity: sim, size: 150, ok: sim >= 0.74, faces: 1 });
+          const sims = imgs.filter((i) => i.found).map((i) => i.similarity);
+          outputs[k] = { text: [JSON.stringify({ available: true, ok: imgs.every((i) => i.ok), similarity: sims.length ? Math.min(...sims) : null, images: imgs })] };
         }
         if (n.class_type === 'SiennaExposureCheck') outputs[k] = { text: [JSON.stringify({ available: true, exposed: false, score: 0 })] };
         if (n.class_type === 'SiennaBodyCheck') outputs[k] = { text: [JSON.stringify({ status: 'warn', flags: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06, severity: 'likely' }], checked: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06 }], skipped: [], scene: { diff: 6.1, changed: false } })] };
       }
       return send(res, 200, { [id]: { outputs, status: { status_str: 'success', completed: true, messages: [] } } });
     }
-    if (p === '/view') return send(res, 200, png(), 'image/png');
+    if (p === '/view') return /\.mp4$/.test(url.searchParams.get('filename') ?? '') && mp4 ? send(res, 200, mp4, 'video/mp4') : send(res, 200, png(), 'image/png');
     if (p === '/interrupt') return send(res, 200, {});
     send(res, 404, { error: 'not found' });
   })

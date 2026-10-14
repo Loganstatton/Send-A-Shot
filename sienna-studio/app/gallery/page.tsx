@@ -43,7 +43,7 @@ export default function GalleryPage() {
       {error && <p className="text-red-300">{error}</p>}
       {filter === 'review' && list.length > 0 && (
         <p className="mb-3 text-sm text-amber-300">
-          These photos did not pass the face check, or her face couldn't be checked, so they are not approved. Open one and choose “Looks like Sienna” to move it into the
+          These photos and videos did not pass the face check, or her face couldn't be checked, so they are not approved. Open one and choose “Looks like Sienna” to move it into the
           gallery as your approval (it stays marked as unverified), or delete it.
         </p>
       )}
@@ -62,9 +62,12 @@ export default function GalleryPage() {
           const issues = Object.values(r.review).filter((v) => v === 'issue').length;
           return (
             <Link key={r.id} href={`/gallery/${r.id}`} className="relative block aspect-[3/4] overflow-hidden rounded-xl bg-ink-800">
+              {r.video?.result && <span className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/55 px-3 py-1.5 text-lg text-white">▶</span>}
               {img ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={fileUrl(img.file)} alt="" loading="lazy" className="h-full w-full object-cover" />
+              ) : r.video && r.status !== 'error' ? (
+                <div className="flex h-full items-center justify-center text-xs text-ink-400">{r.status === 'done' ? 'No preview' : 'Making video…'}</div>
               ) : (
                 <div className={cx('flex h-full items-center justify-center text-xs', r.status === 'error' ? 'text-red-300' : 'text-ink-400')}>
                   {r.status === 'error' ? 'Failed' : r.status === 'done' ? 'No image' : 'In progress…'}
@@ -74,6 +77,7 @@ export default function GalleryPage() {
                 {r.favorite && <span className="text-accent">♥</span>}
                 {r.backend === 'mock' && <Badge tone="warn">MOCK</Badge>}
                 {r.outfitEdit && <Badge tone="accent">edited</Badge>}
+                {r.video && <Badge tone="accent">▶ {r.video.result ? `${Math.round(r.video.result.seconds)}s` : 'video'}</Badge>}
                 {r.status === 'error' && <Badge tone="error">error</Badge>}
                 {issues > 0 && <Badge tone="warn">{issues} issue{issues > 1 ? 's' : ''}</Badge>}
                 {galleryState(r) === 'needs_review' && <Badge tone="warn">unverified · needs review</Badge>}
