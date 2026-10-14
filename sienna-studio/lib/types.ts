@@ -360,6 +360,11 @@ export interface GenerationRecord {
       images: { filename: string; subfolder: string; type: string; nodeId: string }[];
     }[];
   };
+  /** Set on every record made by this release or later (1 = every finished photo records an identityCheck). A
+   * finished photo without it is a legacy photo from before face verification, never treated as verified. */
+  identityPolicy?: 1;
+  /** Edit Outfit only: whether the face check was added to the edit's graph, or why not. */
+  editFaceCheck?: { status: 'on' } | { status: 'unavailable'; reason: string };
   /** Face check of the photo that was kept. Only 'verified' means the face was confirmed as Sienna's; the gallery
    * flags anything else so the user can decide whether to keep the image. */
   identityCheck?: {

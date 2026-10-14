@@ -12,7 +12,7 @@ export default function GalleryPage() {
   const { data, loading, error } = useApi<GenerationRecord[]>('/api/history?limit=500');
 
   // Photos whose face wasn't verified as Sienna's never land in the gallery on their own: they wait in Needs Review.
-  const inGallery = (r: GenerationRecord) => ['approved', 'approved_by_you'].includes(galleryState(r));
+  const inGallery = (r: GenerationRecord) => ['approved', 'approved_by_you', 'legacy'].includes(galleryState(r));
   const toReview = (data ?? []).filter((r) => !inGallery(r));
   const list = (data ?? []).filter((r) =>
     filter === 'review' ? !inGallery(r) : !inGallery(r) ? false : filter === 'fav' ? r.favorite : filter === 'issues' ? Object.values(r.review).includes('issue') : true,
@@ -79,6 +79,7 @@ export default function GalleryPage() {
                 {galleryState(r) === 'needs_review' && <Badge tone="warn">unverified · needs review</Badge>}
                 {galleryState(r) === 'rejected' && <Badge tone="error">not her</Badge>}
                 {galleryState(r) === 'approved_by_you' && <Badge>your approval · face unverified</Badge>}
+                {galleryState(r) === 'legacy' && <Badge>legacy · face not verified</Badge>}
                 {r.images.length > 1 && <Badge>{r.images.length}</Badge>}
                 <span className="ml-auto truncate text-ink-200">{r.outfitEdit ? 'Outfit edit' : r.presetName ?? 'Custom'}</span>
               </div>

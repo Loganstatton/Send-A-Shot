@@ -141,3 +141,20 @@ export function missingIdentity(
         : 'the face check is not available on the GPU');
   return { status: 'unavailable', similarity: null, reason };
 }
+
+/**
+ * Outcome for a single photo with no retries (Edit Outfit results): the strict rule on its face-check report, and
+ * "unavailable" when the check didn't run or returned nothing. Never verified without a passing score.
+ */
+export function singlePhotoIdentity(
+  rec: Pick<GenerationRecord, 'siennaLock' | 'params' | 'exposureGuard'>,
+  face: FaceReport | null,
+  notRunReason?: string,
+): NonNullable<GenerationRecord['identityCheck']> {
+  if (!face) return missingIdentity(rec, notRunReason ?? 'the face check returned no result');
+  if (!face.available) return missingIdentity(rec, `the face check could not run (${face.error ?? 'models not installed'})`);
+  const v = faceVerdict(face, false, 'strict');
+  if (v.status === 'verified') return { status: 'verified', similarity: face.similarity };
+  if (v.status === 'unchecked') return { status: 'unchecked', similarity: face.similarity, reason: v.reason };
+  return { status: 'unconfirmed', similarity: face.similarity, reason: v.reason };
+}

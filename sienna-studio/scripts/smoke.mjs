@@ -89,6 +89,7 @@ if (avail.status === 200 && avail.body.enabled) {
     }
     assert(e.status === 'done' && e.images.length === 1 && e.id !== rec.id, `edit saved as a new image (${scope})`);
     assert(e.outfitEdit?.sourceId === rec.id && e.outfitEdit?.scope === scope && e.outfitEdit?.footwear === footwear, `edit record links its source (${scope})`);
+    assert(!!e.identityCheck && (e.identityCheck.status !== 'verified' || typeof e.identityCheck.similarity === 'number'), `edit records a face-check outcome (${scope}: ${e.identityCheck?.status})`);
     assert(!e.outfitEdit?.protect || Object.values(e.outfitEdit.protect).every((v) => !v) || avail.body.experiments, 'experimental body protection ignored while experiments are off');
   }
   // garment-only redraw + Avoid
@@ -106,6 +107,7 @@ if (avail.status === 200 && avail.body.enabled) {
   assert(re.status === 'done' && re.outfitEdit?.redraw?.info?.mask > 0, `clothes-only redraw finished (${re.error ?? 'redraw area ' + re.outfitEdit?.redraw?.info?.mask})`);
   const after = (await call(`/api/history/${rec.id}/status`)).body;
   assert(after.images[0].file === before.images[0].file, 'original image untouched');
+  assert(JSON.stringify(after.identityCheck) === JSON.stringify(before.identityCheck) && JSON.stringify(after.review) === JSON.stringify(before.review), 'original face check and review untouched');
 } else {
   console.log('– Edit Outfit is off on this server (SIENNA_OUTFIT_EDIT), skipped');
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { visibleWarnings } from '@/lib/warnings';
-import { identityLabel } from '@/lib/identity-notice';
+import { identityLabel, isLegacyPhoto } from '@/lib/identity-notice';
 import { fileUrl } from '@/lib/client/api';
 import { MODULE_LABELS, ModuleKey } from '@/lib/comfy/modules';
 import type { GenerationRecord, StoredImage } from '@/lib/types';
@@ -43,7 +43,9 @@ export function GenerationMeta({ rec, showPrompt = true }: { rec: GenerationReco
         <Meta k="Backend" v={rec.backend === 'mock' ? <Badge tone="warn">MOCK</Badge> : 'ComfyUI'} />
         <Meta k="Prompt ID" v={<span className="select-all break-all font-mono text-xs">{rec.promptId ?? '—'}</span>} />
         <Meta k="Seed" v={<span className="select-all">{rec.seed}</span>} />
-        {(rec.identityCheck || (rec.status === 'done' && rec.images.length > 0)) && (
+        {isLegacyPhoto(rec) ? (
+          <Meta k="Face check" v={<Badge>Legacy — not verified (made before face checks)</Badge>} />
+        ) : (rec.identityCheck || (rec.status === 'done' && rec.images.length > 0)) && (
           <Meta
             k="Face check"
             v={

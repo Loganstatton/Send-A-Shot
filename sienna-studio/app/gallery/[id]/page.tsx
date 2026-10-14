@@ -14,7 +14,7 @@ import type { GenerationRecord, ReviewItem, ReviewMark } from '@/lib/types';
 import { PROMPT_FIELD_LABELS, REVIEW_ITEMS } from '@/lib/types';
 import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Spinner, TextArea, cx, toast } from '@/components/ui';
 import { GenerationMeta } from '@/components/GenerationMeta';
-import { identityNotice } from '@/lib/identity-notice';
+import { identityNotice, isLegacyPhoto, LEGACY_NOTICE } from '@/lib/identity-notice';
 
 export default function GenerationDetail() {
   const { id } = useParams<{ id: string }>();
@@ -399,7 +399,10 @@ function BodyRefButton({ rec, refs, onChange }: { rec: GenerationRecord; refs?: 
 
 /** Shown when the face wasn't verified as Sienna's: the user decides whether the photo looks like her. */
 function IdentityReview({ rec, onMark }: { rec: GenerationRecord; onMark: (mark: 'ok' | 'issue' | null) => void }) {
-  const n = identityNotice(rec);
+  const mark = rec.review?.face_drift;
+  const n = isLegacyPhoto(rec)
+    ? { ...LEGACY_NOTICE, userCall: mark === 'ok' ? ('looks_like_her' as const) : mark === 'issue' ? ('not_her' as const) : undefined }
+    : identityNotice(rec);
   if (!n) return null;
   return (
     <Notice kind="warn">

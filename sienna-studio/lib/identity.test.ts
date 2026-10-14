@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { galleryState, identityLabel, identityNotice, needsIdentityReview } from './identity-notice';
-import { FACE_THRESHOLD, FACE_TURNED_FLOOR, faceVerdict, missingIdentity, parseFace, rearRequest } from './identity';
+import { galleryState, identityLabel, identityNotice, isLegacyPhoto, needsIdentityReview } from './identity-notice';
+import { FACE_THRESHOLD, FACE_TURNED_FLOOR, faceVerdict, missingIdentity, parseFace, rearRequest, singlePhotoIdentity } from './identity';
 
 const face = (similarity: number | null, more: Partial<Parameters<typeof faceVerdict>[0]> = {}) => ({
   available: true, ok: true, similarity, size: 150, found: similarity !== null, ...more,
@@ -150,9 +150,10 @@ describe('face check could not run (production)', () => {
     expect(galleryState({ ...done, identityCheck: c })).toBe('approved');
   });
 
-  it('fails closed: a finished photo with no face-check outcome at all goes to Needs Review', () => {
-    expect(galleryState({ ...done, identityCheck: undefined })).toBe('needs_review');
-    expect(identityNotice({ ...done, identityCheck: undefined })!.detail).toContain('Face check unavailable: no face-check result was recorded');
+  it('fails closed: a photo from this release with no face-check outcome goes to Needs Review', () => {
+    const fresh = { ...done, identityPolicy: 1 as const, identityCheck: undefined };
+    expect(galleryState(fresh)).toBe('needs_review');
+    expect(identityNotice(fresh)!.detail).toContain('Face check unavailable: no face-check result was recorded');
     // failed or unfinished jobs have no photo to approve and stay as they are
     expect(galleryState({ status: 'error', images: [], review: {}, identityCheck: undefined })).toBe('approved');
   });
@@ -160,7 +161,7 @@ describe('face check could not run (production)', () => {
   it('labels "face not detected" and "face check unavailable" differently', () => {
     expect(identityLabel({ status: 'unchecked', similarity: null })).toBe('Face not detected');
     expect(identityLabel({ status: 'unavailable', similarity: null })).toBe('Face check unavailable');
-    expect(identityLabel(undefined)).toBe('Face check unavailable — no result recorded');
+    expect(identityLabel(undefined)).toBe('No face-check result');
     const n = identityNotice({ ...done, identityCheck: { status: 'unavailable', similarity: null, reason: 'the face check returned no result' } })!;
     expect(n.title).toBe('Face not verified — manual review required');
     expect(n.detail).toMatch(/^Face check unavailable: the face check returned no result\. Verification did not happen/);
@@ -178,5 +179,45 @@ describe('face check could not run (production)', () => {
     const statuses = ['verified', 'inconclusive', 'unconfirmed', 'unchecked', 'unavailable', 'not_applicable'] as const;
     const auto = statuses.filter((status) => galleryState({ ...done, identityCheck: { status, similarity: null } }) === 'approved');
     expect(auto).toEqual(['verified', 'not_applicable']);
+  });
+});
+
+describe('legacy photos (made before face verification)', () => {
+  const legacy = { status: 'done' as const, images: [{ id: 'i', file: 'gen_i.png', width: 1, height: 1, createdAt: '' }], review: {} };
+  it('stay in the gallery, labelled legacy — not moved, not verified', () => {
+    expect(isLegacyPhoto(legacy)).toBe(true);
+    expect(galleryState(legacy)).toBe('legacy');
+    expect(needsIdentityReview(legacy)).toBe(false);
+    expect(identityNotice(legacy)).toBeNull();
+  });
+  it('even an old record whose old check passed is not treated as verified', () => {
+    const old = { ...legacy, exposureGuard: { status: 'on' as const, maxAttempts: 4, attempts: [{ seed: 1, exposed: false, score: 0, faceOk: true, similarity: 0.8, images: [] }] } };
+    expect(galleryState(old)).toBe('legacy');
+  });
+  it("the user's own call still applies to legacy photos", () => {
+    expect(galleryState({ ...legacy, review: { face_drift: 'ok' as const } })).toBe('approved_by_you');
+    expect(galleryState({ ...legacy, review: { face_drift: 'issue' as const } })).toBe('rejected');
+  });
+  it('a new photo (marked with identityPolicy) is never mistaken for legacy', () => {
+    expect(isLegacyPhoto({ ...legacy, identityPolicy: 1 })).toBe(false);
+    expect(galleryState({ ...legacy, identityPolicy: 1 })).toBe('needs_review');
+  });
+  it('unfinished or failed jobs are neither legacy nor approved content', () => {
+    expect(isLegacyPhoto({ status: 'error', images: [], review: {} })).toBe(false);
+  });
+});
+
+describe('Edit Outfit results (single photo, no retries)', () => {
+  const rec = { siennaLock: true, params: {} as never, exposureGuard: undefined };
+  const report = (similarity: number | null, more = {}) => ({ available: true, ok: true, similarity, size: 150, found: similarity !== null, ...more });
+  it('uses the same 0.74 rule', () => {
+    expect(singlePhotoIdentity(rec, report(0.8)).status).toBe('verified');
+    expect(singlePhotoIdentity(rec, report(0.7))).toEqual({ status: 'unconfirmed', similarity: 0.7, reason: "didn't look enough like Sienna" });
+    expect(singlePhotoIdentity(rec, report(null)).status).toBe('unchecked');
+  });
+  it('face check missing, failed or empty → unavailable (Needs Review), never verified', () => {
+    expect(singlePhotoIdentity(rec, null)).toEqual({ status: 'unavailable', similarity: null, reason: 'the face check returned no result' });
+    expect(singlePhotoIdentity(rec, { available: false, ok: true, similarity: null, error: 'models failed' }).reason).toBe('the face check could not run (models failed)');
+    expect(singlePhotoIdentity(rec, null, 'the face check could not run (server is missing SiennaFaceCheck)').status).toBe('unavailable');
   });
 });

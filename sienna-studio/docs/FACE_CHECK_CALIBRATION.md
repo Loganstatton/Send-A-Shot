@@ -153,10 +153,20 @@ then both rules replayed on the same photos (first 4 attempts). GPU cost ≈ $0.
 | Face models fail to load / node reports an error | unavailable → Needs Review |
 | Node returns no result | unavailable → Needs Review |
 | Face check turned off with Sienna Lock on | unavailable → Needs Review |
-| Edit Outfit result (no face check runs) | unavailable → Needs Review |
+| Edit Outfit result | now face-checked with the same 0.74 rule (no retries); unavailable → Needs Review |
 | Mock backend | unavailable → Needs Review (it used to report a fake 0.85 "verified") |
 | A finished photo with no outcome recorded at all | treated as unavailable by the gallery (fail closed) |
 | GPU job error or timeout | no photo is delivered (job fails, as before) |
 | Sienna Lock off | not applicable — the photo isn't meant to be Sienna; gallery as before |
 
 Nothing is deleted or rejected automatically; manual approval keeps the unverified status.
+
+### Edit Outfit and legacy photos (2026-10-14)
+
+- **Edit Outfit** results run the same face check (0.74, single photo, no retries). Verified → gallery; didn't match,
+  no face, or check unavailable → Needs Review. The edit is always a new photo; the original image, its face result
+  and review marks are untouched (checked by the smoke test).
+- **Legacy photos** (finished before this release: no face result and no `identityPolicy` marker) stay in the
+  gallery, labelled "legacy · face not verified", and are never counted as verified — even if an old check had
+  passed. Nothing is migrated or rewritten; the user's own Looks like Sienna / Not her marks still apply.
+- New records carry `identityPolicy: 1`, so a new photo with no face result is a failure (Needs Review), never legacy.

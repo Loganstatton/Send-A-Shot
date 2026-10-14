@@ -14,11 +14,20 @@ export interface IdentityNotice {
   userCall?: 'looks_like_her' | 'not_her';
 }
 
-type NoticeRec = Pick<GenerationRecord, 'identityCheck' | 'review'> & Partial<Pick<GenerationRecord, 'status' | 'images'>>;
+type NoticeRec = Pick<GenerationRecord, 'identityCheck' | 'review'> & Partial<Pick<GenerationRecord, 'status' | 'images' | 'identityPolicy'>>;
+
+/**
+ * A finished photo made before face verification existed: no identityCheck and no identityPolicy marker. It keeps
+ * its place in the gallery (nothing is moved or lost on deployment) but is labelled as legacy and never counted as
+ * verified. A photo from this release with no outcome is a failure instead, and goes to Needs Review.
+ */
+export function isLegacyPhoto(rec: NoticeRec): boolean {
+  return !rec.identityCheck && !rec.identityPolicy && rec.status === 'done' && !!rec.images?.length;
+}
 
 /** Short label for the photo details: what the face check found, or why it couldn't. */
 export function identityLabel(c: GenerationRecord['identityCheck'] | undefined): string {
-  if (!c) return 'Face check unavailable — no result recorded';
+  if (!c) return 'No face-check result';
   switch (c.status) {
     case 'verified': return 'Verified as Sienna';
     case 'unconfirmed': return "Didn't match Sienna";
@@ -32,7 +41,9 @@ export function identityLabel(c: GenerationRecord['identityCheck'] | undefined):
 export function identityNotice(rec: NoticeRec): IdentityNotice | null {
   const mark = rec.review?.face_drift;
   const userCall = mark === 'ok' ? 'looks_like_her' : mark === 'issue' ? 'not_her' : undefined;
-  // Fail closed: a finished photo with no face-check outcome at all is treated as "check unavailable".
+  // Legacy photos are labelled separately (legacyNotice) and stay where they were.
+  if (isLegacyPhoto(rec)) return null;
+  // Fail closed: a finished photo from this release with no face-check outcome is treated as "check unavailable".
   const c = rec.identityCheck ?? (rec.status === 'done' && rec.images?.length ? { status: 'unavailable' as const, similarity: null, reason: 'no face-check result was recorded' } : undefined);
   if (!c || c.status === 'verified' || c.status === 'not_applicable') return null;
   const sim = typeof c.similarity === 'number' ? ` (similarity ${c.similarity.toFixed(2)}; 0.74 or more confirms her face)` : '';
@@ -72,9 +83,21 @@ export function identityNotice(rec: NoticeRec): IdentityNotice | null {
  * result recorded at all — waits in Needs Review. The user's "Looks like Sienna" moves it into the gallery marked
  * as their approval (still not a verified face); "Not her" leaves it in Needs Review as rejected.
  */
-export type GalleryState = 'approved' | 'needs_review' | 'approved_by_you' | 'rejected';
+export type GalleryState = 'approved' | 'needs_review' | 'approved_by_you' | 'rejected' | 'legacy';
+
+/** What the photo details and gallery say about a legacy photo. */
+export const LEGACY_NOTICE = {
+  title: 'Legacy photo — face not verified',
+  detail:
+    'This photo was made before face verification existed, so it was never checked. It stays in your gallery as it was, but it is not counted as verified. Use the buttons to mark it yourself if you like.',
+};
 
 export function galleryState(rec: NoticeRec): GalleryState {
+  if (isLegacyPhoto(rec)) {
+    // the user's own call still applies; otherwise it stays in the gallery, labelled legacy
+    const mark = rec.review?.face_drift;
+    return mark === 'issue' ? 'rejected' : mark === 'ok' ? 'approved_by_you' : 'legacy';
+  }
   const n = identityNotice(rec);
   if (!n) return 'approved';
   return n.userCall === 'looks_like_her' ? 'approved_by_you' : n.userCall === 'not_her' ? 'rejected' : 'needs_review';

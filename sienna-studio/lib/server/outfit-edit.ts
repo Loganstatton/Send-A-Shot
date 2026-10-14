@@ -48,7 +48,8 @@ import { buildPrompt } from '../prompt';
 import { MIN_BODY_REFS } from '../body-refs';
 import { resolveLockedLora } from '../sienna-models';
 import type { ContentMode, GenerationRecord, StoredImage } from '../types';
-import { describeMissing, GenerationError } from './generate';
+import { describeMissing, GenerationError, missingClasses } from './generate';
+import { FACE_NODE_ID, faceNode, parseFace, singlePhotoIdentity } from '../identity';
 import { preflight } from './jobs';
 import {
   adultContentAllowed,
@@ -298,6 +299,18 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
     if (e instanceof ComfyError) throw new GenerationError(`Uploading images failed: ${e.message}`, e.status, e.details);
     throw e;
   }
+  // Face check on the edited photo (the same 0.74 rule as Create; no retries). If the GPU lacks it, the edit still
+  // runs and the result is filed in Needs Review as "face check unavailable".
+  let faceCheck: { status: 'on' } | { status: 'unavailable'; reason: string } = { status: 'unavailable', reason: 'the edit has no output to check' };
+  const fNode = faceNode(graph, EDIT_NODES.final);
+  if (fNode) {
+    const missing = backend.kind === 'mock' ? [] : await missingClasses(backend, { [FACE_NODE_ID]: fNode }, [FACE_NODE_ID]);
+    if (missing.length) faceCheck = { status: 'unavailable', reason: `the face check could not run (server is missing ${describeMissing(missing)})` };
+    else {
+      graph = { ...graph, [FACE_NODE_ID]: fNode };
+      faceCheck = { status: 'on' };
+    }
+  }
 
   const clientId = newId('sienna-edit-');
   const record: GenerationRecord = {
@@ -330,6 +343,8 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
     favorite: false,
     review: {},
     notes: '',
+    identityPolicy: 1,
+    editFaceCheck: faceCheck,
     parentId: source.id,
     outfitEdit: {
       model: 'qwen-image-edit-2509',
@@ -432,8 +447,10 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
       return patchRecord(id, {
         status: 'done',
         images: [image],
-        // Edit Outfit results never run the face check, so they are not verified: Needs Review
-        identityCheck: { status: 'unavailable', similarity: null, reason: 'the face check does not run on Edit Outfit results' },
+        identityCheck:
+          rec.editFaceCheck?.status === 'on'
+            ? singlePhotoIdentity(rec, parseFace(state.texts?.[FACE_NODE_ID]))
+            : singlePhotoIdentity(rec, null, rec.editFaceCheck?.reason ?? 'the face check did not run on this edit'),
         warnings,
         outfitEdit: { ...rec.outfitEdit, referenceCrop, crop, ...(rec.outfitEdit.protect ? { isolation, bodyCheck } : {}), ...(redraw ? { redraw } : {}) },
         completedAt: new Date().toISOString(),

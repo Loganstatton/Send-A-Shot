@@ -80,7 +80,7 @@ async function uploadStored(backend: ComfyBackend, img: StoredImage): Promise<st
 }
 
 /** Node classes in `ids` that the server does not have (empty if the server can't be asked). */
-async function missingClasses(backend: ComfyBackend, graph: ComfyGraph, ids: string[]): Promise<string[]> {
+export async function missingClasses(backend: ComfyBackend, graph: ComfyGraph, ids: string[]): Promise<string[]> {
   const classes = [...new Set(ids.map((id) => graph[id]?.class_type).filter(Boolean))];
   const missing: string[] = [];
   await Promise.all(
@@ -504,6 +504,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     graph,
     record: {
       backend: backend.kind,
+      identityPolicy: 1,
       presetId: preset?.id ?? null,
       presetName: preset?.name ?? null,
       workflowId: workflow.id,
