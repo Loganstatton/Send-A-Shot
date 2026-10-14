@@ -5,7 +5,7 @@
  * turned away, see faceVerdict. Faces smaller than FACE_MIN_SIZE px can't be judged: their embedding is too noisy.
  */
 import reference from './sienna-face-reference.json';
-import type { ComfyGraph } from './types';
+import type { ComfyGraph, GenerationRecord } from './types';
 
 export const FACE_NODE_ID = 'sienna_face';
 export const FACE_NODE_CLASS = 'SiennaFaceCheck';
@@ -119,4 +119,25 @@ export function parseFace(texts: string[] | undefined): FaceReport | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The face-check outcome when no verdict came back. With Sienna Lock off the photo isn't meant to be Sienna, so
+ * identity doesn't apply. Otherwise verification was expected and could not happen — turned off, not installed on
+ * the GPU, failed to load, or no result — and the photo is filed in Needs Review as "Face check unavailable".
+ */
+export function missingIdentity(
+  rec: Pick<GenerationRecord, 'siennaLock' | 'params' | 'exposureGuard'>,
+  faceProblem?: string,
+): NonNullable<GenerationRecord['identityCheck']> {
+  if (!rec.siennaLock) return { status: 'not_applicable', similarity: null, reason: 'Sienna Lock was off' };
+  const guard = rec.exposureGuard;
+  const reason =
+    faceProblem ??
+    (rec.params.faceCheck === false
+      ? 'the face check was turned off for this photo'
+      : guard?.status === 'unavailable' && guard.reason
+        ? `the face check could not run (${guard.reason})`
+        : 'the face check is not available on the GPU');
+  return { status: 'unavailable', similarity: null, reason };
 }

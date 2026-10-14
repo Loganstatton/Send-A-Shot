@@ -14,18 +14,41 @@ export interface IdentityNotice {
   userCall?: 'looks_like_her' | 'not_her';
 }
 
-export function identityNotice(rec: Pick<GenerationRecord, 'identityCheck' | 'review'>): IdentityNotice | null {
-  const c = rec.identityCheck;
-  if (!c || c.status === 'verified') return null;
-  const sim = typeof c.similarity === 'number' ? ` (similarity ${c.similarity.toFixed(2)}; 0.74 or more confirms her face)` : '';
+type NoticeRec = Pick<GenerationRecord, 'identityCheck' | 'review'> & Partial<Pick<GenerationRecord, 'status' | 'images'>>;
+
+/** Short label for the photo details: what the face check found, or why it couldn't. */
+export function identityLabel(c: GenerationRecord['identityCheck'] | undefined): string {
+  if (!c) return 'Face check unavailable — no result recorded';
+  switch (c.status) {
+    case 'verified': return 'Verified as Sienna';
+    case 'unconfirmed': return "Didn't match Sienna";
+    case 'unchecked': return 'Face not detected';
+    case 'unavailable': return 'Face check unavailable';
+    case 'inconclusive': return 'Not verified (turned away)';
+    case 'not_applicable': return 'Not checked — Sienna Lock off';
+  }
+}
+
+export function identityNotice(rec: NoticeRec): IdentityNotice | null {
   const mark = rec.review?.face_drift;
   const userCall = mark === 'ok' ? 'looks_like_her' : mark === 'issue' ? 'not_her' : undefined;
+  // Fail closed: a finished photo with no face-check outcome at all is treated as "check unavailable".
+  const c = rec.identityCheck ?? (rec.status === 'done' && rec.images?.length ? { status: 'unavailable' as const, similarity: null, reason: 'no face-check result was recorded' } : undefined);
+  if (!c || c.status === 'verified' || c.status === 'not_applicable') return null;
+  const sim = typeof c.similarity === 'number' ? ` (similarity ${c.similarity.toFixed(2)}; 0.74 or more confirms her face)` : '';
   if (c.status === 'unchecked') {
     // her face couldn't be found or was too small to compare (often hidden or turned away on purpose): not retried,
     // not rejected — the user decides
     return {
       title: 'Face not verified — manual review required',
-      detail: `The face check couldn't compare this photo with Sienna: ${c.reason ?? 'no face was found'}. It was not retried and has not been counted as a match; it is waiting in Needs Review for you to approve or reject.`,
+      detail: `Face not detected: ${c.reason ?? 'no face was found'}, so it couldn't be compared with Sienna. It was not retried and has not been counted as a match; it is waiting in Needs Review for you to approve or reject.`,
+      userCall,
+    };
+  }
+  if (c.status === 'unavailable') {
+    return {
+      title: 'Face not verified — manual review required',
+      detail: `Face check unavailable: ${c.reason ?? 'the face check could not run'}. Verification did not happen, so this photo has not been counted as Sienna; it is waiting in Needs Review for you to approve or reject.`,
       userCall,
     };
   }
@@ -44,19 +67,20 @@ export function identityNotice(rec: Pick<GenerationRecord, 'identityCheck' | 're
 }
 
 /**
- * Where a photo is filed. Only a verified face (or a photo the face check didn't run on at all) is approved
- * automatically — a photo whose face couldn't be found or compared waits in Needs Review too. Anything unverified waits in Needs Review; the user's "Looks like Sienna" moves it into the
- * gallery marked as their approval (still not a verified face), "Not her" leaves it in Needs Review as rejected.
+ * Where a photo is filed. Only a verified face is approved automatically (and photos made with Sienna Lock off,
+ * which aren't meant to be her). Everything else — no match, face not detected, face check unavailable, or no
+ * result recorded at all — waits in Needs Review. The user's "Looks like Sienna" moves it into the gallery marked
+ * as their approval (still not a verified face); "Not her" leaves it in Needs Review as rejected.
  */
 export type GalleryState = 'approved' | 'needs_review' | 'approved_by_you' | 'rejected';
 
-export function galleryState(rec: Pick<GenerationRecord, 'identityCheck' | 'review'>): GalleryState {
+export function galleryState(rec: NoticeRec): GalleryState {
   const n = identityNotice(rec);
   if (!n) return 'approved';
   return n.userCall === 'looks_like_her' ? 'approved_by_you' : n.userCall === 'not_her' ? 'rejected' : 'needs_review';
 }
 
-export function needsIdentityReview(rec: Pick<GenerationRecord, 'identityCheck' | 'review'>): boolean {
+export function needsIdentityReview(rec: NoticeRec): boolean {
   const s = galleryState(rec);
   return s === 'needs_review' || s === 'rejected';
 }

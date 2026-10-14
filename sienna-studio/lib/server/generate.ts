@@ -39,7 +39,7 @@ import { posePreset } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
-import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
+import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
 import { activeStylePacks, nudeOnlyAllowed, packCoverage, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
@@ -613,6 +613,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
       let refs = state.images;
       const extra: Partial<GenerationRecord> = {};
       const guard = rec.exposureGuard;
+      // Why the face check produced no verdict, if it didn't (never read as a pass: see missingIdentity).
+      let faceProblem: string | undefined;
       if (guard?.status === 'on') {
         const checks = guard.checks ?? { top: true, face: false };
         const top = checks.top ? parseExposure(state.texts?.[EXPOSURE_NODE_ID]) : null;
@@ -622,6 +624,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         if (face && !face.available) notes.push(`Face check didn't run on the GPU (${face.error ?? 'models not installed'}).`);
         const topOn = !!top?.available;
         const faceOn = !!face?.available;
+        if (checks.face && !face) faceProblem = 'the face check returned no result';
+        else if (face && !face.available) faceProblem = `the face check could not run (${face.error ?? 'models not installed'})`;
         if (topOn || faceOn) {
           const attempts = [
             ...guard.attempts,
@@ -668,7 +672,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           }
           refs = kept.images;
           extra.seed = kept.seed;
-          if (faceOn) extra.identityCheck = identitySummary(kept);
+          if (kept.identity) extra.identityCheck = identitySummary(kept);
+          else if (checks.face && !faceProblem) faceProblem = 'the face check had no result for the kept photo';
           extra.exposureGuard = { ...guard, attempts };
           const note = exposureWarning(attempts, kept);
           if (note) notes.push(note);
@@ -677,6 +682,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         }
         if (notes.length) extra.warnings = [...rec.warnings, ...notes];
       }
+      // Every finished photo gets a face-check outcome; "could not run" is never a pass.
+      if (!extra.identityCheck) extra.identityCheck = missingIdentity(rec, faceProblem);
       const images: StoredImage[] = [];
       for (const ref of refs) {
         const { bytes, mime } = await backend.fetchImage(ref);

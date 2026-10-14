@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { galleryState, identityNotice, needsIdentityReview } from './identity-notice';
-import { FACE_THRESHOLD, FACE_TURNED_FLOOR, faceVerdict, parseFace, rearRequest } from './identity';
+import { galleryState, identityLabel, identityNotice, needsIdentityReview } from './identity-notice';
+import { FACE_THRESHOLD, FACE_TURNED_FLOOR, faceVerdict, missingIdentity, parseFace, rearRequest } from './identity';
 
 const face = (similarity: number | null, more: Partial<Parameters<typeof faceVerdict>[0]> = {}) => ({
   available: true, ok: true, similarity, size: 150, found: similarity !== null, ...more,
@@ -120,5 +120,63 @@ describe('galleryState (Needs Review)', () => {
   });
   it("a verified photo's review mark doesn't change where it is filed", () => {
     expect(galleryState(rec('verified', 'issue'))).toBe('approved');
+  });
+});
+
+describe('face check could not run (production)', () => {
+  const params = (faceCheck?: boolean) => ({ faceCheck }) as never;
+  const done = { status: 'done' as const, images: [{ id: 'i', file: 'gen_i.png', width: 1, height: 1, createdAt: '' }], review: {} };
+
+  it('never reads "could not run" as verified: every cause becomes unavailable', () => {
+    const cases = [
+      missingIdentity({ siennaLock: true, params: params(), exposureGuard: undefined }),
+      missingIdentity({ siennaLock: true, params: params(), exposureGuard: { status: 'unavailable', reason: 'server is missing SiennaFaceCheck', maxAttempts: 1, attempts: [] } }),
+      missingIdentity({ siennaLock: true, params: params(false), exposureGuard: undefined }),
+      missingIdentity({ siennaLock: true, params: params(), exposureGuard: undefined }, 'the face check could not run (models not installed)'),
+      missingIdentity({ siennaLock: true, params: params(), exposureGuard: undefined }, 'the face check returned no result'),
+    ];
+    for (const c of cases) {
+      expect(c.status).toBe('unavailable');
+      expect(galleryState({ ...done, identityCheck: c })).toBe('needs_review');
+    }
+    expect(cases[1].reason).toBe('the face check could not run (server is missing SiennaFaceCheck)');
+    expect(cases[2].reason).toBe('the face check was turned off for this photo');
+    expect(cases[3].reason).toBe('the face check could not run (models not installed)');
+  });
+
+  it('Sienna Lock off is the only case identity does not apply (not meant to be her)', () => {
+    const c = missingIdentity({ siennaLock: false, params: params(), exposureGuard: undefined });
+    expect(c.status).toBe('not_applicable');
+    expect(galleryState({ ...done, identityCheck: c })).toBe('approved');
+  });
+
+  it('fails closed: a finished photo with no face-check outcome at all goes to Needs Review', () => {
+    expect(galleryState({ ...done, identityCheck: undefined })).toBe('needs_review');
+    expect(identityNotice({ ...done, identityCheck: undefined })!.detail).toContain('Face check unavailable: no face-check result was recorded');
+    // failed or unfinished jobs have no photo to approve and stay as they are
+    expect(galleryState({ status: 'error', images: [], review: {}, identityCheck: undefined })).toBe('approved');
+  });
+
+  it('labels "face not detected" and "face check unavailable" differently', () => {
+    expect(identityLabel({ status: 'unchecked', similarity: null })).toBe('Face not detected');
+    expect(identityLabel({ status: 'unavailable', similarity: null })).toBe('Face check unavailable');
+    expect(identityLabel(undefined)).toBe('Face check unavailable — no result recorded');
+    const n = identityNotice({ ...done, identityCheck: { status: 'unavailable', similarity: null, reason: 'the face check returned no result' } })!;
+    expect(n.title).toBe('Face not verified — manual review required');
+    expect(n.detail).toMatch(/^Face check unavailable: the face check returned no result\. Verification did not happen/);
+    expect(identityNotice({ ...done, identityCheck: { status: 'unchecked', similarity: null, reason: 'no face was found' } })!.detail).toMatch(/^Face not detected/);
+  });
+
+  it('manual approval keeps the unavailable status; nothing is deleted or rejected automatically', () => {
+    const c = { status: 'unavailable' as const, similarity: null, reason: 'the face check returned no result' };
+    expect(galleryState({ ...done, identityCheck: c, review: { face_drift: 'ok' } })).toBe('approved_by_you');
+    expect(identityNotice({ ...done, identityCheck: c, review: { face_drift: 'ok' } })!.title).toBe('Face not verified — manual review required');
+    expect(galleryState({ ...done, identityCheck: c, review: { face_drift: 'issue' } })).toBe('rejected');
+  });
+
+  it('only "verified" or Sienna Lock off is ever approved automatically', () => {
+    const statuses = ['verified', 'inconclusive', 'unconfirmed', 'unchecked', 'unavailable', 'not_applicable'] as const;
+    const auto = statuses.filter((status) => galleryState({ ...done, identityCheck: { status, similarity: null } }) === 'approved');
+    expect(auto).toEqual(['verified', 'not_applicable']);
   });
 });

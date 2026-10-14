@@ -140,3 +140,23 @@ then both rules replayed on the same photos (first 4 attempts). GPU cost ≈ $0.
 - **Pose-aware 0.68** is kept for future consideration, active only with `SIENNA_EXPERIMENTAL=true` (unset on Render).
 - **No face to compare** (none found, or too small — often hidden or turned away on purpose): not retried, never a
   match, filed in Needs Review as "Face not verified — manual review required" (owner's follow-up decision).
+
+### Face check unavailable (owner's follow-up, 2026-10-14)
+
+"Verification could not run" is never a pass. Every finished photo records a face outcome; anything other than
+**verified** goes to Needs Review as "Face not verified — manual review required", and the photo details tell
+**Face not detected** apart from **Face check unavailable** (with the cause):
+
+| Cause | Outcome |
+|---|---|
+| Face check node not installed on the GPU | unavailable → Needs Review |
+| Face models fail to load / node reports an error | unavailable → Needs Review |
+| Node returns no result | unavailable → Needs Review |
+| Face check turned off with Sienna Lock on | unavailable → Needs Review |
+| Edit Outfit result (no face check runs) | unavailable → Needs Review |
+| Mock backend | unavailable → Needs Review (it used to report a fake 0.85 "verified") |
+| A finished photo with no outcome recorded at all | treated as unavailable by the gallery (fail closed) |
+| GPU job error or timeout | no photo is delivered (job fails, as before) |
+| Sienna Lock off | not applicable — the photo isn't meant to be Sienna; gallery as before |
+
+Nothing is deleted or rejected automatically; manual approval keeps the unverified status.

@@ -92,7 +92,8 @@ if (arg('--qwen-edit')) {
 }
 if (arg('--face-check')) {
   // Photo checks: the face check answers with FAKE_FACE_SIMS (comma-separated, one per generation, cycling), e.g.
-  // "0.6,0.7,0.65,0.71" = four failures in a row; "0.8" = always verified; "none" = no face found.
+  // "0.6,0.7,0.65,0.71" = four failures in a row; "0.8" = always verified; "none" = no face found;
+  // "down" = face models failed to load; "empty" = the node returned no result.
   Object.assign(SPECS, {
     SiennaFaceCheck: { images: ['IMAGE'], reference: ['STRING'], threshold: ['FLOAT'], min_face: ['INT'] },
     SiennaExposureCheck: { images: ['IMAGE'], threshold: ['FLOAT'] },
@@ -192,6 +193,9 @@ http
         if (n.class_type === 'SiennaGarmentRedrawMask') outputs[k] = { text: [JSON.stringify({ scope: 'full', grow: 'garment', source: 'segmenter', grown: false, uncovered: 0.011, old_garment: 0.047, mask: 0.157, empty: false })] };
         if (n.class_type === 'SiennaFaceCheck') {
           const v = FACE_SIMS[faceCalls++ % FACE_SIMS.length];
+          // 'down' = models failed to load; 'empty' = the node returned nothing
+          if (v === 'down') { outputs[k] = { text: [JSON.stringify({ available: false, error: 'face models failed to load' })] }; continue; }
+          if (v === 'empty') continue;
           const sim = v === 'none' ? null : Number(v);
           const img = sim === null ? { found: false, similarity: null, ok: true, faces: 0 } : { found: true, similarity: sim, size: 150, ok: sim >= 0.74, faces: 1 };
           outputs[k] = { text: [JSON.stringify({ available: true, ok: img.ok, similarity: sim, images: [img] })] };

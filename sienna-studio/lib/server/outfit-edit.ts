@@ -432,6 +432,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
       return patchRecord(id, {
         status: 'done',
         images: [image],
+        // Edit Outfit results never run the face check, so they are not verified: Needs Review
+        identityCheck: { status: 'unavailable', similarity: null, reason: 'the face check does not run on Edit Outfit results' },
         warnings,
         outfitEdit: { ...rec.outfitEdit, referenceCrop, crop, ...(rec.outfitEdit.protect ? { isolation, bodyCheck } : {}), ...(redraw ? { redraw } : {}) },
         completedAt: new Date().toISOString(),

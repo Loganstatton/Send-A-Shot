@@ -363,7 +363,10 @@ export interface GenerationRecord {
   /** Face check of the photo that was kept. Only 'verified' means the face was confirmed as Sienna's; the gallery
    * flags anything else so the user can decide whether to keep the image. */
   identityCheck?: {
-    status: 'verified' | 'inconclusive' | 'unconfirmed' | 'unchecked';
+    /** verified: matched Sienna. unconfirmed: no attempt matched. unchecked: face not detected / too small.
+     * unavailable: the face check could not run. inconclusive: experimental pose-aware rule only.
+     * not_applicable: Sienna Lock off (not meant to be Sienna). */
+    status: 'verified' | 'inconclusive' | 'unconfirmed' | 'unchecked' | 'unavailable' | 'not_applicable';
     similarity: number | null;
     reason?: string;
   };

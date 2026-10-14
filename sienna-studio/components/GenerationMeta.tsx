@@ -1,6 +1,7 @@
 'use client';
 
 import { visibleWarnings } from '@/lib/warnings';
+import { identityLabel } from '@/lib/identity-notice';
 import { fileUrl } from '@/lib/client/api';
 import { MODULE_LABELS, ModuleKey } from '@/lib/comfy/modules';
 import type { GenerationRecord, StoredImage } from '@/lib/types';
@@ -42,20 +43,15 @@ export function GenerationMeta({ rec, showPrompt = true }: { rec: GenerationReco
         <Meta k="Backend" v={rec.backend === 'mock' ? <Badge tone="warn">MOCK</Badge> : 'ComfyUI'} />
         <Meta k="Prompt ID" v={<span className="select-all break-all font-mono text-xs">{rec.promptId ?? '—'}</span>} />
         <Meta k="Seed" v={<span className="select-all">{rec.seed}</span>} />
-        {rec.identityCheck && (
+        {(rec.identityCheck || (rec.status === 'done' && rec.images.length > 0)) && (
           <Meta
             k="Face check"
             v={
-              rec.identityCheck.status === 'unchecked' ? (
-                <Badge tone="warn">not verified · {rec.identityCheck.reason ?? 'no face to compare'}</Badge>
-              ) : rec.identityCheck.status === 'verified' ? (
-                <Badge tone="ok">verified as Sienna{typeof rec.identityCheck.similarity === 'number' ? ` · ${rec.identityCheck.similarity.toFixed(2)}` : ''}</Badge>
-              ) : (
-                <Badge tone="warn">
-                  {rec.identityCheck.status === 'inconclusive' ? 'not verified' : "didn't match"}
-                  {typeof rec.identityCheck.similarity === 'number' ? ` · ${rec.identityCheck.similarity.toFixed(2)}` : ''}
-                </Badge>
-              )
+              <Badge tone={rec.identityCheck?.status === 'verified' ? 'ok' : rec.identityCheck?.status === 'not_applicable' ? 'neutral' : 'warn'}>
+                {identityLabel(rec.identityCheck)}
+                {typeof rec.identityCheck?.similarity === 'number' ? ` · ${rec.identityCheck.similarity.toFixed(2)}` : ''}
+                {rec.identityCheck?.reason && rec.identityCheck.status !== 'unconfirmed' ? ` · ${rec.identityCheck.reason}` : ''}
+              </Badge>
             }
           />
         )}
