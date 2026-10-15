@@ -1,0 +1,30 @@
+{
+ "note": "Scene sets: every image in a set is Sienna in the SAME outfit and place, in different head angles, expressions and framing. Every ordered pair inside a set becomes a training example (reference = one image, target = another), with a driver made from the target. All Sienna images need your approval; drivers are QA-checked automatically.",
+ "views_per_set": ["front, neutral, head level", "three-quarter left, smiling", "true profile (alternating left/right)", "talking or laughing, mouth open", "looking up OR looking down (alternating)"],
+ "sets": [
+  {"id": "S01", "outfit": "cream cable-knit cardigan over a white top", "place": "cozy cafe", "framing": "head and shoulders", "anchor": "P13"},
+  {"id": "S02", "outfit": "white linen shirt", "place": "park with trees, golden hour", "framing": "chest-up", "anchor": "P3"},
+  {"id": "S03", "outfit": "black fitted turtleneck", "place": "green leafy backdrop", "framing": "head and shoulders", "anchor": "P1"},
+  {"id": "S04", "outfit": "light blue denim shirt", "place": "garden", "framing": "head and shoulders", "anchor": "P7"},
+  {"id": "S05", "outfit": "grey hoodie", "place": "park under tall trees", "framing": "head and shoulders", "anchor": "P9"},
+  {"id": "S06", "outfit": "white t-shirt", "place": "cafe table", "framing": "chest-up", "anchor": "P41"},
+  {"id": "S07", "outfit": "denim shirt", "place": "living room", "framing": "chest-up", "anchor": "P43"},
+  {"id": "S08", "outfit": "striped long-sleeve top", "place": "bright kitchen", "framing": "head and shoulders", "anchor": "R1-09"},
+  {"id": "S09", "outfit": "yellow summer dress", "place": "sunny city sidewalk", "framing": "head and shoulders", "anchor": "R1-11"},
+  {"id": "S10", "outfit": "denim jacket, white t-shirt, black jeans", "place": "city sidewalk with trees", "framing": "waist-up", "anchor": "R1-14"},
+  {"id": "S11", "outfit": "white linen shirt and beige shorts", "place": "sandy beach", "framing": "mid-body", "anchor": "R1-17"},
+  {"id": "S12", "outfit": "red bodycon dress", "place": "bright living room", "framing": "full body, head to toe", "anchor": "verified 0779 photo"},
+  {"id": "S13", "outfit": "navy blue knit sweater", "place": "quiet residential street", "framing": "head and shoulders"},
+  {"id": "S14", "outfit": "olive green jacket over a black t-shirt", "place": "city street, overcast", "framing": "chest-up"},
+  {"id": "S15", "outfit": "black blazer over a white top", "place": "modern office", "framing": "waist-up"},
+  {"id": "S16", "outfit": "grey t-shirt, blue jeans, white sneakers", "place": "city park", "framing": "full body, head to toe"},
+  {"id": "S17", "outfit": "burgundy sweater", "place": "living room, warm evening lamp", "framing": "head and shoulders"},
+  {"id": "S18", "outfit": "camel wool coat and scarf", "place": "city street at dusk", "framing": "chest-up"},
+  {"id": "S19", "outfit": "white ribbed tank top", "place": "bedroom by a window", "framing": "head and shoulders"},
+  {"id": "S20", "outfit": "green knit dress, brown ankle boots", "place": "bright living room", "framing": "full body, head to toe"},
+  {"id": "N1", "outfit": "nude (non-explicit, standing)", "place": "bright minimalist bedroom", "framing": "full body, head to toe", "anchor": "Test B reference 61002", "adult": true},
+  {"id": "N2", "outfit": "nude (non-explicit, standing)", "place": "sunlit living room", "framing": "mid-body", "adult": true},
+  {"id": "N3", "outfit": "nude (non-explicit)", "place": "bathroom with white tiles, soft light", "framing": "chest-up", "adult": true},
+  {"id": "N4", "outfit": "nude (non-explicit, standing, turning)", "place": "bedroom, evening lamp", "framing": "full body, head to toe", "adult": true}
+ ]
+}
