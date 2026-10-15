@@ -47,6 +47,7 @@
 #                      (xinsir/controlnet-openpose-sdxl-1.0, ~2.5 GB)
 #   --with-qwen-edit   also install the optional Edit Outfit editor (Qwen-Image-Edit-2509 fp8, ~30 GB)
 #   --with-wan-video   also install Video Studio: Wan2.2 image-to-video + Wan2.2 Animate (~62 GB)
+#   --with-wan-animate also install only Copy Motion v1 (Wan2.2 Animate 14B fp8 + DWPose, ~27 GB)
 #   --with-wan-animate2 also install Copy Motion's default model, Wan2.2-Animate-2 14B int8 (Comfy-Org/Wan-Animate-2, ~24 GB)
 #   --with-style-packs also download the Create screen's style packs from Civitai (~2.5 GB):
 #                      Micro bikini (143602), Real-photo look (1368634), Natural skin (248951),
@@ -77,6 +78,7 @@ OUTFIT=0
 POSE=0
 QWEN=0
 WAN=0
+WAN1=0
 WAN2=0
 PACKS=0
 for arg in "$@"; do
@@ -85,7 +87,8 @@ for arg in "$@"; do
     --with-outfit) OUTFIT=1 ;;
     --with-pose) POSE=1 ;;
     --with-qwen-edit) QWEN=1 ;;
-    --with-wan-video) WAN=1 ;;
+    --with-wan-video) WAN=1; WAN1=1 ;;
+    --with-wan-animate) WAN1=1 ;;
     --with-wan-animate2) WAN2=1 ;;
     --with-style-packs) PACKS=1 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
@@ -314,7 +317,7 @@ if (( QWEN )); then
 fi
 
 # ── Video Studio (Wan2.2, optional) ────────────────────────────────────────────
-if (( WAN )); then
+if (( WAN1 )); then
   log "Video Studio model licenses (Hugging Face model cards)"
   # The upstream Wan2.2 models; the repackaged/fp8 copies below are conversions of these.
   check_licenses "Wan-AI/Wan2.2-I2V-A14B:apache-2.0" "Wan-AI/Wan2.2-Animate-14B:apache-2.0" "yzd-v/DWPose:apache-2.0"
@@ -334,6 +337,9 @@ if (( WAN )); then
   fetch_model "$W21/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" "$COMFYUI_DIR/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" 6000000000
   fetch_model "$W22/vae/wan_2.1_vae.safetensors" "$COMFYUI_DIR/models/vae/wan_2.1_vae.safetensors" 200000000
   fetch_model "$W21/clip_vision/clip_vision_h.safetensors" "$COMFYUI_DIR/models/clip_vision/clip_vision_h.safetensors" 1000000000
+fi
+if (( WAN )); then
+  W22="$HF/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files"
   # Animate Image
   for f in wan2.2_i2v_high_noise_14B_fp8_scaled wan2.2_i2v_low_noise_14B_fp8_scaled; do
     fetch_model "$W22/diffusion_models/$f.safetensors" "$COMFYUI_DIR/models/diffusion_models/$f.safetensors" 13000000000
@@ -341,7 +347,9 @@ if (( WAN )); then
   for f in wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise; do
     fetch_model "$W22/loras/$f.safetensors" "$COMFYUI_DIR/models/loras/$f.safetensors" 100000000
   done
-  # Copy Motion
+fi
+if (( WAN1 )); then
+  # Copy Motion v1
   fetch_model "$HF/Kijai/WanVideo_comfy_fp8_scaled/resolve/main/Wan22Animate/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors" \
     "$COMFYUI_DIR/models/diffusion_models/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors" 15000000000
   fetch_model "$HF/Kijai/WanVideo_comfy/resolve/main/Lightx2v/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" \
@@ -366,7 +374,7 @@ fi
 # ── Sienna custom nodes (pose retargeting, garment-only isolation, chin crop, top check) ──
 # Shipped in this repo (scripts/comfy_nodes/sienna_nodes). Copied when the script runs from
 # a checkout, or when SIENNA_NODES_DIR points at an uploaded copy.
-if (( OUTFIT || POSE || QWEN || PACKS || WAN || WAN2 )); then
+if (( OUTFIT || POSE || QWEN || PACKS || WAN || WAN1 || WAN2 )); then
   log "sienna_nodes"
   src="${SIENNA_NODES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/comfy_nodes/sienna_nodes}"
   if [[ -f "$src/__init__.py" ]]; then
@@ -435,7 +443,7 @@ if (( RESTART )); then
           if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — update ComfyUI (Qwen nodes need a 2025-09+ build) or check the log"; fi
         done
       fi
-      if (( WAN )); then
+      if (( WAN1 )); then
         for cls in WanImageToVideo WanAnimateToVideo CreateVideo SaveVideo LoadVideo GetVideoComponents TrimVideoLatent ImageFromBatch DWPreprocessor SiennaFaceCheck; do
           if curl -fsS --max-time 5 "$base/object_info/$cls" 2>/dev/null | grep -q "\"$cls\""; then echo "  ✓ $cls"; else echo "  ✗ $cls NOT loaded — update ComfyUI (video nodes need a 2025-09+ build) or check the log"; fi
         done

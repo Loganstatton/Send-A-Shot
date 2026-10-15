@@ -67,3 +67,26 @@ Copy Motion engine (`SIENNA_MOTION_ENGINE=animate1` selects Wan2.2 Animate v1). 
 - Network volume: **56 GB used, 19 GB free** of 75 GB; its ComfyUI (2026-09-25) lacks the Wan Animate 2 nodes
   (need ComfyUI ≥ 0.35).
 - Cost: ≈ $0.50 in total.
+
+## Identity follow-up (2026-10-15, $0.32, separate RTX 4090, production volume untouched)
+
+Same photo, same dance, same seed. Every one of the 64 frames scored with the app's face check (YuNet + SFace vs
+Sienna's reference, bar 0.74; "usable" = face ≥ 64 px):
+
+| Version | Median | 10th pct | Best | Frames ≥ 0.74 | Face flicker* |
+|---|---|---|---|---|---|
+| Wan Animate 2 | 0.40 | 0.24 | 0.58 | 0 / 60 | 30.4 |
+| Test 1 — Wan2.2 Animate v1 (DWPose) | 0.42 | 0.22 | 0.67 | 0 / 8 (faces 46–89 px) | 27.0 |
+| Test 2 — WA2 + Sienna FaceDetailer, denoise 0.35 | 0.64 | 0.39 | 0.75 | 1 / 60 | 29.4 |
+| Test 2 — WA2 + Sienna FaceDetailer, denoise 0.5 | **0.67** | 0.37 | 0.75 | 3 / 60 | 29.8 |
+| Test 2 + temporal smoothing of the correction | 0.54–0.56 | 0.25–0.31 | 0.70 | 0 / 60 | 28.9–29.1 |
+
+\*mean frame-to-frame change inside the aligned face, lower = steadier (mostly real motion).
+
+- v1: closest to Sienna in calm frames, but her face is small and smeared in fast moves; it re-frames her head-to-toe and
+  swapped her shoes for black boots. Motion comparable to WA2; ~11 s/step vs 23 s.
+- Face restore (production settings: RealVisXL V5 + sienna_v2, fixed seed, face-only prompt): clearly the most Sienna
+  (freckles, eyes, face shape), steady frame to frame, but it neutralises expressions (open mouth → closed) and
+  can't fix the head-tilted-back frames (0.23). Smoothing the correction over neighbouring frames lowered identity.
+- Verdict: neither reaches the bar throughout the clip. Next step: a Wan-native Sienna identity LoRA (ai-toolkit
+  `train_lora_wan22_14b_24gb`, her approved 29-image v2 dataset), so identity comes from the video model itself.
