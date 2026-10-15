@@ -93,6 +93,48 @@ def test_build_metadata_and_clips():
         assert int(a.get(cv2.CAP_PROP_FRAME_COUNT)) == int(b.get(cv2.CAP_PROP_FRAME_COUNT))
 
 
+def test_mask_to_latent():
+    from face_loss import mask_to_latent
+    m = np.zeros((768, 528), np.uint8); m[0:384, 0:264] = 255          # top-left quarter is head
+    w = mask_to_latent(m, 96, 66)
+    assert w.shape == (96, 66) and abs(w[:48, :33].mean() - 1) < 1e-6 and w[48:, :].max() == 0 and w[:, 33:].max() == 0
+
+
+def test_pair_gate_rules():
+    from pair_qa import PairQA
+    Q = object.__new__(PairQA)   # gate() needs no models
+    base = dict(yaw=-20.0, pitch=5.0, jaw=0.0, smile=0.7, mouth_gap=0.0, blink=0.1, id=0.8, hair_lab=[40, 134, 137],
+                lm=[[0, 0]] * 478, face_h=100.0)
+    base['lm'] = [[float(i), 0.0] for i in range(478)]
+    base['body'] = [[float(i * 7 % 50), float(i * 13 % 90), 1.0] for i in range(33)]       # same visible body pose
+    drv = dict(base, id=0.2, hair_lab=[14, 128, 127])
+    c, v, why = Q.gate(base, drv)
+    assert v == 'PASS', why
+    c, v, why = Q.gate(base, dict(drv, smile=0.1))                  # smile mismatch fails
+    assert v == 'FAIL' and 'smile' in why
+    c, v, why = Q.gate(base, dict(drv, id=0.5))                     # driver too much like Sienna fails
+    assert v == 'FAIL' and 'driver_id' in why
+    c, v, why = Q.gate(base, dict(drv, hair_lab=[42, 134, 137]))     # similar hair needs review
+    assert v == 'REVIEW'
+    c, v, why = Q.gate(dict(base, yaw=-60.0, id=0.5), dict(drv, yaw=-58.0))  # profile: identity by eye
+    assert v == 'REVIEW' and c['target_id'][1] is None
+    body = [[0, 0, 1]] * 33; body = [list(b) for b in body]
+    body[11], body[12], body[0] = [10, 0, 1], [0, 0, 1], [5, -5, 1]
+    back = [list(b) for b in body]; back[0] = [5, -5, 0.1]
+    assert PairQA.facing(body) == 1 and PairQA.facing(back) == -1
+
+
+def test_similarity_and_warp_identity():
+    from driver_edit import similarity, piecewise_warp
+    src = np.random.RandomState(0).rand(30, 2) * 100 + 50
+    a = np.radians(10); R = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+    s, R2, t = similarity(src, 1.5 * src @ R.T + [3, 4])
+    assert abs(s - 1.5) < 1e-6 and np.allclose(R2, R, atol=1e-6) and np.allclose(t, [3, 4], atol=1e-4)
+    img = (np.random.RandomState(1).rand(240, 200, 3) * 255).astype(np.uint8)
+    out = piecewise_warp(img, src, src.copy())                                 # no movement -> unchanged image
+    assert np.abs(out.astype(int) - img.astype(int)).mean() < 2.0
+
+
 if __name__ == '__main__':
     fails = 0
     for name, fn in list(globals().items()):

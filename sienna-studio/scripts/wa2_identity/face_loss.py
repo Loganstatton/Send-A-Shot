@@ -6,7 +6,13 @@ Differences from DiffSynth's FlowMatchSFTLoss:
   2. Pixels inside the target's head box get extra weight (FACE_WEIGHT), so the gradient concentrates on identity
      while the rest of the frame still teaches body, outfit and background from the reference.
 The face box comes from the dataset metadata as "x0,y0,x1,y1" in 0-1 image coordinates (key `face_box`).
+
+Head-only mode (cross-outfit pairs): when a sample has `loss_mask` (path to a PNG, white = head + hair, from
+pair_qa.head_mask), only that region is scored. Used when the reference photo shows Sienna in a different outfit and
+place than the target, which is the case for almost all approved photos: outfit and background are then not
+supervised at all, instead of being taught wrongly.
 """
+import numpy as np
 try:
     import torch
 except ImportError:  # face_bounds stays importable for local tests without torch
@@ -30,6 +36,21 @@ def face_bounds(face_box, lat_h, lat_w, pad=FACE_PAD):
     return r0, max(r0 + 1, int(round(y1 * lat_h))), c0, max(c0 + 1, int(round(x1 * lat_w)))
 
 
+def mask_to_latent(mask, lat_h, lat_w):
+    """Fraction of head pixels in each latent cell (area average of a 0/255 or 0/1 mask). Pure numpy (tested)."""
+    import cv2
+    m = (np.asarray(mask, np.float32) > 0.5 * (255 if np.asarray(mask).max() > 1 else 1)).astype(np.float32)
+    return cv2.resize(m, (lat_w, lat_h), interpolation=cv2.INTER_AREA)
+
+
+def mask_weight_map(mask_path, lat_h, lat_w, device, dtype):
+    import cv2
+    w = torch.as_tensor(mask_to_latent(cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE), lat_h, lat_w), device=device, dtype=dtype)
+    if float(w.sum()) <= 0:
+        raise ValueError(f'empty loss mask: {mask_path}')
+    return w / w.mean()
+
+
 def face_weight_map(face_box, lat_h, lat_w, device, dtype, weight=FACE_WEIGHT, pad=FACE_PAD):
     w = torch.ones((lat_h, lat_w), device=device, dtype=dtype)
     b = face_bounds(face_box, lat_h, lat_w, pad)
@@ -51,6 +72,9 @@ def FlowMatchIdentityLoss(pipe, **inputs):
     models = {name: getattr(pipe, name) for name in pipe.in_iteration_models}
     pred = pipe.model_fn(**models, **inputs, timestep=timestep)
     pred, target = pred[:, :, 1:].float(), target[:, :, 1:].float()          # drop the reference-image slot
-    wmap = face_weight_map(inputs.get('face_box'), pred.shape[-2], pred.shape[-1], pred.device, pred.dtype)
+    if inputs.get('loss_mask'):
+        wmap = mask_weight_map(inputs['loss_mask'], pred.shape[-2], pred.shape[-1], pred.device, pred.dtype)
+    else:
+        wmap = face_weight_map(inputs.get('face_box'), pred.shape[-2], pred.shape[-1], pred.device, pred.dtype)
     loss = (((pred - target) ** 2) * wmap).mean()
     return loss * pipe.scheduler.training_weight(timestep)

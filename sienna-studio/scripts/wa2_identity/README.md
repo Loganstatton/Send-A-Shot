@@ -42,6 +42,21 @@ so lowering the loss requires taking identity from the reference. The target's p
 differ from the reference, so copying the reference's expression is penalised, more so inside the ×4 face region.
 Clothed drivers paired with nude targets (sets N1–N4) penalise the clothing ghosts seen in Test B.
 
+## Revised pairing (existing approved photos as targets)
+- **Targets** are approved photos, unchanged (crop/resize only). No new Sienna faces.
+- **References** are other approved photos. Almost none share an outfit, so the sample carries `loss_mask` (head + hair,
+  `pair_qa.head_mask`) and `face_loss.py` scores only that region; outfit and background are not trained.
+- **Drivers** are other women (existing base-model images), matched on head yaw/pitch/roll, shoulders or full-body
+  landmarks and expression, then edited locally on the driver only (`driver_edit.py`): whole-image similarity alignment
+  plus an identical paired crop, a mouth/cheek expression transfer (target minus a neutral Sienna photo in 3D, so her
+  face shape cancels), and hair darkening when the colour is too close to hers.
+- **Gates** (`pair_qa.py`): head pose, blendshapes (smile, jaw, blink), lip gap, body or shoulders, facing direction,
+  driver identity at most 0.35, hair colour difference, and target identity at least 0.70 on the full-resolution photo
+  (profiles and small faces by eye). Every pair is also reviewed visually: a warped open-mouth smile can pass the
+  numbers and still be a grimace.
+- **Local limits:** open-mouth smiles, smiles on turned heads and head pitch can't be made by warping. Those need
+  LivePortrait retargeting of another woman's portrait on the GPU.
+
 ## Limits of training on stills
 - No real Sienna video exists, and generated videos have the wrong face, so supervision is per frame. Each 9-frame
   pseudo-clip applies the same smooth camera move to driver and target, so every frame is still an approved image.
@@ -59,5 +74,7 @@ Clothed drivers paired with nude targets (sets N1–N4) penalise the clothing gh
 - `train_wa2_identity.sh`: two-stage DiffSynth run
 - `build_metadata.py`: dataset folder, metadata.json and pseudo-clips
 - `driver_graph.py`: ComfyUI graph for drivers
+- `pair_qa.py`: pair measurements and acceptance gates (MediaPipe, SFace; CPU)
+- `driver_edit.py`: local driver edits (alignment, paired crop, expression transfer, hair recolour)
 - `set_plan.json`: the 24 scene sets
 - `tests/test_wa2_identity.py`: local tests (no GPU)
