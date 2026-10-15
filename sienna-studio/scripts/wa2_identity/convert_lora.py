@@ -37,8 +37,17 @@ def convert(state: Dict[str, object], alpha: float = None) -> Dict[str, object]:
         import numpy as np
         for nk in list(out):
             if nk.endswith('lora_A.weight'):
-                out[nk[:-len('lora_A.weight')] + 'alpha'] = np.asarray(alpha, dtype=np.float32)
+                out[nk[:-len('lora_A.weight')] + 'alpha'] = _scalar(alpha)
     return out
+
+
+def _scalar(v):
+    try:
+        import torch
+        return torch.tensor(float(v))
+    except ImportError:
+        import numpy as np
+        return np.asarray(v, dtype=np.float32)
 
 
 def check_pairs(state: Dict[str, object]) -> int:
@@ -58,7 +67,11 @@ def check_pairs(state: Dict[str, object]) -> int:
 
 
 if __name__ == '__main__':
-    from safetensors.numpy import load_file, save_file
+    try:   # DiffSynth saves bf16, which numpy can't hold; use torch when available (on the GPU pod)
+        import torch  # noqa: F401
+        from safetensors.torch import load_file, save_file
+    except ImportError:
+        from safetensors.numpy import load_file, save_file
     args = sys.argv[1:]
     alpha = float(args[args.index('--alpha') + 1]) if '--alpha' in args else None
     src, dst = [a for a in args if not a.startswith('--') and a != (str(alpha) if alpha is not None else None)][:2]
