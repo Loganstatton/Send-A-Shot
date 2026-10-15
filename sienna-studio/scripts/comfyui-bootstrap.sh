@@ -47,6 +47,7 @@
 #                      (xinsir/controlnet-openpose-sdxl-1.0, ~2.5 GB)
 #   --with-qwen-edit   also install the optional Edit Outfit editor (Qwen-Image-Edit-2509 fp8, ~30 GB)
 #   --with-wan-video   also install Video Studio: Wan2.2 image-to-video + Wan2.2 Animate (~62 GB)
+#   --with-wan-animate2 also install Copy Motion's default model, Wan2.2-Animate-2 14B int8 (Comfy-Org/Wan-Animate-2, ~24 GB)
 #   --with-style-packs also download the Create screen's style packs from Civitai (~2.5 GB):
 #                      Micro bikini (143602), Real-photo look (1368634), Natural skin (248951),
 #                      and in the adult-fashion section French lace lingerie (2903117),
@@ -76,6 +77,7 @@ OUTFIT=0
 POSE=0
 QWEN=0
 WAN=0
+WAN2=0
 PACKS=0
 for arg in "$@"; do
   case "$arg" in
@@ -84,6 +86,7 @@ for arg in "$@"; do
     --with-pose) POSE=1 ;;
     --with-qwen-edit) QWEN=1 ;;
     --with-wan-video) WAN=1 ;;
+    --with-wan-animate2) WAN2=1 ;;
     --with-style-packs) PACKS=1 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -347,10 +350,23 @@ if (( WAN )); then
     "$COMFYUI_DIR/models/loras/WanAnimate_relight_lora_fp16.safetensors" 100000000
 fi
 
+# ── Copy Motion: Wan2.2-Animate-2 (optional, default Copy Motion engine) ──────
+if (( WAN2 )); then
+  log "Wan2.2-Animate-2 license (Hugging Face model card)"
+  check_licenses "Wan-AI/Wan2.2-Animate-2-14B:apache-2.0"
+  grep -rqs '"WanAnimate2ToVideo"' "$COMFYUI_DIR/comfy_extras" || echo "  ! WanAnimate2ToVideo not found — update ComfyUI (needs an August 2026+ build)"
+  WA2="$HF/Comfy-Org/Wan-Animate-2/resolve/main"
+  fetch_model "$WA2/diffusion_models/wan_animate_2_int8_convrot.safetensors" "$COMFYUI_DIR/models/diffusion_models/wan_animate_2_int8_convrot.safetensors" 15000000000
+  fetch_model "$WA2/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" "$COMFYUI_DIR/models/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" 600000000
+  fetch_model "$WA2/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" "$COMFYUI_DIR/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" 6000000000
+  fetch_model "$WA2/clip_vision/clip_vision_h.safetensors" "$COMFYUI_DIR/models/clip_vision/clip_vision_h.safetensors" 1000000000
+  fetch_model "$WA2/vae/Wan2_1_VAE_bf16.safetensors" "$COMFYUI_DIR/models/vae/Wan2_1_VAE_bf16.safetensors" 200000000
+fi
+
 # ── Sienna custom nodes (pose retargeting, garment-only isolation, chin crop, top check) ──
 # Shipped in this repo (scripts/comfy_nodes/sienna_nodes). Copied when the script runs from
 # a checkout, or when SIENNA_NODES_DIR points at an uploaded copy.
-if (( OUTFIT || POSE || QWEN || PACKS || WAN )); then
+if (( OUTFIT || POSE || QWEN || PACKS || WAN || WAN2 )); then
   log "sienna_nodes"
   src="${SIENNA_NODES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/comfy_nodes/sienna_nodes}"
   if [[ -f "$src/__init__.py" ]]; then

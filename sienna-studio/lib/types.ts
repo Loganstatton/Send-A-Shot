@@ -408,7 +408,7 @@ export interface StoredVideo {
 /** How a Video Studio result was made. The source photo's record is never modified. */
 export interface VideoInfo {
   mode: import('./video').VideoMode;
-  model: 'wan2.2-i2v-14b' | 'wan2.2-animate-14b';
+  model: 'wan2.2-i2v-14b' | 'wan2.2-animate-14b' | 'wan2.2-animate-2-14b';
   sourceId: string;
   sourceImage: StoredImage;
   quality: import('./video').VideoQuality;

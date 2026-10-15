@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ComfyGraph } from './types';
 import {
+  ANIMATE2_CHUNK,
+  buildMotion2Graph,
+  MOTION2_FILES,
+  MOTION2_NODE_CLASSES,
+  motion2Chunks,
+  motion2Prompt,
   ANIMATE_CHUNK,
   ANIMATE_STEPS,
   animateLength,
@@ -245,14 +251,21 @@ const SCHEMAS: Record<string, string[]> = {
   SaveVideo: ['video', 'filename_prefix', 'format', 'codec', 'format.codec'],
   DWPreprocessor: ['image', 'detect_hand', 'detect_body', 'detect_face', 'resolution', 'bbox_detector', 'pose_estimator', 'scale_stick_for_xinsr_cn'],
   SiennaFaceCheck: ['images', 'reference', 'threshold', 'min_face'],
+  // Wan Animate 2 (comfy_extras/nodes_wan.py, nodes_custom_sampler.py)
+  WanAnimate2ToVideo: ['positive', 'negative', 'vae', 'width', 'height', 'length', 'batch_size', 'reference_image', 'pose_video', 'clip_vision_output', 'positive_pose', 'clip_vision_output_pose', 'continue_motion', 'video_frame_offset', 'pose_strength', 'pose_start_percent', 'pose_end_percent', 'reference_image_strength'],
+  WanAnimate2Cache: ['model', 'device', 'dtype'],
+  SamplerCustom: ['model', 'add_noise', 'noise_seed', 'cfg', 'positive', 'negative', 'sampler', 'sigmas', 'latent_image'],
+  BasicScheduler: ['model', 'scheduler', 'steps', 'denoise'],
+  KSamplerSelect: ['sampler_name'],
 };
-const REQUIRED_OPTIONAL = new Set(['clip_vision_output', 'start_image', 'ref_pad_image', 'reference_image', 'face_video', 'pose_video', 'background_video', 'character_mask', 'continue_motion', 'audio', 'bit_depth', 'color_space', 'codec', 'format.codec']);
+const REQUIRED_OPTIONAL = new Set(['positive_pose', 'clip_vision_output_pose', 'clip_vision_output', 'start_image', 'ref_pad_image', 'reference_image', 'face_video', 'pose_video', 'background_video', 'character_mask', 'continue_motion', 'audio', 'bit_depth', 'color_space', 'codec', 'format.codec']);
 
 describe('node inputs match ComfyUI', () => {
   const graphs = {
     animateFast: buildAnimateGraph({ imageName: 'a.png', width: 480, height: 704, frames: 81, positive: 'p', negative: 'n', seed: 1, quality: 'fast', face }),
     animateQuality: buildAnimateGraph({ imageName: 'a.png', width: 480, height: 704, frames: 81, positive: 'p', negative: 'n', seed: 1, quality: 'quality', face }),
     motion3: buildMotionGraph({ imageName: 'a.png', videoName: 'm.mp4', width: 480, height: 704, startFrame: 0, frames: 200, chunks: 3, positive: 'p', negative: 'n', seed: 1, face }),
+    motion2x3: buildMotion2Graph({ imageName: 'a.png', videoName: 'm.mp4', width: 480, height: 832, startFrame: 16, frames: 230, chunks: 3, positive: 'p', motionText: 'm', negative: 'n', seed: 1, face }),
   };
   for (const [name, g] of Object.entries(graphs)) {
     it(`${name}: every input exists and every required input is set`, () => {
@@ -267,5 +280,52 @@ describe('node inputs match ComfyUI', () => {
   it('DWPose model names are ones the node offers', () => {
     expect(['yolox_l.torchscript.pt', 'yolox_l.onnx']).toContain(WAN_FILES.bbox);
     expect(['dw-ll_ucoco_384_bs5.torchscript.pt', 'dw-ll_ucoco_384.onnx']).toContain(WAN_FILES.pose);
+  });
+});
+
+describe('Copy Motion v2 (Wan Animate 2)', () => {
+  const base = { imageName: 'sienna/p.png', videoName: 'mot_ab.mp4', width: 480, height: 832, startFrame: 16, positive: 'p', motionText: 'a woman dancing', negative: 'n', seed: 9, face };
+
+  it('81-frame parts continuing from one frame: 81, 161, 241', () => {
+    expect(motion2Chunks(65)).toEqual({ chunks: 1, frames: 65 });
+    expect(motion2Chunks(81)).toEqual({ chunks: 1, frames: 81 });
+    expect(motion2Chunks(82)).toEqual({ chunks: 2, frames: 82 });
+    expect(motion2Chunks(161)).toEqual({ chunks: 2, frames: 161 });
+    expect(motion2Chunks(999)).toEqual({ chunks: 3, frames: 241 });
+  });
+
+  it('follows the official template: no skeleton, 6 LCM steps at cfg 1, shift 5, int8 cache in system RAM', () => {
+    const g = buildMotion2Graph({ ...base, frames: 65, chunks: 1 });
+    expect(Object.values(g).some((x) => x.class_type === 'DWPreprocessor')).toBe(false);
+    expect(g.v_cache.inputs).toMatchObject({ device: 'cpu', dtype: 'int8', model: ['v_fast', 0] });
+    expect(g.v_sigmas.inputs).toMatchObject({ scheduler: 'simple', steps: 6, denoise: 1 });
+    expect(g.v_sampler.inputs.sampler_name).toBe('lcm');
+    expect(g.v_shift.inputs.shift).toBe(5);
+    expect(g.v_ks_0.inputs).toMatchObject({ cfg: 1, add_noise: true, noise_seed: 9, sigmas: ['v_sigmas', 0], sampler: ['v_sampler', 0] });
+    expect(g.v_anim_0.inputs).toMatchObject({ length: ANIMATE2_CHUNK, video_frame_offset: 0, pose_video: ['v_scaled', 0], positive_pose: ['v_pose_text', 0], reference_image: ['v_ref', 0] });
+    expect(g.v_drive_part.inputs).toMatchObject({ batch_index: 16, length: 65 });
+    expect(g.v_frames.inputs.length).toBe(65);
+  });
+
+  it('extra parts continue from the previous frames and offset', () => {
+    const g = buildMotion2Graph({ ...base, frames: 230, chunks: 3 });
+    expect(g.v_anim_1.inputs).toMatchObject({ continue_motion: ['v_new_0', 0], video_frame_offset: ['v_anim_0', 5] });
+    expect(g.v_anim_2.inputs).toMatchObject({ continue_motion: ['v_join_1', 0], video_frame_offset: ['v_anim_1', 5] });
+    expect(checkLinks(g).sort()).toEqual([VIDEO_NODES.face, VIDEO_NODES.poster, VIDEO_NODES.save].sort());
+    for (const x of Object.values(g)) expect(MOTION2_NODE_CLASSES.concat(['SiennaFaceCheck'])).toContain(x.class_type);
+    const files = MOTION2_FILES.map((f) => f[2]);
+    for (const x of Object.values(g)) for (const k of ['unet_name', 'lora_name', 'vae_name', 'clip_name']) if (typeof x.inputs[k] === 'string') expect(files).toContain(x.inputs[k]);
+  });
+
+  it('drops SDXL weights from the profile text', () => {
+    expect(motion2Prompt('long hair, (large round eyes:1.2), (freckles)', '', 'beach')).toBe(
+      'Character Description: long hair, large round eyes, freckles. Realistic photo, natural skin, consistent face.\nBackground description: beach.',
+    );
+  });
+
+  it('main prompt describes looks only', () => {
+    expect(motion2Prompt('long chestnut hair', 'red bodycon dress', '')).toBe(
+      'Character Description: long chestnut hair, wearing red bodycon dress. Realistic photo, natural skin, consistent face.\nBackground description: the same setting as in the photo, background stationary.',
+    );
   });
 });

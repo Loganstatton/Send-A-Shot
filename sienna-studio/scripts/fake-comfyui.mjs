@@ -41,7 +41,7 @@ const SPECS = {
   VAEEncode: { pixels: ['IMAGE'], vae: ['VAE'] },
   SaveImage: { images: ['IMAGE'], filename_prefix: ['STRING'] },
   LoadImage: { image: [['example.png'], { image_upload: true }] },
-  ImageScale: { image: ['IMAGE'], upscale_method: combo(['nearest-exact', 'bilinear', 'lanczos']), width: ['INT'], height: ['INT'], crop: combo(['disabled', 'center']) },
+  ImageScale: { image: ['IMAGE'], upscale_method: combo(['nearest-exact', 'bilinear', 'area', 'bicubic', 'lanczos']), width: ['INT'], height: ['INT'], crop: combo(['disabled', 'center']) },
   ControlNetLoader: { control_net_name: combo(MODELS.control_net_name) },
   ControlNetApplyAdvanced: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], control_net: ['CONTROL_NET'], image: ['IMAGE'], strength: ['FLOAT'], start_percent: ['FLOAT'], end_percent: ['FLOAT'] },
   SetUnionControlNetType: { control_net: ['CONTROL_NET'], type: combo(['auto', 'openpose', 'depth']) },
@@ -108,7 +108,8 @@ if (arg('--wan-video')) {
     'lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors',
     'WanAnimate_relight_lora_fp16.safetensors',
   );
-  MODELS.vae_name.push('wan_2.1_vae.safetensors');
+  MODELS.vae_name.push('wan_2.1_vae.safetensors', 'Wan2_1_VAE_bf16.safetensors');
+  MODELS.unet_name.push('wan_animate_2_int8_convrot.safetensors');
   const clipNames = [...(SPECS.CLIPLoader?.clip_name?.[0] ?? []), 'umt5_xxl_fp8_e4m3fn_scaled.safetensors'];
   Object.assign(SPECS, {
     CLIPLoader: { clip_name: combo(clipNames), type: combo(['wan', 'qwen_image', 'sdxl']), device: combo(['default', 'cpu']) },
@@ -130,6 +131,11 @@ if (arg('--wan-video')) {
     SaveVideo: { video: ['VIDEO'], filename_prefix: ['STRING'], format: combo(['auto', 'mp4', 'mkv', 'webm']) },
     LoadVideo: { file: [['example.mp4'], { video_upload: true }] },
     GetVideoComponents: { video: ['VIDEO'] },
+    WanAnimate2ToVideo: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], vae: ['VAE'], width: ['INT'], height: ['INT'], length: ['INT'], batch_size: ['INT'], video_frame_offset: ['INT'] },
+    WanAnimate2Cache: { model: ['MODEL'], device: combo(['cpu', 'gpu']), dtype: combo(['default', 'int8', 'int4']) },
+    SamplerCustom: { model: ['MODEL'], add_noise: ['BOOLEAN'], noise_seed: ['INT'], cfg: ['FLOAT'], positive: ['CONDITIONING'], negative: ['CONDITIONING'], sampler: ['SAMPLER'], sigmas: ['SIGMAS'], latent_image: ['LATENT'] },
+    BasicScheduler: { model: ['MODEL'], scheduler: combo(['simple', 'normal', 'karras']), steps: ['INT'], denoise: ['FLOAT'] },
+    KSamplerSelect: { sampler_name: combo(['euler', 'lcm', 'dpmpp_2m']) },
     DWPreprocessor: {
       image: ['IMAGE'], detect_hand: combo(['enable', 'disable']), detect_body: combo(['enable', 'disable']), detect_face: combo(['enable', 'disable']), resolution: ['INT'],
       bbox_detector: combo(['None', 'yolox_l.torchscript.pt', 'yolox_l.onnx']), pose_estimator: combo(['dw-ll_ucoco_384_bs5.torchscript.pt', 'dw-ll_ucoco_384.onnx']),

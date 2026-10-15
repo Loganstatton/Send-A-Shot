@@ -48,3 +48,22 @@ licenses (Apache-2.0) first. Needs 24 GB+ VRAM (48 GB+ is faster for 720p and lo
   ComfyUI over HTTP), not visually. Proposed test plan: see the session report.
 - No sound (movement videos are stripped; Wan outputs silent video).
 - Wan Animate 2 (Aug 2026, no pose extraction) could replace Wan2.2 Animate for Copy Motion; worth an A/B on the GPU.
+
+## Copy Motion proof of concept (2026-10-15, real GPU)
+
+Engine: **Wan2.2-Animate-2 14B** (int8, Comfy-Org/Wan-Animate-2; Apache-2.0, confirmed on Hugging Face), now the default
+Copy Motion engine (`SIENNA_MOTION_ENGINE=animate1` selects Wan2.2 Animate v1). Graph follows ComfyUI's official
+`video_wan_animate2` template (6 LCM steps, cfg 1, shift 5, lightx2v LoRA, motion cache in system RAM).
+
+- Inputs: blind-confirmed Sienna photo (face 0.779, red dress, facing camera); ComfyUI's MIT-licensed sample
+  `street_dance_drive.mp4`, 1.0–5.0 s (the first second is a close-up), normalised by the app to 16 fps.
+- RTX 4090 24 GB (Secure Cloud, $0.89/h): **185.8 s** for a 4 s, 528×768 clip including model load; 175 s for a
+  second run; 23.4 s per step; **VRAM peak 17.7 GB** — no offloading needed. Downloads 24.4 GB in ~4 min.
+- Result: motion copied closely (steps, spin, arm swings, the driving camera's push-in), red dress and her room kept,
+  no flicker or broken limbs seen. **Face check failed: 0.22–0.51 on all 4 frames** (bar 0.74). Her hair and eye colour
+  carry over, but the face shape drifts and the dancer's earrings and expressions leak in. Raising
+  `reference_image_strength` to 1.5 did not help (0.25–0.50).
+- Two community-cloud 4090 hosts had broken CUDA (`cuInit` 999); check CUDA before downloading.
+- Network volume: **56 GB used, 19 GB free** of 75 GB; its ComfyUI (2026-09-25) lacks the Wan Animate 2 nodes
+  (need ComfyUI ≥ 0.35).
+- Cost: ≈ $0.50 in total.

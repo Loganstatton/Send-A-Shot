@@ -12,6 +12,7 @@ export interface VideoAvailability {
   modes: Record<VideoMode, { available: boolean; missing: string[] }>;
   faceCheck: boolean;
   adultAllowed: boolean;
+  motionEngine: 'animate2' | 'animate1';
 }
 
 export interface DrivingVideo {

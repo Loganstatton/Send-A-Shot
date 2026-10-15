@@ -32,6 +32,9 @@ export const WAN_FILES = {
   animateFast: 'lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors',
   relight: 'WanAnimate_relight_lora_fp16.safetensors',
   clipVision: 'clip_vision_h.safetensors',
+  /** Copy Motion v2 (Wan2.2-Animate-2-14B, Comfy-Org/Wan-Animate-2): no pose extraction, its own VAE file name. */
+  animate2: 'wan_animate_2_int8_convrot.safetensors',
+  vae2: 'Wan2_1_VAE_bf16.safetensors',
   /** DWPose models (comfyui_controlnet_aux downloads them on first use). */
   bbox: 'yolox_l.onnx',
   pose: 'dw-ll_ucoco_384_bs5.torchscript.pt',
@@ -45,6 +48,8 @@ export type VideoMode = 'animate' | 'motion';
 export type VideoQuality = 'fast' | 'quality';
 export type VideoResolution = '480p' | '720p';
 export type CameraMove = 'still' | 'push_in' | 'orbit' | 'handheld';
+/** Copy Motion model: Wan2.2-Animate-2 (end-to-end, default) or Wan2.2 Animate v1 (DWPose skeleton). */
+export type MotionEngine = 'animate2' | 'animate1';
 
 export const VIDEO_MODE_LABELS: Record<VideoMode, string> = { animate: 'Animate Image', motion: 'Copy Motion' };
 
@@ -315,7 +320,135 @@ export function buildMotionGraph(i: MotionGraphInput): ComfyGraph {
   return g;
 }
 
+// ── Copy Motion v2: Wan2.2-Animate-2 ────────────────────────────────────────────
+/**
+ * Follows ComfyUI's official "video_wan_animate2" template (Motion Transfer subgraph): the driving frames go straight
+ * into WanAnimate2ToVideo (no skeleton), plus a text for the character/background and one for the motion. Base model
+ * int8 + the lightx2v LoRA, 6 steps, LCM sampler, cfg 1, shift 5. The pose-branch cache lives in system RAM (the
+ * template's tip for 24 GB cards). Longer clips are 81-frame parts continuing from the previous part's last frame.
+ */
+export const ANIMATE2_CHUNK = 81;
+export const ANIMATE2_OVERLAP = 1;
+export const MOTION2_STEPS = { steps: 6, cfg: 1, shift: 5, sampler: 'lcm', scheduler: 'simple' };
+
+export function motion2Chunks(frames: number): { chunks: number; frames: number } {
+  const want = Math.max(1, Math.floor(frames));
+  const step = ANIMATE2_CHUNK - ANIMATE2_OVERLAP;
+  const chunks = Math.min(MAX_ANIMATE_CHUNKS, Math.max(1, Math.ceil((want - ANIMATE2_CHUNK) / step) + 1));
+  return { chunks, frames: Math.min(want, ANIMATE2_CHUNK + (chunks - 1) * step) };
+}
+
+export interface Motion2GraphInput extends MotionGraphInput {
+  /** What the motion is (the template's pose prompt), e.g. "a woman doing an energetic street dance". */
+  motionText: string;
+  /** Where the motion-branch cache is kept: 'cpu' (safe on 24 GB cards) or 'gpu'. */
+  cacheDevice?: 'cpu' | 'gpu';
+}
+
+export function buildMotion2Graph(i: Motion2GraphInput): ComfyGraph {
+  const g: ComfyGraph = {
+    v_image: n('LoadImage', { image: i.imageName }, 'Sienna photo'),
+    v_ref: n('ImageScale', { image: ['v_image', 0], upscale_method: 'area', width: i.width, height: i.height, crop: 'center' }, 'Sienna photo, output size'),
+    v_drive: n('LoadVideo', { file: i.videoName }, 'Driving video'),
+    v_drive_frames: n('GetVideoComponents', { video: ['v_drive', 0] }),
+    v_drive_part: n('ImageFromBatch', { image: ['v_drive_frames', 0], batch_index: Math.max(0, Math.floor(i.startFrame)), length: i.frames }, 'Chosen part'),
+    v_scaled: n('ImageScale', { image: ['v_drive_part', 0], upscale_method: 'area', width: i.width, height: i.height, crop: 'center' }),
+    v_drive_first: n('ImageFromBatch', { image: ['v_scaled', 0], batch_index: 0, length: 1 }),
+    v_clipvision: n('CLIPVisionLoader', { clip_name: WAN_FILES.clipVision }),
+    v_cv_ref: n('CLIPVisionEncode', { clip_vision: ['v_clipvision', 0], image: ['v_ref', 0], crop: 'none' }),
+    v_cv_pose: n('CLIPVisionEncode', { clip_vision: ['v_clipvision', 0], image: ['v_drive_first', 0], crop: 'none' }),
+    v_clip: n('CLIPLoader', { clip_name: WAN_FILES.textEncoder, type: 'wan', device: 'default' }),
+    v_pos: n('CLIPTextEncode', { clip: ['v_clip', 0], text: i.positive }, 'Character + background'),
+    v_pose_text: n('CLIPTextEncode', { clip: ['v_clip', 0], text: i.motionText }, 'Motion'),
+    v_neg: n('CLIPTextEncode', { clip: ['v_clip', 0], text: i.negative }, 'Negative'),
+    v_vae: n('VAELoader', { vae_name: WAN_FILES.vae2 }),
+    v_unet: n('UNETLoader', { unet_name: WAN_FILES.animate2, weight_dtype: 'default' }),
+    v_fast: n('LoraLoaderModelOnly', { model: ['v_unet', 0], lora_name: WAN_FILES.animateFast, strength_model: 1 }),
+    v_cache: n('WanAnimate2Cache', { model: ['v_fast', 0], device: i.cacheDevice ?? 'cpu', dtype: 'int8' }, 'Motion-branch cache'),
+    v_shift: n('ModelSamplingSD3', { model: ['v_cache', 0], shift: MOTION2_STEPS.shift }),
+    v_sigmas: n('BasicScheduler', { model: ['v_cache', 0], scheduler: MOTION2_STEPS.scheduler, steps: MOTION2_STEPS.steps, denoise: 1 }),
+    v_sampler: n('KSamplerSelect', { sampler_name: MOTION2_STEPS.sampler }),
+  };
+  let images: [string, number] | null = null;
+  let anim: string | null = null;
+  for (let c = 0; c < i.chunks; c++) {
+    const a = `v_anim_${c}`;
+    g[a] = n(
+      'WanAnimate2ToVideo',
+      {
+        positive: ['v_pos', 0],
+        negative: ['v_neg', 0],
+        vae: ['v_vae', 0],
+        reference_image: ['v_ref', 0],
+        pose_video: ['v_scaled', 0],
+        clip_vision_output: ['v_cv_ref', 0],
+        positive_pose: ['v_pose_text', 0],
+        clip_vision_output_pose: ['v_cv_pose', 0],
+        width: i.width,
+        height: i.height,
+        length: ANIMATE2_CHUNK,
+        batch_size: 1,
+        video_frame_offset: anim ? [anim, 5] : 0,
+        pose_strength: 1,
+        pose_start_percent: 0,
+        pose_end_percent: 1,
+        reference_image_strength: 1,
+        ...(images ? { continue_motion: images } : {}),
+      },
+      c ? `Continue (part ${c + 1})` : 'Animate (part 1)',
+    );
+    g[`v_ks_${c}`] = n('SamplerCustom', {
+      model: ['v_shift', 0],
+      add_noise: true,
+      noise_seed: i.seed,
+      cfg: MOTION2_STEPS.cfg,
+      positive: [a, 0],
+      negative: [a, 1],
+      sampler: ['v_sampler', 0],
+      sigmas: ['v_sigmas', 0],
+      latent_image: [a, 2],
+    });
+    g[`v_trim_${c}`] = n('TrimVideoLatent', { samples: [`v_ks_${c}`, 0], trim_amount: [a, 3] });
+    g[`v_dec_${c}`] = n('VAEDecode', { samples: [`v_trim_${c}`, 0], vae: ['v_vae', 0] });
+    g[`v_new_${c}`] = n('ImageFromBatch', { image: [`v_dec_${c}`, 0], batch_index: [a, 4], length: 4096 });
+    if (images) {
+      g[`v_join_${c}`] = n('ImageBatch', { image1: images, image2: [`v_new_${c}`, 0] });
+      images = [`v_join_${c}`, 0];
+    } else images = [`v_new_${c}`, 0];
+    anim = a;
+  }
+  g.v_frames = n('ImageFromBatch', { image: images!, batch_index: 0, length: i.frames });
+  addOutputs(g, ['v_frames', 0], i.frames, false, i.face);
+  return g;
+}
+
+/** Text for Wan Animate 2's main prompt: looks only (character + background), no motion words. */
+export function motion2Prompt(character: string, outfit: string, scene: string): string {
+  // SDXL weighting like "(large eyes:1.2)" means nothing to Wan's text encoder: keep the words only
+  const clean = (t: string) =>
+    t
+      .replace(/\(([^()]*?)(?::\s*[\d.]+)?\)/g, '$1')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/[.,\s]+$/, '');
+  const who = [clean(character) || 'a woman', clean(outfit) ? `wearing ${clean(outfit)}` : ''].filter(Boolean).join(', ');
+  return `Character Description: ${who}. Realistic photo, natural skin, consistent face.\nBackground description: ${clean(scene) || 'the same setting as in the photo, background stationary'}.`;
+}
+
 /** Every node class a video graph can use (for availability checks). */
+export const MOTION2_NODE_CLASSES = [
+  'LoadImage', 'ImageScale', 'LoadVideo', 'GetVideoComponents', 'ImageFromBatch', 'CLIPVisionLoader', 'CLIPVisionEncode', 'CLIPLoader', 'CLIPTextEncode',
+  'VAELoader', 'UNETLoader', 'LoraLoaderModelOnly', 'WanAnimate2Cache', 'ModelSamplingSD3', 'BasicScheduler', 'KSamplerSelect', 'WanAnimate2ToVideo',
+  'SamplerCustom', 'TrimVideoLatent', 'VAEDecode', 'ImageBatch', 'CreateVideo', 'SaveVideo', 'SaveImage',
+];
+export const MOTION2_FILES: [string, string, string][] = [
+  ['UNETLoader', 'unet_name', WAN_FILES.animate2],
+  ['LoraLoaderModelOnly', 'lora_name', WAN_FILES.animateFast],
+  ['CLIPLoader', 'clip_name', WAN_FILES.textEncoder],
+  ['VAELoader', 'vae_name', WAN_FILES.vae2],
+  ['CLIPVisionLoader', 'clip_name', WAN_FILES.clipVision],
+];
+
 export const VIDEO_NODE_CLASSES: Record<VideoMode, string[]> = {
   animate: ['LoadImage', 'UNETLoader', 'CLIPLoader', 'VAELoader', 'CLIPTextEncode', 'LoraLoaderModelOnly', 'ModelSamplingSD3', 'WanImageToVideo', 'KSamplerAdvanced', 'VAEDecode', 'CreateVideo', 'SaveVideo', 'ImageFromBatch', 'SaveImage'],
   motion: [

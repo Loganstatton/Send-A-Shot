@@ -445,7 +445,7 @@ function VideoCard({ rec }: { rec: GenerationRecord }) {
       )}
       <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-ink-400">Model</dt>
-        <dd>{v.model === 'wan2.2-i2v-14b' ? 'Wan2.2 image-to-video 14B' : 'Wan2.2 Animate 14B'}</dd>
+        <dd>{v.model === 'wan2.2-i2v-14b' ? 'Wan2.2 image-to-video 14B' : v.model === 'wan2.2-animate-2-14b' ? 'Wan2.2-Animate-2 14B' : 'Wan2.2 Animate 14B'}</dd>
         <dt className="text-ink-400">Length</dt>
         <dd>
           {v.result ? `${v.result.seconds} s · ${v.result.frames} frames` : `${v.seconds} s`} at 16 fps

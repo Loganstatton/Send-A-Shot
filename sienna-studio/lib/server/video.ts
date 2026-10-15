@@ -23,8 +23,14 @@ import {
   animateLength,
   animatePrompt,
   buildAnimateGraph,
+  buildMotion2Graph,
   buildMotionGraph,
   CameraMove,
+  MOTION2_FILES,
+  MOTION2_NODE_CLASSES,
+  motion2Chunks,
+  motion2Prompt,
+  MotionEngine,
   estimateMinutes,
   FaceCheckSpec,
   MAX_MOTION_SECONDS,
@@ -68,10 +74,18 @@ export function videoEnabled(): boolean {
   return process.env.SIENNA_VIDEO === 'true';
 }
 
+/** Copy Motion model: Wan2.2-Animate-2 by default; SIENNA_MOTION_ENGINE=animate1 selects Wan2.2 Animate v1 (DWPose). */
+export function motionEngine(): MotionEngine {
+  return process.env.SIENNA_MOTION_ENGINE === 'animate1' ? 'animate1' : 'animate2';
+}
+
+const MOTION2_TEXT = 'a woman performing the movement from the reference video naturally, background stationary';
+
 export const VIDEO_WORKFLOWS: Record<VideoMode, { id: string; name: string; model: VideoInfo['model'] }> = {
   animate: { id: 'video-wan22-i2v', name: 'Animate Image · Wan2.2 I2V 14B', model: 'wan2.2-i2v-14b' },
   motion: { id: 'video-wan22-animate', name: 'Copy Motion · Wan2.2 Animate 14B', model: 'wan2.2-animate-14b' },
 };
+const MOTION2_WORKFLOW = { id: 'video-wan22-animate2', name: 'Copy Motion · Wan2.2-Animate-2 14B', model: 'wan2.2-animate-2-14b' as const };
 
 export interface VideoAvailability {
   enabled: boolean;
@@ -82,6 +96,7 @@ export interface VideoAvailability {
   /** The frame face check is installed on the GPU (without it every video goes to Needs Review). */
   faceCheck: boolean;
   adultAllowed: boolean;
+  motionEngine: MotionEngine;
 }
 
 /** What the GPU server lacks for each mode (node classes and model files). */
@@ -90,7 +105,7 @@ export async function videoAvailability(): Promise<VideoAvailability> {
   const backend = createBackend(await getComfyUrl());
   const ffmpeg = !!(await ffmpegPath());
   const none = { available: false, missing: [] as string[] };
-  const base = { enabled, backend: backend.kind, ffmpeg, adultAllowed: adultContentAllowed() };
+  const base = { enabled, backend: backend.kind, ffmpeg, adultAllowed: adultContentAllowed(), motionEngine: motionEngine() };
   if (!enabled) return { ...base, modes: { animate: none, motion: none }, faceCheck: false };
   const noFfmpeg = 'ffmpeg on the app server (npm install, or set FFMPEG_PATH)';
   if (backend.kind === 'mock') {
@@ -101,13 +116,14 @@ export async function videoAvailability(): Promise<VideoAvailability> {
     const missing: string[] = [];
     try {
       const absent: string[] = [];
+      const v2 = mode === 'motion' && motionEngine() === 'animate2';
       await Promise.all(
-        VIDEO_NODE_CLASSES[mode].map(async (c) => {
+        (v2 ? MOTION2_NODE_CLASSES : VIDEO_NODE_CLASSES[mode]).map(async (c) => {
           if (!(await backend.nodeInfo(c))) absent.push(c);
         }),
       );
       if (absent.length) missing.push(`${describeMissing(absent.sort())} — update ComfyUI / run comfyui-bootstrap.sh --with-wan-video`);
-      for (const [cls, input, file] of VIDEO_FILES[mode]) {
+      for (const [cls, input, file] of v2 ? MOTION2_FILES : VIDEO_FILES[mode]) {
         const choices = await backend.inputChoices(cls, input);
         if (!choices.includes(file)) missing.push(`model file ${file}`);
       }
@@ -220,7 +236,8 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
   const { width, height } = videoSize(sourceImage.width ?? source.params.width, sourceImage.height ?? source.params.height, req.resolution);
   const negative = [WAN_NEGATIVE, ADULT_ONLY_NEGATIVE, contentMode === 'sfw' ? SFW_NEGATIVE : ''].filter(Boolean).join(', ');
   const seed = req.seed >= 0 ? Math.floor(req.seed) : Math.floor(Math.random() * 2 ** 48);
-  const wf = VIDEO_WORKFLOWS[req.mode];
+  const engine = motionEngine();
+  const wf = req.mode === 'motion' && engine === 'animate2' ? MOTION2_WORKFLOW : VIDEO_WORKFLOWS[req.mode];
 
   let info: VideoInfo;
   let positive: string;
@@ -255,14 +272,19 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
     const start = Math.min(Math.max(0, drive.video.seconds - 1), Math.max(0, req.start ?? 0));
     const startFrame = Math.round(start * VIDEO_FPS);
     const wantFrames = Math.round(Math.min(MAX_MOTION_SECONDS, Math.max(1, req.seconds ?? MAX_MOTION_SECONDS)) * VIDEO_FPS);
-    const chunks = motionChunks(Math.min(wantFrames, drive.video.frames - startFrame));
+    const v2 = engine === 'animate2';
+    const chunks = (v2 ? motion2Chunks : motionChunks)(Math.min(wantFrames, drive.video.frames - startFrame));
     const frames = chunks.frames;
     const seconds = Math.round((frames / VIDEO_FPS) * 10) / 10;
     if (req.quality === 'quality') warnings.push('Copy Motion has one speed setting (its 6-step model); “quality” only applies to Animate Image.');
     if (req.resolution === '720p') warnings.push('Copy Motion is tuned for 480p; 720p takes about twice as long and may look softer, not sharper.');
-    positive = motionPrompt(lock.text);
+    // Wan Animate 2: the main prompt describes looks only (her profile + the photo's outfit; Scene = background)
+    const outfit = applyIdentityLock(source.fields.outfit ?? '', character.extraLockedTerms).text;
+    positive = v2 ? motion2Prompt(character.appearanceTraits, outfit, lock.text) : motionPrompt(lock.text);
     build = (imageName, videoName, face) =>
-      buildMotionGraph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, negative, seed, face });
+      v2
+        ? buildMotion2Graph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, motionText: MOTION2_TEXT, negative, seed, face })
+        : buildMotionGraph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, negative, seed, face });
     info = {
       mode: 'motion',
       model: wf.model,

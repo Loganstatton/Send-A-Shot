@@ -14,6 +14,7 @@ import {
   MAX_MOTION_SECONDS,
   MAX_MOTION_TEXT,
   MOTION_PRESETS,
+  motion2Chunks,
   motionChunks,
   VIDEO_FPS,
   VideoMode,
@@ -78,7 +79,7 @@ function VideoStudio() {
   useEffect(() => {
     if (length > maxLength) setLength(maxLength);
   }, [maxLength, length]);
-  const chunks = motionChunks(Math.round(length * VIDEO_FPS));
+  const chunks = (avail?.motionEngine === 'animate1' ? motionChunks : motion2Chunks)(Math.round(length * VIDEO_FPS));
   const minutes =
     mode === 'animate'
       ? estimateMinutes({ mode, quality, ...size, frames: seconds * VIDEO_FPS + 1 })
