@@ -25,7 +25,8 @@ command -v runpodctl >/dev/null && [ -n "${RUNPOD_API_KEY:-}" ] && [ -n "${RUNPO
 DEADLINE_S=${DEADLINE_SECONDS:-$((HARD_MIN * 60))}
 ( sleep $DEADLINE_S; log HARD_DEADLINE; sync; runpodctl remove pod "$RUNPOD_POD_ID" ) &
 # any failed step removes the pod at once (no idle billing until the deadline); a normal finish leaves it up for eval
-trap 'rc=$?; if [ $rc -ne 0 ]; then log "FAILED rc=$rc - removing pod"; sync; runpodctl remove pod "$RUNPOD_POD_ID"; fi' EXIT
+# (FAIL_GRACE seconds first, so the session can read the error; still far inside the cap)
+trap 'rc=$?; if [ $rc -ne 0 ]; then log "FAILED rc=$rc - removing pod in ${FAIL_GRACE:-180}s"; sync; sleep ${FAIL_GRACE:-180}; runpodctl remove pod "$RUNPOD_POD_ID"; fi' EXIT
 log "deadline armed: ${DEADLINE_S}s"; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null; free -g | sed -n 2p; df -h $P $R ${VOLD:+$VMNT} 2>/dev/null | tail -3
 PY=/workspace/runpod-slim/ComfyUI/.venv-cu128/bin/python; [ -x $PY ] || PY=python3
 # 2. dataset bundle (uploaded next to this script) must match its checksum
@@ -41,10 +42,19 @@ rm -f $P/gate.bin; log transfer_gate_ok
 [ -n "${STOP_AFTER_GATE:-}" ] && { log STOP_AFTER_GATE; exit 0; }   # test hook: everything below needs a GPU
 # 4. trainer + models (models on container disk only)
 log deps; (cd /root && git clone -q https://github.com/modelscope/DiffSynth-Studio dss && cd dss && git fetch -q --depth 1 origin 4a2d8af77849b20702b2639338f6fe4512f2f93e && git checkout -q FETCH_HEAD)
-cd /root/dss && $PY -m pip install -q --no-deps -e . && $PY -m pip install -q "imageio[ffmpeg]" ftfy modelscope peft accelerate pandas psutil "huggingface_hub[hf_xet]" opencv-python-headless
+cd /root/dss && $PY -m pip install -q --no-deps -e . 2>&1 | tail -3
+# one package per call (same set as the passed smoke test): one constraint conflict (this image sets PIP_CONSTRAINT)
+# must not drop the others; the import check below fails the run within a minute if anything is missing
+for pkg in "imageio[ffmpeg]" ftfy modelscope peft accelerate pandas psutil librosa "huggingface_hub[hf_xet]"; do $PY -m pip install -q "$pkg" 2>&1 | tail -2; done
+$PY -c "import cv2" 2>/dev/null || $PY -m pip install -q opencv-python-headless 2>&1 | tail -2
+$PY -c "import cv2, imageio_ffmpeg, ftfy, peft, accelerate, pandas, librosa, modelscope, diffsynth; print('DEPS_OK cv2', cv2.__version__)" || { log DEPS_FAIL; exit 7; }
+export FFMPEG=$($PY -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())" 2>/dev/null || command -v ffmpeg)
+[ -x "${FFMPEG:-}" ] || { log NO_FFMPEG; exit 6; }
+# dataset first (a few seconds, CPU): a problem here shows up before any model download
+log build_dataset; $PY /workspace/wa2_identity/make_pilot.py $FROZEN $C/manifest.json ${INCLUDE:+--include $INCLUDE} 2>&1 | tee $L/composition.log || { log COMPOSE_FAIL; exit 6; }
+$PY /workspace/wa2_identity/build_metadata.py $C/manifest.json $C/data 2>&1 | tee -a $L/composition.log || { log BUILD_FAIL; exit 6; }
+log "dataset built: $(ls $C/data/clips | wc -l) clip files, $($PY -c "import json;print(len(json.load(open('$C/data/metadata.json'))))") rows"
 (HF_DL_DIR=$M HF_XET_HIGH_PERFORMANCE=1 $PY /workspace/wa2_identity/smoke/hf_dl.py > $L/dl.log 2>&1 &)
-log build_dataset; $PY /workspace/wa2_identity/make_pilot.py $FROZEN $C/manifest.json ${INCLUDE:+--include $INCLUDE} | tee $L/composition.log
-$PY /workspace/wa2_identity/build_metadata.py $C/manifest.json $C/data | tee -a $L/composition.log
 export WA2_DATASET_BASE=$C/data
 until grep -q ALL_DOWNLOADS_DONE $L/dl.log; do sleep 10; grep -q MISSING $L/dl.log && { log DOWNLOAD_MISSING; exit 4; }; done
 T5=$(find $M -name "models_t5_umt5-xxl-enc-bf16.pth" | head -1); CLIP=$(find $M -name "models_clip_open-clip*.pth" | head -1)

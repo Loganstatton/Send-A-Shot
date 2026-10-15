@@ -338,7 +338,7 @@ def _pod_env(tmp, fake_ctl=True, **kw):
         open(bin_ + '/runpodctl', 'w').write(f'#!/bin/bash\necho "$@" >> {tmp}/removed\n'); os.chmod(bin_ + '/runpodctl', 0o755)
     path = bin_ + ':' + ':'.join(x for x in os.environ['PATH'].split(':') if not (fake_ctl is False and os.path.exists(os.path.join(x, 'runpodctl'))))
     env = {'PATH': path, 'HOME': tmp, 'HARD_MIN': '240', 'RUNPOD_API_KEY': 'k', 'RUNPOD_POD_ID': 'podX', 'PULL_DIR': tmp + '/pull',
-           'VOL_MOUNT': tmp + '/novol', 'WORK_ROOT': tmp + '/root', 'UPLOAD_DIR': tmp + '/up', 'GATE_BYTES': '100000'}
+           'VOL_MOUNT': tmp + '/novol', 'WORK_ROOT': tmp + '/root', 'UPLOAD_DIR': tmp + '/up', 'GATE_BYTES': '100000', 'FAIL_GRACE': '0'}
     env.update(kw); return env
 
 
