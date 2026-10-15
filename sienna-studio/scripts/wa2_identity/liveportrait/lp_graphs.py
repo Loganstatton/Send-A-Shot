@@ -12,10 +12,10 @@ NEG = ('freckles, long dark brown wavy hair, green eyes, smiling, open mouth, te
        'illustration, 3d render, deformed, blurry, extra fingers, watermark, text')
 
 
-def source_graph(prompt, seed, prefix, w=832, h=1216):
+def source_graph(prompt, seed, prefix, w=832, h=1216, neg=None):
     return {'1': {'class_type': 'CheckpointLoaderSimple', 'inputs': {'ckpt_name': CKPT}},
             '2': {'class_type': 'CLIPTextEncode', 'inputs': {'clip': ['1', 1], 'text': prompt}},
-            '3': {'class_type': 'CLIPTextEncode', 'inputs': {'clip': ['1', 1], 'text': NEG}},
+            '3': {'class_type': 'CLIPTextEncode', 'inputs': {'clip': ['1', 1], 'text': neg or NEG}},
             '4': {'class_type': 'EmptyLatentImage', 'inputs': {'width': w, 'height': h, 'batch_size': 1}},
             '5': {'class_type': 'KSampler', 'inputs': {'model': ['1', 0], 'positive': ['2', 0], 'negative': ['3', 0], 'latent_image': ['4', 0],
                                                        'seed': seed, 'steps': 28, 'cfg': 5.0, 'sampler_name': 'dpmpp_2m', 'scheduler': 'karras', 'denoise': 1.0}},
@@ -95,3 +95,55 @@ def lp_graph_relative(source_image, neutral_image, target_image, prefix, multipl
         g[f'c{v}'] = {'class_type': 'LivePortraitComposite', 'inputs': {'source_image': ['src', 0], 'cropped_image': [f'p{v}', 0], 'liveportrait_out': [f'p{v}', 1]}}
         g[f's{v}'] = {'class_type': 'SaveImage', 'inputs': {'images': [f'c{v}', 0], 'filename_prefix': f'{prefix}_{v}'}}
     return g
+
+
+# Expression sources: the woman is generated WITH the target's natural expression; LivePortrait then only matches
+# head rotation ('off' mode = rotation and translation from the driving image, expression and face shape from the source).
+NEG_EXPR = ('freckles, long dark brown wavy hair, green eyes, grimace, distorted teeth, deformed mouth, asymmetric face, '
+            'nude, cleavage, lingerie, cartoon, illustration, 3d render, deformed, blurry, extra fingers, watermark, text')
+
+
+def lp_graph_rotation(source_image, target_image, prefix):
+    crop = lambda img: {'class_type': 'LivePortraitCropper', 'inputs': {
+        'pipeline': ['pipe', 0], 'cropper': ['cropper', 0], 'source_image': [img, 0], 'dsize': 512, 'scale': 2.3,
+        'vx_ratio': 0.0, 'vy_ratio': -0.125, 'face_index': 0, 'face_index_order': 'large-small', 'rotate': True}}
+    return {'pipe': {'class_type': 'DownloadAndLoadLivePortraitModels', 'inputs': {'precision': 'fp16', 'mode': 'human'}},
+            'cropper': {'class_type': 'LivePortraitLoadMediaPipeCropper', 'inputs': {'landmarkrunner_onnx_device': 'CPU', 'keep_model_loaded': True}},
+            'src': {'class_type': 'LoadImage', 'inputs': {'image': source_image}},
+            'tgt': {'class_type': 'LoadImage', 'inputs': {'image': target_image}},
+            'scrop': crop('src'), 'tcrop': crop('tgt'),
+            'p': {'class_type': 'LivePortraitProcess', 'inputs': {
+                'pipeline': ['pipe', 0], 'crop_info': ['scrop', 1], 'source_image': ['src', 0], 'driving_images': ['tcrop', 0],
+                'lip_zero': False, 'lip_zero_threshold': 0.03, 'stitching': True, 'delta_multiplier': 1.0, 'mismatch_method': 'constant',
+                'relative_motion_mode': 'off', 'driving_smooth_observation_variance': 3e-6}},
+            'c': {'class_type': 'LivePortraitComposite', 'inputs': {'source_image': ['src', 0], 'cropped_image': ['p', 0], 'liveportrait_out': ['p', 1]}},
+            's': {'class_type': 'SaveImage', 'inputs': {'images': ['c', 0], 'filename_prefix': prefix}}}
+
+
+_WHO = ['28 year old Scandinavian woman with platinum blonde pixie cut', '31 year old Black woman with short natural curls',
+        '26 year old Korean woman with straight black shoulder-length hair', '35 year old Irish woman with copper red bob',
+        '29 year old Indian woman with black hair in a high bun', '33 year old woman with ash blonde shoulder-length straight hair',
+        '27 year old Brazilian woman with short dyed burgundy hair', '30 year old Japanese woman with black hair and blunt bangs',
+        '34 year old Black woman with long box braids', '25 year old Polish woman with honey blonde braid',
+        '32 year old Mexican woman with short black curly hair', '36 year old woman with silver grey bob']
+_TOP = ['white t-shirt', 'navy sweater', 'green blouse', 'black turtleneck', 'red hoodie', 'striped shirt']
+_PLACE = ['kitchen', 'living room', 'bedroom by a window', 'cafe', 'office', 'city street']
+# target -> (expression, head/framing), written from the approved photo; yaw sign: + = face turned toward image right
+EXPR_TARGETS = {
+    'O-002': ('big natural smile showing upper teeth, eyes smiling', 'close-up phone selfie, facing the camera, head tilted slightly'),
+    'O-011': ('big natural toothy smile, eyes crinkled', 'close-up phone selfie, facing the camera, head slightly tilted'),
+    'R1-09': ('laughing out loud with mouth open, genuine laughter', 'head and shoulders photo, facing the camera, head slightly tilted'),
+    'R1-11': ('big open smile showing teeth, joyful', 'head and shoulders photo, head tilted to one side, facing the camera'),
+    'P43':   ('talking with mouth open mid-sentence, teeth visible, friendly', 'chest-up candid photo, facing the camera, one hand raised near her cheek'),
+    'O-005': ('soft closed-mouth smile', 'close-up phone selfie, head turned three-quarter to the side and tilted'),
+    'O-007': ('soft closed-mouth smile', 'close-up phone selfie, head strongly tilted to one side'),
+    'O-013': ('soft closed-mouth smile, warm eyes', 'close-up phone selfie, facing the camera'),
+    'O-025': ('gentle closed-mouth smile', 'close-up phone selfie, head tilted to one side'),
+    'P7':    ('warm closed-mouth smile', 'head and shoulders photo, body and face turned three-quarter to the right, seen from her left side'),
+}
+
+
+def expr_prompt(i, expr, frame):
+    kind, pose = frame.split(', ', 1)
+    return (f'{kind} of a {_WHO[i % len(_WHO)]}, {expr}, {pose}, wearing a {_TOP[i % len(_TOP)]}, in a {_PLACE[(i // 2) % len(_PLACE)]}, '
+            'natural light, realistic photo, natural skin texture')
