@@ -1,30 +1,144 @@
 {
  "note": "Three-scene proof of concept. Same outfit, place and seed inside a set; only pose guidance and expression change. All Sienna images need approval; every ordered pair (ref != target) inside a set is a training example. None of these outfits/places is used by any evaluation clip.",
  "sets": [
-  {"id": "P1_headturn", "anchor": "P13 (approved)", "outfit": "cream cable-knit cardigan over a white top", "place": "cozy cafe interior with wooden tables", "lighting": "warm window daylight",
-   "framing": "head and shoulders", "seed": 71001,
-   "views": [["front, head level", "front_level", "calm neutral expression, lips closed"],
-             ["three-quarter view facing left of frame", "tqL", "soft smile"],
-             ["side profile facing left of frame", "profL", "calm neutral expression"],
-             ["three-quarter view facing right of frame", "tqR", "soft smile"],
-             ["side profile facing right of frame", "profR", "relaxed expression"],
-             ["looking back over her shoulder toward the camera", "over_shoulder", "slight smile"]]},
-  {"id": "P2_talking", "anchor": "P43 (approved)", "outfit": "light denim shirt", "place": "bright living room", "lighting": "soft daylight",
-   "framing": "chest-up", "seed": 71002,
-   "views": [["front, head level", "front_level", "neutral expression, lips closed"],
-             ["front, head level", "front_level", "talking mid-sentence, mouth open, teeth visible"],
-             ["slight turn to the right", "tqR", "laughing, mouth wide open"],
-             ["front, head level", "front_level", "big smile showing teeth"],
-             ["slight turn to the left", "tqL", "surprised expression, mouth open in an O shape"],
-             ["chin slightly lowered", "down", "gentle closed smile, eyes looking down"]]},
-  {"id": "P3_fullbody", "anchor": "new", "outfit": "grey t-shirt, blue jeans and white sneakers", "place": "city park with a paved path", "lighting": "soft daylight",
-   "framing": "full body, head to toe, feet visible", "seed": 71003,
-   "views": [["standing facing the camera, arms relaxed", "full", "soft smile"],
-             ["walking toward the camera", "full_walk", "natural smile"],
-             ["standing turned three-quarters to the left, face toward the camera", "full_tqL", "soft smile"],
-             ["standing in side profile facing right of frame", "full_profR", "neutral expression"],
-             ["standing with one hand on hip, weight on one leg", "full_hip", "confident smile"],
-             ["arms raised above her head, stretching", "full_arms", "laughing"]]}
+  {
+   "id": "P1_headturn",
+   "anchor": "P13 (approved)",
+   "outfit": "cream cable-knit cardigan over a white top",
+   "place": "cozy cafe interior with wooden tables",
+   "lighting": "warm window daylight",
+   "framing": "head and shoulders",
+   "seed": 71001,
+   "views": [
+    [
+     "front, head level",
+     "front_level",
+     "calm neutral expression, lips closed"
+    ],
+    [
+     "three-quarter view facing left of frame",
+     "tqL",
+     "soft smile"
+    ],
+    [
+     "side profile facing left of frame",
+     "profL",
+     "calm neutral expression"
+    ],
+    [
+     "three-quarter view facing right of frame",
+     "tqR",
+     "soft smile"
+    ],
+    [
+     "side profile facing right of frame",
+     "profR",
+     "relaxed expression"
+    ],
+    [
+     "looking back over her shoulder toward the camera",
+     "over_shoulder",
+     "slight smile"
+    ],
+    [
+     "side profile facing left of frame, head level",
+     "profL2",
+     "slight smile"
+    ]
+   ]
+  },
+  {
+   "id": "P2_talking",
+   "anchor": "P43 (approved)",
+   "outfit": "light denim shirt",
+   "place": "bright living room",
+   "lighting": "soft daylight",
+   "framing": "chest-up",
+   "seed": 71002,
+   "views": [
+    [
+     "front, head level",
+     "front_level",
+     "neutral expression, lips closed"
+    ],
+    [
+     "front, head level",
+     "front_level",
+     "talking mid-sentence, mouth open, teeth visible"
+    ],
+    [
+     "slight turn to the right",
+     "tqR",
+     "laughing, mouth wide open"
+    ],
+    [
+     "front, head level",
+     "front_level",
+     "big smile showing teeth"
+    ],
+    [
+     "slight turn to the left",
+     "tqL",
+     "surprised expression, mouth open in an O shape"
+    ],
+    [
+     "chin slightly lowered",
+     "down",
+     "gentle closed smile, eyes looking down"
+    ],
+    [
+     "front, head level, gesturing with one hand",
+     "front_level",
+     "talking animatedly, mouth open"
+    ]
+   ]
+  },
+  {
+   "id": "P3_fullbody",
+   "anchor": "new",
+   "outfit": "grey t-shirt, blue jeans and white sneakers",
+   "place": "city park with a paved path",
+   "lighting": "soft daylight",
+   "framing": "full body, head to toe, feet visible",
+   "seed": 71003,
+   "views": [
+    [
+     "standing facing the camera, arms relaxed",
+     "full",
+     "soft smile"
+    ],
+    [
+     "walking toward the camera",
+     "full_walk",
+     "natural smile"
+    ],
+    [
+     "standing turned three-quarters to the left, face toward the camera",
+     "full_tqL",
+     "soft smile"
+    ],
+    [
+     "standing in side profile facing right of frame",
+     "full_profR",
+     "neutral expression"
+    ],
+    [
+     "standing with one hand on hip, weight on one leg",
+     "full_hip",
+     "confident smile"
+    ],
+    [
+     "arms raised above her head, stretching",
+     "full_arms",
+     "laughing"
+    ],
+    [
+     "turning away, looking back over her shoulder toward the camera",
+     "full_turn",
+     "soft smile"
+    ]
+   ]
+  }
  ],
  "per_set": "6 views + 1 spare = 7 Sienna images; 1 driver per Sienna image",
  "examples": "3 sets x (6 x 5 ordered pairs) = 90 single-frame examples + 18 nine-frame camera-move clips"
