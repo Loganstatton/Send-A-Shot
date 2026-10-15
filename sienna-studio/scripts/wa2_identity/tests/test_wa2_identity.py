@@ -65,13 +65,14 @@ def test_face_bounds():
 
 
 def test_build_metadata_and_clips():
-    A = f'{SP}/stageA'
+    A = f'{SP}/stageA'; d0 = tempfile.mkdtemp()
     sets = [
         {'id': 'demo_profile', 'reference': f'{SP}/sienna_v2_dataset/sienna_v2_013.jpg', 'driver': f'{A}/pose_src/profL2.png',
-         'target': f'{A}/pose_cands/p03.png', 'prompt': 'Character Description: test', 'face_box': '0.15,0.18,0.55,0.42', 'clip': True},
+         'target': f'{A}/pose_cands/p03.png', 'face_box': '0.15,0.18,0.55,0.42', 'clip': True, 'loss_mask': f'{d0}/mask.png'},
         {'id': 'demo_front', 'reference': f'{SP}/sienna_v2_dataset/sienna_v2_013.jpg', 'driver': f'{A}/pose_src/talk.png',
-         'target': f'{A}/pose_cands/p43.png', 'prompt': 'Character Description: test', 'face_box': ''},
+         'target': f'{A}/pose_cands/p43.png', 'face_box': ''},
     ]
+    m0 = np.zeros((1216, 832), np.uint8); m0[100:500, 200:600] = 255; cv2.imwrite(f'{d0}/mask.png', m0)
     if not all(os.path.exists(s[k]) for s in sets for k in ('reference', 'driver', 'target')):
         print('  (sample images missing; skipped)'); return
     with tempfile.TemporaryDirectory() as d:
@@ -80,7 +81,14 @@ def test_build_metadata_and_clips():
         for m in meta:
             for k in ('video', 'animate2_reference_image', 'animate2_reference_video'):
                 assert os.path.exists(os.path.join(d, m[k])), m[k]
-            assert m['animate2_prompt_ref'] == bm.MOTION_TEXT
+            assert m['animate2_prompt_ref'] == bm.MOTION_TEXT and m['prompt'] == bm.TRAIN_PROMPT   # no per-sample text
+        assert meta[0]['loss_mask'] == 'masks/demo_profile.png' and meta[2]['loss_mask'] == ''
+        mk = cv2.imread(f'{d}/masks/demo_profile.png', 0); assert mk.shape == (bm.H, bm.W) and set(np.unique(mk)) <= {0, 255}
+        cm = cv2.imread(f'{d}/{meta[1]["loss_mask"]}', 0); assert (cm > 0).sum() >= (mk > 0).sum()   # clip mask = union
+        try:
+            bm.build([dict(sets[1], prompt='smiling, head turned left')], d); raise AssertionError('per-sample prompt accepted')
+        except ValueError:
+            pass
         im = cv2.imread(f'{d}/targets/demo_profile.png'); assert im.shape[:2] == (bm.H, bm.W)
         assert bm.W % 16 == 0 and bm.H % 16 == 0 and (bm.CLIP_FRAMES - 1) % 4 == 0
         cap = cv2.VideoCapture(f'{d}/clips/demo_profile_target.mp4'); n = 0

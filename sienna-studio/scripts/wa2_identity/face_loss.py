@@ -44,7 +44,9 @@ def mask_to_latent(mask, lat_h, lat_w):
 
 
 def mask_weight_map(mask_path, lat_h, lat_w, device, dtype):
-    import cv2
+    import cv2, os
+    if not os.path.isabs(mask_path):   # metadata paths are relative to the dataset folder
+        mask_path = os.path.join(os.environ.get('WA2_DATASET_BASE', ''), mask_path)
     w = torch.as_tensor(mask_to_latent(cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE), lat_h, lat_w), device=device, dtype=dtype)
     if float(w.sum()) <= 0:
         raise ValueError(f'empty loss mask: {mask_path}')

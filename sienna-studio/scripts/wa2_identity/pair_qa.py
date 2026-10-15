@@ -155,13 +155,20 @@ class PairQA:
         return c, ('FAIL' if fails else 'REVIEW' if review else 'PASS'), fails + [f'{k}: visual review' for k in review]
 
 
-def head_mask(qa_out, dilate=0.12):
-    """Loss mask for cross-outfit pairs: face skin + hair (segmenter) plus the face-mesh hull, dilated by a fraction of
-    face height. Everything else gets zero weight, so outfit and background differences are not trained on."""
+def head_mask(qa_out, dilate=0.12, edge=0.03):
+    """Loss mask for cross-outfit pairs: face skin + hair (segmenter) plus the face-mesh hull, dilated by a fraction
+    of face height to cover jaw/ears/hairline; then clothes pixels are removed and background is kept only in a thin
+    band (edge x face height) around the head, so outfit and scenery carry (almost) no loss weight."""
     s = qa_out['_seg']; W, H = qa_out['size']
-    m = cv2.resize(((s == 1) | (s == 3)).astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST)
+    seg = cv2.resize(s, (W, H), interpolation=cv2.INTER_NEAREST)
+    head = ((seg == 1) | (seg == 3)).astype(np.uint8)
     if 'lm' in qa_out:
-        cv2.fillConvexPoly(m, cv2.convexHull(np.array(qa_out['lm'], np.int32)), 1)
-        k = max(3, int(qa_out['face_h'] * dilate)) | 1
-        m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+        cv2.fillConvexPoly(head, cv2.convexHull(np.array(qa_out['lm'], np.int32)), 1)
+    fh = qa_out.get('face_h') or 0.15 * H
+    k = max(3, int(fh * dilate)) | 1
+    m = cv2.dilate(head, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    m[seg == 4] = 0                                                    # never score clothes
+    ke = max(3, int(fh * edge)) | 1
+    band = cv2.dilate(head, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ke, ke)))
+    m[(seg == 0) & (band == 0)] = 0                                    # background only right at the head's edge
     return m

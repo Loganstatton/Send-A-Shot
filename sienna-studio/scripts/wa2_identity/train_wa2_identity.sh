@@ -7,9 +7,10 @@
 set -euo pipefail
 DATA=${DATA:?prepared dataset folder}; OUT=${OUT:-./models/train/sienna_wa2_identity}; STEPS_EPOCHS=${EPOCHS:-12}
 HERE=$(cd "$(dirname "$0")" && pwd)
+export WA2_DATASET_BASE="$(cd "$DATA" && pwd)"   # loss_mask paths in metadata are relative to the dataset folder
 COMMON=(--data_file_keys "video,animate2_reference_image,animate2_reference_video" --height 768 --width 528 --num_frames 9
   --lora_base_model dit --lora_target_modules "self_attn.q,self_attn.k,self_attn.v" --lora_rank 32
-  --extra_inputs "animate2_prompt_ref,animate2_reference_image,animate2_reference_video,face_box" --use_gradient_checkpointing
+  --extra_inputs "animate2_prompt_ref,animate2_reference_image,animate2_reference_video,face_box,loss_mask" --use_gradient_checkpointing
   --remove_prefix_in_ckpt "pipe.dit.")
 accelerate launch examples/wanvideo/model_training/train.py --dataset_base_path "$DATA" --dataset_metadata_path "$DATA/metadata.json" \
   --dataset_repeat 1 --model_id_with_origin_paths "Wan-AI/Wan2.2-Animate-2-14B:videomodel/Wan-AI/models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.2-Animate-2-14B:videomodel/Wan-AI/models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth,Wan-AI/Wan2.1-T2V-14B:Wan2.1_VAE.pth" \

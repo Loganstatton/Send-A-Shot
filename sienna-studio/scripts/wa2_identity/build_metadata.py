@@ -1,6 +1,10 @@
 """Build a DiffSynth Wan-Animate-2 training folder from approved (reference, driver, target) sets.
 
-manifest.json: [{"id", "reference", "driver", "target", "prompt", "face_box"?, "clip"?: true}]
+manifest.json: [{"id", "reference", "driver", "target", "face_box"?, "loss_mask"?, "clip"?: true}]
+  loss_mask - optional head+hair mask of the target (pair_qa.head_mask). When present only that region is scored,
+              which is required when the reference shows a different outfit/place (cross-outfit pairs).
+Every sample gets the SAME text prompt (TRAIN_PROMPT): a per-sample prompt describing the pose or expression would let
+the model read the answer from the text instead of from the driver. A differing manifest "prompt" is an error.
   reference - approved Sienna image, same outfit/scene as the target, different pose/expression
   driver    - a different person (stand-in) rendered from the target's own pose + face keypoints
   target    - approved Sienna image: ground truth for identity AND for the driver's pose/expression
@@ -13,6 +17,7 @@ import numpy as np, cv2
 W, H = 528, 768             # the Copy Motion inference size (lib/video.ts videoSize for 832x1216 at 480p)
 CLIP_FRAMES = 9             # 4n+1, as Wan requires
 MOTION_TEXT = 'a woman performing the movement from the reference video naturally, background stationary'  # lib/server/video.ts MOTION2_TEXT
+TRAIN_PROMPT = MOTION_TEXT  # constant for every sample (no per-sample hints)
 FF = os.environ.get('FFMPEG', '/home/user/Send-A-Shot/sienna-studio/node_modules/ffmpeg-static/ffmpeg')
 
 
@@ -57,7 +62,7 @@ def clip_box(box, scale, dx, dy):
 
 
 def build(manifest, out):
-    for d in ('refs', 'drivers', 'targets', 'clips'):
+    for d in ('refs', 'drivers', 'targets', 'clips', 'masks'):
         os.makedirs(f'{out}/{d}', exist_ok=True)
     meta = []
     for s in manifest:
@@ -65,9 +70,16 @@ def build(manifest, out):
         ref, drv, tgt = (fit(cv2.imread(s[k])) for k in ('reference', 'driver', 'target'))
         for k, im in (('refs', ref), ('drivers', drv), ('targets', tgt)):
             cv2.imwrite(f'{out}/{k}/{sid}.png', im)
-        base = {'animate2_reference_image': f'refs/{sid}.png', 'prompt': s['prompt'], 'animate2_prompt_ref': MOTION_TEXT}
+        if s.get('prompt') not in (None, TRAIN_PROMPT):
+            raise ValueError(f'{sid}: per-sample prompts are not allowed (they can leak pose/expression); omit "prompt"')
+        mask = None
+        if s.get('loss_mask'):
+            mask = fit(cv2.imread(s['loss_mask'], cv2.IMREAD_GRAYSCALE)); mask = np.where(mask > 127, 255, 0).astype(np.uint8)
+            if not mask.any(): raise ValueError(f'{sid}: empty loss mask')
+            cv2.imwrite(f'{out}/masks/{sid}.png', mask)
+        base = {'animate2_reference_image': f'refs/{sid}.png', 'prompt': TRAIN_PROMPT, 'animate2_prompt_ref': MOTION_TEXT}
         meta.append({**base, 'video': f'targets/{sid}.png', 'animate2_reference_video': f'drivers/{sid}.png',
-                     'face_box': ','.join(f'{v:.4f}' for v in box) if box else ''})
+                     'face_box': ','.join(f'{v:.4f}' for v in box) if box else '', 'loss_mask': f'masks/{sid}.png' if mask is not None else ''})
         if s.get('clip'):
             path = camera_path()
             write_clip([apply_camera(tgt, *p) for p in path], f'{out}/clips/{sid}_target.mp4')
@@ -75,8 +87,12 @@ def build(manifest, out):
             # the face moves a little during the clip; weight the union of its boxes
             boxes = [clip_box(box, *p) for p in path] if box else None
             ub = [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)] if boxes else None
+            cm = ''
+            if mask is not None:   # union of the moved masks: the head moves a little during the clip
+                u = np.max([apply_camera(cv2.merge([mask] * 3), *p)[..., 0] for p in path], axis=0)
+                cv2.imwrite(f'{out}/masks/{sid}_clip.png', u); cm = f'masks/{sid}_clip.png'
             meta.append({**base, 'video': f'clips/{sid}_target.mp4', 'animate2_reference_video': f'clips/{sid}_driver.mp4',
-                         'face_box': ','.join(f'{v:.4f}' for v in ub) if ub else ''})
+                         'face_box': ','.join(f'{v:.4f}' for v in ub) if ub else '', 'loss_mask': cm})
     json.dump(meta, open(f'{out}/metadata.json', 'w'), indent=1, ensure_ascii=False)
     return meta
 
