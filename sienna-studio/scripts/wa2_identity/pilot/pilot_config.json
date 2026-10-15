@@ -1,14 +1,14 @@
 {
- "_status": "FINAL - not run. Awaiting: likeness decision on R1-17, P3, P12, P41, P9, P1 (O-023, O-012 provisionally excluded) and separate training authorisation.",
+ "_status": "READY - dataset v2 frozen. Awaiting the owner's explicit \"start\" before the pilot volume or any GPU is created.",
  "model": {
   "train_weights": "Wan-AI/Wan2.2-Animate-2-14B wan_animate_2/wan_animate_2_bf16.safetensors (official bf16)",
   "inference_weights": "Comfy-Org/Wan-Animate-2 wan_animate_2_int8_convrot.safetensors (Copy Motion's model)",
   "trainer": "DiffSynth-Studio @4a2d8af77849b20702b2639338f6fe4512f2f93e (same commit as the passed smoke test)"
  },
  "dataset": {
-  "frozen": "stageA_review/wa2_dataset_frozen_v1 (SHA256SUMS; tgz sha256 prefix 7d8d52594f609b3c)",
-  "pairs": "24 strong (+ only the review pairs the owner approves -> wa2_dataset_frozen_v2)",
-  "composition": "make_pilot.py: 100 rows per epoch x 3 epochs = 300 steps (originals, opposite-tilt and level-tilt rotations, priority repeats, up to 20 nine-frame pseudo-clips)",
+  "frozen": "stageA_review/wa2_dataset_frozen_v2 (SHA256SUMS sha256 616032cd89c4564f)",
+  "pairs": "28 = 24 strong + confirmed R1-17, P3, P12, P41; P9 and P1 kept for comparison only; O-023, O-012 excluded",
+  "composition": "make_pilot.py on v2: 100 rows x 3 epochs = 300 steps; 80 still rows (35 usual lean, 14 level, 29 opposite lean, 2 full body), 20 clip rows",
   "validation_heldout": [
    "P5",
    "P6",
