@@ -143,6 +143,41 @@ def test_similarity_and_warp_identity():
     assert np.abs(out.astype(int) - img.astype(int)).mean() < 2.0
 
 
+
+def test_rotation_mask_excludes_reflected_border():
+    mask = np.zeros((768, 528), np.uint8); mask[:300, :] = 255          # head touching the top edge
+    r = bm.rotate_mask(mask, 30, (264, 150))
+    assert r.any() and set(np.unique(r)) <= {0, 255}
+    valid = bm.rotate_about(np.full_like(mask, 255), 30, (264, 150), cv2.INTER_NEAREST, cv2.BORDER_CONSTANT)
+    assert not (r[valid == 0] > 0).any()                                  # nothing scored outside the real frame
+    assert r[0, 0] == 0 and r[0, -1] == 0                                  # corners are reflected border
+
+
+def test_rotation_changes_tilt_sign():
+    img = np.zeros((768, 528), np.uint8); cv2.line(img, (164, 300), (364, 300), 255, 9)   # level "eye line"
+    r = bm.rotate_about(img, 20, (264, 300), cv2.INTER_NEAREST, cv2.BORDER_CONSTANT)
+    ys, xs = np.nonzero(r); slope = np.degrees(np.arctan(np.polyfit(xs, ys, 1)[0]))
+    assert abs(slope + 20) < 2     # +20 (counter-clockwise) -> measured tilt -20, as make_pilot assumes
+
+
+def test_pilot_composition():
+    import make_pilot as mp
+    frozen = '/home/user/Send-A-Shot/stageA_review/wa2_dataset_frozen_v1'
+    if not os.path.exists(frozen):
+        return
+    for inc in ([], ['R1-17', 'P41', 'P3']):
+        ents, n, info = mp.compose(frozen, inc)
+        assert n == mp.ROWS and info['steps'] == 300
+        ids = {e['id'].split('_')[0] for e in ents}
+        assert ids >= {'O-004', 'O-011', 'R1-09'} and not ids & {'P5', 'P6', 'P8', 'P42', 'O-006', 'O-017'}
+        assert set(inc) <= ids and all(abs(e.get('rotate', 0)) <= mp.MAX_ROT for e in ents)
+        assert sum(e['clip'] for e in ents) <= mp.MAX_CLIPS
+    try:
+        mp.compose(frozen, ['O-001']); assert False, 'a training pair is not a review pair'
+    except ValueError:
+        pass
+
+
 if __name__ == '__main__':
     fails = 0
     for name, fn in list(globals().items()):

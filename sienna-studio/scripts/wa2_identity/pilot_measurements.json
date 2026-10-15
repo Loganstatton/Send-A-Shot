@@ -1,0 +1,325 @@
+{
+ "_note": "Measured on the approved target photos (MediaPipe). tilt = eye-line angle in degrees; rotating an image by +d (counter-clockwise) changes it by -d.",
+ "targets": {
+  "O-001": {
+   "set": "train",
+   "yaw": -3.138,
+   "pitch": 12.343,
+   "tilt": -11.9,
+   "smile": 0.231,
+   "mouth_gap": 0.001,
+   "identity": 0.875,
+   "full_body": false
+  },
+  "O-003": {
+   "set": "train",
+   "yaw": -5.766,
+   "pitch": 9.738,
+   "tilt": -17.2,
+   "smile": 0.008,
+   "mouth_gap": 0.001,
+   "identity": 0.855,
+   "full_body": false
+  },
+  "O-004": {
+   "set": "train",
+   "yaw": -23.93,
+   "pitch": 2.41,
+   "tilt": -23.2,
+   "smile": 0.702,
+   "mouth_gap": 0.002,
+   "identity": 0.78,
+   "full_body": false
+  },
+  "O-010": {
+   "set": "train",
+   "yaw": -6.072,
+   "pitch": 7.821,
+   "tilt": -21.7,
+   "smile": 0.033,
+   "mouth_gap": 0.002,
+   "identity": 0.847,
+   "full_body": false
+  },
+  "O-014": {
+   "set": "train",
+   "yaw": -5.213,
+   "pitch": 5.866,
+   "tilt": -19.1,
+   "smile": 0.002,
+   "mouth_gap": 0.001,
+   "identity": 0.809,
+   "full_body": false
+  },
+  "O-015": {
+   "set": "train",
+   "yaw": -8.186,
+   "pitch": 4.955,
+   "tilt": -20.6,
+   "smile": 0.015,
+   "mouth_gap": 0.002,
+   "identity": 0.804,
+   "full_body": false
+  },
+  "O-016": {
+   "set": "train",
+   "yaw": -3.83,
+   "pitch": 8.18,
+   "tilt": -7.6,
+   "smile": 0.036,
+   "mouth_gap": 0.002,
+   "identity": 0.792,
+   "full_body": false
+  },
+  "O-018": {
+   "set": "train",
+   "yaw": -8.699,
+   "pitch": 7.335,
+   "tilt": -20.3,
+   "smile": 0.756,
+   "mouth_gap": 0.001,
+   "identity": 0.831,
+   "full_body": false
+  },
+  "O-019": {
+   "set": "train",
+   "yaw": -13.26,
+   "pitch": 10.028,
+   "tilt": -22.3,
+   "smile": 0.859,
+   "mouth_gap": 0.005,
+   "identity": 0.796,
+   "full_body": false
+  },
+  "O-020": {
+   "set": "train",
+   "yaw": 9.508,
+   "pitch": 7.177,
+   "tilt": -19.7,
+   "smile": 0.045,
+   "mouth_gap": 0.003,
+   "identity": 0.728,
+   "full_body": false
+  },
+  "O-026": {
+   "set": "train",
+   "yaw": -8.795,
+   "pitch": 9.871,
+   "tilt": -24.5,
+   "smile": 0.654,
+   "mouth_gap": 0.002,
+   "identity": 0.858,
+   "full_body": false
+  },
+  "O-027": {
+   "set": "train",
+   "yaw": -4.085,
+   "pitch": 7.849,
+   "tilt": -23.0,
+   "smile": 0.786,
+   "mouth_gap": 0.001,
+   "identity": 0.923,
+   "full_body": false
+  },
+  "O-028": {
+   "set": "train",
+   "yaw": -6.011,
+   "pitch": 9.388,
+   "tilt": -25.7,
+   "smile": 0.748,
+   "mouth_gap": 0.003,
+   "identity": 0.885,
+   "full_body": false
+  },
+  "O-029": {
+   "set": "train",
+   "yaw": -14.031,
+   "pitch": 7.763,
+   "tilt": -22.6,
+   "smile": 0.719,
+   "mouth_gap": 0.001,
+   "identity": 0.839,
+   "full_body": false
+  },
+  "R1-01": {
+   "set": "train",
+   "yaw": 0.221,
+   "pitch": 6.692,
+   "tilt": -8.0,
+   "smile": 0.031,
+   "mouth_gap": 0.001,
+   "identity": 0.709,
+   "full_body": false
+  },
+  "R1-14": {
+   "set": "train",
+   "yaw": -8.048,
+   "pitch": 2.444,
+   "tilt": -22.8,
+   "smile": 0.934,
+   "mouth_gap": 0.062,
+   "identity": 0.787,
+   "full_body": false
+  },
+  "O-002": {
+   "set": "train",
+   "yaw": -5.244,
+   "pitch": 11.043,
+   "tilt": -16.6,
+   "smile": 0.872,
+   "mouth_gap": 0.055,
+   "identity": 0.888,
+   "full_body": false
+  },
+  "O-011": {
+   "set": "train",
+   "yaw": -5.022,
+   "pitch": 4.242,
+   "tilt": -19.4,
+   "smile": 0.908,
+   "mouth_gap": 0.071,
+   "identity": 0.907,
+   "full_body": false
+  },
+  "R1-09": {
+   "set": "train",
+   "yaw": -7.156,
+   "pitch": -1.386,
+   "tilt": -9.4,
+   "smile": 0.914,
+   "mouth_gap": 0.096,
+   "identity": 0.802,
+   "full_body": false
+  },
+  "R1-11": {
+   "set": "train",
+   "yaw": -5.176,
+   "pitch": 3.459,
+   "tilt": -22.1,
+   "smile": 0.955,
+   "mouth_gap": 0.083,
+   "identity": 0.775,
+   "full_body": false
+  },
+  "O-013": {
+   "set": "train",
+   "yaw": -5.382,
+   "pitch": 11.211,
+   "tilt": -18.0,
+   "smile": 0.789,
+   "mouth_gap": 0.0,
+   "identity": 0.923,
+   "full_body": false
+  },
+  "O-005": {
+   "set": "train",
+   "yaw": -23.567,
+   "pitch": 0.267,
+   "tilt": -17.8,
+   "smile": 0.724,
+   "mouth_gap": 0.002,
+   "identity": 0.789,
+   "full_body": false
+  },
+  "O-007": {
+   "set": "train",
+   "yaw": 10.352,
+   "pitch": 15.012,
+   "tilt": -26.6,
+   "smile": 0.676,
+   "mouth_gap": 0.001,
+   "identity": 0.812,
+   "full_body": false
+  },
+  "O-025": {
+   "set": "train",
+   "yaw": -4.843,
+   "pitch": 6.433,
+   "tilt": -25.5,
+   "smile": 0.717,
+   "mouth_gap": 0.0,
+   "identity": 0.836,
+   "full_body": false
+  },
+  "O-023": {
+   "set": "review_pending",
+   "yaw": 8.434,
+   "pitch": 9.449,
+   "tilt": -21.5,
+   "smile": 0.01,
+   "mouth_gap": 0.002,
+   "identity": 0.673,
+   "full_body": false
+  },
+  "P3": {
+   "set": "review_pending",
+   "yaw": -51.044,
+   "pitch": 5.991,
+   "tilt": 1.3,
+   "smile": 0.007,
+   "mouth_gap": 0.02,
+   "identity": 0.573,
+   "full_body": false
+  },
+  "P12": {
+   "set": "review_pending",
+   "yaw": null,
+   "pitch": null,
+   "tilt": null,
+   "smile": null,
+   "mouth_gap": null,
+   "identity": 0.603,
+   "full_body": true
+  },
+  "O-012": {
+   "set": "review_pending",
+   "yaw": -6.02,
+   "pitch": 4.536,
+   "tilt": -19.4,
+   "smile": 0.937,
+   "mouth_gap": 0.065,
+   "identity": 0.878,
+   "full_body": false
+  },
+  "R1-17": {
+   "set": "review_pending",
+   "yaw": 16.571,
+   "pitch": 2.906,
+   "tilt": -14.4,
+   "smile": 0.826,
+   "mouth_gap": 0.08,
+   "identity": 0.727,
+   "full_body": false
+  },
+  "P9": {
+   "set": "review_pending",
+   "yaw": 18.875,
+   "pitch": -7.735,
+   "tilt": -10.2,
+   "smile": 0.01,
+   "mouth_gap": 0.001,
+   "identity": 0.632,
+   "full_body": false
+  },
+  "P41": {
+   "set": "review_pending",
+   "yaw": 36.907,
+   "pitch": 18.788,
+   "tilt": 14.8,
+   "smile": 0.0,
+   "mouth_gap": 0.004,
+   "identity": 0.353,
+   "full_body": false
+  },
+  "P1": {
+   "set": "review_pending",
+   "yaw": -57.012,
+   "pitch": 5.782,
+   "tilt": 2.9,
+   "smile": 0.0,
+   "mouth_gap": 0.006,
+   "identity": 0.499,
+   "full_body": false
+  }
+ }
+}

@@ -1,6 +1,11 @@
 """Build a DiffSynth Wan-Animate-2 training folder from approved (reference, driver, target) sets.
 
-manifest.json: [{"id", "reference", "driver", "target", "face_box"?, "loss_mask"?, "clip"?: true}]
+manifest.json: [{"id", "reference", "driver", "target", "face_box"?, "loss_mask"?, "clip"?: true,
+                 "rotate"?: deg, "still"?: true, "copies"?: 1}]
+  rotate    - in-plane rotation (degrees, counter-clockwise; measured head tilt changes by -deg) applied identically to
+              driver, target and loss mask about the head centre. Used to break the one-way selfie tilt without
+              mirroring (a mirror would flip her facial asymmetry). The reference is never rotated.
+  still/copies - write the single-frame sample (default yes) this many times; clip=true adds the 9-frame pseudo-clip.
   loss_mask - optional head+hair mask of the target (pair_qa.head_mask). When present only that region is scored,
               which is required when the reference shows a different outfit/place (cross-outfit pairs).
 Every sample gets the SAME text prompt (TRAIN_PROMPT): a per-sample prompt describing the pose or expression would let
@@ -61,6 +66,28 @@ def clip_box(box, scale, dx, dy):
     return [min(1, max(0, f(x0, dx))), min(1, max(0, f(y0, dy))), min(1, max(0, f(x1, dx))), min(1, max(0, f(y1, dy)))]
 
 
+ROT_ZOOM = 1.12   # zoom while rotating so less of the frame is filled by reflected border
+
+
+def rotate_about(img, deg, center, interp=cv2.INTER_CUBIC, border=cv2.BORDER_REFLECT):
+    m = cv2.getRotationMatrix2D(center, deg, ROT_ZOOM)
+    return cv2.warpAffine(img, m, (img.shape[1], img.shape[0]), flags=interp, borderMode=border, borderValue=0)
+
+
+def rotate_mask(mask, deg, center):
+    """Rotated loss mask, limited to pixels that came from inside the original frame: the reflected border is a
+    mirror image, so it must never be scored (that would teach a mirrored face/hair)."""
+    rot = rotate_about(mask, deg, center, cv2.INTER_NEAREST, cv2.BORDER_CONSTANT)
+    valid = rotate_about(np.full_like(mask, 255), deg, center, cv2.INTER_NEAREST, cv2.BORDER_CONSTANT)
+    valid = cv2.erode(valid, np.ones((9, 9), np.uint8))
+    return np.where((rot > 127) & (valid > 127), 255, 0).astype(np.uint8)
+
+
+def head_center(mask):
+    ys, xs = np.nonzero(mask)
+    return (float(xs.mean()), float(ys.mean())) if len(xs) else (mask.shape[1] / 2, mask.shape[0] / 2)
+
+
 def build(manifest, out):
     for d in ('refs', 'drivers', 'targets', 'clips', 'masks'):
         os.makedirs(f'{out}/{d}', exist_ok=True)
@@ -76,10 +103,21 @@ def build(manifest, out):
         if s.get('loss_mask'):
             mask = fit(cv2.imread(s['loss_mask'], cv2.IMREAD_GRAYSCALE)); mask = np.where(mask > 127, 255, 0).astype(np.uint8)
             if not mask.any(): raise ValueError(f'{sid}: empty loss mask')
+        if s.get('rotate'):
+            if box or mask is None: raise ValueError(f'{sid}: rotate needs a loss_mask and no face_box')
+            c = head_center(mask)
+            drv, tgt = rotate_about(drv, s['rotate'], c), rotate_about(tgt, s['rotate'], c)
+            mask = rotate_mask(mask, s['rotate'], c)
+            if not mask.any(): raise ValueError(f'{sid}: rotation left no scorable head pixels')
+            for k, im in (('drivers', drv), ('targets', tgt)):
+                cv2.imwrite(f'{out}/{k}/{sid}.png', im)
+        if mask is not None:
             cv2.imwrite(f'{out}/masks/{sid}.png', mask)
         base = {'animate2_reference_image': f'refs/{sid}.png', 'prompt': TRAIN_PROMPT, 'animate2_prompt_ref': MOTION_TEXT}
-        meta.append({**base, 'video': f'targets/{sid}.png', 'animate2_reference_video': f'drivers/{sid}.png',
-                     'face_box': ','.join(f'{v:.4f}' for v in box) if box else '', 'loss_mask': f'masks/{sid}.png' if mask is not None else ''})
+        still = {**base, 'video': f'targets/{sid}.png', 'animate2_reference_video': f'drivers/{sid}.png',
+                 'face_box': ','.join(f'{v:.4f}' for v in box) if box else '', 'loss_mask': f'masks/{sid}.png' if mask is not None else ''}
+        if s.get('still', True):
+            meta.extend(dict(still) for _ in range(int(s.get('copies', 1))))
         if s.get('clip'):
             path = camera_path()
             write_clip([apply_camera(tgt, *p) for p in path], f'{out}/clips/{sid}_target.mp4')

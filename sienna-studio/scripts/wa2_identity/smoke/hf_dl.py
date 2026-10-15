@@ -1,7 +1,7 @@
 """Parallel downloads for the smoke test; resolves real file names from the repo listings first."""
 import os, sys, time, fnmatch, threading
 from huggingface_hub import HfApi, hf_hub_download
-M = '/workspace/m'; os.makedirs(M, exist_ok=True); api = HfApi()
+M = os.environ.get('HF_DL_DIR', '/workspace/m'); os.makedirs(M, exist_ok=True); api = HfApi()   # pilot: container disk, not the volume
 WANTS = [('Wan-AI/Wan2.2-Animate-2-14B', '*wan_animate_2_bf16.safetensors', 'dit'),
          ('Wan-AI/Wan2.2-Animate-2-14B', '*models_t5_umt5-xxl-enc-bf16.pth', 't5'),
          ('Wan-AI/Wan2.2-Animate-2-14B', '*models_clip_open-clip-xlm-roberta-large-vit-huge-14.pth', 'clip'),
