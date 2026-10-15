@@ -210,6 +210,227 @@ def test_pilot_guard_cap_and_protection():
         pass
 
 
+PILOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'pilot')
+SP = '/tmp/claude-0/-home-user-Send-A-Shot/5ab8d7bf-5d0f-550f-a69c-62a6985b93f2/scratchpad'
+ASSETS = '/home/user/Send-A-Shot/stageA_review/wa2_eval_assets'
+
+
+def _guard(args, scratch):
+    r = subprocess.run([sys.executable, os.path.join(PILOT_DIR, 'pilot_guard.py')] + args, capture_output=True, text=True,
+                       env={**os.environ, 'SCRATCH': scratch, 'PILOT_DRY_RUN': '1', 'EXPECTED_RATE': '0.59'})
+    return r.returncode, r.stdout + r.stderr
+
+
+def test_guard_end_to_end_dry_run():
+    d = tempfile.mkdtemp(); led = os.path.join(d, 'wa2_pilot_ledger.json')
+    assert _guard(['init', '2.60'], d)[0] == 0
+    rc, out = _guard(['create-pod', 'NVIDIA A40'], d)                      # first pod gets the whole remaining budget
+    assert rc == 0 and 'HARD_MIN=' in out, out
+    hard = int(out.split('HARD_MIN=')[1].split()[0]); assert abs(hard - (2.60 - 0.05) / 0.59 * 60) <= 1
+    rc, out = _guard(['create-pod', 'NVIDIA A40'], d)                      # nothing left: a second pod is refused
+    assert rc != 0 and 'REFUSED' in out
+    L = json.load(open(led)); L['pods'][0]['started'] -= 5 * 3600; json.dump(L, open(led, 'w'))   # pretend it overran
+    rc, out = _guard(['watch'], d)
+    assert rc == 0 and 'TERMINATED' in out and json.load(open(led))['pods'][0].get('ended')
+    rc, out = _guard(['create-volume', 'US-IL-1'], d); assert rc != 0 and 'not approved' in out
+    L = json.load(open(led)); L['volume'] = {'id': 'u4odco714x', 'name': 'sienna-studio', 'created': 0}; json.dump(L, open(led, 'w'))
+    rc, out = _guard(['delete-volume', '--verified', d], d); assert rc != 0 and 'REFUSED' in out      # production: never
+    L['volume'] = {'id': 'pv1', 'name': 'sienna-wa2-pilot', 'created': 0}; json.dump(L, open(led, 'w'))
+    rc, out = _guard(['delete-volume'], d); assert rc != 0 and 'verify' in out                        # unverified: refused
+    ck = os.path.join(d, 'ck'); os.makedirs(ck); open(ck + '/a.safetensors', 'wb').write(b'x' * 100)
+    import hashlib
+    open(ck + '/SHA256SUMS', 'w').write(hashlib.sha256(b'x' * 100).hexdigest() + '  a.safetensors\n')
+    open(ck + '/a.safetensors', 'ab').write(b'!')                                                     # corrupted copy
+    rc, out = _guard(['delete-volume', '--verified', ck], d); assert rc != 0 and 'MISMATCH' in out
+    open(ck + '/a.safetensors', 'wb').write(b'x' * 100)
+    rc, out = _guard(['delete-volume', '--verified', ck], d); assert rc == 0 and 'DELETED' in out, out
+    assert json.load(open(led))['volume'].get('deleted')
+
+
+def _fake_pod_server(root, flaky=None):
+    """Minimal JupyterLab /files/ server with token check and HTTP Range, rooted at `root`."""
+    import http.server, threading
+    state = {'flaky': set(flaky or [])}
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a): pass
+
+        def do_GET(self):
+            if self.headers.get('Authorization') != 'token T': self.send_response(403); self.end_headers(); return
+            p = os.path.join(root, self.path.split('/files/', 1)[-1])
+            if not os.path.isfile(p): self.send_response(404); self.end_headers(); return
+            data = open(p, 'rb').read(); start = 0
+            rng = self.headers.get('Range')
+            if rng:
+                start = int(rng.split('=')[1].split('-')[0])
+                if start >= len(data): self.send_response(416); self.end_headers(); return
+                self.send_response(206)
+            else:
+                self.send_response(200)
+            body = data[start:]; self.send_header('Content-Length', str(len(body))); self.end_headers()
+            if os.path.basename(p) in state['flaky']:                      # drop the connection half way, once
+                state['flaky'].discard(os.path.basename(p)); self.wfile.write(body[:len(body) // 2]); self.wfile.flush()
+                self.connection.close(); return
+            self.wfile.write(body)
+
+    srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f'http://127.0.0.1:{srv.server_address[1]}'
+
+
+def test_checkpoint_puller_paths_recovery_and_verification():
+    sys.path.insert(0, PILOT_DIR); import pull_ckpts as pc, hashlib
+    root = tempfile.mkdtemp(); pod = os.path.join(root, 'workspace', 'wa2_pull')     # JupyterLab rooted at / (2nd prefix)
+    os.makedirs(pod + '/ckpt')
+    gate = os.urandom(300_000); open(pod + '/gate.bin', 'wb').write(gate)
+    open(pod + '/gate.sha256', 'w').write(hashlib.sha256(gate).hexdigest() + '  gate.bin\n')
+    files = {n: os.urandom(500_000 + i) for i, n in enumerate(('step-100.safetensors', 'comfy_step-100.safetensors', 'step-200.safetensors'))}
+    for n, b in files.items(): open(f'{pod}/ckpt/{n}', 'wb').write(b)
+    sums = ''.join(f'{hashlib.sha256(b).hexdigest()}  {n}\n' for n, b in files.items())
+    open(pod + '/ckpt/SHA256SUMS', 'w').write(sums)
+    open(pod + '/ckpt/step-200.safetensors', 'ab').write(b'corrupt')        # pod-side file no longer matches its checksum
+    srv, url = _fake_pod_server(root, flaky={'step-100.safetensors'})
+    signalled = []
+    local = tempfile.mkdtemp()
+    pl = pc.Puller(base=url, token='T', signal_gate=lambda: signalled.append(1), backoff=0)
+    assert pl.gate(local) and pl.prefix == 'workspace/wa2_pull' and signalled == [1]
+    assert not os.path.exists(local + '/gate.bin')
+    half = files['comfy_step-100.safetensors'][:200_000]                     # an interrupted earlier download
+    open(local + '/comfy_step-100.safetensors.part', 'wb').write(half)
+    n = pl.pull(local)
+    assert n == 2, n                                                        # two verified; the corrupt one rejected
+    ok = open(local + '/SHA256SUMS').read()
+    assert 'step-100.safetensors' in ok and 'comfy_step-100' in ok and 'step-200' not in ok
+    assert not os.path.exists(local + '/step-200.safetensors')
+    assert open(local + '/comfy_step-100.safetensors', 'rb').read() == files['comfy_step-100.safetensors']
+    open(f'{pod}/ckpt/step-200.safetensors', 'wb').write(files['step-200.safetensors'])   # pod republishes it correctly
+    assert pl.pull(local) == 1 and 'step-200' in open(local + '/SHA256SUMS').read()
+    assert pl.pull(local) == 0                                              # nothing re-downloaded
+    sys.path.insert(0, PILOT_DIR); import pilot_guard as g
+    assert g.sha_dir(local) == 3                                            # what the guard checks before deleting a volume
+    bad = pc.Puller(base=url, token='WRONG', signal_gate=lambda: None, backoff=0)
+    assert not bad.gate(tempfile.mkdtemp())                                 # no access -> gate fails -> pod never trains
+    srv.shutdown()
+
+
+def _run_pod_script(env, timeout=30):
+    """Runs the pod script; returns when the script exits (its background deadline timer is left running until
+    `timeout`, so a test can observe it firing), then kills the whole process group."""
+    import signal, time as _t
+    log = tempfile.mktemp()
+    with open(log, 'w') as fo:
+        p = subprocess.Popen(['bash', os.path.join(PILOT_DIR, 'pilot_pod.sh')], env=env, stdout=fo, stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            rc = p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            rc = None
+    _t.sleep(0.3)
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    return rc, open(log).read(), p.pid
+
+
+def _pod_env(tmp, fake_ctl=True, **kw):
+    bin_ = os.path.join(tmp, 'bin'); os.makedirs(bin_, exist_ok=True)
+    if fake_ctl:
+        open(bin_ + '/runpodctl', 'w').write(f'#!/bin/bash\necho "$@" >> {tmp}/removed\n'); os.chmod(bin_ + '/runpodctl', 0o755)
+    path = bin_ + ':' + ':'.join(x for x in os.environ['PATH'].split(':') if not (fake_ctl is False and os.path.exists(os.path.join(x, 'runpodctl'))))
+    env = {'PATH': path, 'HOME': tmp, 'HARD_MIN': '240', 'RUNPOD_API_KEY': 'k', 'RUNPOD_POD_ID': 'podX', 'PULL_DIR': tmp + '/pull',
+           'VOL_MOUNT': tmp + '/novol', 'WORK_ROOT': tmp + '/root', 'UPLOAD_DIR': tmp + '/up', 'GATE_BYTES': '100000'}
+    env.update(kw); return env
+
+
+def _pod_upload(tmp, good=True):
+    import tarfile, hashlib
+    up = tmp + '/up'; ds = tmp + '/src/wa2_dataset_frozen_v9'; os.makedirs(up); os.makedirs(ds)
+    open(ds + '/a.txt', 'w').write('a'); open(ds + '/SHA256SUMS', 'w').write(hashlib.sha256(b'a').hexdigest() + '  a.txt\n')
+    with tarfile.open(up + '/dataset.tgz', 'w:gz') as t: t.add(ds, arcname='wa2_dataset_frozen_v9')
+    h = hashlib.sha256(open(up + '/dataset.tgz', 'rb').read()).hexdigest() if good else '0' * 64
+    open(up + '/dataset.tgz.sha256', 'w').write(f'{h}  dataset.tgz\n')
+
+
+def test_pod_script_deadline_abort_and_gate():
+    import time as _t
+    t1 = tempfile.mkdtemp(); _pod_upload(t1)                                # (a) cannot self-delete -> refuses to start
+    rc, out, _ = _run_pod_script(_pod_env(t1, fake_ctl=False, RUNPOD_API_KEY=''))
+    assert rc == 9 and 'NO_SELF_DELETE_ABORT' in out, (rc, out[-400:])
+    t2 = tempfile.mkdtemp(); _pod_upload(t2, good=False)                    # (b) dataset checksum fails -> pod removed now
+    rc, out, _ = _run_pod_script(_pod_env(t2))
+    assert rc == 2 and 'DATASET_CHECKSUM_FAIL' in out and 'remove pod podX' in open(t2 + '/removed').read()
+    t3 = tempfile.mkdtemp(); _pod_upload(t3)                                # (c) gate never confirmed -> pod removed
+    rc, out, _ = _run_pod_script(_pod_env(t3, GATE_POLLS='2', GATE_SLEEP='0.2'))
+    assert rc == 3 and 'TRANSFER_GATE_FAIL' in out and 'remove pod podX' in open(t3 + '/removed').read()
+    t4 = tempfile.mkdtemp(); _pod_upload(t4)                                # (d) hard deadline fires while waiting
+    rc, out, pid = _run_pod_script(_pod_env(t4, DEADLINE_SECONDS='2', GATE_POLLS='100', GATE_SLEEP='0.2'), timeout=6)
+    deadline_hit = os.path.exists(t4 + '/removed') and 'remove pod podX' in open(t4 + '/removed').read()
+    assert deadline_hit, out[-400:]
+    t5 = tempfile.mkdtemp(); _pod_upload(t5); os.makedirs(t5 + '/pull'); open(t5 + '/pull/gate.ok', 'w').close()
+    rc, out, _ = _run_pod_script(_pod_env(t5, STOP_AFTER_GATE='1', DEADLINE_SECONDS='600'))   # (e) gate ok -> continues
+    assert rc == 0 and 'transfer_gate_ok' in out and not os.path.exists(t5 + '/removed'), (rc, out[-400:])
+    assert os.path.exists(t5 + '/pull/gate.sha256') and not os.path.exists(t5 + '/pull/gate.bin')
+    import shutil
+    for t in (t1, t2, t3, t4, t5): shutil.rmtree(t, ignore_errors=True)
+
+
+def test_eval_graphs_change_only_lora_inputs_and_names():
+    sys.path.insert(0, PILOT_DIR); import eval_graphs as eg
+    runs = eg.plan('comfy_300.safetensors', 'comfy_200.safetensors', 'closeup_photo.png', 'closeup_drive.mp4', 'talk_drive.mp4', 0.7)
+    assert set(runs) == {'main_noLoRA', 'main_s300_1.0', 'main_s300_0.7', 'main_s200_1.0', 'close_noLoRA', 'close_best', 'talk_noLoRA', 'talk_best'}
+    names = {('v_save', 'filename_prefix'), ('v_poster', 'filename_prefix')}
+    assert set(eg.diff_from_baseline(runs['main_noLoRA'])) == names        # baseline re-render: identical except output names
+    lora = names | {('v_idlora', 'ADDED'), ('v_cache', 'model')}
+    for k in ('main_s300_1.0', 'main_s300_0.7', 'main_s200_1.0'):
+        assert set(eg.diff_from_baseline(runs[k])) == lora, k
+    assert runs['main_s300_0.7']['v_idlora']['inputs']['strength_model'] == 0.7
+    assert runs['main_s300_1.0']['v_idlora']['inputs']['model'] == ['v_fast', 0]      # after lightx2v, before the cache
+    inputs = {('v_image', 'image'), ('v_drive', 'file'), ('v_drive_part', 'batch_index')}
+    assert set(eg.diff_from_baseline(runs['close_noLoRA'])) == names | inputs
+    assert set(eg.diff_from_baseline(runs['talk_best'])) == names | inputs | {('v_idlora', 'ADDED'), ('v_cache', 'model')}
+    g = runs['close_best']
+    assert g['v_ks_0']['inputs']['noise_seed'] == 2202 and g['v_sigmas']['inputs']['steps'] == 6 and g['v_anim_0']['inputs']['width'] == 528
+
+
+def test_close_framed_evaluation_reads_face_and_expression():
+    if not os.path.exists(ASSETS + '/closeup_drive.mp4') or not os.path.exists(SP + '/mpmodels'):
+        return
+    import eval_pilot as ev
+    an = ev.Analyzer(SP + '/mpmodels', SP + '/facemodels')
+    fr = ev.read_frames(ASSETS + '/closeup_drive.mp4'); assert len(fr) == 64 and fr[0].shape[:2] == (768, 528)
+    A = [an.frame(f) for f in fr[::4]]
+    ref = ev.fit(cv2.imread(ASSETS + '/closeup_photo.png')); ra = an.frame(ref)
+    r = ev.summarise('close', fr[::4], A, A, ev.torso_lab(ref, ra['mp'].get('body')))
+    assert r['face_px_median'] >= 150 and r['faces_scored'] >= 14            # big enough for reliable identity
+    assert sum(1 for a in A if 'jaw' in a['mp']) >= 14                      # expression readable
+    assert ra['size'] >= 150 and ra['sim'] >= 0.74                          # close-up photo is still clearly her
+    assert r['mouth_follows_driver_corr'] is None or r['mouth_follows_driver_corr'] > 0.99   # self-comparison sanity
+
+
+def test_talking_clip_gate_rejects_clip_without_smiles():
+    if not os.path.exists(ASSETS + '/closeup_drive.mp4') or not os.path.exists(SP + '/mpmodels'):
+        return
+    import prepare_talking_clip as pt, shutil
+    out = tempfile.mkdtemp(); shutil.copy(ASSETS + '/closeup_photo.png', out)
+    ok, problems, rep = pt.check_and_prepare(ASSETS + '/closeup_drive.mp4', 0.0, out, SP + '/facemodels', SP + '/mpmodels')
+    assert not ok and any('smile' in p for p in problems), (problems, rep)    # the dance clip has no smile: must be rejected
+    ok, problems, _ = pt.check_and_prepare(ASSETS + '/closeup_drive.mp4', 2.0, out, SP + '/facemodels', SP + '/mpmodels')
+    assert not ok and any('too short' in p for p in problems)
+
+
+
+def test_split_for_delivery_reassembles_exactly():
+    import hashlib, shutil
+    d = tempfile.mkdtemp(); f = d + '/comfy_lora.safetensors'; data = os.urandom(60 * 2 ** 20 + 123)
+    open(f, 'wb').write(data)
+    r = subprocess.run(['bash', os.path.join(PILOT_DIR, 'split_for_delivery.sh'), f, d + '/out'], capture_output=True, text=True)
+    assert r.returncode == 0 and 'reassembly verified' in r.stdout, r.stdout + r.stderr
+    parts = sorted(p for p in os.listdir(d + '/out') if '.part' in p)
+    assert len(parts) == 3 and all(os.path.getsize(f'{d}/out/{p}') < 30 * 2 ** 20 for p in parts)
+    assert hashlib.sha256(b''.join(open(f'{d}/out/{p}', 'rb').read() for p in parts)).hexdigest() == hashlib.sha256(data).hexdigest()
+    shutil.rmtree(d)
+
+
 if __name__ == '__main__':
     fails = 0
     for name, fn in list(globals().items()):

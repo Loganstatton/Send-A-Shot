@@ -13,26 +13,32 @@
 # confirm (gate.ok). If the transfer test fails, the pod stops before downloading models or training.
 set -uo pipefail
 : "${HARD_MIN:?HARD_MIN (minutes) from pilot_guard.py is required}"
-P=/workspace/wa2_pull; mkdir -p $P/ckpt $P/logs; L=$P/logs
-VOLD=""; [ -d /pilotvol ] && { VOLD=/pilotvol/wa2_pilot; mkdir -p $VOLD/ckpt $VOLD/logs $VOLD/dataset; }
-C=/root/work; M=/root/m; mkdir -p $C $M
+# paths are overridable only so tests can run this script locally with a fake runpodctl (tests/test_wa2_identity.py)
+P=${PULL_DIR:-/workspace/wa2_pull}; mkdir -p $P/ckpt $P/logs; L=$P/logs
+VMNT=${VOL_MOUNT:-/pilotvol}; VOLD=""; [ -d $VMNT ] && { VOLD=$VMNT/wa2_pilot; mkdir -p $VOLD/ckpt $VOLD/logs $VOLD/dataset; }
+R=${WORK_ROOT:-/root}; C=$R/work; M=$R/m; mkdir -p $C $M
+UP=${UPLOAD_DIR:-/workspace/wa2_upload}
 exec > >(tee -a $L/pod.log) 2>&1
 log() { echo "STAGE $(date -u +%H:%M:%S) $*"; [ -n "$VOLD" ] && cp $L/*.log $VOLD/logs/ 2>/dev/null; true; }
 # 1. absolute deadline: the pod deletes itself even if the controlling session is gone
 command -v runpodctl >/dev/null && [ -n "${RUNPOD_API_KEY:-}" ] && [ -n "${RUNPOD_POD_ID:-}" ] || { log NO_SELF_DELETE_ABORT; exit 9; }
-( sleep $((HARD_MIN * 60)); log HARD_DEADLINE; sync; runpodctl remove pod "$RUNPOD_POD_ID" ) &
-log "deadline armed: $HARD_MIN min"; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader; free -g | sed -n 2p; df -h /workspace /root ${VOLD:+/pilotvol} | tail -3
+DEADLINE_S=${DEADLINE_SECONDS:-$((HARD_MIN * 60))}
+( sleep $DEADLINE_S; log HARD_DEADLINE; sync; runpodctl remove pod "$RUNPOD_POD_ID" ) &
+# any failed step removes the pod at once (no idle billing until the deadline); a normal finish leaves it up for eval
+trap 'rc=$?; if [ $rc -ne 0 ]; then log "FAILED rc=$rc - removing pod"; sync; runpodctl remove pod "$RUNPOD_POD_ID"; fi' EXIT
+log "deadline armed: ${DEADLINE_S}s"; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null; free -g | sed -n 2p; df -h $P $R ${VOLD:+$VMNT} 2>/dev/null | tail -3
 PY=/workspace/runpod-slim/ComfyUI/.venv-cu128/bin/python; [ -x $PY ] || PY=python3
 # 2. dataset bundle (uploaded next to this script) must match its checksum
-cd /workspace/wa2_upload && sha256sum -c dataset.tgz.sha256 || { log DATASET_CHECKSUM_FAIL; exit 2; }
+cd $UP && sha256sum -c dataset.tgz.sha256 || { log DATASET_CHECKSUM_FAIL; exit 2; }
 tar -xzf dataset.tgz -C $C && (cd $C/wa2_dataset_frozen_v* && sha256sum -c --quiet SHA256SUMS) || { log DATASET_FILES_FAIL; exit 2; }
 [ -n "$VOLD" ] && cp dataset.tgz dataset.tgz.sha256 $VOLD/dataset/
 FROZEN=$(ls -d $C/wa2_dataset_frozen_v* | tail -1)
 # 3. transfer gate: 100 MB test file must be pulled and verified by the session before we spend on downloads/training
-head -c 100000000 /dev/urandom > $P/gate.bin && (cd $P && sha256sum gate.bin > gate.sha256); log transfer_gate_waiting
-for i in $(seq 1 60); do [ -f $P/gate.ok ] && break; sleep 10; done
-[ -f $P/gate.ok ] || { log TRANSFER_GATE_FAIL; runpodctl remove pod "$RUNPOD_POD_ID"; exit 3; }
+head -c ${GATE_BYTES:-100000000} /dev/urandom > $P/gate.bin && (cd $P && sha256sum gate.bin > gate.sha256); log transfer_gate_waiting
+for i in $(seq 1 ${GATE_POLLS:-60}); do [ -f $P/gate.ok ] && break; sleep ${GATE_SLEEP:-10}; done
+[ -f $P/gate.ok ] || { log TRANSFER_GATE_FAIL; exit 3; }
 rm -f $P/gate.bin; log transfer_gate_ok
+[ -n "${STOP_AFTER_GATE:-}" ] && { log STOP_AFTER_GATE; exit 0; }   # test hook: everything below needs a GPU
 # 4. trainer + models (models on container disk only)
 log deps; (cd /root && git clone -q https://github.com/modelscope/DiffSynth-Studio dss && cd dss && git fetch -q --depth 1 origin 4a2d8af77849b20702b2639338f6fe4512f2f93e && git checkout -q FETCH_HEAD)
 cd /root/dss && $PY -m pip install -q --no-deps -e . && $PY -m pip install -q "imageio[ffmpeg]" ftfy modelscope peft accelerate pandas psutil "huggingface_hub[hf_xet]" opencv-python-headless

@@ -1,0 +1,423 @@
+{
+ "_source": "Copy Motion job gf8b7e85e533aa605 (2026-10-15): the render scored 0.395 (no LoRA) and the base of the 0.665 face-restored result. Face-check nodes removed (they do not change pixels).",
+ "seed": 2202,
+ "width": 528,
+ "height": 768,
+ "photo": "gen_5ienna0779frnt01.png",
+ "drive": "mot_0c269a44a2763e10.mp4",
+ "graph": {
+  "v_image": {
+   "class_type": "LoadImage",
+   "inputs": {
+    "image": "sienna/gen_5ienna0779frnt01.png"
+   },
+   "_meta": {
+    "title": "Sienna photo"
+   }
+  },
+  "v_ref": {
+   "class_type": "ImageScale",
+   "inputs": {
+    "image": [
+     "v_image",
+     0
+    ],
+    "upscale_method": "area",
+    "width": 528,
+    "height": 768,
+    "crop": "center"
+   },
+   "_meta": {
+    "title": "Sienna photo, output size"
+   }
+  },
+  "v_drive": {
+   "class_type": "LoadVideo",
+   "inputs": {
+    "file": "mot_0c269a44a2763e10.mp4"
+   },
+   "_meta": {
+    "title": "Driving video"
+   }
+  },
+  "v_drive_frames": {
+   "class_type": "GetVideoComponents",
+   "inputs": {
+    "video": [
+     "v_drive",
+     0
+    ]
+   }
+  },
+  "v_drive_part": {
+   "class_type": "ImageFromBatch",
+   "inputs": {
+    "image": [
+     "v_drive_frames",
+     0
+    ],
+    "batch_index": 16,
+    "length": 64
+   },
+   "_meta": {
+    "title": "Chosen part"
+   }
+  },
+  "v_scaled": {
+   "class_type": "ImageScale",
+   "inputs": {
+    "image": [
+     "v_drive_part",
+     0
+    ],
+    "upscale_method": "area",
+    "width": 528,
+    "height": 768,
+    "crop": "center"
+   }
+  },
+  "v_drive_first": {
+   "class_type": "ImageFromBatch",
+   "inputs": {
+    "image": [
+     "v_scaled",
+     0
+    ],
+    "batch_index": 0,
+    "length": 1
+   }
+  },
+  "v_clipvision": {
+   "class_type": "CLIPVisionLoader",
+   "inputs": {
+    "clip_name": "clip_vision_h.safetensors"
+   }
+  },
+  "v_cv_ref": {
+   "class_type": "CLIPVisionEncode",
+   "inputs": {
+    "clip_vision": [
+     "v_clipvision",
+     0
+    ],
+    "image": [
+     "v_ref",
+     0
+    ],
+    "crop": "none"
+   }
+  },
+  "v_cv_pose": {
+   "class_type": "CLIPVisionEncode",
+   "inputs": {
+    "clip_vision": [
+     "v_clipvision",
+     0
+    ],
+    "image": [
+     "v_drive_first",
+     0
+    ],
+    "crop": "none"
+   }
+  },
+  "v_clip": {
+   "class_type": "CLIPLoader",
+   "inputs": {
+    "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+    "type": "wan",
+    "device": "default"
+   }
+  },
+  "v_pos": {
+   "class_type": "CLIPTextEncode",
+   "inputs": {
+    "clip": [
+     "v_clip",
+     0
+    ],
+    "text": "Character Description: fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, natural hazel-green eyes with realistic muted iris color, large round natural breasts, slim toned waist with defined abs, curvy hips, wearing fitted bright red bodycon dress. Realistic photo, natural skin, consistent face.\nBackground description: a bright modern bedroom with white walls and a large window."
+   },
+   "_meta": {
+    "title": "Character + background"
+   }
+  },
+  "v_pose_text": {
+   "class_type": "CLIPTextEncode",
+   "inputs": {
+    "clip": [
+     "v_clip",
+     0
+    ],
+    "text": "a woman performing the movement from the reference video naturally, background stationary"
+   },
+   "_meta": {
+    "title": "Motion"
+   }
+  },
+  "v_neg": {
+   "class_type": "CLIPTextEncode",
+   "inputs": {
+    "clip": [
+     "v_clip",
+     0
+    ],
+    "text": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走, child, teen, minor, childlike, school uniform, nsfw, nude, nudity, topless, explicit, sexual, lingerie, see-through"
+   },
+   "_meta": {
+    "title": "Negative"
+   }
+  },
+  "v_vae": {
+   "class_type": "VAELoader",
+   "inputs": {
+    "vae_name": "Wan2_1_VAE_bf16.safetensors"
+   }
+  },
+  "v_unet": {
+   "class_type": "UNETLoader",
+   "inputs": {
+    "unet_name": "wan_animate_2_int8_convrot.safetensors",
+    "weight_dtype": "default"
+   }
+  },
+  "v_fast": {
+   "class_type": "LoraLoaderModelOnly",
+   "inputs": {
+    "model": [
+     "v_unet",
+     0
+    ],
+    "lora_name": "lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+    "strength_model": 1
+   }
+  },
+  "v_cache": {
+   "class_type": "WanAnimate2Cache",
+   "inputs": {
+    "model": [
+     "v_fast",
+     0
+    ],
+    "device": "cpu",
+    "dtype": "int8"
+   },
+   "_meta": {
+    "title": "Motion-branch cache"
+   }
+  },
+  "v_shift": {
+   "class_type": "ModelSamplingSD3",
+   "inputs": {
+    "model": [
+     "v_cache",
+     0
+    ],
+    "shift": 5
+   }
+  },
+  "v_sigmas": {
+   "class_type": "BasicScheduler",
+   "inputs": {
+    "model": [
+     "v_cache",
+     0
+    ],
+    "scheduler": "simple",
+    "steps": 6,
+    "denoise": 1
+   }
+  },
+  "v_sampler": {
+   "class_type": "KSamplerSelect",
+   "inputs": {
+    "sampler_name": "lcm"
+   }
+  },
+  "v_anim_0": {
+   "class_type": "WanAnimate2ToVideo",
+   "inputs": {
+    "positive": [
+     "v_pos",
+     0
+    ],
+    "negative": [
+     "v_neg",
+     0
+    ],
+    "vae": [
+     "v_vae",
+     0
+    ],
+    "reference_image": [
+     "v_ref",
+     0
+    ],
+    "pose_video": [
+     "v_scaled",
+     0
+    ],
+    "clip_vision_output": [
+     "v_cv_ref",
+     0
+    ],
+    "positive_pose": [
+     "v_pose_text",
+     0
+    ],
+    "clip_vision_output_pose": [
+     "v_cv_pose",
+     0
+    ],
+    "width": 528,
+    "height": 768,
+    "length": 81,
+    "batch_size": 1,
+    "video_frame_offset": 0,
+    "pose_strength": 1,
+    "pose_start_percent": 0,
+    "pose_end_percent": 1,
+    "reference_image_strength": 1
+   },
+   "_meta": {
+    "title": "Animate (part 1)"
+   }
+  },
+  "v_ks_0": {
+   "class_type": "SamplerCustom",
+   "inputs": {
+    "model": [
+     "v_shift",
+     0
+    ],
+    "add_noise": true,
+    "noise_seed": 2202,
+    "cfg": 1,
+    "positive": [
+     "v_anim_0",
+     0
+    ],
+    "negative": [
+     "v_anim_0",
+     1
+    ],
+    "sampler": [
+     "v_sampler",
+     0
+    ],
+    "sigmas": [
+     "v_sigmas",
+     0
+    ],
+    "latent_image": [
+     "v_anim_0",
+     2
+    ]
+   }
+  },
+  "v_trim_0": {
+   "class_type": "TrimVideoLatent",
+   "inputs": {
+    "samples": [
+     "v_ks_0",
+     0
+    ],
+    "trim_amount": [
+     "v_anim_0",
+     3
+    ]
+   }
+  },
+  "v_dec_0": {
+   "class_type": "VAEDecode",
+   "inputs": {
+    "samples": [
+     "v_trim_0",
+     0
+    ],
+    "vae": [
+     "v_vae",
+     0
+    ]
+   }
+  },
+  "v_new_0": {
+   "class_type": "ImageFromBatch",
+   "inputs": {
+    "image": [
+     "v_dec_0",
+     0
+    ],
+    "batch_index": [
+     "v_anim_0",
+     4
+    ],
+    "length": 4096
+   }
+  },
+  "v_frames": {
+   "class_type": "ImageFromBatch",
+   "inputs": {
+    "image": [
+     "v_new_0",
+     0
+    ],
+    "batch_index": 0,
+    "length": 64
+   }
+  },
+  "v_video": {
+   "class_type": "CreateVideo",
+   "inputs": {
+    "images": [
+     "v_frames",
+     0
+    ],
+    "fps": 16
+   },
+   "_meta": {
+    "title": "Frames → video"
+   }
+  },
+  "v_save": {
+   "class_type": "SaveVideo",
+   "inputs": {
+    "video": [
+     "v_video",
+     0
+    ],
+    "filename_prefix": "sienna/video",
+    "format": "mp4",
+    "codec": "auto",
+    "format.codec": "auto"
+   },
+   "_meta": {
+    "title": "Save video"
+   }
+  },
+  "v_poster_frame": {
+   "class_type": "ImageFromBatch",
+   "inputs": {
+    "image": [
+     "v_frames",
+     0
+    ],
+    "batch_index": 0,
+    "length": 1
+   }
+  },
+  "v_poster": {
+   "class_type": "SaveImage",
+   "inputs": {
+    "images": [
+     "v_poster_frame",
+     0
+    ],
+    "filename_prefix": "sienna/poster"
+   },
+   "_meta": {
+    "title": "Poster"
+   }
+  }
+ }
+}
