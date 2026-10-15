@@ -105,7 +105,7 @@ def main(a):
         body = {'name': f'{POD_PREFIX}_{len(L["pods"]) + 1}', 'templateId': tpl.get('templateId'), 'gpuTypeIds': [gpu], 'gpuCount': 1,
                 'ports': tpl.get('ports'), 'env': {**(tpl.get('env') or {}), 'SIENNA_IDLE_MINUTES': '30'}, 'cloudType': 'SECURE',
                 'containerDiskInGb': 150, 'minRAMPerGPU': 48, 'volumeInGb': 0, 'imageName': 'runpod/comfyui:1.4.0-comfyuiv0.35.0-cuda12.8'}
-        if vol: body.update({'networkVolumeId': vol, 'volumeMountPath': '/pilotvol'})   # never /workspace: ComfyUI installs there
+        if vol: body.update({'networkVolumeId': vol, 'volumeMountPath': '/pilotvol', 'dataCenterIds': [L['volume']['dc']]})   # never /workspace: ComfyUI installs there
         est_rate = float(os.environ.get('EXPECTED_RATE', '0.59'))
         if budget_minutes(L, est_rate) < MIN_RUN_H * 60: raise SystemExit(f'REFUSED: budget left for only {budget_minutes(L, est_rate):.0f} min')
         d = call('/pods', body); rate = float(d.get('costPerHr') or est_rate); now = time.time()

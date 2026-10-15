@@ -7,10 +7,11 @@ deleted and fetched again on the next pass; files already verified are never re-
 files relative to /workspace or to /, so both URL prefixes are tried at the gate and the working one is kept.
 Usage: POD=<id> pull_ckpts.py <local dir> [--once]
 """
-import hashlib, os, subprocess, sys, time, urllib.error, urllib.request
+import hashlib, os, re, subprocess, sys, time, urllib.error, urllib.request
 
 SP = os.environ.get('SCRATCH', '/tmp/claude-0/-home-user-Send-A-Shot/5ab8d7bf-5d0f-550f-a69c-62a6985b93f2/scratchpad')
 PREFIXES = ('wa2_pull', 'workspace/wa2_pull')
+PULL_PATTERN = re.compile(os.environ.get('PULL_PATTERN', '.*'))   # which checkpoint files to pull (local disk is small)
 
 
 class Puller:
@@ -83,6 +84,7 @@ class Puller:
         for line in sums.decode().splitlines():
             if not line.strip(): continue
             h, f = line.split(None, 1); f = f.strip().lstrip('*'); p = os.path.join(local, f)
+            if not PULL_PATTERN.search(f): continue
             if not (os.path.exists(p) and sha(p) == h):
                 if self.get(f'ckpt/{f}', p) and sha(p) == h:
                     new += 1; print('VERIFIED', f, os.path.getsize(p) // 2 ** 20, 'MB')
