@@ -178,6 +178,38 @@ def test_pilot_composition():
         pass
 
 
+
+def test_pilot_guard_cap_and_protection():
+    import importlib, time as _t
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'pilot'))
+    g = importlib.import_module('pilot_guard')
+    now = 1_000_000.0
+    L = {'cap': 3.0, 'pods': [{'id': 'a', 'name': 'sienna_wa2_pilot_1', 'rate': 0.6, 'started': now - 3600, 'deadline': now + 1800}], 'volume': None}
+    assert abs(g.spent(L, now) - 0.6) < 1e-6 and abs(g.committed(L, now) - 0.3) < 1e-6
+    m = g.budget_minutes(L, 0.6, now)                     # (3.0 - 0.05 - 0.6 - 0.3) / 0.6 h
+    assert abs(m - (3.0 - 0.05 - 0.9) / 0.6 * 60) < 1e-6
+    L['pods'][0]['ended'] = now
+    assert g.committed(L, now) == 0
+    for vid, name in (('u4odco714x', 'sienna-wa2-pilot'), ('x', 'sienna-studio'), ('x', 'other')):
+        try:
+            g.check_volume_allowed(vid, name); assert False, (vid, name)
+        except SystemExit:
+            pass
+    g.check_volume_allowed('abc', 'sienna-wa2-pilot')
+    try:
+        g.check_pod_allowed('sienna-comfyui'); assert False
+    except SystemExit:
+        pass
+    d = tempfile.mkdtemp(); open(d + '/x.bin', 'wb').write(b'abc')
+    import hashlib
+    open(d + '/SHA256SUMS', 'w').write(hashlib.sha256(b'abc').hexdigest() + '  x.bin\n'); assert g.sha_dir(d) == 1
+    open(d + '/x.bin', 'wb').write(b'abd')
+    try:
+        g.sha_dir(d); assert False
+    except SystemExit:
+        pass
+
+
 if __name__ == '__main__':
     fails = 0
     for name, fn in list(globals().items()):
