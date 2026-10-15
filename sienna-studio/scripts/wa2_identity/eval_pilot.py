@@ -13,6 +13,11 @@ Per run it reports:
               mean error and share of joints within 0.2 torso lengths
   clothing    colour of the torso region vs the Sienna photo (CIE76 delta E, median) and its frame-to-frame jitter
   body        shoulder/torso and hip/shoulder ratios vs the no-LoRA run (relative change)
+  stability   identity changes between frames: cosine between consecutive frames' face embeddings
+  head pose   does her head follow the driver's turn/tilt (median error), and has the tilt drifted towards her
+              selfie lean (median output-minus-driver tilt, compared with the no-LoRA run)
+  memorising  nearest TRAINING target per frame (face embedding and aligned face-crop correlation): a LoRA that
+              copies training photos makes one photo dominate and crop correlation rise versus the no-LoRA run
 Usage: eval_pilot.py --driver drive.mp4 --start-sec 1.0 --ref sienna.png --out report.json NAME=video.mp4|frames_dir ...
 The first NAME is the no-LoRA baseline that liveliness and body proportions are compared with.
 """
@@ -133,14 +138,33 @@ class Analyzer:
         self.heldout = self.sf.reference_embedding(embs) if embs else None
         return len(embs)
 
-    def frame(self, img):
+    def set_train(self, paths):
+        """Training targets (never scored for identity): per-image face embedding + aligned crop, for memorisation."""
+        self.train = []
+        for p in paths:
+            f = self.frame(cv2.imread(p), train=False)
+            if f.get('emb') is not None and f.get('crop') is not None: self.train.append((os.path.basename(p), f['emb'], f['crop']))
+        return len(self.train)
+
+    def frame(self, img, train=True):
         p = os.path.join(self.tmp, 'f.png'); cv2.imwrite(p, img); a = self.qa.analyze(p); a.pop('_seg', None)
         found = self.sf.faces(img, *self.M); out = {'mp': a}
+        if 'lm' in a: out['tilt'] = float(np.degrees(np.arctan2(a['lm'][263][1] - a['lm'][33][1], a['lm'][263][0] - a['lm'][33][0])))
         if found:
+            out['emb'] = np.asarray(found[0]['embedding'], np.float32)
             c = self.sf.check(found, self.ref, 0.74, 64); out['sim'], out['size'] = c['similarity'], c['size']
             if self.heldout is not None: out['sim_heldout'] = self.sf.similarity(found[0]['embedding'], self.heldout)
         det = self.M[0]; det.setInputSize((W, H)); _, fs = det.detect(img)
         out['box'] = None if fs is None else fs[np.argmax(fs[:, 2] * fs[:, 3])][:4].tolist()
+        if out['box'] is not None:
+            g = cv2.cvtColor(get_crop(img, crop_box(out['box'], 1.2)).astype(np.uint8), cv2.COLOR_BGR2GRAY)
+            g = cv2.resize(g, (64, 64), interpolation=cv2.INTER_AREA).astype(np.float32).ravel(); g -= g.mean()
+            out['crop'] = g / (np.linalg.norm(g) + 1e-6)
+        if train and getattr(self, 'train', None) and out.get('emb') is not None and out.get('crop') is not None:
+            e = out['emb'] / (np.linalg.norm(out['emb']) + 1e-9)
+            cos = [float(np.dot(e, t[1] / (np.linalg.norm(t[1]) + 1e-9))) for t in self.train]
+            ncc = [float(np.dot(out['crop'], t[2])) for t in self.train]
+            out['nearest_train'] = self.train[int(np.argmax(cos))][0]; out['nearest_cos'] = max(cos); out['nearest_ncc'] = max(ncc)
         return out
 
 
@@ -179,6 +203,24 @@ def summarise(name, frames, A, drv, ref_lab, base=None):
     ts = [torso(a['mp'].get('body')) for a in A]; ts = [t for t in ts if t and t['len'] > 10]
     r['body'] = {'shoulder_over_torso': float(np.median([t['sw'] / t['len'] for t in ts])) if ts else None,
                  'hip_over_shoulder': float(np.median([t['hw'] / t['sw'] for t in ts if t['sw'] > 5])) if ts else None}
+    embs = [a.get('emb') if a.get('size', 0) >= 64 else None for a in A]
+    steps = [float(np.dot(embs[i] / np.linalg.norm(embs[i]), embs[i - 1] / np.linalg.norm(embs[i - 1])))
+             for i in range(1, len(embs)) if embs[i] is not None and embs[i - 1] is not None]
+    r['identity_stability'] = {'consecutive_cos_median': float(np.median(steps)) if steps else None,
+                               'consecutive_cos_p10': float(np.percentile(steps, 10)) if steps else None,
+                               'similarity_std': float(np.std(sims)) if sims else None}
+    pe = [(abs(a['mp']['yaw'] - d['mp']['yaw']), abs(a['mp']['pitch'] - d['mp']['pitch']), a['tilt'] - d['tilt'])
+          for a, d in zip(A, drv) if 'yaw' in a['mp'] and 'yaw' in d['mp'] and 'tilt' in a and 'tilt' in d]
+    r['head_pose_following'] = {'n': len(pe), 'yaw_err_median': float(np.median([x[0] for x in pe])) if pe else None,
+                                'pitch_err_median': float(np.median([x[1] for x in pe])) if pe else None,
+                                'tilt_bias_median': float(np.median([x[2] for x in pe])) if pe else None}
+    nn = [a for a in A if a.get('nearest_train')]
+    if nn:
+        from collections import Counter
+        top, cnt = Counter(a['nearest_train'] for a in nn).most_common(1)[0]
+        r['memorisation'] = {'n': len(nn), 'nearest_cos_median': float(np.median([a['nearest_cos'] for a in nn])),
+                             'crop_ncc_median': float(np.median([a['nearest_ncc'] for a in nn])),
+                             'most_common_nearest': top, 'most_common_share': cnt / len(nn)}
     if base:
         b = base
         r['vs_baseline'] = {
@@ -188,6 +230,15 @@ def summarise(name, frames, A, drv, ref_lab, base=None):
             'motion_error_change': (r['motion']['joint_error_torso_lengths'] - b['motion']['joint_error_torso_lengths']) if r['motion']['joint_error_torso_lengths'] is not None and b['motion']['joint_error_torso_lengths'] is not None else None,
             'clothing_deltaE_change': (r['clothing']['deltaE_vs_photo_median'] - b['clothing']['deltaE_vs_photo_median']) if r['clothing']['deltaE_vs_photo_median'] is not None and b['clothing']['deltaE_vs_photo_median'] is not None else None,
             'body_ratio_change': {k: (r['body'][k] / b['body'][k] - 1) if r['body'][k] and b['body'][k] else None for k in r['body']}}
+        dif = lambda x, y: (x - y) if x is not None and y is not None else None
+        rs, bs = r['identity_stability'], b['identity_stability']; rh, bh = r['head_pose_following'], b['head_pose_following']
+        r['vs_baseline'].update({
+            'stability_change': dif(rs['consecutive_cos_median'], bs['consecutive_cos_median']),
+            'yaw_err_change': dif(rh['yaw_err_median'], bh['yaw_err_median']),
+            'tilt_bias_change': dif(rh['tilt_bias_median'], bh['tilt_bias_median'])})
+        if 'memorisation' in r and 'memorisation' in b:
+            r['vs_baseline']['crop_ncc_change'] = r['memorisation']['crop_ncc_median'] - b['memorisation']['crop_ncc_median']
+            r['vs_baseline']['dominant_share_change'] = r['memorisation']['most_common_share'] - b['memorisation']['most_common_share']
     return r
 
 
@@ -200,6 +251,12 @@ def verdict(r, base):
     if v.get('clothing_deltaE_change') is not None: c['clothing kept (delta E +5 at most)'] = v['clothing_deltaE_change'] <= 5
     br = [abs(x) for x in (v.get('body_ratio_change') or {}).values() if x is not None]
     if br: c['body proportions kept (within 8%)'] = max(br) <= 0.08
+    if v.get('stability_change') is not None: c['identity no less stable frame to frame (-0.02 at most)'] = v['stability_change'] >= -0.02
+    if v.get('yaw_err_change') is not None: c['head turns still follow the driver (+5 deg error at most)'] = v['yaw_err_change'] <= 5
+    if v.get('tilt_bias_change') is not None: c['no drift to her selfie tilt (within 5 deg)'] = abs(v['tilt_bias_change']) <= 5
+    if v.get('crop_ncc_change') is not None:
+        c['not copying training photos (crop match +0.10 at most, no photo dominating +25%)'] = \
+            v['crop_ncc_change'] <= 0.10 and v.get('dominant_share_change', 0) <= 0.25
     return c
 
 
@@ -208,8 +265,10 @@ if __name__ == '__main__':
     ap.add_argument('--ref', required=True); ap.add_argument('--out', required=True)
     ap.add_argument('--mp', default=os.environ.get('MP_MODELS')); ap.add_argument('--face', default=os.environ.get('FACE_MODELS'))
     ap.add_argument('--heldout', help='folder of held-out validation photos (scoring only)')
+    ap.add_argument('--train', help='folder of the training targets (memorisation check only)')
     ap.add_argument('runs', nargs='+'); a = ap.parse_args()
     an = Analyzer(a.mp, a.face)
+    if a.train: print('training targets for the memorisation check:', an.set_train(sorted(glob.glob(a.train + '/*_target.*'))))
     if a.heldout: print('held-out photos with a readable face:', an.set_heldout(sorted(glob.glob(a.heldout + '/*'))))
     runs = [r.split('=', 1) for r in a.runs]
     frames0 = read_frames(runs[0][1]); n = len(frames0)
@@ -227,6 +286,9 @@ if __name__ == '__main__':
         print(f"{name:18s} identity median {idn['median'] if idn['median'] is not None else float('nan'):.3f}  p10 {idn['p10'] if idn['p10'] is not None else float('nan'):.3f}  "
               f">=0.74 {idn['pass_074']}/{idn['n']}  flicker {r['flicker'] or 0:.2f}  expr-motion {r['expression_motion'] or 0:.3f}  "
               f"motion err {r['motion']['joint_error_torso_lengths'] or 0:.3f}  clothes dE {r['clothing']['deltaE_vs_photo_median'] or 0:.1f}")
+        st, hp, mm = r['identity_stability'], r['head_pose_following'], r.get('memorisation')
+        print(f"      frame-to-frame identity cos {st['consecutive_cos_median'] or 0:.3f}  head yaw err {hp['yaw_err_median'] or 0:.1f}  tilt bias {hp['tilt_bias_median'] or 0:+.1f} (n {hp['n']})"
+              + (f"  nearest-train crop {mm['crop_ncc_median']:.3f}, top photo {mm['most_common_nearest']} {mm['most_common_share']:.0%}" if mm else ''))
         if 'identity_vs_heldout_photos' in r: print(f"      vs held-out photos: median {r['identity_vs_heldout_photos']['median']:.3f}")
         for k, v in r['identity_by_angle'].items(): print(f"      angle {k:24s} n {v['n']:2d}  median {v['median']:.3f}")
         for k, v in r['identity_by_driver_expression'].items(): print(f"      driver expr {k:18s} n {v['n']:2d}  median {v['median']:.3f}")

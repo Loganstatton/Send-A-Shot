@@ -431,6 +431,51 @@ def test_split_for_delivery_reassembles_exactly():
     shutil.rmtree(d)
 
 
+def test_freeze_v2_only_confirmed_and_v1_untouched():
+    import freeze_v2 as fz, shutil, hashlib, tarfile
+    v1 = '/home/user/Send-A-Shot/stageA_review/wa2_dataset_frozen_v1'
+    if not os.path.exists(v1):
+        return
+    before = hashlib.sha256(open(v1 + '/SHA256SUMS', 'rb').read()).hexdigest()
+    d = tempfile.mkdtemp(); out = d + '/v2'
+    for bad in (['O-023'], ['O-001'], ['P99']):
+        try:
+            fz.freeze(v1, out, bad); assert False, bad
+        except ValueError:
+            pass
+    try:
+        fz.freeze(v1, out, ['P3'], ['P3']); assert False
+    except ValueError:
+        pass
+    m = fz.freeze(v1, out, ['R1-17', 'P3'], ['P41'])
+    tr = {e['id'] for e in m['train']}
+    assert len(tr) == 26 and {'R1-17', 'P3'} <= tr and not tr & {'P41', 'P12', 'P9', 'P1', 'O-023', 'O-012'}
+    assert {e['id'] for e in m['review_pending']} == {'P12', 'P9', 'P1'}           # kept for comparison, not trained
+    assert m['decision']['rejected'] == ['P41'] and m['decision']['excluded'] == ['O-023', 'O-012']
+    for e in m['validation_heldout']:                                               # held-out photos byte-identical
+        assert open(f"{out}/{e['image']}", 'rb').read() == open(f"{v1}/{e['image']}", 'rb').read()
+    r = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=out, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not os.access(out + '/manifest.json', os.W_OK) or os.geteuid() == 0     # read-only (root ignores modes)
+    assert oct(os.stat(out + '/manifest.json').st_mode & 0o222) == '0o0'
+    try:
+        fz.freeze(v1, out, ['P12']); assert False, 'overwrote a frozen dataset'
+    except FileExistsError:
+        pass
+    import make_pilot as mp
+    ents, n, info = mp.compose(out)                                                 # v2 trains as-is, 300 steps
+    assert n == 100 and info['pairs'] == 26 and {'R1-17', 'P3'} <= set(info['priority'])
+    parts = fz.backup_parts(out, d + '/bk')
+    assert all(os.path.getsize(p) < 30 * 2 ** 20 for p in parts)
+    x = d + '/x'; os.makedirs(x)
+    for p in parts:
+        with tarfile.open(p) as t: t.extractall(x)
+    r = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=x + '/v2', capture_output=True, text=True)
+    assert r.returncode == 0
+    assert hashlib.sha256(open(v1 + '/SHA256SUMS', 'rb').read()).hexdigest() == before                 # v1 untouched
+    subprocess.run(['chmod', '-R', 'u+w', d]); shutil.rmtree(d)
+
+
 if __name__ == '__main__':
     fails = 0
     for name, fn in list(globals().items()):

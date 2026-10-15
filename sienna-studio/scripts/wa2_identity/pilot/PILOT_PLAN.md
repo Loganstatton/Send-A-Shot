@@ -1,6 +1,6 @@
 # WA2 identity-LoRA pilot (300 steps): final plan, awaiting two decisions
 
-**Status:** code complete, all 20 local tests pass. Nothing launched, created or spent.
+**Status:** code complete, all 20 local tests pass. Nothing launched, created or spent. Dataset v2 is built only by `freeze_v2.py` from your confirmations.
 
 **Still needed from you:**
 1. Your likeness decision on R1-17, P3, P12, P41, P9 and P1.
@@ -63,7 +63,7 @@
 
 ## 6. Comparison and evaluation (`eval_graphs.py`, `eval_pilot.py`)
 **Same inputs everywhere:**
-- Copy Motion's exact graph, photo and driving clip
+- Copy Motion's exact graph, photo and uploaded driving clip
 - Seed 2202, 528×768, 6 LCM steps, lightx2v
 
 The LoRA graphs differ from the baseline only by the inserted LoRA node; the close-up graphs also change the input files. Tests prove nothing else moves.
@@ -75,27 +75,50 @@ The LoRA graphs differ from the baseline only by the inserted LoRA node; the clo
 | Best previous face-restored | Stored frames from the same graph, scored from disk (reproduces 0.665 exactly) |
 | Close-framed | No-LoRA vs best LoRA on the head-and-shoulders crop (faces about 175 px) |
 
-**Measured per run:**
-- **Face similarity:** median, p10, frames ≥ 0.74, and similarity against the 6 held-out photos.
-- **Head turns:** similarity split by angle (frontal / 15–35° / over 35° / unreadable).
-- **Expression preservation:** mouth/smile motion relative to no-LoRA, and correlation with the driver's mouth.
-- **Flicker.**
-- **Motion accuracy:** normalised pose against the driver.
-- **Clothing:** colour against the photo.
-- **Body proportions:** against the no-LoRA run.
+**Your seven priorities and how each is measured:**
 
-## 7. GO / PARTIAL / NO-GO (fixed in advance)
+| # | Priority | Measured by |
+|---|---|---|
+| 1 | Face similarity during head turns | Identity split by angle: frontal / 15–35° / over 35° / unreadable. Unreadable frames go on a strip for your review |
+| 2 | Recognisable in close-up | The close-framed runs, plus similarity against the 6 held-out photos |
+| 3 | Natural mouth movement and expressions | Mouth/smile motion against no-LoRA, and correlation with the driver's mouth. A frozen face fails. Talking and laughing need your clip |
+| 4 | Flicker and identity changes between frames | Pixel flicker, plus frame-to-frame face-embedding stability |
+| 5 | Dance accuracy | Normalised body pose against the driver |
+| 6 | Body proportions and clothing | Shoulder/torso and hip/shoulder ratios, and torso colour against the photo |
+| 7 | Memorising training poses or appearances | Head pose following the driver (turn error, drift towards her selfie tilt); nearest training photo per frame; whether one photo dominates |
+
+**Check on the stored runs:** no-LoRA vs face-restored passes all 9 checks; the restore copied no training photo.
+
+**Limitation:** the dancer's head pose is readable in only 4 full-body frames, so turn-following and tilt drift are judged on the close-up runs.
+
+**Deliverables to you:**
+- Every rendered video (no-LoRA, LoRA variants, close-ups).
+- A side-by-side comparison video that includes the face-restored result.
+- Face close-up strips.
+- The full report.
+- A GO / NO-GO recommendation.
+
+## 7. GO / PARTIAL / NO-GO (fixed in advance; scores alone never decide)
 **GO only if all of these hold:**
 1. Main clip, best LoRA: median ≥ no-LoRA + **0.10**, and ≥ **0.67** (matches or beats the face-restored result without restoration).
 2. The turned (15–35°) bin improves by ≥ 0.10, not only frontal frames.
 3. Close-framed: LoRA ≥ no-LoRA + 0.10.
 4. Similarity against the held-out photos improves by ≥ 0.08 (it learned her, not its training photos).
-5. Not frozen: liveliness ≥ 0.8 of no-LoRA. Flicker within +5%, motion error +0.05 at most, clothing ΔE +5 at most, body ratios within 8%.
-6. Your visual review says she is recognisable through the turns.
+5. Every behaviour check passes:
+   - not frozen (liveliness ≥ 0.8 of no-LoRA)
+   - flicker within +5%
+   - frame-to-frame identity no less stable
+   - motion error +0.05 at most
+   - clothing ΔE +5 at most
+   - body ratios within 8%
+   - head turns still follow the driver (+5° at most)
+   - no drift to her selfie tilt (within 5°)
+   - no training photo copied or dominating
+6. Your visual review of the videos says she is recognisable through the turns, and the motion looks natural.
 
 **PARTIAL:** gain of +0.05 to +0.10, or 1 holds but one of 2–4 is missing, or the visuals are mixed. I report and propose options, with no automatic next spend.
 
-**NO-GO:** gain under +0.05, or any frozen face, broken motion or changed body.
+**NO-GO:** gain under +0.05, or any frozen face, broken motion, changed body or memorisation.
 
 **Expressions are not proven by this pilot.** The dance clip has no smiles. Talking and laughing stay open until your authorised clip passes `prepare_talking_clip.py` and the talk test runs.
 
