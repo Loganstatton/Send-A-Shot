@@ -3,6 +3,7 @@
 import { api, ApiError } from './api';
 import { trackJob } from './jobs';
 import type { CameraMove, VideoMode, VideoQuality, VideoResolution } from '../video';
+import type { MovementKind } from '../video-framing';
 import type { GenerationRecord, StoredImage, StoredVideo } from '../types';
 
 export interface VideoAvailability {
@@ -13,6 +14,8 @@ export interface VideoAvailability {
   faceCheck: boolean;
   adultAllowed: boolean;
   motionEngine: 'animate2' | 'animate1';
+  safeFraming: { available: boolean; missing: string[] };
+  experiments: boolean;
 }
 
 export interface DrivingVideo {
@@ -33,6 +36,7 @@ export interface VideoBody {
   drive?: DrivingVideo;
   start?: number;
   scene?: string;
+  framing?: MovementKind | null;
 }
 
 export async function startVideo(body: VideoBody): Promise<GenerationRecord> {
@@ -53,6 +57,7 @@ export function rerunVideo(rec: GenerationRecord, newSeed: boolean): Promise<Gen
     resolution: v.resolution,
     ...(v.mode === 'animate' ? { motion: v.motion ?? '', camera: v.camera, seconds: v.seconds } : {}),
     ...(v.mode === 'motion' && v.drive ? { drive: { video: v.drive.video, poster: v.drive.poster }, start: v.drive.start, seconds: v.drive.seconds, scene: v.scene ?? '' } : {}),
+    framing: v.safeFraming?.movement ?? null,
   });
 }
 

@@ -14,14 +14,17 @@ import {
   MAX_MOTION_SECONDS,
   MAX_MOTION_TEXT,
   MOTION_PRESETS,
+  MotionPreset,
   motion2Chunks,
   motionChunks,
   VIDEO_FPS,
   VideoMode,
   VideoQuality,
   VideoResolution,
+  slowMotionWords,
   videoSize,
 } from '@/lib/video';
+import { MOVEMENT_LABELS, MovementKind, movementFromText, SAFE_FRAMING_DEFAULT } from '@/lib/video-framing';
 import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Slider, Spinner, TextArea, TextInput, toast } from '@/components/ui';
 
 export default function VideoPage() {
@@ -43,6 +46,7 @@ function VideoStudio() {
   const [picking, setPicking] = useState(false);
   // Animate Image
   const [motion, setMotion] = useState(MOTION_PRESETS[0].text);
+  const [presetId, setPresetId] = useState<string | null>(MOTION_PRESETS[0].id);
   const [camera, setCamera] = useState<CameraMove>('still');
   const [seconds, setSeconds] = useState(5);
   const [quality, setQuality] = useState<VideoQuality>('fast');
@@ -52,6 +56,9 @@ function VideoStudio() {
   const [start, setStart] = useState(0);
   const [length, setLength] = useState(5);
   const [scene, setScene] = useState('');
+  const [motionMovement, setMotionMovement] = useState<MovementKind>('small');
+  // Safe framing: on/off follows the movement until the user chooses
+  const [framingChoice, setFramingChoice] = useState<boolean | null>(null);
   // both
   const [resolution, setResolution] = useState<VideoResolution>('480p');
   const [seed, setSeed] = useState('');
@@ -70,6 +77,12 @@ function VideoStudio() {
   useEffect(() => {
     if (!photoId && photos.length) setPhotoId(photos[0].id);
   }, [photos, photoId]);
+
+  const preset: MotionPreset | null = MOTION_PRESETS.find((p) => p.id === presetId && p.text === motion) ?? null;
+  const movement: MovementKind = mode === 'animate' ? preset?.framing ?? movementFromText(motion) : motionMovement;
+  useEffect(() => setFramingChoice(null), [movement]);
+  const framing = framingChoice ?? SAFE_FRAMING_DEFAULT[movement];
+  const slow = mode === 'animate' ? slowMotionWords(motion) : [];
 
   const img = photo?.images[0];
   const size = videoSize(img?.width ?? photo?.params.width ?? 832, img?.height ?? photo?.params.height ?? 1216, resolution);
@@ -108,8 +121,8 @@ function VideoStudio() {
       const seedNum = seed.trim() === '' ? -1 : Math.max(0, Math.floor(Number(seed)) || 0);
       const rec = await startVideo(
         mode === 'animate'
-          ? { mode, sourceId: photo.id, seed: seedNum, quality, resolution, motion, camera, seconds }
-          : { mode, sourceId: photo.id, seed: seedNum, quality: 'fast', resolution, drive: drive!, start, seconds: length, scene },
+          ? { mode, sourceId: photo.id, seed: seedNum, quality, resolution, motion, camera, seconds, framing: framingUsable && framing ? movement : null }
+          : { mode, sourceId: photo.id, seed: seedNum, quality: 'fast', resolution, drive: drive!, start, seconds: length, scene, framing: framingUsable && framing ? movement : null },
       );
       toast(rec.status === 'error' ? 'Video failed — see details' : 'Video queued');
       router.push(`/gallery/${rec.id}`);
@@ -136,6 +149,13 @@ function VideoStudio() {
     );
 
   const m = avail.modes[mode];
+  const framingUsable = avail.safeFraming.available && movement !== 'still' && (mode === 'animate' || avail.motionEngine === 'animate2');
+  const engine =
+    mode === 'animate'
+      ? `Wan2.2 Animate Image (I2V 14B) · ${quality === 'fast' ? 'Fast, 4 steps' : quality === 'quality' ? 'Quality, 20 steps (testing)' : 'Hybrid (testing)'}`
+      : avail.motionEngine === 'animate2'
+        ? 'Wan2.2-Animate-2 Copy Motion · 6 steps'
+        : 'Wan2.2 Animate Copy Motion (v1, DWPose)';
   const canRun = m.available && !!photo && !busy && (mode === 'animate' ? motion.trim().length > 0 : !!drive && upload === null);
 
   return (
@@ -219,12 +239,41 @@ function VideoStudio() {
             <SectionTitle>What she does</SectionTitle>
             <div className="flex flex-wrap gap-2">
               {MOTION_PRESETS.map((p) => (
-                <Chip key={p.label} active={motion === p.text} onClick={() => setMotion(p.text)}>
+                <Chip
+                  key={p.id}
+                  active={motion === p.text}
+                  onClick={() => {
+                    setMotion(p.text);
+                    setPresetId(p.id);
+                  }}
+                >
                   {p.label}
+                  {p.best === 'motion' ? ' · best with 🕺' : ''}
                 </Chip>
               ))}
             </div>
+            {preset?.best === 'motion' && (
+              <Notice kind="warn">
+                <p className="font-medium">Best made with Copy Motion</p>
+                <p className="mt-1 text-xs">{preset.why}</p>
+                <p className="mt-1 text-xs">Copy Motion needs a short video of a real person doing this movement at normal speed. Animate Image will still try if you stay here.</p>
+                <Button
+                  className="mt-2"
+                  onClick={() => {
+                    setMotionMovement(preset.framing);
+                    setMode('motion');
+                  }}
+                >
+                  Switch to Copy Motion
+                </Button>
+              </Notice>
+            )}
             <TextArea rows={3} value={motion} maxLength={MAX_MOTION_TEXT} onChange={(e) => setMotion(e.target.value)} hint="Describe movement, not her looks — her look comes from the photo." />
+            {slow.length > 0 && (
+              <p className="text-xs text-amber-300">
+                “{slow.join('”, “')}” asks for slow movement — Wan already tends to move slowly, so this usually looks like slow motion. Say how fast instead, e.g. “at a normal walking pace”.
+              </p>
+            )}
             <SectionTitle>Camera</SectionTitle>
             <div className="flex flex-wrap gap-2">
               {(Object.keys(CAMERA_LABELS) as CameraMove[]).map((c) => (
@@ -242,14 +291,27 @@ function VideoStudio() {
               ))}
             </div>
             <SectionTitle>Speed</SectionTitle>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={`grid gap-2 ${avail.experiments ? 'grid-cols-3' : 'grid-cols-2'}`}>
               <Chip active={quality === 'fast'} onClick={() => setQuality('fast')} className="w-full">
-                Fast (4 steps)
+                {avail.experiments ? 'Fast ✓' : 'Fast (recommended)'}
               </Chip>
               <Chip active={quality === 'quality'} onClick={() => setQuality('quality')} className="w-full">
-                Quality (20 steps)
+                {avail.experiments ? 'Quality · test' : 'Quality (testing)'}
               </Chip>
+              {avail.experiments && (
+                <Chip active={quality === 'hybrid'} onClick={() => setQuality('hybrid')} className="w-full">
+                  Hybrid · test
+                </Chip>
+              )}
             </div>
+            {quality === 'fast' ? (
+              <p className="text-xs text-ink-400">Recommended: best identity and cost in the motion test.</p>
+            ) : (
+              <p className="text-xs text-ink-400">
+                Testing only. In the motion test, {quality === 'quality' ? 'Quality took 7× longer without more natural movement' : 'Hybrid restored speed on a jump but the picture fell apart'}; Fast is
+                the recommended setting.
+              </p>
+            )}
           </Card>
         ) : (
           <Card className="space-y-3">
@@ -284,6 +346,10 @@ function VideoStudio() {
               Only the movement is copied: body pose, hands and expressions. The person in the video never appears in the result. Use videos of adults that you have the
               right to use. Up to 200 MB; the first 20 s are kept.
             </p>
+            <p className="text-xs text-ink-400">
+              Copy Motion follows the video’s real timing, so use a clip filmed at normal speed — don’t slow it down. Best for jumps, quick turns and fast movements where
+              gravity and momentum matter.
+            </p>
             <TextArea
               label="Scene (optional)"
               rows={2}
@@ -294,6 +360,43 @@ function VideoStudio() {
             />
           </Card>
         )}
+
+        <Card className="space-y-3">
+          <SectionTitle>Safe framing</SectionTitle>
+          {mode === 'motion' ? (
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(MOVEMENT_LABELS) as MovementKind[]).map((k) => (
+                <Chip key={k} active={motionMovement === k} onClick={() => setMotionMovement(k)}>
+                  {MOVEMENT_LABELS[k]}
+                </Chip>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm">Movement: {MOVEMENT_LABELS[movement]}</p>
+          )}
+          {movement === 'still' ? (
+            <p className="text-xs text-ink-400">Small movements need no extra room.</p>
+          ) : !framingUsable ? (
+            <p className="text-xs text-amber-300">
+              Not available: {mode === 'motion' && avail.motionEngine !== 'animate2' ? 'needs the Wan Animate 2 engine' : avail.safeFraming.missing.join('; ') || 'GPU server not ready'}.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Chip active={framing} onClick={() => setFramingChoice(true)} className="w-full">
+                  On
+                </Chip>
+                <Chip active={!framing} onClick={() => setFramingChoice(false)} className="w-full">
+                  Off
+                </Chip>
+              </div>
+              <p className="text-xs text-ink-400">
+                Adds only the room this movement needs above her head and around her body, so she stays in the frame. The new strip continues the photo’s own background; her
+                pixels aren’t changed. Photos that already have room are left as they are. About 15 s more on the GPU.
+              </p>
+            </>
+          )}
+        </Card>
 
         <Card className="space-y-3">
           <SectionTitle>Resolution</SectionTitle>
@@ -310,6 +413,10 @@ function VideoStudio() {
           </Collapsible>
         </Card>
 
+        <p className="text-xs text-ink-400">
+          Engine: {engine}
+          {framingUsable && framing ? ' + safe framing (photo checkpoint fills the added room)' : ''}
+        </p>
         <Notice>
           About {minutes} min on the GPU (RTX 4090){mode === 'motion' && chunks.chunks > 1 ? `, made in ${chunks.chunks} parts` : ''}. Frames are checked against Sienna’s face
           (0.74): if any checked frame doesn’t match, the video goes to Needs Review. Videos are not redone automatically.

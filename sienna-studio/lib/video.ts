@@ -17,6 +17,7 @@
  */
 
 import type { ComfyGraph } from './types';
+import { MOVEMENT_MARGINS, MovementKind, SAFE_FRAME_MAX_PAD, SAFE_FRAME_MIN_ASPECT } from './video-framing';
 
 export const VIDEO_FPS = 16;
 
@@ -45,7 +46,13 @@ export const WAN_NEGATIVE =
   '色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走';
 
 export type VideoMode = 'animate' | 'motion';
-export type VideoQuality = 'fast' | 'quality';
+/**
+ * fast    — lightx2v 4-step LoRAs, cfg 1 (default; best cost and identity in the motion test)
+ * quality — 20 steps, cfg 3.5, no LoRA (testing only: 7× the GPU time, not more natural movement in the motion test)
+ * hybrid  — 2 full-guidance steps without the LoRA, then 1 + 3 lightx2v steps (testing only, experiments flag:
+ *           restored speed on a jump but the image fell apart)
+ */
+export type VideoQuality = 'fast' | 'quality' | 'hybrid';
 export type VideoResolution = '480p' | '720p';
 export type CameraMove = 'still' | 'push_in' | 'orbit' | 'handheld';
 /** Copy Motion model: Wan2.2-Animate-2 (end-to-end, default) or Wan2.2 Animate v1 (DWPose skeleton). */
@@ -60,8 +67,12 @@ export const CAMERA_LABELS: Record<CameraMove, { label: string; text: string }> 
   handheld: { label: 'Handheld phone', text: 'handheld phone video, slight natural camera shake' },
 };
 
-/** One-tap motion ideas for Animate Image. */
-export const MOTION_PRESETS: { label: string; text: string }[] = [
+/**
+ * The original (v1) presets, kept unchanged for reference and A/B tests; the UI no longer offers them.
+ * Measured problem (motion test, Oct 2026): speed words like "walks slowly" make Wan produce slow-motion movement
+ * (an AI walk at 0.79 steps/s vs ~1.8 for a real walk).
+ */
+export const MOTION_PRESETS_V1: { label: string; text: string }[] = [
   { label: 'Smile at camera', text: 'she looks into the camera and smiles softly, blinking naturally, subtle breathing' },
   { label: 'Hair in the breeze', text: 'a gentle breeze moves her hair, she tucks a strand behind her ear and smiles' },
   { label: 'Turn toward camera', text: 'she slowly turns her head toward the camera and smiles' },
@@ -69,6 +80,92 @@ export const MOTION_PRESETS: { label: string; text: string }[] = [
   { label: 'Sway', text: 'she sways gently from side to side to music, relaxed and smiling' },
   { label: 'Look over shoulder', text: 'she glances back over her shoulder at the camera and smiles' },
 ];
+
+/**
+ * One-tap movements (v2): normal human speed, no slow-motion wording. Words that describe her face ("smiles softly")
+ * or the weather ("a gentle breeze") stay — only words that slow her movement were removed.
+ * `best` is the engine that made this kind of movement most believable in the motion test: Animate Image for ordinary
+ * moves, Copy Motion (with a real-timing reference video) where timing, gravity and momentum matter. The app never
+ * switches engines on its own — the UI shows the recommendation and the user decides.
+ * `framing` is the room the movement needs around her (safe framing, lib/video-framing.ts).
+ */
+export interface MotionPreset {
+  id: string;
+  label: string;
+  text: string;
+  best: VideoMode;
+  /** Why the other engine is weaker for this movement (shown when the user is on it). */
+  why?: string;
+  framing: MovementKind;
+}
+export const MOTION_PRESETS: MotionPreset[] = [
+  { id: 'smile', label: 'Smile at camera', text: 'she looks into the camera and smiles softly, blinking naturally, subtle breathing', best: 'animate', framing: 'still' },
+  { id: 'breeze', label: 'Hair in the breeze', text: 'a gentle breeze moves her hair, she tucks a strand behind her ear and smiles', best: 'animate', framing: 'still' },
+  { id: 'turn_head', label: 'Turn toward camera', text: 'she turns her head toward the camera at a natural, everyday pace and smiles', best: 'animate', framing: 'still' },
+  {
+    id: 'walk',
+    label: 'Walk toward camera',
+    text: 'she walks toward the camera at a normal walking pace, natural heel-to-toe steps, her arms swinging naturally, real-time speed',
+    best: 'animate',
+    framing: 'walk',
+  },
+  { id: 'sway', label: 'Sway to music', text: 'she sways from side to side in time with upbeat music, relaxed and smiling', best: 'animate', framing: 'small' },
+  {
+    id: 'shift',
+    label: 'Shift her stance',
+    text: 'she shifts her weight from one foot to the other and adjusts her stance, an ordinary movement at normal speed',
+    best: 'animate',
+    framing: 'small',
+  },
+  { id: 'shoulder', label: 'Look over shoulder', text: 'she glances back over her shoulder at the camera and smiles', best: 'animate', framing: 'still' },
+  {
+    id: 'bend',
+    label: 'Bend & pick up',
+    text: 'she bends forward at the waist and knees in one natural movement, picks something up from the floor and stands straight back up, the whole movement takes about three seconds, her hair falls forward and swings back, real-time speed, natural momentum and gravity',
+    best: 'animate',
+    framing: 'bend',
+  },
+  {
+    id: 'turn_around',
+    label: 'Turn around, look back',
+    text: 'she turns around at a normal pace until her back faces the camera, then glances back over her shoulder at the camera, her hair swinging with the turn, real-time speed',
+    best: 'motion',
+    why: 'Quick turns need exact timing; Copy Motion follows a real reference video, Animate Image guesses the timing.',
+    framing: 'turn',
+  },
+  {
+    id: 'jump',
+    label: 'Small jump',
+    text: 'she bends her knees and springs straight up into a small quick jump, both feet clearly leave the floor, she lands and her knees bend to absorb the landing, about half a second in the air, real-time speed, natural gravity',
+    best: 'motion',
+    why: 'In the motion test Animate Image jumps floated (≈ 1/8 of real gravity) or fell apart; Copy Motion matched a real jump’s timing and gravity.',
+    framing: 'jump',
+  },
+];
+
+/**
+ * Speed words that slow her MOVEMENT down ("walks slowly", "slowly turns", "gently sways", "slow motion").
+ * Face and mood words are left alone ("smiles softly", "a gentle breeze", "relaxed").
+ */
+const MOVE_VERB =
+  '(?:walk|turn|move|sway|shift|bend|rise|spin|twirl|danc|step|lean|rais|lift|jump|run|stand|sit|kneel|crouch|squat|stretch|swing|rotat|approach|strut|pac|stroll|rock|bounc|wiggl|shak|twist|swirl|glid|lower|climb|roll)\\w*';
+const SLOW_ADV = '(?:slowly|gently|languidly|leisurely|unhurriedly|sluggishly)';
+const SLOW_PATTERNS = [
+  /\b(?:in\s+)?slow[- ]?(?:motion|mo)\b|\bslowmo\b/i,
+  new RegExp(`\\b${SLOW_ADV}\\s+(?:\\w+\\s+)?${MOVE_VERB}`, 'i'),
+  new RegExp(`\\b${MOVE_VERB}(?:\\s+[\\w'-]+){0,3}?\\s+${SLOW_ADV}\\b`, 'i'),
+  new RegExp(`\\bslow\\s+(?:${MOVE_VERB})`, 'i'),
+];
+export function slowMotionWords(text: string): string[] {
+  const found: string[] = [];
+  for (const sentence of text.split(/[,.;!?]/)) {
+    for (const re of SLOW_PATTERNS) {
+      const m = re.exec(sentence);
+      if (m && !found.includes(m[0].trim())) found.push(m[0].trim());
+    }
+  }
+  return found;
+}
 
 export const DURATIONS_ANIMATE = [2, 3, 4, 5] as const;
 export const MAX_MOTION_SECONDS = 14;
@@ -107,7 +204,8 @@ export function videoSize(srcW: number, srcH: number, res: VideoResolution): { w
 export function estimateMinutes(opts: { mode: VideoMode; quality: VideoQuality; width: number; height: number; frames: number; chunks?: number }): number {
   const px = (opts.width * opts.height) / (640 * 640);
   if (opts.mode === 'animate') {
-    const base = opts.quality === 'quality' ? 9 : 1.5; // 640×640, 81 frames
+    // 640×640, 81 frames; hybrid measured at ≈ 1.75× fast in the motion test (A40: 165 s vs 100 s)
+    const base = opts.quality === 'quality' ? 9 : opts.quality === 'hybrid' ? 2.6 : 1.5;
     return Math.max(0.5, Math.round(base * px * (opts.frames / 81) * 10) / 10);
   }
   // Animate: 6 steps per chunk, plus DWPose on the driving frames
@@ -173,16 +271,21 @@ export interface AnimateGraphInput {
   seed: number;
   quality: VideoQuality;
   face: FaceCheckSpec | null;
+  /** Safe framing: add room around her before animating (null = use the photo as it is). */
+  frame?: SafeFrameSpec | null;
 }
 
 export const ANIMATE_STEPS: Record<VideoQuality, { steps: number; cfg: number; split: number }> = {
   fast: { steps: 4, cfg: 1, split: 2 },
   quality: { steps: 20, cfg: 3.5, split: 10 },
+  // hybrid: 6-step schedule; steps 0–2 full guidance on the plain high-noise expert, 2–3 high + lightx2v, 3–6 low + lightx2v
+  hybrid: { steps: 6, cfg: 1, split: 3 },
 };
+export const HYBRID_GUIDED = { steps: 2, cfg: 3.5 };
 
 export function buildAnimateGraph(i: AnimateGraphInput): ComfyGraph {
   const s = ANIMATE_STEPS[i.quality];
-  const fast = i.quality === 'fast';
+  const lora = i.quality !== 'quality';
   const g: ComfyGraph = {
     v_image: n('LoadImage', { image: i.imageName }, 'Sienna photo'),
     v_unet_high: n('UNETLoader', { unet_name: WAN_FILES.i2vHigh, weight_dtype: 'default' }),
@@ -192,28 +295,103 @@ export function buildAnimateGraph(i: AnimateGraphInput): ComfyGraph {
     v_pos: n('CLIPTextEncode', { clip: ['v_clip', 0], text: i.positive }, 'Motion prompt'),
     v_neg: n('CLIPTextEncode', { clip: ['v_clip', 0], text: i.negative }, 'Negative'),
   };
-  if (fast) {
+  const sized = i.frame ? buildSafeFrame(g, ['v_image', 0], i.frame) : null;
+  if (lora) {
     g.v_fast_high = n('LoraLoaderModelOnly', { model: ['v_unet_high', 0], lora_name: WAN_FILES.fastHigh, strength_model: 1 });
     g.v_fast_low = n('LoraLoaderModelOnly', { model: ['v_unet_low', 0], lora_name: WAN_FILES.fastLow, strength_model: 1 });
   }
-  g.v_shift_high = n('ModelSamplingSD3', { model: [fast ? 'v_fast_high' : 'v_unet_high', 0], shift: 5 });
-  g.v_shift_low = n('ModelSamplingSD3', { model: [fast ? 'v_fast_low' : 'v_unet_low', 0], shift: 5 });
+  g.v_shift_high = n('ModelSamplingSD3', { model: [lora ? 'v_fast_high' : 'v_unet_high', 0], shift: 5 });
+  g.v_shift_low = n('ModelSamplingSD3', { model: [lora ? 'v_fast_low' : 'v_unet_low', 0], shift: 5 });
   g.v_i2v = n('WanImageToVideo', {
     positive: ['v_pos', 0],
     negative: ['v_neg', 0],
     vae: ['v_vae', 0],
-    start_image: ['v_image', 0],
-    width: i.width,
-    height: i.height,
+    start_image: sized ? sized.image : ['v_image', 0],
+    width: sized ? sized.width : i.width,
+    height: sized ? sized.height : i.height,
     length: i.frames,
     batch_size: 1,
   });
   const common = { steps: s.steps, cfg: s.cfg, sampler_name: 'euler', scheduler: 'simple', noise_seed: i.seed, positive: ['v_i2v', 0] as [string, number], negative: ['v_i2v', 1] as [string, number] };
-  g.v_ks_high = n('KSamplerAdvanced', { ...common, model: ['v_shift_high', 0], latent_image: ['v_i2v', 2], add_noise: 'enable', start_at_step: 0, end_at_step: s.split, return_with_leftover_noise: 'enable' }, 'High-noise expert');
+  if (i.quality === 'hybrid') {
+    g.v_shift_high_base = n('ModelSamplingSD3', { model: ['v_unet_high', 0], shift: 5 });
+    g.v_ks_guided = n(
+      'KSamplerAdvanced',
+      { ...common, cfg: HYBRID_GUIDED.cfg, model: ['v_shift_high_base', 0], latent_image: ['v_i2v', 2], add_noise: 'enable', start_at_step: 0, end_at_step: HYBRID_GUIDED.steps, return_with_leftover_noise: 'enable' },
+      'Motion steps (full guidance)',
+    );
+  }
+  const highStart = i.quality === 'hybrid' ? HYBRID_GUIDED.steps : 0;
+  g.v_ks_high = n(
+    'KSamplerAdvanced',
+    {
+      ...common,
+      model: ['v_shift_high', 0],
+      latent_image: i.quality === 'hybrid' ? ['v_ks_guided', 0] : ['v_i2v', 2],
+      add_noise: i.quality === 'hybrid' ? 'disable' : 'enable',
+      start_at_step: highStart,
+      end_at_step: s.split,
+      return_with_leftover_noise: 'enable',
+    },
+    'High-noise expert',
+  );
   g.v_ks_low = n('KSamplerAdvanced', { ...common, model: ['v_shift_low', 0], latent_image: ['v_ks_high', 0], add_noise: 'disable', start_at_step: s.split, end_at_step: 10000, return_with_leftover_noise: 'disable' }, 'Low-noise expert');
   g.v_decode = n('VAEDecode', { samples: ['v_ks_low', 0], vae: ['v_vae', 0] });
   addOutputs(g, ['v_decode', 0], i.frames, true, i.face);
   return g;
+}
+
+// ── Safe framing ─────────────────────────────────────────────────────────────
+
+/** Node ids the server reads back for safe framing. */
+export const SAFE_FRAME_NODES = { report: 'v_sf', image: 'v_sf_save' } as const;
+
+export interface SafeFrameSpec {
+  movement: MovementKind;
+  /** SDXL checkpoint that fills the added room (the photo generator's own checkpoint; nothing about it is changed). */
+  checkpoint: string;
+  /** What the photo shows, so the added room continues it (outfit/scene words, no identity). */
+  scene: string;
+  /** Output pixel count (480p: 832×480, 720p: 1280×720) — the framed photo is scaled to it, multiples of 16. */
+  area: number;
+  seed: number;
+}
+
+export const SAFE_FRAME_NODE_CLASSES = ['SiennaSafeFrame', 'CheckpointLoaderSimple', 'InpaintModelConditioning', 'KSampler', 'VAEDecode', 'InvertMask', 'ImageCompositeMasked', 'ImageScale', 'SaveImage'];
+export const SAFE_FRAME_NEGATIVE = 'person, people, extra limbs, text, watermark, logo, frame, border, blurry, seam, duplicate';
+
+export function safeFramePrompt(scene: string): string {
+  const s = scene.trim().replace(/[.\s]+$/, '');
+  return `${s ? `${s}, ` : ''}the same photo seen a little wider, natural continuation of the background, realistic photo, same lighting`;
+}
+
+/**
+ * Adds the safe-framing stage: SiennaSafeFrame measures her and pads only the missing room (mask = the new strip),
+ * SDXL fills the strip, the original pixels are pasted back exactly, and the result is scaled to the video size.
+ * Returns links to the framed image and its width/height (computed on the GPU, multiples of 16).
+ */
+export function buildSafeFrame(g: ComfyGraph, image: [string, number], f: SafeFrameSpec) {
+  const m = MOVEMENT_MARGINS[f.movement];
+  g[SAFE_FRAME_NODES.report] = n(
+    'SiennaSafeFrame',
+    { image, margins: JSON.stringify(m), target_area: Math.round(f.area), max_pad: SAFE_FRAME_MAX_PAD, min_aspect: SAFE_FRAME_MIN_ASPECT, feather: 24 },
+    'Safe framing (room for the movement)',
+  );
+  g.v_sf_ckpt = n('CheckpointLoaderSimple', { ckpt_name: f.checkpoint }, 'Fill: photo checkpoint');
+  g.v_sf_pos = n('CLIPTextEncode', { clip: ['v_sf_ckpt', 1], text: safeFramePrompt(f.scene) });
+  g.v_sf_neg = n('CLIPTextEncode', { clip: ['v_sf_ckpt', 1], text: SAFE_FRAME_NEGATIVE });
+  g.v_sf_cond = n('InpaintModelConditioning', { positive: ['v_sf_pos', 0], negative: ['v_sf_neg', 0], vae: ['v_sf_ckpt', 2], pixels: [SAFE_FRAME_NODES.report, 0], mask: [SAFE_FRAME_NODES.report, 1], noise_mask: true });
+  g.v_sf_ks = n(
+    'KSampler',
+    { model: ['v_sf_ckpt', 0], seed: f.seed, steps: 24, cfg: 5, sampler_name: 'dpmpp_2m', scheduler: 'karras', positive: ['v_sf_cond', 0], negative: ['v_sf_cond', 1], latent_image: ['v_sf_cond', 2], denoise: 1 },
+    'Fill the added room',
+  );
+  g.v_sf_dec = n('VAEDecode', { samples: ['v_sf_ks', 0], vae: ['v_sf_ckpt', 2] });
+  g.v_sf_keep = n('InvertMask', { mask: [SAFE_FRAME_NODES.report, 1] });
+  g.v_sf_comp = n('ImageCompositeMasked', { destination: ['v_sf_dec', 0], source: [SAFE_FRAME_NODES.report, 0], x: 0, y: 0, resize_source: false, mask: ['v_sf_keep', 0] }, 'Original pixels back');
+  g[SAFE_FRAME_NODES.image] = n('SaveImage', { images: ['v_sf_comp', 0], filename_prefix: 'sienna/framed' }, 'Framed photo');
+  g.v_sf_out = n('ImageScale', { image: ['v_sf_comp', 0], upscale_method: 'lanczos', width: [SAFE_FRAME_NODES.report, 2], height: [SAFE_FRAME_NODES.report, 3], crop: 'disabled' }, 'Framed photo, video size');
+  return { image: ['v_sf_out', 0] as [string, number], width: [SAFE_FRAME_NODES.report, 2] as [string, number], height: [SAFE_FRAME_NODES.report, 3] as [string, number] };
 }
 
 export interface MotionGraphInput {
@@ -343,16 +521,24 @@ export interface Motion2GraphInput extends MotionGraphInput {
   motionText: string;
   /** Where the motion-branch cache is kept: 'cpu' (safe on 24 GB cards) or 'gpu'. */
   cacheDevice?: 'cpu' | 'gpu';
+  /** Safe framing: add room around her before copying the movement (null = use the photo as it is). */
+  frame?: SafeFrameSpec | null;
 }
 
 export function buildMotion2Graph(i: Motion2GraphInput): ComfyGraph {
-  const g: ComfyGraph = {
-    v_image: n('LoadImage', { image: i.imageName }, 'Sienna photo'),
-    v_ref: n('ImageScale', { image: ['v_image', 0], upscale_method: 'area', width: i.width, height: i.height, crop: 'center' }, 'Sienna photo, output size'),
+  const g: ComfyGraph = { v_image: n('LoadImage', { image: i.imageName }, 'Sienna photo') };
+  // Safe framing: the framed photo is already at the video size; the driving frames follow its shape.
+  const sized = i.frame ? buildSafeFrame(g, ['v_image', 0], i.frame) : null;
+  const W = sized ? sized.width : i.width;
+  const H = sized ? sized.height : i.height;
+  Object.assign(g, {
+    v_ref: sized
+      ? n('ImageScale', { image: sized.image, upscale_method: 'area', width: W, height: H, crop: 'center' }, 'Sienna photo (framed), output size')
+      : n('ImageScale', { image: ['v_image', 0], upscale_method: 'area', width: i.width, height: i.height, crop: 'center' }, 'Sienna photo, output size'),
     v_drive: n('LoadVideo', { file: i.videoName }, 'Driving video'),
     v_drive_frames: n('GetVideoComponents', { video: ['v_drive', 0] }),
     v_drive_part: n('ImageFromBatch', { image: ['v_drive_frames', 0], batch_index: Math.max(0, Math.floor(i.startFrame)), length: i.frames }, 'Chosen part'),
-    v_scaled: n('ImageScale', { image: ['v_drive_part', 0], upscale_method: 'area', width: i.width, height: i.height, crop: 'center' }),
+    v_scaled: n('ImageScale', { image: ['v_drive_part', 0], upscale_method: 'area', width: W, height: H, crop: 'center' }),
     v_drive_first: n('ImageFromBatch', { image: ['v_scaled', 0], batch_index: 0, length: 1 }),
     v_clipvision: n('CLIPVisionLoader', { clip_name: WAN_FILES.clipVision }),
     v_cv_ref: n('CLIPVisionEncode', { clip_vision: ['v_clipvision', 0], image: ['v_ref', 0], crop: 'none' }),
@@ -368,7 +554,7 @@ export function buildMotion2Graph(i: Motion2GraphInput): ComfyGraph {
     v_shift: n('ModelSamplingSD3', { model: ['v_cache', 0], shift: MOTION2_STEPS.shift }),
     v_sigmas: n('BasicScheduler', { model: ['v_cache', 0], scheduler: MOTION2_STEPS.scheduler, steps: MOTION2_STEPS.steps, denoise: 1 }),
     v_sampler: n('KSamplerSelect', { sampler_name: MOTION2_STEPS.sampler }),
-  };
+  });
   let images: [string, number] | null = null;
   let anim: string | null = null;
   for (let c = 0; c < i.chunks; c++) {
@@ -384,8 +570,8 @@ export function buildMotion2Graph(i: Motion2GraphInput): ComfyGraph {
         clip_vision_output: ['v_cv_ref', 0],
         positive_pose: ['v_pose_text', 0],
         clip_vision_output_pose: ['v_cv_pose', 0],
-        width: i.width,
-        height: i.height,
+        width: W,
+        height: H,
         length: ANIMATE2_CHUNK,
         batch_size: 1,
         video_frame_offset: anim ? [anim, 5] : 0,

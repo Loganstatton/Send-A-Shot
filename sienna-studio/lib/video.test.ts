@@ -329,3 +329,94 @@ describe('Copy Motion v2 (Wan Animate 2)', () => {
     );
   });
 });
+
+// ── Motion presets v2 / slow-motion wording / engines (motion test, Oct 2026) ──
+import { buildSafeFrame, HYBRID_GUIDED, MOTION_PRESETS, MOTION_PRESETS_V1, SAFE_FRAME_NODES, slowMotionWords } from './video';
+import { MOVEMENT_MARGINS, movementFromText, SAFE_FRAMING_DEFAULT } from './video-framing';
+
+describe('motion presets v2', () => {
+  it('no preset asks for slow movement; the old walk/turn/sway presets did', () => {
+    for (const p of MOTION_PRESETS) expect(slowMotionWords(p.text), p.label).toEqual([]);
+    const old = Object.fromEntries(MOTION_PRESETS_V1.map((p) => [p.label, slowMotionWords(p.text)]));
+    expect(old['Walk toward camera']).toEqual(['walks slowly']);
+    expect(old['Turn toward camera']).toEqual(['slowly turns']);
+    expect(old['Sway']).toEqual(['sways gently']);
+    expect(old['Smile at camera']).toEqual([]); // "smiles softly" is her face, not her speed
+  });
+  it('keeps facial and weather words', () => {
+    expect(MOTION_PRESETS.find((p) => p.id === 'smile')!.text).toContain('smiles softly');
+    expect(MOTION_PRESETS.find((p) => p.id === 'breeze')!.text).toContain('a gentle breeze');
+  });
+  it('flags speed words on movement only', () => {
+    expect(slowMotionWords('she gently shifts her weight and smiles softly')).toEqual(['gently shifts']);
+    expect(slowMotionWords('she turns her head slowly toward the camera')).toEqual(['turns her head slowly']);
+    expect(slowMotionWords('a jump in slow motion')).toEqual(['in slow motion']);
+    expect(slowMotionWords('a gentle breeze, she smiles softly, relaxed and happy')).toEqual([]);
+    expect(slowMotionWords('she walks toward the camera at a normal walking pace')).toEqual([]);
+  });
+  it('recommends the engine that won the motion test, never both', () => {
+    const best = Object.fromEntries(MOTION_PRESETS.map((p) => [p.id, p.best]));
+    expect(best).toMatchObject({ walk: 'animate', bend: 'animate', shift: 'animate', jump: 'motion', turn_around: 'motion' });
+    for (const p of MOTION_PRESETS.filter((x) => x.best === 'motion')) expect(p.why).toBeTruthy();
+  });
+});
+
+describe('hybrid (testing only)', () => {
+  it('2 full-guidance steps without the LoRA, then lightx2v high 2–3 and low 3–6', () => {
+    const g = buildAnimateGraph({ imageName: 'a.png', width: 480, height: 832, frames: 81, positive: 'p', negative: 'n', seed: 1, quality: 'hybrid', face: null });
+    expect(g.v_ks_guided.inputs).toMatchObject({ cfg: HYBRID_GUIDED.cfg, steps: 6, start_at_step: 0, end_at_step: 2, add_noise: 'enable', model: ['v_shift_high_base', 0] });
+    expect(g.v_shift_high_base.inputs.model).toEqual(['v_unet_high', 0]);
+    expect(g.v_ks_high.inputs).toMatchObject({ cfg: 1, start_at_step: 2, end_at_step: 3, add_noise: 'disable', latent_image: ['v_ks_guided', 0], model: ['v_shift_high', 0] });
+    expect(g.v_ks_low.inputs).toMatchObject({ cfg: 1, start_at_step: 3, latent_image: ['v_ks_high', 0] });
+    expect(g.v_shift_high.inputs.model).toEqual(['v_fast_high', 0]);
+  });
+  it('fast and quality graphs are unchanged by the hybrid option', () => {
+    const f = buildAnimateGraph({ imageName: 'a.png', width: 480, height: 832, frames: 81, positive: 'p', negative: 'n', seed: 1, quality: 'fast', face: null });
+    expect(f.v_ks_guided).toBeUndefined();
+    expect(f.v_ks_high.inputs).toMatchObject({ steps: 4, cfg: 1, start_at_step: 0, end_at_step: 2, add_noise: 'enable', latent_image: ['v_i2v', 2] });
+    const q = buildAnimateGraph({ imageName: 'a.png', width: 480, height: 832, frames: 81, positive: 'p', negative: 'n', seed: 1, quality: 'quality', face: null });
+    expect(q.v_fast_high).toBeUndefined();
+    expect(q.v_ks_high.inputs).toMatchObject({ steps: 20, cfg: 3.5, end_at_step: 10 });
+  });
+});
+
+describe('safe framing', () => {
+  const frame = { movement: 'jump' as const, checkpoint: 'sdxl.safetensors', scene: 'sunny park path', area: 832 * 480, seed: 7 };
+  it('Animate Image starts from the framed photo at the size the GPU computes', () => {
+    const g = buildAnimateGraph({ imageName: 'a.png', width: 480, height: 832, frames: 81, positive: 'p', negative: 'n', seed: 1, quality: 'fast', face: null, frame });
+    const sf = g[SAFE_FRAME_NODES.report];
+    expect(sf.class_type).toBe('SiennaSafeFrame');
+    expect(JSON.parse(sf.inputs.margins as string)).toEqual(MOVEMENT_MARGINS.jump);
+    expect(sf.inputs.target_area).toBe(832 * 480);
+    expect(g.v_i2v.inputs).toMatchObject({ start_image: ['v_sf_out', 0], width: ['v_sf', 2], height: ['v_sf', 3] });
+    expect(g.v_sf_ckpt.inputs.ckpt_name).toBe('sdxl.safetensors');
+    // her pixels go back unchanged: composite source = the padded original, mask = inverted outpaint mask
+    expect(g.v_sf_comp.inputs).toMatchObject({ source: ['v_sf', 0], destination: ['v_sf_dec', 0], mask: ['v_sf_keep', 0] });
+    expect(g.v_sf_pos.inputs.text).toContain('sunny park path');
+    expect(g[SAFE_FRAME_NODES.image].class_type).toBe('SaveImage');
+  });
+  it('without framing the graph is exactly as before', () => {
+    const g = buildAnimateGraph({ imageName: 'a.png', width: 480, height: 832, frames: 81, positive: 'p', negative: 'n', seed: 1, quality: 'fast', face: null });
+    expect(g.v_sf).toBeUndefined();
+    expect(g.v_i2v.inputs).toMatchObject({ start_image: ['v_image', 0], width: 480, height: 832 });
+  });
+  it('Copy Motion: framed reference, driving frames and output follow the framed shape', () => {
+    const g = buildMotion2Graph({ imageName: 'a.png', videoName: 'd.mp4', width: 480, height: 832, startFrame: 0, frames: 60, chunks: 1, positive: 'p', motionText: 'm', negative: 'n', seed: 1, face: null, frame });
+    expect(g.v_ref.inputs).toMatchObject({ image: ['v_sf_out', 0], width: ['v_sf', 2], height: ['v_sf', 3] });
+    expect(g.v_scaled.inputs).toMatchObject({ width: ['v_sf', 2], height: ['v_sf', 3] });
+    expect(g.v_anim_0.inputs).toMatchObject({ width: ['v_sf', 2], height: ['v_sf', 3] });
+    const plain = buildMotion2Graph({ imageName: 'a.png', videoName: 'd.mp4', width: 480, height: 832, startFrame: 0, frames: 60, chunks: 1, positive: 'p', motionText: 'm', negative: 'n', seed: 1, face: null });
+    expect(plain.v_sf).toBeUndefined();
+    expect(plain.v_ref.inputs).toMatchObject({ image: ['v_image', 0], width: 480, height: 832 });
+  });
+  it('movement from free text, and which movements default to safe framing', () => {
+    expect(movementFromText('she does a small jump')).toBe('jump');
+    expect(movementFromText('she turns around and looks back')).toBe('turn');
+    expect(movementFromText('she bends down to pick something up')).toBe('bend');
+    expect(movementFromText('she walks toward the camera')).toBe('walk');
+    expect(movementFromText('she smiles')).toBe('still');
+    expect(SAFE_FRAMING_DEFAULT).toMatchObject({ jump: true, turn: true, athletic: true, walk: false, bend: false, still: false });
+    expect(MOVEMENT_MARGINS.jump.top).toBeGreaterThanOrEqual(0.18); // reference jump: feet rose 0.18 of her height
+    expect(typeof buildSafeFrame).toBe('function');
+  });
+});

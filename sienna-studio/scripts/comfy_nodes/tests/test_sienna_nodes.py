@@ -401,15 +401,6 @@ def test_band_redraw_mask_has_no_garment_outline_and_spares_accessories():
     assert not band2[210, 300]
 
 
-if __name__ == "__main__":
-    fails = 0
-    for name, fn in list(globals().items()):
-        if name.startswith("test_"):
-            try:
-                fn(); print("ok  ", name)
-            except Exception as e:  # noqa: BLE001
-                fails += 1; print("FAIL", name, repr(e))
-    sys.exit(1 if fails else 0)
 
 
 def test_exposure_summary_flags_exposed_breasts_above_threshold_only():
@@ -476,3 +467,79 @@ def test_face_appearance_is_lighting_relative():
     a, b = sf.appearance(img, f), sf.appearance(dim, f)
     assert abs(a["hair_rel"] - b["hair_rel"]) < 0.15
     assert abs(a["skin_hue"] - b["skin_hue"]) < 6
+
+
+# ── safe framing (video) ─────────────────────────────────────────────────────
+import sienna_frame as fr  # noqa: E402
+
+
+def _seg(h, w, top, bottom, left, right, face=None):
+    """Synthetic segmenter output: background 1 everywhere except the person box; optional face-skin box."""
+    bg = np.ones((h, w), np.float32)
+    bg[top:bottom, left:right] = 0.0
+    cl = [bg, np.zeros((h, w), np.float32), np.zeros((h, w), np.float32), np.zeros((h, w), np.float32)]
+    if face:
+        t, b, l, r = face
+        cl[3][t:b, l:r] = 1.0
+    return cl
+
+
+def test_safe_frame_jump_on_tight_photo_adds_only_headroom():
+    # 4:5 photo, head at the very top, feet in the photo (like the approved body set)
+    box = fr.subject_box(_seg(1400, 1120, 10, 1340, 400, 720))
+    assert box["top"] == 10 and box["bottom"] == 1340
+    p = fr.plan_pads(box, {"top": 0.24, "bottom": 0.03, "side": 0.08})
+    hb = 1330
+    assert abs(p["top"] - (0.24 * hb - 10)) <= fr.ALIGN
+    assert p["bottom"] == fr._up(0.03 * hb - 60)  # 60 px already below her feet
+    assert p["left"] == 0 and p["right"] == 0     # 400 px each side already > 0.08 * 1330
+    assert p["changed"] and not p["capped"] and p["feet_in_photo"]
+
+
+def test_safe_frame_leaves_a_roomy_photo_alone():
+    box = fr.subject_box(_seg(1600, 1000, 400, 1450, 350, 650))
+    p = fr.plan_pads(box, {"top": 0.24, "bottom": 0.03, "side": 0.08})
+    assert not p["changed"] and p["top"] == p["bottom"] == p["left"] == p["right"] == 0
+
+
+def test_safe_frame_no_room_below_a_cropped_body():
+    # cropped at the thighs: no bottom pad, body height from the face (9 × face height)
+    box = fr.subject_box(_seg(1000, 800, 5, 1000, 250, 550, face=(40, 190, 350, 450)))
+    assert fr.body_height(box) == 1350.0  # 9 x 150 px face > the 995 px visible
+    p = fr.plan_pads(box, {"top": 0.24, "bottom": 0.05, "side": 0.0})
+    assert p["bottom"] == 0 and p["top"] >= 0.24 * 1350 - 5 and not p["feet_in_photo"]
+
+
+def test_safe_frame_keeps_phone_shape_and_caps():
+    box = fr.subject_box(_seg(1000, 600, 0, 990, 200, 400))
+    p = fr.plan_pads(box, {"top": 0.6, "bottom": 0.0, "side": 0.0}, max_pad=0.4, min_aspect=9 / 16)
+    assert p["capped"] and p["top"] <= fr._up(0.4 * 1000)
+    nw, nh = 600 + p["left"] + p["right"], 1000 + p["top"] + p["bottom"]
+    assert nw / nh >= 9 / 16 - 0.01  # widened instead of getting taller than 9:16
+    assert p["left"] == p["right"]
+
+
+def test_safe_frame_pad_image_and_sizes():
+    img = np.random.RandomState(0).rand(100, 80, 3).astype(np.float32)
+    out, mask = fr.pad_image(img, {"top": 24, "bottom": 0, "left": 8, "right": 8}, feather=10)
+    assert out.shape == (124, 96, 3) and mask.shape == (124, 96)
+    assert mask[:24].min() == 1.0 and mask[:, :8].min() == 1.0
+    assert np.allclose(out[24 + 20:, 8 + 20:88 - 20], img[20:, 20:60])  # the photo itself is untouched
+    assert mask[24 + 50, 8 + 40] == 0.0 and 0 < mask[24 + 2, 8 + 40] < 1  # ramp only near the new edge
+    same, m0 = fr.pad_image(img, {"top": 0, "bottom": 0, "left": 0, "right": 0})
+    assert np.array_equal(same, img) and m0.max() == 0
+    w, h = fr.fit_area(1120, 1648, 832 * 480)
+    assert w % 16 == 0 and h % 16 == 0 and abs(w * h - 832 * 480) / (832 * 480) < 0.06 and abs(w / h - 1120 / 1648) < 0.03
+    fw, fh = fr.fill_size(1120, 1648)
+    assert fw * fh <= 1_100_000 and fw % 8 == 0
+
+
+if __name__ == "__main__":
+    fails = 0
+    for name, fn in list(globals().items()):
+        if name.startswith("test_"):
+            try:
+                fn(); print("ok  ", name)
+            except Exception as e:  # noqa: BLE001
+                fails += 1; print("FAIL", name, repr(e))
+    sys.exit(1 if fails else 0)

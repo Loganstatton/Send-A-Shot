@@ -30,7 +30,7 @@ export const POST = handle(async (req: Request) => {
       sourceId: z.string().min(1).max(64),
       imageIndex: z.number().int().min(0).max(7).default(0),
       seed: z.number().int().min(-1).max(2 ** 48).default(-1),
-      quality: z.enum(['fast', 'quality']).default('fast'),
+      quality: z.enum(['fast', 'quality', 'hybrid']).default('fast'),
       resolution: z.enum(['480p', '720p']).default('480p'),
       motion: z.string().trim().max(MAX_MOTION_TEXT).optional(),
       camera: z.enum(['still', 'push_in', 'orbit', 'handheld']).optional(),
@@ -38,6 +38,7 @@ export const POST = handle(async (req: Request) => {
       drive: z.object({ video: storedVideoSchema, poster: storedImageSchema }).optional(),
       start: z.number().min(0).max(60).optional(),
       scene: z.string().trim().max(MAX_MOTION_TEXT).optional(),
+      framing: z.enum(['still', 'small', 'walk', 'bend', 'turn', 'jump', 'athletic']).nullable().optional(),
     }),
   );
   return json(await startVideo(body), 202);

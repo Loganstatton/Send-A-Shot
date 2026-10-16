@@ -10,17 +10,20 @@ Sienna Studio custom ComfyUI nodes (installed by scripts/comfyui-bootstrap.sh).
   SiennaBodyCheck        source / result / reference measurements → body-consistency report (JSON)
   SiennaExposureCheck    image(s) → did a nipple show? (NudeNet; JSON per image, for the app's retry)
   SiennaFaceCheck        image(s) + reference embedding → how close the face is to Sienna (OpenCV SFace; JSON)
+  SiennaSafeFrame        photo + movement margins → photo with the missing room around her added + outpaint mask (video)
 
-The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py / sienna_body.py (no ComfyUI imports; unit-tested).
+The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py / sienna_body.py / sienna_frame.py (no ComfyUI imports; unit-tested).
 """
 
 import json
 
+import cv2
 import numpy as np
 import torch
 
 from .sienna_body import SCENE_CHANGED, body_sheet, compare, garment_only, keypoints_from_pose, measure_body, scale_points, scene_backdrop, scene_change
 from .sienna_crop import chin_crop
+from . import sienna_frame
 from .sienna_exposure import DEFAULT_THRESHOLD, detector, detector_error, summarize
 from . import sienna_face
 from .sienna_redraw import GROW_MODES, erase, garment_region, overlay, segment_classes, segmenter_error
@@ -366,6 +369,58 @@ class SiennaFaceCheck:
         return {"ui": {"text": [text]}, "result": (text,)}
 
 
+class SiennaSafeFrame:
+    """Video safe framing: adds only the room her movement needs around her (see sienna_frame.py). Outputs the padded
+    photo at an SDXL-friendly size, the outpaint mask, the final video width/height and a JSON report."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "margins": ("STRING", {"default": '{"top": 0.24, "bottom": 0.03, "side": 0.08}'}),
+                "target_area": ("INT", {"default": 399360, "min": 65536, "max": 4194304}),
+                "max_pad": ("FLOAT", {"default": 0.4, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "min_aspect": ("FLOAT", {"default": 0.5625, "min": 0.2, "max": 1.0, "step": 0.0025}),
+                "feather": ("INT", {"default": 24, "min": 0, "max": 128}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "STRING")
+    RETURN_NAMES = ("image", "outpaint_mask", "width", "height", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image, margins, target_area, max_pad, min_aspect, feather):
+        img = image[0].detach().cpu().numpy().astype(np.float32)
+        h, w = img.shape[:2]
+        try:
+            m = {k: float(v) for k, v in json.loads(margins or "{}").items()}
+        except (ValueError, TypeError):
+            m = {}
+        report = {"available": True, "margins": m, "source": [w, h]}
+        box = sienna_frame.subject_box(segment_classes(img)) if any(m.values()) else None
+        if box is None:
+            plan = {"top": 0, "bottom": 0, "left": 0, "right": 0, "changed": False}
+            if any(m.values()):
+                report.update(available=False, error=segmenter_error() or "she was not found in the photo")
+        else:
+            plan = sienna_frame.plan_pads(box, m, max_pad=max_pad, min_aspect=min_aspect)
+            report["subject"] = {k: round(v, 1) for k, v in box.items() if k not in ("img_w", "img_h")}
+        padded, mask = sienna_frame.pad_image(img, plan, feather=feather)
+        ph, pw = padded.shape[:2]
+        fw, fh = sienna_frame.fill_size(pw, ph)
+        if (fw, fh) != (pw, ph):
+            padded = cv2.resize(padded, (fw, fh), interpolation=cv2.INTER_AREA)
+            mask = cv2.resize(mask, (fw, fh), interpolation=cv2.INTER_LINEAR)
+        vw, vh = sienna_frame.fit_area(pw, ph, int(target_area))
+        report.update(plan=plan, padded=[pw, ph], video=[vw, vh])
+        text = json.dumps(report)
+        return {"ui": {"text": [text]},
+                "result": (torch.from_numpy(padded[None]).float(), torch.from_numpy(mask[None]).float(), vw, vh, text)}
+
+
 NODE_CLASS_MAPPINGS = {
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
@@ -377,6 +432,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaGarmentRedrawMask": SiennaGarmentRedrawMask,
     "SiennaExposureCheck": SiennaExposureCheck,
     "SiennaFaceCheck": SiennaFaceCheck,
+    "SiennaSafeFrame": SiennaSafeFrame,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaPoseRetarget": "Sienna Pose Retarget",
@@ -389,4 +445,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaGarmentRedrawMask": "Sienna Garment Redraw Mask",
     "SiennaExposureCheck": "Sienna Exposure Check",
     "SiennaFaceCheck": "Sienna Face Check",
+    "SiennaSafeFrame": "Sienna Safe Frame (video)",
 }

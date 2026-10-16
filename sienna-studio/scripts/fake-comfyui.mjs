@@ -133,6 +133,11 @@ if (arg('--wan-video')) {
     GetVideoComponents: { video: ['VIDEO'] },
     WanAnimate2ToVideo: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], vae: ['VAE'], width: ['INT'], height: ['INT'], length: ['INT'], batch_size: ['INT'], video_frame_offset: ['INT'] },
     WanAnimate2Cache: { model: ['MODEL'], device: combo(['cpu', 'gpu']), dtype: combo(['default', 'int8', 'int4']) },
+    // safe framing (video): Sienna node + core SDXL inpaint pieces
+    SiennaSafeFrame: { image: ['IMAGE'], margins: ['STRING'], target_area: ['INT'], max_pad: ['FLOAT'], min_aspect: ['FLOAT'], feather: ['INT'] },
+    InpaintModelConditioning: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], vae: ['VAE'], pixels: ['IMAGE'], mask: ['MASK'], noise_mask: ['BOOLEAN'] },
+    InvertMask: { mask: ['MASK'] },
+    ImageCompositeMasked: { destination: ['IMAGE'], source: ['IMAGE'], x: ['INT'], y: ['INT'], resize_source: ['BOOLEAN'] },
     SamplerCustom: { model: ['MODEL'], add_noise: ['BOOLEAN'], noise_seed: ['INT'], cfg: ['FLOAT'], positive: ['CONDITIONING'], negative: ['CONDITIONING'], sampler: ['SAMPLER'], sigmas: ['SIGMAS'], latent_image: ['LATENT'] },
     BasicScheduler: { model: ['MODEL'], scheduler: combo(['simple', 'normal', 'karras']), steps: ['INT'], denoise: ['FLOAT'] },
     KSamplerSelect: { sampler_name: combo(['euler', 'lcm', 'dpmpp_2m']) },
@@ -263,6 +268,7 @@ http
           const sims = imgs.filter((i) => i.found).map((i) => i.similarity);
           outputs[k] = { text: [JSON.stringify({ available: true, ok: imgs.every((i) => i.ok), similarity: sims.length ? Math.min(...sims) : null, images: imgs })] };
         }
+        if (n.class_type === 'SiennaSafeFrame') outputs[k] = { text: [JSON.stringify({ available: true, source: [1122, 1402], plan: { top: 312, bottom: 16, left: 0, right: 0, body_height: 1360, feet_in_photo: true, capped: false, changed: true }, padded: [1122, 1730], video: [512, 784] })] };
         if (n.class_type === 'SiennaExposureCheck') outputs[k] = { text: [JSON.stringify({ available: true, exposed: false, score: 0 })] };
         if (n.class_type === 'SiennaBodyCheck') outputs[k] = { text: [JSON.stringify({ status: 'warn', flags: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06, severity: 'likely' }], checked: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06 }], skipped: [], scene: { diff: 6.1, changed: false } })] };
       }

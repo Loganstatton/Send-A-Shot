@@ -10,6 +10,7 @@ import { FACE_LABELS, FOOTWEAR_LABELS, PROTECT_LABELS, SCOPE_LABELS } from '@/li
 import { bodyReferenceProblem, BodyReference } from '@/lib/body-refs';
 import { shareImage } from '@/lib/client/share';
 import { rerunVideo, shareVideo } from '@/lib/client/video';
+import { MOVEMENT_LABELS } from '@/lib/video-framing';
 import { CAMERA_LABELS, VIDEO_MODE_LABELS } from '@/lib/video';
 import { REVIEW_INFO } from '@/lib/review';
 import type { GenerationRecord, ReviewItem, ReviewMark } from '@/lib/types';
@@ -452,8 +453,31 @@ function VideoCard({ rec }: { rec: GenerationRecord }) {
         </dd>
         <dt className="text-ink-400">Size</dt>
         <dd>
-          {v.width}×{v.height} ({v.resolution}){v.mode === 'animate' ? ` · ${v.quality === 'fast' ? 'fast, 4 steps' : 'quality, 20 steps'}` : ''}
+          {v.width}×{v.height} ({v.resolution}){v.mode === 'animate' ? ` · ${v.quality === 'fast' ? 'fast, 4 steps' : v.quality === 'hybrid' ? 'hybrid (testing)' : 'quality, 20 steps'}` : ''}
         </dd>
+        {v.safeFraming && (
+          <>
+            <dt className="text-ink-400">Safe framing</dt>
+            <dd className="text-xs">
+              {MOVEMENT_LABELS[v.safeFraming.movement]}
+              {v.safeFraming.report?.plan
+                ? v.safeFraming.report.plan.changed
+                  ? ` · room added: ${(['top', 'bottom', 'left', 'right'] as const)
+                      .filter((k) => v.safeFraming!.report!.plan![k] > 0)
+                      .map((k) => `${k} ${v.safeFraming!.report!.plan![k]} px`)
+                      .join(', ')}`
+                  : ' · the photo already had enough room'
+                : v.safeFraming.report && !v.safeFraming.report.available
+                  ? ` · not applied (${v.safeFraming.report.error ?? 'unknown'})`
+                  : ''}
+              {v.safeFraming.framedImage && (
+                <a className="ml-2 text-accent" href={fileUrl(v.safeFraming.framedImage.file)} target="_blank" rel="noreferrer">
+                  framed photo →
+                </a>
+              )}
+            </dd>
+          </>
+        )}
         {v.motion !== undefined && (
           <>
             <dt className="text-ink-400">Motion</dt>

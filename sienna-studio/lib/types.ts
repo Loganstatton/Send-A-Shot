@@ -429,6 +429,17 @@ export interface VideoInfo {
   faceCheck: { status: 'on' } | { status: 'unavailable'; reason: string };
   frameFaces?: import('./video').FrameFace[];
   result?: StoredVideo | null;
+  /** Safe framing: room added around her for the movement (filled from the photo's edges; her pixels unchanged). */
+  safeFraming?: { movement: import('./video-framing').MovementKind; status: 'on'; report?: SafeFrameReport | null; framedImage?: StoredImage | null };
+}
+
+/** What SiennaSafeFrame measured and added (pixels of the source photo). */
+export interface SafeFrameReport {
+  available: boolean;
+  error?: string;
+  plan: { top: number; bottom: number; left: number; right: number; capped: boolean; changed: boolean } | null;
+  source: [number, number] | null;
+  padded: [number, number] | null;
 }
 
 /** How an Edit Outfit result was made. The source record and its image are never modified. */
