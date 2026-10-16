@@ -126,6 +126,13 @@ export const MOTION_PRESETS: MotionPreset[] = [
     framing: 'bend',
   },
   {
+    id: 'bend_away',
+    label: 'Bend over (back to camera)',
+    text: 'with her back to the camera, she bends forward at the waist in one natural movement, reaches down toward the floor and stands straight back up, the whole movement takes about three seconds, her hair falls forward and swings back, real-time speed, natural momentum and gravity',
+    best: 'animate',
+    framing: 'bend',
+  },
+  {
     id: 'turn_around',
     label: 'Turn around, look back',
     text: 'she turns around at a normal pace until her back faces the camera, then glances back over her shoulder at the camera, her hair swinging with the turn, real-time speed',
