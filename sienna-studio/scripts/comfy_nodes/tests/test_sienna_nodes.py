@@ -510,13 +510,24 @@ def test_safe_frame_no_room_below_a_cropped_body():
     assert p["bottom"] == 0 and p["top"] >= 0.24 * 1350 - 5 and not p["feet_in_photo"]
 
 
+def test_safe_frame_side_room_follows_visible_body_when_cropped():
+    # thigh-cropped photo, narrow margins at the sides: side room from the visible 995 px, not the 9 x face estimate
+    box = fr.subject_box(_seg(1000, 800, 5, 1000, 300, 500, face=(40, 290, 350, 450)))
+    assert fr.body_height(box) == 2250.0
+    p = fr.plan_pads(box, {"top": 0.0, "bottom": 0.0, "side": 0.1})
+    assert p["left"] == 0 and p["right"] == 0  # 300 px each side > 0.1 x 995
+    p2 = fr.plan_pads(box, {"top": 0.0, "bottom": 0.0, "side": 0.4})
+    assert p2["left"] == fr._up(0.4 * 995 - 300) and not p2["capped"]
+
+
 def test_safe_frame_keeps_phone_shape_and_caps():
     box = fr.subject_box(_seg(1000, 600, 0, 990, 200, 400))
     p = fr.plan_pads(box, {"top": 0.6, "bottom": 0.0, "side": 0.0}, max_pad=0.4, min_aspect=9 / 16)
     assert p["capped"] and p["top"] <= fr._up(0.4 * 1000)
     nw, nh = 600 + p["left"] + p["right"], 1000 + p["top"] + p["bottom"]
-    assert nw / nh >= 9 / 16 - 0.01  # widened instead of getting taller than 9:16
-    assert p["left"] == p["right"]
+    assert nw / nh >= 9 / 16 - 0.01  # less headroom instead of a frame taller than 9:16
+    assert p["left"] == p["right"] == 0  # never side strips (side fills showed seams in the Phase 2 test)
+    assert p["top"] == int((600 / (9 / 16) - 1000)) // fr.ALIGN * fr.ALIGN
 
 
 def test_safe_frame_pad_image_and_sizes():

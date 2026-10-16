@@ -8,8 +8,9 @@ outside its first frame without her leaving it. This adds only the missing room 
   body_height   head-top → feet when her feet are in the photo; otherwise ≥ 9 × her face height (the visible part
                 can't tell how tall she is)
   plan_pads     margins (fractions of body height, per movement) minus the room the photo already has, per side.
-                Room below her is added only when her feet are in the photo. Extra width only if the frame would get
-                taller than min_aspect (9:16). Capped at max_pad of the photo per axis, so she never gets tiny.
+                Side room uses the visible height when she is cropped (only headroom needs her full height).
+                Room below her is added only when her feet are in the photo. If the frame would get taller than
+                min_aspect (9:16), the room above/below is reduced (never side strips). Capped at max_pad per axis.
   pad_image     the padded image (new strip pre-filled from blurred, mirrored edges so the fill starts from the
                 right colours) and the outpaint mask (1 in the new strip, ramping to 0 over `feather` px into the photo)
   fit_area      final size at the video's pixel budget, multiples of 16, same shape
@@ -71,11 +72,13 @@ def plan_pads(box: Dict[str, float], margins: Dict[str, float], max_pad: float =
     w, h = box["img_w"], box["img_h"]
     hb = body_height(box)
     feet_in = box["bottom"] <= FEET_EDGE * h
+    # side room scales with the part of her that is in the photo (a thigh-cropped photo must not get full-body side room)
+    hs = min(hb, box["bottom"] - box["top"])
     need = {
         "top": margins.get("top", 0) * hb - box["top"],
         "bottom": (margins.get("bottom", 0) * hb - (h - box["bottom"])) if feet_in else 0.0,
-        "left": margins.get("side", 0) * hb - box["left"],
-        "right": margins.get("side", 0) * hb - (w - box["right"]),
+        "left": margins.get("side", 0) * hs - box["left"],
+        "right": margins.get("side", 0) * hs - (w - box["right"]),
     }
     need = {k: max(0.0, v) for k, v in need.items()}
     capped = False
@@ -88,10 +91,13 @@ def plan_pads(box: Dict[str, float], margins: Dict[str, float], max_pad: float =
             capped = True
     pads = {k: _up(v) for k, v in need.items()}
     nw, nh = w + pads["left"] + pads["right"], h + pads["top"] + pads["bottom"]
-    if nw / nh < min_aspect:  # too tall for a phone frame: widen evenly
-        extra = int(math.ceil(min_aspect * nh - nw))
-        pads["left"] += _up(extra / 2)
-        pads["right"] += _up(extra / 2)
+    if nw / nh < min_aspect:  # taller than a phone frame: give less room above/below instead of adding side strips
+        room = max(0.0, nw / min_aspect - h)
+        tot = pads["top"] + pads["bottom"]
+        if tot > 0:
+            f = room / tot
+            pads["top"], pads["bottom"] = int(pads["top"] * f) // ALIGN * ALIGN, int(pads["bottom"] * f) // ALIGN * ALIGN
+            capped = True
     return {**pads, "body_height": round(hb, 1), "feet_in_photo": feet_in, "capped": capped,
             "changed": any(pads[k] > 0 for k in ("top", "bottom", "left", "right"))}
 

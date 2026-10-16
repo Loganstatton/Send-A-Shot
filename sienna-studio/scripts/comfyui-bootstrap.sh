@@ -275,6 +275,30 @@ if (( POSE )); then
 fi
 
 # ── Edit Outfit (Qwen-Image-Edit-2509, optional) ──────────────────────────────
+# MediaPipe's multiclass selfie segmenter (Apache-2.0): tells hair, skin and clothes apart. Used by "Change only the
+# clothes" (garment-only redraw) and by Video Studio's safe framing (finds her outline, hair included). Installed
+# without dependencies — it would pull opencv-contrib next to ComfyUI's opencv; what it needs at runtime is added here.
+install_segmenter() {
+  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check --no-deps "mediapipe==1.1.0" \
+    || echo "mediapipe not installed — garment-only redraw falls back to the pose; safe framing is skipped"
+  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "absl-py>=2.1" "flatbuffers>=24" certifi || true
+  fetch_model "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite" \
+    "$COMFYUI_DIR/models/mediapipe/selfie_multiclass_256x256.tflite" 10000000
+  # MediaPipe dlopens libEGL/libGLESv2 even on CPU; GPU images often lack them and apt installs vanish with the Pod,
+  # so copies are kept next to the model (models/mediapipe/lib), where the Sienna node preloads them.
+  if [[ ! -f "$COMFYUI_DIR/models/mediapipe/lib/libEGL.so.1" ]] && command -v apt-get >/dev/null; then
+    tmp=$(mktemp -d)
+    (cd "$tmp" && { apt-get download libegl1 libgles2 libglvnd0 >/dev/null 2>&1 || { apt-get update -qq >/dev/null 2>&1 && apt-get download libegl1 libgles2 libglvnd0 >/dev/null 2>&1; }; } \
+      && for d in *.deb; do dpkg -x "$d" x; done \
+      && mkdir -p "$COMFYUI_DIR/models/mediapipe/lib" \
+      && cp -L x/usr/lib/x86_64-linux-gnu/{libEGL.so.1,libGLESv2.so.2,libGLdispatch.so.0} "$COMFYUI_DIR/models/mediapipe/lib/") \
+      || echo "could not fetch libEGL/libGLESv2 — garment-only redraw falls back to the pose; safe framing is skipped"
+    rm -rf "$tmp"
+  fi
+  "$COMFYUI_PYTHON" -c "from mediapipe.tasks.python import vision; print('mediapipe · ok')" \
+    || echo "mediapipe import failed — garment-only redraw falls back to the pose; safe framing is skipped"
+}
+
 if (( QWEN )); then
   log "Edit Outfit model licenses (Hugging Face model cards)"
   check_licenses "Comfy-Org/Qwen-Image-Edit_ComfyUI:apache-2.0" "Comfy-Org/Qwen-Image_ComfyUI:apache-2.0" "Qwen/Qwen-Image-Edit-2509:apache-2.0" \
@@ -287,27 +311,7 @@ if (( QWEN )); then
     fetch_model "$HF/yzd-v/DWPose/resolve/main/$f" "$COMFYUI_DIR/custom_nodes/comfyui_controlnet_aux/ckpts/yzd-v/DWPose/$f" 100000000
   done
   fetch_model "$HF/Bingsu/adetailer/resolve/main/person_yolov8m-seg.pt" "$COMFYUI_DIR/models/ultralytics/segm/person_yolov8m-seg.pt" 40000000
-  # "Change only the clothes" (garment-only redraw): MediaPipe's multiclass selfie segmenter (Apache-2.0) tells
-  # clothes from skin. Installed without dependencies — it would pull opencv-contrib next to ComfyUI's opencv;
-  # what it needs at runtime is installed above or here. Without it the redraw area is estimated from the pose.
-  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check --no-deps "mediapipe==1.1.0" \
-    || echo "mediapipe not installed — garment-only redraw will estimate the clothing area from the pose"
-  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "absl-py>=2.1" "flatbuffers>=24" certifi || true
-  fetch_model "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite" \
-    "$COMFYUI_DIR/models/mediapipe/selfie_multiclass_256x256.tflite" 10000000
-  # MediaPipe dlopens libEGL/libGLESv2 even on CPU; GPU images often lack them and apt installs vanish with the Pod,
-  # so copies are kept next to the model (models/mediapipe/lib), where the Sienna node preloads them.
-  if [[ ! -f "$COMFYUI_DIR/models/mediapipe/lib/libEGL.so.1" ]] && command -v apt-get >/dev/null; then
-    tmp=$(mktemp -d)
-    (cd "$tmp" && { apt-get download libegl1 libgles2 libglvnd0 >/dev/null 2>&1 || { apt-get update -qq >/dev/null 2>&1 && apt-get download libegl1 libgles2 libglvnd0 >/dev/null 2>&1; }; } \
-      && for d in *.deb; do dpkg -x "$d" x; done \
-      && mkdir -p "$COMFYUI_DIR/models/mediapipe/lib" \
-      && cp -L x/usr/lib/x86_64-linux-gnu/{libEGL.so.1,libGLESv2.so.2,libGLdispatch.so.0} "$COMFYUI_DIR/models/mediapipe/lib/") \
-      || echo "could not fetch libEGL/libGLESv2 — garment-only redraw will estimate the clothing area from the pose"
-    rm -rf "$tmp"
-  fi
-  "$COMFYUI_PYTHON" -c "from mediapipe.tasks.python import vision; print('mediapipe · ok')" \
-    || echo "mediapipe import failed — garment-only redraw will estimate the clothing area from the pose"
+  install_segmenter
   fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors" \
     "$COMFYUI_DIR/models/vae/qwen_image_vae.safetensors" 200000000
   fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" \
@@ -369,6 +373,13 @@ if (( WAN2 )); then
   fetch_model "$WA2/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" "$COMFYUI_DIR/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" 6000000000
   fetch_model "$WA2/clip_vision/clip_vision_h.safetensors" "$COMFYUI_DIR/models/clip_vision/clip_vision_h.safetensors" 1000000000
   fetch_model "$WA2/vae/Wan2_1_VAE_bf16.safetensors" "$COMFYUI_DIR/models/vae/Wan2_1_VAE_bf16.safetensors" 200000000
+fi
+
+# Video Studio's safe framing measures her outline with the segmenter.
+if (( WAN || WAN1 || WAN2 )) && (( ! QWEN )); then
+  log "Segmenter for safe framing (MediaPipe)"
+  "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check opencv-python-headless || true
+  install_segmenter
 fi
 
 # ── Sienna custom nodes (pose retargeting, garment-only isolation, chin crop, top check) ──
