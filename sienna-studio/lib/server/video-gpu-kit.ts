@@ -44,10 +44,32 @@ FLAGS="--with-wan-i2v"; [ "\${SIENNA_COPY_MOTION:-0}" = 1 ] && FLAGS="$FLAGS --w
 SIENNA_NODES_DIR=/tmp/sn/sienna_nodes bash /tmp/comfyui-bootstrap.sh $FLAGS; log "BOOTSTRAP_RC=$?"
 rm -rf "$C/custom_nodes/sienna_autostop" && cp -r /tmp/sn/sienna_autostop "$C/custom_nodes/sienna_autostop"
 log "restarting ComfyUI"
-CMD=$(ps -eo args | grep -E "python[0-9.]* .*main\\.py" | grep -v grep | head -1); PID=$(pgrep -f "main\\.py" | head -1)
-kill $PID; sleep 5
-cd "$C" && nohup $CMD > /tmp/comfyui.log 2>&1 &
-log "SETUP_DONE"
+# Restart with the exact command, environment and folder /start.sh used (its venv and settings are in that
+# environment: a plain re-run of the command line from this shell starts a ComfyUI that dies at once).
+python3 - <<'PY'
+import os, subprocess, sys, time
+def comfy_pid():
+    # the python process running ComfyUI's main.py (not a shell that merely mentions it)
+    for p in os.listdir('/proc'):
+        try: a = open(f'/proc/{p}/cmdline').read().split('\\0')
+        except (OSError, ValueError): continue
+        if p.isdigit() and 'python' in os.path.basename(a[0]) and any(x.endswith('main.py') for x in a[1:]): return p
+pid = comfy_pid()
+if not pid: sys.exit('ComfyUI process not found')
+env = dict(kv.split('=', 1) for kv in open(f'/proc/{pid}/environ').read().split('\\0') if '=' in kv)
+args = open(f'/proc/{pid}/cmdline').read().split('\\0')[:-1]
+cwd = os.readlink(f'/proc/{pid}/cwd')
+os.kill(int(pid), 15)
+for _ in range(30):
+    try:
+        if open(f'/proc/{pid}/stat').read().split(')')[-1].split()[0] == 'Z': break  # exited, not yet reaped
+    except OSError: break
+    time.sleep(1)
+subprocess.Popen(args, cwd=cwd, env=env, stdout=open('/tmp/comfyui.log', 'w'), stderr=subprocess.STDOUT, start_new_session=True)
+print('restarted:', ' '.join(args), 'in', cwd)
+PY
+for i in $(seq 1 100); do curl -fs localhost:8188/system_stats >/dev/null && break; sleep 3; done
+curl -fs localhost:8188/system_stats >/dev/null && log "SETUP_DONE" || { log "SETUP_FAILED ComfyUI did not come back after the restart"; tail -20 /tmp/comfyui.log; }
 `;
 
 export async function kitFile(name: KitFile): Promise<{ body: Buffer; type: string }> {
