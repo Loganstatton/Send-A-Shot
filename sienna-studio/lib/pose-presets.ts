@@ -78,3 +78,44 @@ export function matchPosePreset(poseText: string, fullBody: boolean): PosePreset
   if (fullBody && /\bstand(ing|s)?\b/i.test(text) && !NOT_STANDING_RE.test(text)) return posePreset('standing_full_body');
   return undefined;
 }
+
+/**
+ * Garment wording for presets that lose the outfit (bent over, 12-photo test 2026-10-17: a string thong came out as
+ * full briefs 2/3, a sundress as a swimsuit or bodysuit 3/3, denim shorts once as cut-out shorts, and seed 3303 added
+ * sandals to every outfit). The outfit text is repeated with weight right after the preset's pose wording, the
+ * garment type gets its shape spelled out (skirt hanging with gravity, thin string back, closed shorts) and the
+ * misreads go into the negative. Only presets listed in OUTFIT_GUARDED use it.
+ */
+const OUTFIT_GUARDED = new Set(['bent_over_rear']);
+const DRESS_RE = /\b(sun ?dress|dress|skirt|gown|frock)\b/i;
+const THONG_RE = /\b(thong|g-?string)\b/i;
+const SWIM_RE = /\b(bikini|swimsuit|swimwear|monokini)\b/i;
+const SHORTS_RE = /\b(shorts|hot ?pants)\b/i;
+const FOOTWEAR_RE = /\b(shoes?|sandals?|heels|boots?|sneakers?|trainers|flip[- ]?flops|slides|socks)\b/i;
+
+export function presetOutfitPrompt(presetId: string | undefined | null, outfit: string): { positive: string; negative: string } | null {
+  if (!presetId || !OUTFIT_GUARDED.has(presetId)) return null;
+  const o = outfit.replace(/[()]/g, '').trim();
+  if (!o) return null;
+  const pos: string[] = [`(wearing ${o}:1.35)`, '(real fabric with thickness, seams and natural folds:1.1)'];
+  const neg: string[] = ['(extra people:1.3), (second person:1.3), (people in the background:1.3)', 'hat, bag, sunglasses, jewelry'];
+  if (DRESS_RE.test(o)) {
+    pos.push('(the dress skirt hangs down from her hips with gravity, loose draping fabric, soft folds:1.3)', '(hem at mid-thigh:1.15)');
+    neg.push('(swimsuit:1.4), (bikini:1.4), (bodysuit:1.4), (leotard:1.3), (one-piece swimsuit:1.4), (underwear:1.2), (bare buttocks:1.2)');
+  } else if (THONG_RE.test(o)) {
+    pos.push('(thong bottoms with a thin string back between her buttocks:1.3), (thin side strings tied at the hips:1.15)');
+    neg.push('(full coverage bottoms:1.4), (briefs:1.3), (boyshorts:1.3), (cheeky bottoms:1.2), (one-piece swimsuit:1.4), (bodysuit:1.3)');
+  } else if (SWIM_RE.test(o)) {
+    pos.push('(two-piece bikini with a separate top and bottoms:1.25), (thin straps and ties:1.1)');
+    neg.push('(one-piece swimsuit:1.4), (bodysuit:1.3), (leotard:1.3)');
+  }
+  if (SHORTS_RE.test(o)) {
+    pos.push('(shorts fully covering her buttocks, closed seams, pockets and hem:1.25)');
+    neg.push('(cut-out shorts:1.3), (torn shorts:1.2), (thong:1.2), (bare buttocks:1.2)');
+  }
+  if (!FOOTWEAR_RE.test(o)) {
+    pos.push('barefoot');
+    neg.push('(sandals:1.3), (shoes:1.2), footwear');
+  }
+  return { positive: pos.join(', '), negative: neg.join(', ') };
+}

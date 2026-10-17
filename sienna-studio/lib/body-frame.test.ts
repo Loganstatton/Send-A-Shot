@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BODY_FRAME_NODE_ID, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from './body-frame';
-import { matchPosePreset } from './pose-presets';
+import { matchPosePreset, presetOutfitPrompt } from './pose-presets';
 
 const joints = (present: number[]) => Array.from({ length: 14 }, (_, i) => (present.includes(i) ? [100 + i, 200 + i] : null));
 const report = (present: number[], valid = true) => [JSON.stringify({ valid, joints: joints(present) })];
@@ -102,5 +102,35 @@ describe('bent-over preset from the Pose text', () => {
     expect(id('looking back over her shoulder')).toBeUndefined();
     expect(id('kneeling upright on the bed, knees together')).toBe('kneeling_upright');
     expect(id('lying on her back on the bed')).toBe('lying_on_back');
+  });
+});
+
+describe('garment wording for the bent-over preset', () => {
+  it('spells out a thong and pushes away fuller bottoms', () => {
+    const p = presetOutfitPrompt('bent_over_rear', 'sage green string thong bikini')!;
+    expect(p.positive.startsWith('(wearing sage green string thong bikini:1.35)')).toBe(true);
+    expect(p.positive).toContain('thin string back');
+    expect(p.negative).toContain('(full coverage bottoms:1.4), (briefs:1.3)');
+  });
+  it('keeps a dress a dress, with a hanging skirt', () => {
+    const p = presetOutfitPrompt('bent_over_rear', 'light floral sundress')!;
+    expect(p.positive).toContain('skirt hangs down from her hips with gravity');
+    expect(p.negative).toContain('(swimsuit:1.4), (bikini:1.4), (bodysuit:1.4)');
+  });
+  it('closes the shorts and keeps her barefoot unless shoes are asked for', () => {
+    const p = presetOutfitPrompt('bent_over_rear', 'denim shorts and a white tank top')!;
+    expect(p.positive).toContain('shorts fully covering her buttocks');
+    expect(p.negative).toContain('(cut-out shorts:1.3)');
+    expect(p.positive).toContain('barefoot');
+    expect(p.negative).toContain('(sandals:1.3)');
+    const shoes = presetOutfitPrompt('bent_over_rear', 'sundress and white sneakers')!;
+    expect(shoes.positive).not.toContain('barefoot');
+    expect(shoes.negative).not.toContain('sandals');
+  });
+  it('rules out extra people for every outfit, and leaves other presets alone', () => {
+    expect(presetOutfitPrompt('bent_over_rear', 'red bikini')!.negative).toContain('(second person:1.3)');
+    expect(presetOutfitPrompt('standing_full_body', 'red bikini')).toBeNull();
+    expect(presetOutfitPrompt(null, 'red bikini')).toBeNull();
+    expect(presetOutfitPrompt('bent_over_rear', '')).toBeNull();
   });
 });

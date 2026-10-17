@@ -35,7 +35,7 @@ import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt, fullBodyFraming } from '../prompt';
-import { matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset } from '../pose-presets';
+import { matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -389,8 +389,14 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   const seed = p.seed >= 0 ? Math.floor(p.seed) : Math.floor(Math.random() * 2 ** 48);
   // a preset's own wording (bent over: the hinge spelled out, and the squat/kneel misreads pushed away)
   const presetPrompt = posePre ? POSE_PRESET_PROMPTS[posePre.id] : undefined;
-  const positive = withTriggers(presetPrompt ? `${presetPrompt.positive}, ${built.positive}` : built.positive, stylePacks);
-  const negative = withPackNegatives(presetPrompt ? `${built.negative}, ${presetPrompt.negative}` : built.negative, stylePacks);
+  // presets that lose the outfit (bent over) also repeat the garment, weighted, right after their pose wording
+  const presetOutfit = posePre ? presetOutfitPrompt(posePre.id, packOutfit) : null;
+  const presetPos = [presetPrompt?.positive, presetOutfit?.positive].filter(Boolean).join(', ');
+  const presetNeg = [presetPrompt?.negative, presetOutfit?.negative].filter(Boolean).join(', ');
+  // the standard full-body wording asks for "feet and shoes" — it added sandals to bent-over photos; barefoot here
+  const builtPositive = presetOutfit?.positive.includes('barefoot') ? built.positive.replace('including feet and shoes', 'including bare feet') : built.positive;
+  const positive = withTriggers(presetPos ? `${presetPos}, ${builtPositive}` : builtPositive, stylePacks);
+  const negative = withPackNegatives(presetNeg ? `${built.negative}, ${presetNeg}` : built.negative, stylePacks);
   const values: Partial<Record<ControlKey, ControlValue | undefined>> = {
     positive_prompt: positive,
     negative_prompt: negative,
