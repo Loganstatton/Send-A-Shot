@@ -63,8 +63,10 @@ describe('rearRequest', () => {
       'walking away from the camera along the waterline',
       'back view, head out of frame',
       'photographed from the back',
+      'the camera is directly behind her',
     ]) expect(rearRequest(t, null, false), t).toBe(true);
-    for (const t of ['standing on the beach facing the camera, smiling', 'back straight, sitting on the bed', 'walking toward the camera', 'lying on her back'])
+    for (const t of ['standing on the beach facing the camera, smiling', 'back straight, sitting on the bed', 'walking toward the camera', 'lying on her back',
+      'lying on her stomach on the bed, propped up on her elbows, chin resting on her hands, feet up behind her'])
       expect(rearRequest(t, null, false), t).toBe(false);
   });
 });

@@ -61,7 +61,7 @@ export const TURNED_EYE_RATIO = 0.38;
 const REAR_POSE_RE = new RegExp(
   '\\b(' +
     [
-      'from behind', 'behind her', '(back|rear)[\\s-]+view', 'seen from (the )?back', 'from the back',
+      'from behind', '(camera|photographer|viewer) (is )?(directly )?behind her', '(back|rear)[\\s-]+view', 'seen from (the )?back', 'from the back',
       '(her )?back (is )?(fully |turned |facing )*(to|toward|towards) the (camera|viewer)',
       '(fac(e|es|ing)|turn(s|ed|ing)?|look(s|ing)?|walk(s|ing)?) away', 'away from the (camera|viewer)',
       'looking back', 'over (her|the|his) shoulder', 'profile view', 'side profile',
