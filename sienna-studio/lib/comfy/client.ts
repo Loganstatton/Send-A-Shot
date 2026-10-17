@@ -100,8 +100,11 @@ function authHeaders(): Record<string, string> {
 }
 
 // /object_info results cached per server URL (5 min) so diagnostics and
-// generation don't re-query node definitions on every request.
+// generation don't re-query node definitions on every request. A missing node
+// is re-checked after 30 s: right after a GPU server starts, its custom nodes
+// and models may still be installing, and "missing" shouldn't stick for 5 min.
 const OBJECT_INFO_TTL = 5 * 60_000;
+const OBJECT_INFO_MISS_TTL = 30_000;
 const gc = globalThis as unknown as { __siennaObjectInfo?: Map<string, Map<string, { at: number; data: NodeInfo | null }>> };
 const objectInfoCaches = (gc.__siennaObjectInfo ??= new Map());
 
@@ -182,7 +185,7 @@ export class RealComfy implements ComfyBackend {
 
   async nodeInfo(nodeClass: string): Promise<NodeInfo | null> {
     const cached = this.objectInfoCache.get(nodeClass);
-    if (cached && Date.now() - cached.at < OBJECT_INFO_TTL) return cached.data;
+    if (cached && Date.now() - cached.at < (cached.data ? OBJECT_INFO_TTL : OBJECT_INFO_MISS_TTL)) return cached.data;
     // ComfyUI returns {} for classes that aren't installed.
     const all = await this.json<Record<string, NodeInfo>>(`/object_info/${encodeURIComponent(nodeClass)}`);
     const info = all[nodeClass] ?? null;

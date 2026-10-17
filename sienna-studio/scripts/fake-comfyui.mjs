@@ -135,6 +135,8 @@ if (arg('--wan-video')) {
     WanAnimate2Cache: { model: ['MODEL'], device: combo(['cpu', 'gpu']), dtype: combo(['default', 'int8', 'int4']) },
     // safe framing (video): Sienna node + core SDXL inpaint pieces
     SiennaSafeFrame: { image: ['IMAGE'], margins: ['STRING'], target_area: ['INT'], max_pad: ['FLOAT'], min_aspect: ['FLOAT'], feather: ['INT'] },
+    // Lock Camera (video): FAKE_LOCK=applied|steady|rejected|unavailable picks the report (default applied)
+    SiennaLockCamera: { images: ['IMAGE'] },
     InpaintModelConditioning: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], vae: ['VAE'], pixels: ['IMAGE'], mask: ['MASK'], noise_mask: ['BOOLEAN'] },
     InvertMask: { mask: ['MASK'] },
     ImageCompositeMasked: { destination: ['IMAGE'], source: ['IMAGE'], x: ['INT'], y: ['INT'], resize_source: ['BOOLEAN'] },
@@ -269,6 +271,11 @@ http
           outputs[k] = { text: [JSON.stringify({ available: true, ok: imgs.every((i) => i.ok), similarity: sims.length ? Math.min(...sims) : null, images: imgs })] };
         }
         if (n.class_type === 'SiennaSafeFrame') outputs[k] = { text: [JSON.stringify({ available: true, source: [1122, 1402], plan: { top: 312, bottom: 16, left: 0, right: 0, body_height: 1360, feet_in_photo: true, capped: false, changed: true }, padded: [1122, 1730], video: [512, 784] })] };
+        if (n.class_type === 'SiennaLockCamera') {
+          const st = process.env.FAKE_LOCK || 'applied';
+          const reasons = { applied: 'camera locked', steady: 'the camera is already steady; nothing to correct', rejected: 'she is at the frame edge where the locked frame needs filling; that part of her would be cut off or smeared', unavailable: 'her outline could not be found (segmenter unavailable)' };
+          outputs[k] = { text: [JSON.stringify({ status: st, reason: reasons[st] ?? st, frames: 65, size: [480, 832], before: { max_px: 25.5, max_x_pct: 3.15, max_y_pct: 2.62, max_zoom_pct: 0.65, max_rot_deg: 0.49 }, ...(st === 'applied' ? { after: { max_px: 1.47, max_x_pct: 0.15, max_y_pct: 0.17, max_zoom_pct: 0.18, max_rot_deg: 0.04 }, fill_pct: 5.9, sharpness_ratio: 1.002, seam_ratio: 0.98, body_lost_pct: 0 } : {}), ms: 10300 })] };
+        }
         if (n.class_type === 'SiennaExposureCheck') outputs[k] = { text: [JSON.stringify({ available: true, exposed: false, score: 0 })] };
         if (n.class_type === 'SiennaBodyCheck') outputs[k] = { text: [JSON.stringify({ status: 'warn', flags: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06, severity: 'likely' }], checked: [{ part: 'thigh (right) length', change: -0.13, basis: 'source', tol: 0.06 }], skipped: [], scene: { diff: 6.1, changed: false } })] };
       }

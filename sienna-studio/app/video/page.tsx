@@ -174,17 +174,26 @@ function VideoStudio() {
 
       <div className="my-3 grid grid-cols-2 gap-2">
         <Chip active={mode === 'animate'} onClick={() => setMode('animate')} className="w-full">
-          🎬 Animate Image
+          🎬 Animate Image ✓
         </Chip>
         <Chip active={mode === 'motion'} onClick={() => setMode('motion')} className="w-full">
-          🕺 Copy Motion
+          🕺 Copy Motion · β
         </Chip>
       </div>
       <p className="mb-3 text-sm text-ink-400">
         {mode === 'animate'
-          ? 'Brings a photo of Sienna to life: describe what she does and how the camera moves.'
+          ? 'Recommended. Brings a photo of Sienna to life: describe what she does and how the camera moves.'
           : 'Sienna performs the movement from a short video — a dance, a walk, a pose sequence. Only Sienna appears in the result.'}
       </p>
+      {mode === 'motion' && (
+        <Notice kind="warn">
+          <p className="font-medium">Experimental</p>
+          <p className="mt-1 text-xs">
+            Copy Motion still has known issues: long hair can flare up, she may turn toward the camera in rear views, and it copies the movement video’s exact
+            speed. Animate Image is the recommended engine.
+          </p>
+        </Notice>
+      )}
       {!m.available && (
         <Notice kind="warn">
           <p className="font-medium">Not available on the GPU server yet</p>
@@ -259,7 +268,7 @@ function VideoStudio() {
             </div>
             {preset?.best === 'motion' && (
               <Notice kind="warn">
-                <p className="font-medium">Best made with Copy Motion</p>
+                <p className="font-medium">Best made with Copy Motion (experimental)</p>
                 <p className="mt-1 text-xs">{preset.why}</p>
                 <p className="mt-1 text-xs">Copy Motion needs a short video of a real person doing this movement at normal speed. Animate Image will still try if you stay here.</p>
                 <Button
