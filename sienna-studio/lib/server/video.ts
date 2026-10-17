@@ -31,6 +31,9 @@ import {
   MOTION2_NODE_CLASSES,
   motion2Chunks,
   motion2Prompt,
+  motion2RearPrompt,
+  MOTION2_REAR_TEXT,
+  Facing,
   MotionEngine,
   estimateMinutes,
   FaceCheckSpec,
@@ -247,6 +250,8 @@ export interface VideoRequest {
   drive?: DrivingVideo;
   start?: number;
   scene?: string;
+  /** Copy Motion: 'away' = she is filmed from behind and must keep her back to the camera (rear-view prompt). */
+  facing?: Facing;
 }
 
 const faceSpec: FaceCheckSpec = { reference: JSON.stringify(SIENNA_FACE_EMBEDDING), threshold: FACE_THRESHOLD, minFace: FACE_MIN_SIZE };
@@ -345,10 +350,15 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
     if (req.resolution === '720p') warnings.push('Copy Motion is tuned for 480p; 720p takes about twice as long and may look softer, not sharper.');
     // Wan Animate 2: the main prompt describes looks only (her profile + the photo's outfit; Scene = background)
     const outfit = applyIdentityLock(source.fields.outfit ?? '', character.extraLockedTerms).text;
-    positive = v2 ? motion2Prompt(character.appearanceTraits, outfit, lock.text) : motionPrompt(lock.text);
+    // Rear view: front-only traits (face, eyes, freckles, chest) made Wan Animate 2 turn her round to show them, so the
+    // text describes her from behind and asks for her back to stay toward the camera. Identity still comes from the photo.
+    const away = req.facing === 'away';
+    if (away && !v2) warnings.push('The rear-view option applies to Copy Motion with Wan Animate 2; this server uses Animate v1, so it has no effect.');
+    positive = v2 ? (away ? motion2RearPrompt : motion2Prompt)(character.appearanceTraits, outfit, lock.text) : motionPrompt(lock.text);
+    const motionText = away ? MOTION2_REAR_TEXT : MOTION2_TEXT;
     build = (imageName, videoName, face) =>
       v2
-        ? buildMotion2Graph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, motionText: MOTION2_TEXT, negative, seed, face, frame })
+        ? buildMotion2Graph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, motionText, negative, seed, face, frame })
         : buildMotionGraph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, negative, seed, face });
     info = {
       mode: 'motion',
@@ -363,6 +373,7 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
       seconds,
       drive: { video: drive.video, poster: drive.poster, start, seconds },
       scene: lock.text,
+      ...(req.facing === 'away' ? { facing: 'away' as const } : {}),
       chunks: chunks.chunks,
       estimateMinutes: estimateMinutes({ mode: 'motion', quality: 'fast', width, height, frames, chunks: chunks.chunks }),
       faceCheck: { status: 'on' },

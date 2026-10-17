@@ -39,6 +39,7 @@ export const POST = handle(async (req: Request) => {
       start: z.number().min(0).max(60).optional(),
       scene: z.string().trim().max(MAX_MOTION_TEXT).optional(),
       framing: z.enum(['still', 'small', 'walk', 'bend', 'turn', 'jump', 'athletic']).nullable().optional(),
+      facing: z.enum(['camera', 'away']).optional(),
     }),
   );
   return json(await startVideo(body), 202);

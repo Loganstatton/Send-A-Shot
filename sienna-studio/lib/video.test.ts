@@ -420,3 +420,39 @@ describe('safe framing', () => {
     expect(typeof buildSafeFrame).toBe('function');
   });
 });
+
+import { motion2RearPrompt, MOTION2_REAR_TEXT, rearViewTraits } from './video';
+
+describe('rear-view Copy Motion prompt', () => {
+  const sienna =
+    'fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, natural hazel-green eyes with realistic muted iris color, (large round natural breasts:1.2), slim toned waist with defined abs, curvy hips';
+
+  it('drops front-only traits (face, eyes, freckles, chest, abs) and adds what a rear view shows', () => {
+    const t = rearViewTraits(sienna);
+    expect(t).not.toMatch(/freckle|eyes|iris|breast|abs\b|face/i);
+    expect(t).toMatch(/fictional adult woman/);
+    expect(t).toMatch(/seen from behind/);
+    expect(t).toMatch(/hair falling down her back/);
+    expect(t).toMatch(/full, round, prominent glutes/);
+    expect(t).toMatch(/slim waist/);
+  });
+
+  it('asks for her back to stay toward the camera for the whole clip; the normal prompt is unchanged', () => {
+    const p = motion2RearPrompt(sienna, 'sage green string thong bikini', 'sunny beach');
+    expect(p).toMatch(/back stays toward the camera from the first frame to the last/);
+    expect(p).toMatch(/never turns around/);
+    expect(p).not.toMatch(/consistent face|freckle|breast/i);
+    expect(p).toMatch(/wearing sage green string thong bikini/);
+    expect(MOTION2_REAR_TEXT).toMatch(/keeping her back to the camera the whole time/);
+    expect(motion2Prompt(sienna, 'x', 'y')).toMatch(/consistent face/);
+  });
+
+  it('keeps the rear bend preset under the 400-character limit and names the hip hinge', () => {
+    const p = MOTION_PRESETS.find((m) => m.id === 'bend_away')!;
+    expect(p.text.length).toBeLessThanOrEqual(400);
+    expect(p.text).toMatch(/hinges forward at the hips/);
+    expect(p.text).toMatch(/hips staying high/);
+    expect(p.text).toMatch(/both feet planted/);
+    expect(p.text).toMatch(/back to the camera the whole time/);
+  });
+});

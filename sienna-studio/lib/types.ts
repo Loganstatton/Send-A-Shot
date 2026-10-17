@@ -423,6 +423,8 @@ export interface VideoInfo {
   /** Copy Motion: the driving video (normalised to 16 fps) and the part of it that was copied. */
   drive?: { video: StoredVideo; poster: StoredImage; start: number; seconds: number };
   scene?: string;
+  /** Copy Motion: 'away' = rear-view prompt (back to the camera for the whole clip). */
+  facing?: import('./video').Facing;
   chunks?: number;
   estimateMinutes: number;
   /** Whether the frame face check was in the graph, or why not. */

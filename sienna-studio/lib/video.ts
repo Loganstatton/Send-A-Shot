@@ -128,7 +128,9 @@ export const MOTION_PRESETS: MotionPreset[] = [
   {
     id: 'bend_away',
     label: 'Bend over (back to camera)',
-    text: 'with her back to the camera, she bends forward at the waist in one natural movement, reaches down toward the floor and stands straight back up, the whole movement takes about three seconds, her hair falls forward and swings back, real-time speed, natural momentum and gravity',
+    // Round 7: "hinge at the hips, knees almost straight" still let her hips drop to ~78% (a slight crouch), so the hips
+    // staying high and the back staying long are named explicitly; facing away is stated for the whole clip.
+    text: 'with her back to the camera the whole time, she hinges forward at the hips with a long straight back, hips staying high above her knees, knees only slightly bent and both feet planted, picks up a seashell from the sand and stands straight back up, real-time speed, natural balance, hair falls forward and swings back, fixed camera, her whole body stays in frame',
     best: 'animate',
     framing: 'bend',
   },
@@ -616,6 +618,49 @@ export function buildMotion2Graph(i: Motion2GraphInput): ComfyGraph {
 }
 
 /** Text for Wan Animate 2's main prompt: looks only (character + background), no motion words. */
+/** Which way she faces the camera in Copy Motion. 'away' = rear view (see motion2RearPrompt). */
+export type Facing = 'camera' | 'away';
+
+/** Front-only features: asking for them in a rear-view clip makes the model turn her round to show them. */
+const FRONT_ONLY = /\b(freckles?|eyes?|iris|eyelash\w*|brows?|face|facial|lips?|smile|teeth|nose|cheeks?|chin|breasts?|bust|chest|cleavage|nipples?|abs|abdomen|stomach|belly|navel)\b/i;
+
+/**
+ * Her profile seen from behind: the profile's own comma-separated traits minus anything only visible from the front,
+ * plus what a rear view does show (hair down her back, back, waist, hips, the approved fuller glute shape, posture).
+ * Identity still comes from the photo itself (reference image + its CLIP-vision embedding); this only changes the text.
+ */
+export function rearViewTraits(character: string): string {
+  const kept = character
+    .replace(/\(([^()]*?)(?::\s*[\d.]+)?\)/g, '$1')
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t && !FRONT_ONLY.test(t));
+  const rear = [
+    'seen from behind',
+    'long dark-brown wavy hair falling down her back',
+    'smooth tanned back with natural skin texture',
+    'slim waist',
+    'curvy hips',
+    'full, round, prominent glutes',
+    'natural relaxed posture',
+  ];
+  return [...kept.filter((t) => !/\b(hair|waist|hips?)\b/i.test(t)), ...rear].join(', ');
+}
+
+/** Wan Animate 2 rear-view prompt: looks from behind only, and an explicit "back to the camera for the whole clip". */
+export function motion2RearPrompt(character: string, outfit: string, scene: string): string {
+  const clean = (t: string) => t.replace(/\s+/g, ' ').trim().replace(/[.,\s]+$/, '');
+  const who = [rearViewTraits(character) || 'a woman seen from behind', clean(outfit) ? `wearing ${clean(outfit)}` : ''].filter(Boolean).join(', ');
+  return (
+    `Character Description: ${who}. Her back stays toward the camera from the first frame to the last; she never turns around ` +
+    `and her face is never shown. Realistic photo, natural skin.\nBackground description: ${clean(scene) || 'the same setting as in the photo, background stationary'}.`
+  );
+}
+
+/** Motion text for rear-view Copy Motion (Wan Animate 2's pose prompt). */
+export const MOTION2_REAR_TEXT =
+  'a woman seen from behind performing the movement from the reference video naturally, keeping her back to the camera the whole time, background stationary';
+
 export function motion2Prompt(character: string, outfit: string, scene: string): string {
   // SDXL weighting like "(large eyes:1.2)" means nothing to Wan's text encoder: keep the words only
   const clean = (t: string) =>
