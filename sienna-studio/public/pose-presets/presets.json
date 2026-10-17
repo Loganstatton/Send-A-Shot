@@ -68,5 +68,12 @@
   "height": 1216,
   "pose": "kneeling upright on the bed, knees together, hands resting on her thighs",
   "strength": 0.85
+ },
+ {
+  "id": "bent_over_rear",
+  "width": 832,
+  "height": 1216,
+  "pose": "seen from behind, bending forward deeply at the waist, hips raised, legs nearly straight with a slight bend at the knees, feet flat on the ground",
+  "strength": 1.0
  }
 ]

@@ -241,3 +241,9 @@ describe('Edit Outfit results (single photo, no retries)', () => {
     expect(singlePhotoIdentity(rec, null, 'the face check could not run (server is missing SiennaFaceCheck)').status).toBe('unavailable');
   });
 });
+
+describe('bent-over preset counts as a rear view', () => {
+  it('so a low face score from behind is inconclusive, not redone toward a front-facing photo', () => {
+    expect(rearRequest('', 'bent_over_rear', false)).toBe(true);
+  });
+});

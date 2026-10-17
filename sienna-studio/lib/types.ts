@@ -365,6 +365,7 @@ export interface GenerationRecord {
       identity?: 'verified' | 'mismatch' | 'inconclusive' | 'unchecked';
       identityReason?: string;
       framingOk?: boolean;
+      poseOk?: boolean;
       images: { filename: string; subfolder: string; type: string; nodeId: string }[];
     }[];
   };

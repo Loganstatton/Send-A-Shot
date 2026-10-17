@@ -56,12 +56,24 @@ P = {
   'kneeling_upright': (832, 1216, 'kneeling upright on the bed, knees together, hands resting on her thighs', merge(face(430, 240), {
       1: (430, 350), 2: (336, 370), 5: (524, 370), 3: (318, 545), 6: (540, 545), 4: (378, 720), 7: (486, 720),
       8: (382, 700), 11: (476, 700), 9: (392, 980), 12: (474, 990), 10: (230, 1060), 13: (300, 1080)})),
+  # Rear three-quarter hip hinge, camera behind her at hip height, facing image-left. The torso is drawn below
+  # horizontal (neck lower than the hips) so the hinge can't be read as standing; knees are only slightly bent and
+  # in front of the hip-ankle line, and both ankles are on the floor below the knees, so it can't read as a squat or a
+  # kneel. Rear view: no eyes, the nose hidden under her hanging head links it to the neck. Her right side is
+  # image-right. Drawn at 1.3x so she fills the portrait frame (hips near the top third, feet near the bottom).
+  'bent_over_rear': (832, 1216, 'seen from behind, bending forward deeply at the waist, hips raised, legs nearly straight with a slight bend at the knees, feet flat on the ground', {
+      i: (round((x - 380) * 1.3 + 416), round((y - 528) * 1.3 + 330)) for i, (x, y) in {
+      0: (200, 800), 16: (232, 760), 17: (178, 712), 1: (262, 680), 2: (322, 712), 5: (232, 626),
+      3: (318, 858), 4: (322, 1000), 6: (214, 772), 7: (210, 916),
+      8: (548, 556), 11: (470, 528), 9: (522, 812), 12: (440, 800), 10: (540, 1092), 13: (458, 1084)}.items()}),
 }
 
 # pose ControlNet strength for presets: 0.85 followed arms-crossed 4/4 and hand-in-hair 2/2 (0.65: 2/4, 1/2).
 # Kneeling was dropped: its skeleton produced a ghost second body or a standing pose in 2 of 4 tests.
 STRENGTH = 0.85
-STRENGTHS = {}
+# bent_over_rear: the earlier bend-over skeletons were ignored at 0.85 (she knelt, crouched or stood in 11 tests), so
+# this one runs at full strength — to be confirmed on the GPU
+STRENGTHS = {'bent_over_rear': 1.0}
 
 out = os.path.join(os.path.dirname(__file__), '..', 'public', 'pose-presets')
 os.makedirs(out, exist_ok=True)

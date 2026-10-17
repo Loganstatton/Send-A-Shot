@@ -33,12 +33,14 @@ export interface ExposureAttempt<Ref = unknown> {
   identityReason?: string;
   /** False when a full-body request came back as a closer shot. */
   framingOk?: boolean;
+  /** False when a pose preset with a body check (bent over) came back in another pose: squatting, kneeling, upright. */
+  poseOk?: boolean;
   images: Ref[];
 }
 
 /** This attempt needs redoing: a nipple showed, her face drifted, or a full-body shot came out too close. */
 export function failed(a: ExposureAttempt): boolean {
-  return a.exposed || a.faceOk === false || a.framingOk === false;
+  return a.exposed || a.faceOk === false || a.framingOk === false || a.poseOk === false;
 }
 
 /** The outfit describes something on top (and doesn't ask for none). */
@@ -123,7 +125,7 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
   if (covered.length) {
     // right framing first, then a verified face over one that couldn't be judged over a mismatch, then the closest
     const idRank = (a: ExposureAttempt<Ref>) => (a.identity === 'verified' ? 4 : a.identity === 'inconclusive' ? 2 : 0);
-    const rank = (a: ExposureAttempt<Ref>) => (a.framingOk === false ? 0 : 10) + idRank(a) + (a.similarity ?? -1);
+    const rank = (a: ExposureAttempt<Ref>) => (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.similarity ?? -1);
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));
@@ -146,7 +148,8 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
   const nip = redone.filter((a) => a.exposed).length;
   const face = redone.filter((a) => !a.exposed && a.faceOk === false).length;
   const frame = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk === false).length;
-  const why = [nip ? `${nip} showed a nipple` : '', face ? `${face} didn't look enough like Sienna` : '', frame ? `${frame} came out closer than full body` : '']
+  const pose = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk !== false && a.poseOk === false).length;
+  const why = [nip ? `${nip} showed a nipple` : '', face ? `${face} didn't look enough like Sienna` : '', frame ? `${frame} came out closer than full body` : '', pose ? `${pose} came out in the wrong pose` : '']
     .filter(Boolean)
     .join(', ');
   const tail =

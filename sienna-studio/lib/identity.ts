@@ -73,7 +73,7 @@ const REAR_POSE_RE = new RegExp(
 /** The request itself turns her face away: a from-behind pose, the looking-back preset, or a rear pose pack. Reads
  * the pose, framing and extra fields (a "rear-view photograph" usually sits in Framing). */
 export function rearRequest(poseText: string, posePresetId: string | null | undefined, rearPack: boolean): boolean {
-  return rearPack || posePresetId === 'looking_back' || REAR_POSE_RE.test(poseText);
+  return rearPack || posePresetId === 'looking_back' || posePresetId === 'bent_over_rear' || REAR_POSE_RE.test(poseText);
 }
 
 export function faceVerdict(face: FaceReport, rear: boolean, policy: FacePolicy = 'strict'): { status: IdentityStatus; reason: string } {
