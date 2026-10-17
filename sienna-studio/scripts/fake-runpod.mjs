@@ -8,6 +8,8 @@
 //   FAKE_NEVER_READY_FIRST=1        only the first pod never gets one (a stuck machine that gets replaced)
 //   FAKE_COMFY_FLAGS="--hang-exec"  extra flags for the fake ComfyUI
 //   FAKE_BAD_KEY=1                  every call answers 401
+//   FAKE_NO_CAPACITY_DC="US-IL-1"   data centres that answer "no instances" for every GPU type
+//   FAKE_NEVER_READY_DC="US-IL-1"   pods in these data centres never get a working ComfyUI (volume won't attach)
 // GET /debug → { creates, deletes, kit: [{file, status}], pods }
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -17,7 +19,10 @@ import path from 'node:path';
 const PORT = Number(process.argv[process.argv.indexOf('--port') + 1]) || 8189;
 const COMFY_PORT = Number(process.env.FAKE_COMFY_PORT || 8190);
 const READY_S = Number(process.env.FAKE_READY_SECONDS || 3);
-const noCap = (process.env.FAKE_NO_CAPACITY || '').split(',').map((s) => s.trim()).filter(Boolean);
+const list = (v) => (v || '').split(',').map((s) => s.trim()).filter(Boolean);
+const noCap = list(process.env.FAKE_NO_CAPACITY);
+const noCapDc = list(process.env.FAKE_NO_CAPACITY_DC);
+const neverReadyDc = list(process.env.FAKE_NEVER_READY_DC);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pods = new Map();
 const debug = { creates: [], deletes: [], kit: [] };
@@ -68,6 +73,8 @@ http
       const gpu = j.gpuTypeIds?.[0];
       debug.creates.push({ name: j.name, gpu, ports: j.ports, volumeInGb: j.volumeInGb, networkVolumeId: j.networkVolumeId ?? null, env: j.env, image: j.imageName, startCmd: j.dockerStartCmd, entrypoint: j.dockerEntrypoint ?? null, dataCenterIds: j.dataCenterIds ?? null, gpuTypeIds: j.gpuTypeIds });
       if (noCap.includes('*') || noCap.includes(gpu)) return send(res, 500, { error: `There are no longer any instances available with the requested specifications (${gpu}).` });
+      const dc = j.dataCenterIds?.[0];
+      if (dc && noCapDc.includes(dc)) return send(res, 500, { error: 'create pod: There are no instances currently available' });
       const id = 'fakepod' + Math.random().toString(36).slice(2, 9);
       const pod = { id, name: j.name, desiredStatus: 'RUNNING', costPerHr: gpu.includes('A40') ? 0.59 : 0.69, gpu };
       pods.set(id, pod);
@@ -76,7 +83,7 @@ http
       const shell = JSON.stringify(j.dockerEntrypoint ?? ['/start.sh']) === JSON.stringify(['bash', '-c']);
       if (shell) fetchKit((j.dockerStartCmd || []).join(' '));
       else debug.kit.push({ file: 'setup.sh', status: 'start command ignored: image entrypoint /start.sh not replaced' });
-      if (!(process.env.FAKE_NEVER_READY_FIRST === '1' && debug.creates.length === 1)) setTimeout(startComfy, READY_S * 1000);
+      if (!(process.env.FAKE_NEVER_READY_FIRST === '1' && debug.creates.length === 1) && !(dc && neverReadyDc.includes(dc))) setTimeout(startComfy, READY_S * 1000);
       return send(res, 200, pod);
     }
     const m = /^\/v1\/pods\/([^/]+)$/.exec(p);

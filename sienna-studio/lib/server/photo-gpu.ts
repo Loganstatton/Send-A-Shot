@@ -7,8 +7,12 @@
  *   starting → a pod is requested (preferred GPU type first, then any of the others); ComfyUI on the volume boots
  *   ready    → ComfyUI answers; photos waiting for the GPU are submitted
  *   stopped  → terminated (idle, by hand, timed out, over budget); the cost goes to the ledger
- * A pod that never comes up (RunPod sometimes hands out a machine that can't start the container) is replaced once
- * by a pod on another machine; a second failure is reported. The volume is attached unchanged — never modified.
+ * A pod that never comes up (RunPod sometimes hands out a machine that can't start the container) is replaced
+ * by a pod on another machine. The volume is attached unchanged — never modified.
+ *
+ * Backup locations (PHOTO_GPU_BACKUP_LOCATIONS="volumeId@DATACENTER,…"): copies of the same models on network
+ * volumes in other data centres. When the main data centre has no free GPU, or its pod never starts, the next
+ * location is used; every location is tried once (the last one twice) before the start is reported as failed.
  *
  * Cost safety: the pod's own lifetime timer and idle auto-stop (they work even if this app is down), plus this app's
  * idle shutdown, startup timeout, maximum session length and monthly budget.
@@ -23,11 +27,16 @@ import { GpuError, runpod, type LedgerEntry } from './video-gpu';
 export const PHOTO_POD_PREFIX = 'sienna-photo';
 export const PHOTO_GPU_STATE_FILE = 'photo-gpu.json';
 
+export interface PhotoGpuLocation {
+  volumeId: string;
+  dataCenter: string;
+}
+
 export interface PhotoGpuConfig {
   apiKey: string;
   apiBase: string;
-  volumeId: string;
-  dataCenter: string;
+  /** The main volume first, then the backups (same models, other data centres). */
+  locations: PhotoGpuLocation[];
   templateId?: string;
   image: string;
   /** The first is tried on its own; if it has no capacity the rest are requested together (any of them). */
@@ -43,6 +52,15 @@ export interface PhotoGpuConfig {
 }
 
 const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+
+/** "volumeId@DATACENTER,volumeId@DATACENTER" → locations (malformed entries are skipped). */
+export function parsePhotoGpuLocations(v: string | undefined): PhotoGpuLocation[] {
+  return (v ?? '')
+    .split(',')
+    .map((x) => x.trim().split('@').map((y) => y.trim()))
+    .filter((x) => x.length === 2 && x[0] && x[1])
+    .map(([volumeId, dataCenter]) => ({ volumeId, dataCenter }));
+}
 
 export function photoGpuEnabled(): boolean {
   return process.env.PHOTO_GPU === 'runpod';
@@ -65,8 +83,10 @@ export function photoGpuConfig(): PhotoGpuConfig | null {
   return {
     apiKey: (e.PHOTO_RUNPOD_API_KEY || e.VIDEO_RUNPOD_API_KEY)!.trim(),
     apiBase: (e.PHOTO_GPU_API_BASE || e.VIDEO_GPU_API_BASE || 'https://rest.runpod.io/v1').replace(/\/+$/, ''),
-    volumeId: e.PHOTO_GPU_VOLUME_ID!.trim(),
-    dataCenter: e.PHOTO_GPU_DATACENTER!.trim(),
+    locations: [
+      { volumeId: e.PHOTO_GPU_VOLUME_ID!.trim(), dataCenter: e.PHOTO_GPU_DATACENTER!.trim() },
+      ...parsePhotoGpuLocations(e.PHOTO_GPU_BACKUP_LOCATIONS),
+    ],
     templateId: e.PHOTO_GPU_TEMPLATE_ID?.trim() || undefined,
     image: e.PHOTO_GPU_IMAGE || 'runpod/comfyui:1.3.3-comfyuiv0.30.0-cuda12.8',
     gpuTypes: (
@@ -107,8 +127,11 @@ export interface PhotoGpuSession {
   phase?: string;
   error?: string;
   stopReason?: string;
-  /** Pods requested in this session (a stuck start is replaced once). */
+  /** Pods requested in this session (a stuck start is replaced on another machine or location). */
   pods: number;
+  /** Index into config.locations of the current pod's volume (absent in sessions saved before backups existed = 0). */
+  location?: number;
+  dataCenter?: string;
   /** Cost of pods already replaced in this session. */
   priorUsd: number;
   attempts: string[];
@@ -197,9 +220,9 @@ export function photoPodStartCommand(c: PhotoGpuConfig): string {
   return [`(sleep ${Math.round(c.maxSessionMin * 60)}; runpodctl remove pod "$RUNPOD_POD_ID") >/dev/null 2>&1 &`, 'exec /start.sh'].join('\n');
 }
 
-/** Request a pod: the preferred GPU type alone, then any of the others. Returns the pod or throws with the reasons. */
-async function createPod(c: PhotoGpuConfig, name: string, attempts: string[], skipGpu?: string): Promise<{ pod: PodInfo; gpu: string }> {
-  const types = c.gpuTypes.filter((g) => g !== skipGpu);
+/** Request a pod in one location: the preferred GPU type alone, then any of the others. Throws with the reasons. */
+async function createPodAt(c: PhotoGpuConfig, loc: PhotoGpuLocation, name: string, attempts: string[]): Promise<{ pod: PodInfo; gpu: string }> {
+  const types = c.gpuTypes;
   const tiers = [types.slice(0, 1), types.slice(1)].filter((t) => t.length);
   for (const tier of tiers) {
     try {
@@ -211,8 +234,8 @@ async function createPod(c: PhotoGpuConfig, name: string, attempts: string[], sk
         gpuCount: 1,
         cloudType: c.cloudType,
         containerDiskInGb: c.diskGb,
-        networkVolumeId: c.volumeId,
-        dataCenterIds: [c.dataCenter],
+        networkVolumeId: loc.volumeId,
+        dataCenterIds: [loc.dataCenter],
         // only ComfyUI is exposed: no Jupyter, no SSH
         ports: ['8188/http'],
         env: { SIENNA_IDLE_MINUTES: String(c.idleMin + 5) },
@@ -222,11 +245,27 @@ async function createPod(c: PhotoGpuConfig, name: string, attempts: string[], sk
       if (!pod?.id) throw new GpuError('RunPod returned no pod id');
       return { pod, gpu: pod.machine?.gpuTypeId || (tier.length === 1 ? tier[0] : 'one of ' + tier.length + ' GPU types') };
     } catch (e: any) {
-      attempts.push(`${tier.length === 1 ? tier[0] : 'other GPU types'}: ${e.message}`);
-      if (e instanceof GpuError && e.status === 502) break; // bad API key
+      attempts.push(`${loc.dataCenter} ${tier.length === 1 ? tier[0] : 'other GPU types'}: ${e.message}`);
+      if (e instanceof GpuError && e.status === 502) throw e; // bad API key: no point trying elsewhere
     }
   }
-  throw new GpuError(`No photo GPU is free right now in ${c.dataCenter} (where Sienna's models are) — try again in a few minutes. ${attempts.slice(-2).join('; ')}`);
+  throw new GpuError(`no GPU free in ${loc.dataCenter}`);
+}
+
+/** Locations to try, in order, starting at `from` and wrapping around. */
+const locationOrder = (c: PhotoGpuConfig, from: number) => c.locations.map((_, i) => (from + i) % c.locations.length);
+
+/** Request a pod in the first location (from `from` on) that has a free GPU. Throws with every reason. */
+async function createPod(c: PhotoGpuConfig, name: string, attempts: string[], from = 0): Promise<{ pod: PodInfo; gpu: string; location: number }> {
+  for (const i of locationOrder(c, from)) {
+    try {
+      return { ...(await createPodAt(c, c.locations[i], name, attempts)), location: i };
+    } catch (e: any) {
+      if (e instanceof GpuError && e.status === 502) throw e;
+    }
+  }
+  const where = c.locations.map((l) => l.dataCenter).join(c.locations.length > 2 ? ', ' : ' or ');
+  throw new GpuError(`No photo GPU is free right now in ${where} (where Sienna's models are) — try again in a few minutes. ${attempts.slice(-4).join('; ')}`);
 }
 
 // ── Session control ────────────────────────────────────────────────────────────
@@ -240,6 +279,7 @@ export interface PhotoGpuView {
   readyAt?: string;
   phase?: string;
   error?: string;
+  dataCenter?: string;
   sessionUsd?: number;
   monthUsd: number;
   budgetUsd: number;
@@ -256,7 +296,7 @@ export async function photoGpuView(): Promise<PhotoGpuView> {
   return {
     mode: 'on-demand',
     status: s ? s.status : 'off',
-    ...(s ? { gpu: s.gpu, rate: s.rate, since: s.createdAt, readyAt: s.readyAt, phase: s.phase, error: s.error, sessionUsd: photoSessionCost(s) } : {}),
+    ...(s ? { gpu: s.gpu, rate: s.rate, since: s.createdAt, readyAt: s.readyAt, phase: s.phase, error: s.error, dataCenter: s.dataCenter, sessionUsd: photoSessionCost(s) } : {}),
     monthUsd: monthSpend(st),
     budgetUsd: c.monthlyBudgetUsd,
     idleMin: c.idleMin,
@@ -292,11 +332,12 @@ export function ensurePhotoGpu(): Promise<PhotoGpuSession> {
     const name = `${PHOTO_POD_PREFIX}-${Date.now().toString(36)}`;
     const attempts: string[] = [];
     try {
-      const { pod, gpu } = await createPod(c, name, attempts);
+      const { pod, gpu, location } = await createPod(c, name, attempts);
       const t = new Date().toISOString();
       st.session = {
         podId: pod.id, name, gpu, rate: Number(pod.costPerHr) || c.estRate, url: c.urlTemplate.replace('{id}', pod.id), status: 'starting',
-        createdAt: t, podCreatedAt: t, lastActivityAt: t, phase: 'booting the GPU', pods: 1, priorUsd: 0, attempts,
+        createdAt: t, podCreatedAt: t, lastActivityAt: t, phase: location ? `booting the GPU (backup location ${c.locations[location].dataCenter})` : 'booting the GPU',
+        pods: 1, priorUsd: 0, attempts, location, dataCenter: c.locations[location].dataCenter,
       };
       await save(st);
       return st.session;
@@ -371,21 +412,27 @@ export function tickPhotoGpu(busy: number, probe: PhotoProbe): Promise<PhotoGpuS
         return st.session;
       }
       if (podAge > c.startupTimeoutMin) {
-        // RunPod sometimes hands out a machine that never starts the container: replace it once, on another machine
+        // RunPod sometimes hands out a machine that never starts the container (or can't attach the volume): replace
+        // it on another machine, in the next location when there is one
         const priorUsd = s.priorUsd + podCost({ ...s, endedAt: new Date().toISOString() });
         await terminatePod(c, s.podId).catch(() => {});
-        if (s.pods >= 2) {
-          st.session = { ...s, priorUsd, podId: '', status: 'failed', endedAt: new Date().toISOString(), error: `The photo GPU didn’t start on two machines in a row (RunPod ${c.dataCenter}). Try again in a few minutes.` };
+        const maxPods = Math.max(2, c.locations.length + 1);
+        if (s.pods >= maxPods) {
+          const where = [...new Set(c.locations.map((l) => l.dataCenter))].join(', ');
+          st.session = { ...s, priorUsd, podId: '', status: 'failed', endedAt: new Date().toISOString(), error: `The photo GPU didn’t start on ${s.pods} machines in a row (RunPod ${where}). Try again in a few minutes.` };
           st.ledger.push({ podId: s.podId, gpu: s.gpu, rate: s.rate, startedAt: s.createdAt, endedAt: st.session.endedAt!, usd: Math.round(priorUsd * 1000) / 1000, reason: 'startup failed twice' });
           await save(st);
           return st.session;
         }
         try {
-          const attempts = [...s.attempts, `${s.gpu} machine never started ComfyUI within ${c.startupTimeoutMin} min — replaced`];
-          const { pod, gpu } = await createPod(c, s.name, attempts);
+          const cur = s.location ?? 0;
+          const attempts = [...s.attempts, `${s.gpu} machine in ${c.locations[cur]?.dataCenter ?? '?'} never started ComfyUI within ${c.startupTimeoutMin} min — replaced`];
+          const { pod, gpu, location } = await createPod(c, s.name, attempts, (cur + 1) % c.locations.length);
+          const moved = location !== cur;
           st.session = {
             ...s, podId: pod.id, gpu, rate: Number(pod.costPerHr) || c.estRate, url: c.urlTemplate.replace('{id}', pod.id), podCreatedAt: new Date().toISOString(),
-            phase: 'the first machine didn’t start — trying another one', pods: s.pods + 1, priorUsd, attempts,
+            phase: moved ? `that machine didn’t start — trying the backup location ${c.locations[location].dataCenter}` : 'the first machine didn’t start — trying another one',
+            pods: s.pods + 1, priorUsd, attempts, location, dataCenter: c.locations[location].dataCenter,
           };
         } catch (e: any) {
           st.session = { ...s, priorUsd, podId: '', status: 'failed', endedAt: new Date().toISOString(), error: e.message };
