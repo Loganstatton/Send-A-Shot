@@ -58,7 +58,7 @@ describe('SDXL production: single modules', () => {
     ({ graph: g, bindings: b } = pruneModule(g, b, 'pose_image'));
     ({ graph: g, bindings: b } = pruneModule(g, b, 'init_image'));
     ({ graph: g, bindings: b } = pruneModule(g, b, 'outfit_reference_image'));
-    expect(g['12'].class_type).toBe('IPAdapterFaceID');
+    expect(g['12'].class_type).toBe('IPAdapterAdvanced');
     expect(g['40'].inputs.model).toEqual(['12', 0]);
     expect(g['40'].inputs.positive).toEqual(['3', 0]);
     expect(g['21']).toBeUndefined(); // ControlNetLoader garbage-collected

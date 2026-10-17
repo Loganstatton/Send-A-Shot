@@ -355,7 +355,7 @@ export async function runDiagnostics(workflowId: string | null): Promise<Diagnos
     choices('CLIPVisionLoader', 'clip_name'),
     choices('PulidFluxModelLoader', 'pulid_file'),
   ]);
-  const needIdentity = flux ? ['ApplyPulidFlux'] : ['IPAdapterUnifiedLoaderFaceID', 'IPAdapterFaceID'];
+  const needIdentity = flux ? ['ApplyPulidFlux'] : ['IPAdapterUnifiedLoader', 'IPAdapterAdvanced'];
   const identityOk = needIdentity.every((c) => idPresent.includes(c));
   checks.push({
     id: 'identity',

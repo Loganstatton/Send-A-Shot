@@ -97,5 +97,5 @@ export function packageFor(classType: string): NodePackage | null {
 }
 
 /** Classes the app treats as the "identity" / "control" families for diagnostics. */
-export const IDENTITY_CLASSES = ['IPAdapterUnifiedLoaderFaceID', 'IPAdapterFaceID', 'IPAdapterAdvanced', 'ApplyPulidFlux', 'ApplyPulid', 'ApplyInstantID'];
+export const IDENTITY_CLASSES = ['IPAdapterUnifiedLoader', 'IPAdapterUnifiedLoaderFaceID', 'IPAdapterFaceID', 'IPAdapterAdvanced', 'ApplyPulidFlux', 'ApplyPulid', 'ApplyInstantID'];
 export const CONTROLNET_CLASSES = ['ControlNetLoader', 'ControlNetApplyAdvanced', 'SetUnionControlNetType', 'DWPreprocessor'];
