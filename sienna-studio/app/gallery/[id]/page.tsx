@@ -148,11 +148,19 @@ export default function GenerationDetail() {
           ) : (
             <>
               <Spinner className="h-8 w-8" />
-              <span>
-                {rec.status === 'queued' ? (rec.queuePosition ? `Queued · #${rec.queuePosition}` : 'Queued') : 'Making the video…'}
-                <br />
-                usually about {rec.video.estimateMinutes} min — you can leave this page
-              </span>
+              {rec.video.gpu?.phase === 'starting' ? (
+                <span>
+                  Starting the video GPU{rec.video.gpu.waitingFor ? ` — ${rec.video.gpu.waitingFor}` : ''}…
+                  <br />
+                  usually 8–12 min, then about {rec.video.estimateMinutes} min for the video — you can leave this page
+                </span>
+              ) : (
+                <span>
+                  {rec.status === 'queued' ? (rec.queuePosition ? `Queued · #${rec.queuePosition}` : 'Queued') : 'Making the video…'}
+                  <br />
+                  usually about {rec.video.estimateMinutes} min — you can leave this page
+                </span>
+              )}
             </>
           )}
         </Card>
@@ -508,6 +516,15 @@ function VideoCard({ rec }: { rec: GenerationRecord }) {
                   framed photo →
                 </a>
               )}
+            </dd>
+          </>
+        )}
+        {v.gpu?.cost && (
+          <>
+            <dt className="text-ink-400">GPU cost</dt>
+            <dd className="text-xs">
+              ≈ ${v.gpu.cost.usd.toFixed(3)} · {Math.round(v.gpu.cost.gpuSeconds / 6) / 10} min on {v.gpu.cost.gpu.replace(/^NVIDIA (GeForce )?/, '')}
+              {v.gpu.cost.startupUsd > 0 ? ` (incl. $${v.gpu.cost.startupUsd.toFixed(3)} to start the GPU)` : ''}
             </dd>
           </>
         )}

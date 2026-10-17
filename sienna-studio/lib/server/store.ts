@@ -287,6 +287,7 @@ export function deleteRecord(id: string, deleteFiles = true): Promise<void> {
     if (rec && deleteFiles) {
       for (const img of rec.images) await fs.rm(path.join(IMAGES_DIR, img.file), { force: true });
       if (rec.video?.result) await fs.rm(path.join(IMAGES_DIR, rec.video.result.file), { force: true });
+      if (rec.video?.lockCamera?.result) await fs.rm(path.join(IMAGES_DIR, rec.video.lockCamera.result.file), { force: true });
       // the driving video (and its poster) can be shared by re-runs: remove it with the last record using it
       const drive = rec.video?.drive;
       if (drive && !list.some((r) => r.id !== rec.id && r.video?.drive?.video.file === drive.video.file)) {

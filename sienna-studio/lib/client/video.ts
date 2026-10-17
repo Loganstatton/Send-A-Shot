@@ -17,6 +17,25 @@ export interface VideoAvailability {
   safeFraming: { available: boolean; missing: string[] };
   lockCamera: { available: boolean; missing: string[] };
   experiments: boolean;
+  gpu?: {
+    mode: 'on-demand' | 'settings-url';
+    status: 'off' | 'starting' | 'ready' | 'stopping' | 'stopped' | 'failed';
+    gpu?: string;
+    rate?: number;
+    since?: string;
+    phase?: string;
+    error?: string;
+    sessionUsd?: number;
+    monthUsd: number;
+    budgetUsd: number;
+    idleMin?: number;
+    missing?: string[];
+  };
+  storage?: { totalBytes: number; freeBytes: number; videoBytes: number; videoCount: number };
+}
+
+export function stopVideoGpu() {
+  return api<VideoAvailability['gpu']>('/api/video-gpu/stop', { method: 'POST' });
 }
 
 export interface DrivingVideo {

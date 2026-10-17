@@ -438,6 +438,22 @@ export interface VideoInfo {
    * applied); the natural video stays in `video.result` either way.
    */
   lockCamera?: { status: 'on' | import('./video').LockCameraStatus; reason?: string; report?: import('./video').LockCameraReport | null; result?: StoredVideo | null };
+  /**
+   * Made on the on-demand video GPU (VIDEO_GPU=runpod): the record waits ('starting') until the GPU is ready, is then
+   * submitted, and gets its GPU cost when it finishes.
+   */
+  gpu?: {
+    phase: 'starting' | 'submitted' | 'failed';
+    requestedAt: string;
+    /** What the GPU is doing while the video waits (booting, downloading models…). */
+    waitingFor?: string;
+    url?: string;
+    submittedAt?: string;
+    /** usd = gpuSeconds at `rate` + startupUsd (only for the video that started the GPU). */
+    cost?: { usd: number; gpuSeconds: number; startupUsd: number; rate: number; gpu: string };
+  };
+  /** The request, kept until the video is submitted to the on-demand GPU (internal). */
+  request?: Record<string, unknown>;
 }
 
 /** What SiennaSafeFrame measured and added (pixels of the source photo). */

@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { AUTH_COOKIE, authEnabled, verifySessionToken } from './lib/auth';
 
 export const config = {
-  // Everything except static assets, the login page and the login API.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon-.*\\.png|apple-touch-icon.png|manifest.webmanifest|login|api/auth).*)'],
+  // Everything except static assets, the login page, the login API and the video GPU's setup kit (token-protected).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon-.*\\.png|apple-touch-icon.png|manifest.webmanifest|login|api/auth|api/video-gpu/kit/).*)'],
 };
 
 export async function middleware(req: NextRequest) {

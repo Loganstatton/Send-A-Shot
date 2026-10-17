@@ -3,7 +3,8 @@
 // /history/{id}, /view). For exercising the real HTTP client + diagnostics
 // without a GPU. NOT used in production.
 //
-//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-face-refine] [--no-lora] [--fail-exec] [--qwen-edit] [--wan-video]
+//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-face-refine] [--no-lora] [--fail-exec] [--hang-exec] [--qwen-edit] [--wan-video]
+//   (--hang-exec: jobs stay "running" forever, for timeout tests)
 import http from 'node:http';
 import { deflateSync } from 'node:zlib';
 
@@ -232,13 +233,13 @@ http
       return send(res, 200, { prompt_id: id, number: counter, node_errors: {} });
     }
     if (p === '/queue') {
-      const running = [...jobs].filter(([, j]) => Date.now() - j.at < 1500).map(([id], i) => [i, id, {}, {}, []]);
+      const running = [...jobs].filter(([, j]) => arg('--hang-exec') || Date.now() - j.at < 1500).map(([id], i) => [i, id, {}, {}, []]);
       return send(res, 200, { queue_running: running, queue_pending: [] });
     }
     if (p.startsWith('/history/')) {
       const id = p.slice('/history/'.length);
       const j = jobs.get(id);
-      if (!j || Date.now() - j.at < 1500) return send(res, 200, {});
+      if (!j || arg('--hang-exec') || Date.now() - j.at < 1500) return send(res, 200, {});
       if (arg('--fail-exec')) {
         return send(res, 200, {
           [id]: {

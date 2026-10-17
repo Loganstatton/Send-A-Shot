@@ -97,6 +97,8 @@ export interface MotionPreset {
   /** Why the other engine is weaker for this movement (shown when the user is on it). */
   why?: string;
   framing: MovementKind;
+  /** Only offered for adult-mode photos (on a server that allows adult content). */
+  adult?: boolean;
 }
 export const MOTION_PRESETS: MotionPreset[] = [
   { id: 'smile', label: 'Smile at camera', text: 'she looks into the camera and smiles softly, blinking naturally, subtle breathing', best: 'animate', framing: 'still' },
@@ -135,6 +137,17 @@ export const MOTION_PRESETS: MotionPreset[] = [
     framing: 'bend',
   },
   {
+    id: 'top_off',
+    label: 'Take off bikini top',
+    // Round 12: "unties … takes it off" came out as a quick lift-and-yank with the top vanishing; the hands are now
+    // described step by step, with smooth movements and the top visibly set down (no slow-speed words: those make Wan
+    // produce slow motion).
+    text: 'facing the camera, she reaches behind her back with both hands and unties the strings of her bikini top, lets the loosened top slide down her arms, takes it off and drops it beside her, then lowers her arms and stands relaxed, smooth and gentle hand movements, real-time speed, fixed camera, her whole body stays in frame',
+    best: 'animate',
+    framing: 'small',
+    adult: true,
+  },
+  {
     id: 'turn_around',
     label: 'Turn around, look back',
     text: 'she turns around at a normal pace until her back faces the camera, then glances back over her shoulder at the camera, her hair swinging with the turn, real-time speed',
@@ -165,6 +178,24 @@ const SLOW_PATTERNS = [
   new RegExp(`\\b${MOVE_VERB}(?:\\s+[\\w'-]+){0,3}?\\s+${SLOW_ADV}\\b`, 'i'),
   new RegExp(`\\bslow\\s+(?:${MOVE_VERB})`, 'i'),
 ];
+/** Taking clothes off (the prompt then also rules out ripping and tearing). */
+const UNDRESS_RE = /\b(take|takes|taking|took|remove|removes|removing|untie|unties|untying|undo|undoes|slip|slips|pull|pulls|lift|lifts|strip|strips|undress|undresses)\b[^.]*\b(top|bra|bikini|shirt|dress|bottoms?|clothes|swimsuit|lingerie)\b/i;
+export const UNDRESS_NEGATIVE = 'ripping, tearing, yanking, torn fabric, clothing vanishing into thin air, jerky sudden arm movements';
+/** A nude photo: the video model must not add underwear or swimwear that isn't there. */
+export const NUDE_SOURCE_NEGATIVE = 'underwear, panties, thong, g-string, briefs, bikini bottom, swimsuit, fabric covering her body';
+const NUDE_OUTFIT_RE = /\b(nude|naked|no clothes|unclothed)\b/i;
+
+/**
+ * Extra negative words for a video: no ripping when she takes something off, and no invented underwear when the photo
+ * shows her nude (adult mode only; SFW videos already exclude nudity).
+ */
+export function videoNegativeExtras(motion: string, outfit: string | undefined, adult: boolean): string[] {
+  const extra: string[] = [];
+  if (adult && UNDRESS_RE.test(motion)) extra.push(UNDRESS_NEGATIVE);
+  if (adult && NUDE_OUTFIT_RE.test(outfit ?? '')) extra.push(NUDE_SOURCE_NEGATIVE);
+  return extra;
+}
+
 export function slowMotionWords(text: string): string[] {
   const found: string[] = [];
   for (const sentence of text.split(/[,.;!?]/)) {

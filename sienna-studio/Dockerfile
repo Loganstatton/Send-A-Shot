@@ -13,6 +13,8 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
     DATA_DIR=/data
+# GNU tar packs the setup kit the on-demand video GPU downloads (busybox tar lacks --exclude)
+RUN apk add --no-cache tar
 RUN addgroup -S app && adduser -S app -G app && mkdir -p /data && chown app:app /data
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static

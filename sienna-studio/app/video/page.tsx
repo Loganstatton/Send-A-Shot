@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { fileUrl, useApi } from '@/lib/client/api';
-import { DrivingVideo, startVideo, uploadDrivingVideo, VideoAvailability } from '@/lib/client/video';
+import { DrivingVideo, startVideo, stopVideoGpu, uploadDrivingVideo, VideoAvailability } from '@/lib/client/video';
 import { galleryState } from '@/lib/identity-notice';
 import type { GenerationRecord } from '@/lib/types';
 import {
@@ -39,7 +39,14 @@ export default function VideoPage() {
 function VideoStudio() {
   const router = useRouter();
   const search = useSearchParams();
-  const { data: avail, error: availError } = useApi<VideoAvailability>('/api/video');
+  const { data: avail, error: availError, reload: reloadAvail } = useApi<VideoAvailability>('/api/video');
+  // while the on-demand video GPU starts or runs, refresh its state (and cost) every 15 s
+  const gpuLive = avail?.gpu?.status === 'starting' || avail?.gpu?.status === 'ready' || avail?.gpu?.status === 'stopping';
+  useEffect(() => {
+    if (!gpuLive) return;
+    const t = setInterval(() => reloadAvail(), 15000);
+    return () => clearInterval(t);
+  }, [gpuLive, reloadAvail]);
   const { data: history } = useApi<GenerationRecord[]>('/api/history?limit=500');
 
   const [mode, setMode] = useState<VideoMode>(search.get('mode') === 'motion' ? 'motion' : 'animate');
@@ -194,6 +201,10 @@ function VideoStudio() {
           </p>
         </Notice>
       )}
+      {avail.gpu?.mode === 'on-demand' && <VideoGpuCard gpu={avail.gpu} onChange={reloadAvail} />}
+      {avail.gpu?.missing && (
+        <Notice kind="warn">The on-demand video GPU is switched on but not configured: missing {avail.gpu.missing.join(', ')}.</Notice>
+      )}
       {!m.available && (
         <Notice kind="warn">
           <p className="font-medium">Not available on the GPU server yet</p>
@@ -252,7 +263,7 @@ function VideoStudio() {
           <Card className="space-y-3">
             <SectionTitle>What she does</SectionTitle>
             <div className="flex flex-wrap gap-2">
-              {MOTION_PRESETS.map((p) => (
+              {MOTION_PRESETS.filter((p) => !p.adult || (avail.adultAllowed && photo?.contentMode === 'adult')).map((p) => (
                 <Chip
                   key={p.id}
                   active={motion === p.text}
@@ -457,8 +468,16 @@ function VideoStudio() {
           {framingUsable && framing ? ' + safe framing (photo checkpoint fills the added room)' : ''}
           {lockUsable && lockCamera ? ' + Lock Camera' : ''}
         </p>
+        {avail.storage && (
+          <p className={`text-xs ${avail.storage.freeBytes < 300e6 ? 'text-amber-300' : 'text-ink-400'}`}>
+            Storage: {Math.round(avail.storage.freeBytes / 1e6)} MB free · videos use {Math.round(avail.storage.videoBytes / 1e6)} MB ({avail.storage.videoCount} files) · each
+            new video ≈ 1 MB (≈ {Math.max(0, Math.floor((avail.storage.freeBytes - 150e6) / 1.2e6))} more fit)
+          </p>
+        )}
         <Notice>
-          About {minutes} min on the GPU (RTX 4090){mode === 'motion' && chunks.chunks > 1 ? `, made in ${chunks.chunks} parts` : ''}. Frames are checked against Sienna’s face
+          About {minutes} min on the GPU{avail.gpu?.mode === 'on-demand' ? '' : ' (RTX 4090)'}
+          {mode === 'motion' && chunks.chunks > 1 ? `, made in ${chunks.chunks} parts` : ''}
+          {avail.gpu?.mode === 'on-demand' && avail.gpu.status !== 'ready' && avail.gpu.status !== 'starting' ? ', plus 8–12 min to start the video GPU' : ''}. Frames are checked against Sienna’s face
           (0.74): if any checked frame doesn’t match, the video goes to Needs Review. Videos are not redone automatically.
         </Notice>
         <Button variant="primary" className="w-full" disabled={!canRun} loading={busy} onClick={run}>
@@ -466,6 +485,56 @@ function VideoStudio() {
         </Button>
       </div>
     </div>
+  );
+}
+
+/** The on-demand video GPU: off / starting / ready, its cost so far, this month's spend, and a stop button. */
+function VideoGpuCard({ gpu, onChange }: { gpu: NonNullable<VideoAvailability['gpu']>; onChange: () => void }) {
+  const [stopping, setStopping] = useState(false);
+  const live = gpu.status === 'starting' || gpu.status === 'ready' || gpu.status === 'stopping';
+  const label =
+    gpu.status === 'starting'
+      ? `Starting${gpu.phase ? ` — ${gpu.phase}` : ''}`
+      : gpu.status === 'ready'
+        ? `Running${gpu.gpu ? ` on ${gpu.gpu.replace(/^NVIDIA (GeForce )?/, '')}` : ''} · stops ${gpu.idleMin ?? 5} min after the last video`
+        : gpu.status === 'stopping'
+          ? 'Stopping…'
+          : 'Off — starts automatically when you make a video';
+  return (
+    <Card className="my-3 space-y-2">
+      <SectionTitle
+        right={
+          live ? (
+            <Button
+              loading={stopping}
+              onClick={async () => {
+                if (!confirm('Stop the video GPU now? Videos still waiting for it will fail.')) return;
+                setStopping(true);
+                try {
+                  await stopVideoGpu();
+                  toast('Video GPU stopped');
+                } catch (e: any) {
+                  toast(e.message, 'error');
+                } finally {
+                  setStopping(false);
+                  onChange();
+                }
+              }}
+            >
+              Stop GPU
+            </Button>
+          ) : null
+        }
+      >
+        Video GPU
+      </SectionTitle>
+      <p className="text-sm">{label}</p>
+      {gpu.status === 'failed' && gpu.error && <p className="text-xs text-amber-300">Last start failed: {gpu.error}</p>}
+      <p className="text-xs text-ink-400">
+        {live && gpu.sessionUsd !== undefined ? `This session ≈ $${gpu.sessionUsd.toFixed(2)} · ` : ''}This month ${gpu.monthUsd.toFixed(2)} of ${gpu.budgetUsd.toFixed(2)} budget
+        {gpu.rate ? ` · $${gpu.rate.toFixed(2)}/h` : ''}
+      </p>
+    </Card>
   );
 }
 

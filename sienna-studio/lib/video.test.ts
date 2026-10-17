@@ -18,6 +18,9 @@ import {
   parseFrameFaces,
   parseLockCamera,
   lockCameraAllowed,
+  NUDE_SOURCE_NEGATIVE,
+  UNDRESS_NEGATIVE,
+  videoNegativeExtras,
   VIDEO_FILES,
   VIDEO_NODE_CLASSES,
   VIDEO_NODES,
@@ -513,5 +516,39 @@ describe('Lock Camera', () => {
     expect(parseLockCamera('{"status":"weird"}')!.status).toBe('rejected'); // unknown → never treated as applied
     expect(parseLockCamera('not json')).toBeNull();
     expect(parseLockCamera(undefined)).toBeNull();
+  });
+});
+
+describe('Undress and nude-source prompts', () => {
+  const topOff = MOTION_PRESETS.find((p) => p.id === 'top_off')!;
+
+  it('the top-off preset is adult-only, fits the prompt limit and asks for no slow motion', () => {
+    expect(topOff.adult).toBe(true);
+    expect(topOff.text.length).toBeLessThanOrEqual(400);
+    expect(slowMotionWords(topOff.text)).toEqual([]);
+    expect(topOff.text).toMatch(/unties/);
+    expect(topOff.text).toMatch(/drops it beside her/);
+  });
+
+  it('removing clothes rules out ripping (adult only)', () => {
+    expect(videoNegativeExtras(topOff.text, 'white micro bikini', true)).toContain(UNDRESS_NEGATIVE);
+    expect(videoNegativeExtras('she takes off her shirt', 'shirt', true)).toContain(UNDRESS_NEGATIVE);
+    expect(videoNegativeExtras(topOff.text, 'white micro bikini', false)).toEqual([]);
+    expect(videoNegativeExtras('she smiles at the camera', 'white micro bikini', true)).toEqual([]);
+  });
+
+  it('a nude photo never gets invented underwear', () => {
+    expect(videoNegativeExtras('she bends over', 'nude', true)).toContain(NUDE_SOURCE_NEGATIVE);
+    expect(videoNegativeExtras('she bends over', 'completely naked on the beach', true)).toContain(NUDE_SOURCE_NEGATIVE);
+    expect(videoNegativeExtras('she bends over', 'sage green thong', true)).toEqual([]);
+    expect(NUDE_SOURCE_NEGATIVE).toMatch(/underwear/);
+  });
+
+  it('existing presets are unchanged (the rear-bend preset stays exactly as validated)', () => {
+    const bend = MOTION_PRESETS.find((p) => p.id === 'bend_away')!;
+    expect(bend.text).toBe(
+      'with her back to the camera the whole time, she hinges forward at the hips with a long straight back, hips staying high above her knees, knees only slightly bent and both feet planted, picks up a seashell from the sand and stands straight back up, real-time speed, natural balance, hair falls forward and swings back, fixed camera, her whole body stays in frame',
+    );
+    expect(MOTION_PRESETS.filter((p) => p.adult).map((p) => p.id)).toEqual(['top_off']);
   });
 });

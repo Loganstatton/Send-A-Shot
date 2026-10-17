@@ -14,7 +14,7 @@ import { createWriteStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { ComfyError, createBackend } from '../comfy/client';
+import { ComfyBackend, ComfyError, createBackend } from '../comfy/client';
 import { builtinWorkflows, PRIMARY_WORKFLOW_ID } from '../comfy/builtin-workflows';
 import { ADULT_ONLY_NEGATIVE, MIN_CHARACTER_AGE, SFW_NEGATIVE } from '../defaults';
 import { applyIdentityLock, findHardBlocks } from '../guard';
@@ -58,19 +58,36 @@ import {
   VideoQuality,
   VideoResolution,
   videoIdentity,
+  videoNegativeExtras,
   videoSize,
   WAN_NEGATIVE,
 } from '../video';
 import { MOVEMENT_MARGINS, MovementKind } from '../video-framing';
 import { FfmpegError, faststart, ffmpegPath, normaliseDrivingVideo, posterFrame, probeVideo, withTempDir } from './ffmpeg';
+import {
+  currentSession,
+  ensureVideoGpu,
+  estimateVideoUsd,
+  GpuError,
+  GpuView,
+  startVideoGpuTimer,
+  tickVideoGpu,
+  touchVideoGpu,
+  VideoGpuConfig,
+  videoGpuConfig,
+  videoGpuView,
+} from './video-gpu';
 import { describeMissing, GenerationError } from './generate';
 import { preflight } from './jobs';
 import {
   adultContentAllowed,
   experimentsEnabled,
   getCharacter,
+  DATA_DIR,
   getComfyUrl,
   getRecord,
+  IMAGES_DIR,
+  listHistory,
   getSettings,
   mimeFromBytes,
   newId,
@@ -117,6 +134,10 @@ export interface VideoAvailability {
   lockCamera: { available: boolean; missing: string[] };
   /** Testing-only options (hybrid sampler) are offered. */
   experiments: boolean;
+  /** On-demand video GPU (VIDEO_GPU=runpod): its state, this month's spend and budget. */
+  gpu?: GpuView;
+  /** Free space on the app's disk (videos are refused when it runs low). */
+  storage?: StorageInfo;
 }
 
 /** The SDXL checkpoint the photo generator uses (safe framing fills the added room with it; nothing is changed). */
@@ -132,9 +153,11 @@ async function photoCheckpoint(sourceCheckpoint?: string): Promise<string> {
 }
 
 /** What the GPU server lacks for each mode (node classes and model files). */
-export async function videoAvailability(): Promise<VideoAvailability> {
+export async function videoAvailability(comfyUrl?: string): Promise<VideoAvailability> {
   const enabled = videoEnabled();
-  const backend = createBackend(await getComfyUrl());
+  const gpu = videoGpuConfig();
+  if (enabled && gpu && !comfyUrl) return onDemandAvailability(gpu.copyMotion);
+  const backend = createBackend(comfyUrl ?? (await getComfyUrl()));
   const ffmpeg = !!(await ffmpegPath());
   const none = { available: false, missing: [] as string[] };
   const base = { enabled, backend: backend.kind, ffmpeg, adultAllowed: adultContentAllowed(), motionEngine: motionEngine(), experiments: experimentsEnabled() };
@@ -199,7 +222,7 @@ export async function videoAvailability(): Promise<VideoAvailability> {
   try {
     faceCheck = !!(await backend.nodeInfo('SiennaFaceCheck'));
   } catch {}
-  return { ...base, modes: { animate, motion }, faceCheck, safeFraming, lockCamera };
+  return { ...base, modes: { animate, motion }, faceCheck, safeFraming, lockCamera, gpu: await videoGpuView(), storage: await storageInfo() };
 }
 
 // ── Driving video intake (Copy Motion) ───────────────────────────────────────
@@ -275,16 +298,43 @@ export interface VideoRequest {
 
 const faceSpec: FaceCheckSpec = { reference: JSON.stringify(SIENNA_FACE_EMBEDDING), threshold: FACE_THRESHOLD, minFace: FACE_MIN_SIZE };
 
+interface VideoPlan {
+  req: VideoRequest;
+  source: GenerationRecord;
+  sourceImage: StoredImage;
+  info: VideoInfo;
+  positive: string;
+  negative: string;
+  warnings: string[];
+  contentMode: ContentMode;
+  wf: { id: string; name: string };
+  seed: number;
+  width: number;
+  height: number;
+  movement: MovementKind | null;
+  lockCamera: boolean;
+  build: (imageName: string, videoName: string, face: FaceCheckSpec | null) => ReturnType<typeof buildAnimateGraph>;
+}
+
 export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
   if (!videoEnabled()) throw new GenerationError('Video Studio is turned off on this server (SIENNA_VIDEO is not "true").', 403);
+  const plan = await planVideo(req);
+  const gpu = videoGpuConfig();
+  if (gpu) return queueForVideoGpu(plan, gpu);
+  const backend = createBackend(await getComfyUrl());
+  if (backend.kind !== 'mock') await checkGpuCanRun(plan, await videoAvailability());
+  return submitPlan(plan, backend, null);
+}
+
+/** Everything about a video that doesn't need the GPU: checks, prompts, size, graph builder. */
+async function planVideo(req: VideoRequest): Promise<VideoPlan> {
   const source = await getRecord(req.sourceId);
   if (!source) throw new GenerationError('The photo was not found.', 404);
   const sourceImage = source.images[req.imageIndex] ?? null;
   if (source.status !== 'done' || !sourceImage || source.video) throw new GenerationError('Choose a finished photo (not a video) to animate.');
 
-  const [character, comfyUrl] = await Promise.all([getCharacter(), getComfyUrl()]);
+  const character = await getCharacter();
   if ((character.age ?? 0) < MIN_CHARACTER_AGE) throw new GenerationError(`The character profile age must be at least ${MIN_CHARACTER_AGE}.`);
-  const backend = createBackend(comfyUrl);
   const warnings: string[] = [];
 
   let contentMode: ContentMode = source.contentMode === 'adult' ? 'adult' : 'sfw';
@@ -312,7 +362,14 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
   const { width, height } = videoSize(sourceImage.width ?? source.params.width, sourceImage.height ?? source.params.height, req.resolution);
   const movement = req.framing && req.framing !== 'still' && MOVEMENT_MARGINS[req.framing] ? req.framing : null;
   if (movement && req.mode === 'motion' && motionEngine() !== 'animate2') throw new GenerationError('Safe framing needs Copy Motion’s Wan Animate 2 engine.', 422);
-  const negative = [WAN_NEGATIVE, ADULT_ONLY_NEGATIVE, contentMode === 'sfw' ? SFW_NEGATIVE : ''].filter(Boolean).join(', ');
+  const negative = [
+    WAN_NEGATIVE,
+    ADULT_ONLY_NEGATIVE,
+    contentMode === 'sfw' ? SFW_NEGATIVE : '',
+    ...videoNegativeExtras(req.mode === 'animate' ? lock.text : '', source.fields.outfit, contentMode === 'adult'),
+  ]
+    .filter(Boolean)
+    .join(', ');
   const seed = req.seed >= 0 ? Math.floor(req.seed) : Math.floor(Math.random() * 2 ** 48);
   const frame: SafeFrameSpec | null = movement
     ? {
@@ -407,55 +464,43 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
     };
   }
 
-  // The frame face check is optional on the GPU: without it the video still runs and goes to Needs Review.
-  let face: FaceCheckSpec | null = faceSpec;
-  if (backend.kind !== 'mock') {
-    const avail = await videoAvailability();
-    const m = avail.modes[req.mode];
-    if (!m.available) throw new GenerationError(`${VIDEO_MODE_LABELS[req.mode]} can't run — the GPU server is missing ${m.missing.join('; ')}.`);
-    if (movement && !avail.safeFraming.available) throw new GenerationError(`Safe framing can't run — the GPU server is missing ${avail.safeFraming.missing.join('; ')}. Turn it off to use the photo as it is.`);
-    if (lockCamera && !avail.lockCamera.available) throw new GenerationError(`Lock Camera can't run — the GPU server is missing ${avail.lockCamera.missing.join('; ')}. Choose Natural camera instead.`);
-    if (!avail.faceCheck) {
-      face = null;
-      info.faceCheck = { status: 'unavailable', reason: 'the face check could not run (server is missing SiennaFaceCheck — run comfyui-bootstrap.sh)' };
-    }
-    await preflight(backend, build('probe.png', 'probe.mp4', face), VIDEO_MODE_LABELS[req.mode]);
-  }
+  return { req: { ...req, seed }, source, sourceImage, info, positive, negative, warnings, contentMode, wf, seed, width, height, movement, lockCamera, build };
+}
 
-  let graph;
-  try {
-    const photo = await readImage(sourceImage.file);
-    const imageName = await backend.uploadImage(photo.bytes, sourceImage.file, photo.mime);
-    const videoName = info.drive ? await backend.uploadImage(await readVideo(info.drive.video.file), info.drive.video.file, 'video/mp4', '') : '';
-    graph = build(imageName, videoName, face);
-  } catch (e) {
-    if (e instanceof ComfyError) throw new GenerationError(`Uploading to the GPU server failed: ${e.message}`, e.status, e.details);
-    throw e;
+/** Does the GPU have what this video needs? (Throws a readable error; the face check is optional.) */
+async function checkGpuCanRun(p: VideoPlan, avail: VideoAvailability) {
+  const m = avail.modes[p.req.mode];
+  if (!m.available) throw new GenerationError(`${VIDEO_MODE_LABELS[p.req.mode]} can't run — the GPU server is missing ${m.missing.join('; ')}.`);
+  if (p.movement && !avail.safeFraming.available) throw new GenerationError(`Safe framing can't run — the GPU server is missing ${avail.safeFraming.missing.join('; ')}. Turn it off to use the photo as it is.`);
+  if (p.lockCamera && !avail.lockCamera.available) throw new GenerationError(`Lock Camera can't run — the GPU server is missing ${avail.lockCamera.missing.join('; ')}. Choose Natural camera instead.`);
+  if (!avail.faceCheck) {
+    p.info.faceCheck = { status: 'unavailable', reason: 'the face check could not run (server is missing SiennaFaceCheck — run comfyui-bootstrap.sh)' };
   }
+}
 
-  const clientId = newId('sienna-video-');
-  const record: GenerationRecord = {
+function recordFromPlan(p: VideoPlan, backend: GenerationRecord['backend'], graph: GenerationRecord['submittedGraph']): GenerationRecord {
+  return {
     id: newId('g'),
     createdAt: new Date().toISOString(),
     status: 'queued',
-    clientId,
-    backend: backend.kind,
+    clientId: newId('sienna-video-'),
+    backend,
     presetId: null,
-    presetName: VIDEO_MODE_LABELS[req.mode],
-    workflowId: wf.id,
-    workflowName: wf.name,
+    presetName: VIDEO_MODE_LABELS[p.req.mode],
+    workflowId: p.wf.id,
+    workflowName: p.wf.name,
     siennaLock: true,
-    contentMode,
-    fields: source.fields,
-    params: { ...source.params, seed, batchSize: 1, width, height },
-    seed,
-    positivePrompt: positive,
-    negativePrompt: negative,
+    contentMode: p.contentMode,
+    fields: p.source.fields,
+    params: { ...p.source.params, seed: p.seed, batchSize: 1, width: p.width, height: p.height },
+    seed: p.seed,
+    positivePrompt: p.positive,
+    negativePrompt: p.negative,
     lora: null,
     faceReference: null,
-    initImage: sourceImage,
+    initImage: p.sourceImage,
     poseImage: null,
-    warnings,
+    warnings: p.warnings,
     prunedModules: [],
     submittedGraph: graph,
     images: [],
@@ -463,15 +508,209 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
     review: {},
     notes: '',
     identityPolicy: 1,
-    parentId: source.id,
-    video: info,
+    parentId: p.source.id,
+    video: p.info,
   };
+}
+
+/** Upload the photo (and movement video) and queue the graph. `existing` = a record that was waiting for the GPU. */
+async function submitPlan(p: VideoPlan, backend: ComfyBackend, existing: GenerationRecord | null, gpuUrl?: string): Promise<GenerationRecord> {
+  const face: FaceCheckSpec | null = p.info.faceCheck.status === 'unavailable' ? null : faceSpec;
+  if (backend.kind !== 'mock') await preflight(backend, p.build('probe.png', 'probe.mp4', face), VIDEO_MODE_LABELS[p.req.mode]);
+  let graph;
   try {
-    const { promptId } = await backend.queuePrompt(graph, clientId);
+    const photo = await readImage(p.sourceImage.file);
+    const imageName = await backend.uploadImage(photo.bytes, p.sourceImage.file, photo.mime);
+    const videoName = p.info.drive ? await backend.uploadImage(await readVideo(p.info.drive.video.file), p.info.drive.video.file, 'video/mp4', '') : '';
+    graph = p.build(imageName, videoName, face);
+  } catch (e) {
+    if (e instanceof ComfyError) throw new GenerationError(`Uploading to the GPU server failed: ${e.message}`, e.status, e.details);
+    throw e;
+  }
+  const record: GenerationRecord = existing
+    ? { ...existing, submittedGraph: graph, positivePrompt: p.positive, negativePrompt: p.negative, video: { ...existing.video!, ...p.info, gpu: existing.video!.gpu, request: existing.video!.request } }
+    : recordFromPlan(p, backend.kind, graph);
+  if (existing && gpuUrl) record.video = { ...record.video!, gpu: { ...record.video!.gpu!, phase: 'submitted', url: gpuUrl, submittedAt: new Date().toISOString() } };
+  try {
+    const { promptId } = await backend.queuePrompt(graph, record.clientId!);
     return saveRecord({ ...record, promptId });
   } catch (e) {
     if (!(e instanceof ComfyError)) throw e;
     return saveRecord({ ...record, status: 'error', error: e.message, errorDetails: e.details, completedAt: new Date().toISOString() });
+  }
+}
+
+// ── On-demand video GPU ───────────────────────────────────────────────────────
+
+/** Availability when videos run on the on-demand GPU: everything comes with its setup kit (Copy Motion only if enabled). */
+async function onDemandAvailability(copyMotion: boolean): Promise<VideoAvailability> {
+  startVideoGpuTimer(videoGpuHousekeeping);
+  const ffmpeg = !!(await ffmpegPath());
+  const ok = { available: true, missing: [] as string[] };
+  const motion = copyMotion
+    ? ok
+    : { available: false, missing: ['Copy Motion on the video GPU (experimental; set VIDEO_GPU_COPY_MOTION=true — adds ≈ 24 GB and a longer start)'] };
+  return {
+    enabled: true,
+    backend: 'comfyui',
+    ffmpeg,
+    modes: { animate: ffmpeg ? ok : { available: false, missing: ['ffmpeg on the app server'] }, motion },
+    faceCheck: true,
+    adultAllowed: adultContentAllowed(),
+    motionEngine: motionEngine(),
+    // safe framing needs the photo checkpoint, which the video GPU doesn't download
+    safeFraming: { available: false, missing: ['the photo checkpoint on the video GPU (safe framing is off with the on-demand video GPU)'] },
+    lockCamera: ok,
+    experiments: experimentsEnabled(),
+    gpu: await videoGpuView(),
+    storage: await storageInfo(),
+  };
+}
+
+/** Queue a video for the on-demand GPU: the record waits ("starting the video GPU") and is submitted when it is ready. */
+async function queueForVideoGpu(p: VideoPlan, gpu: VideoGpuConfig): Promise<GenerationRecord> {
+  const store = await storageInfo();
+  if (store && store.freeBytes < MIN_FREE_BYTES)
+    throw new GenerationError(`The app's disk is almost full (${Math.round(store.freeBytes / 1e6)} MB free). Delete old videos or enlarge the disk first.`, 507);
+  const s = await currentSession();
+  const running = !!s && (s.status === 'starting' || s.status === 'ready');
+  const view = await videoGpuView();
+  const est = estimateVideoUsd(gpu, !running, Math.max(2, p.info.estimateMinutes));
+  if (view.monthUsd + est > gpu.monthlyBudgetUsd)
+    throw new GenerationError(
+      `This video would go over the video GPU budget ($${view.monthUsd.toFixed(2)} used of $${gpu.monthlyBudgetUsd.toFixed(2)} this month, ≈ $${est.toFixed(2)} needed). Raise VIDEO_GPU_MONTHLY_BUDGET_USD to continue.`,
+      402,
+    );
+  await checkGpuCanRun(p, await onDemandAvailability(gpu.copyMotion));
+  const rec = recordFromPlan(p, 'comfyui', {});
+  rec.video = { ...rec.video!, gpu: { phase: 'starting', requestedAt: rec.createdAt }, request: p.req as unknown as Record<string, unknown> };
+  if (!running) rec.warnings = [...rec.warnings, `Starting the video GPU (usually 8–12 min, ≈ $${est.toFixed(2)} for this video including the start).`];
+  const saved = await saveRecord(rec);
+  startVideoGpuTimer(videoGpuHousekeeping);
+  try {
+    await ensureVideoGpu();
+  } catch (e: any) {
+    return (await patchRecord(saved.id, { status: 'error', error: e.message, completedAt: new Date().toISOString(), video: { ...saved.video!, gpu: { ...saved.video!.gpu!, phase: 'failed' } } }))!;
+  }
+  return saved;
+}
+
+/** Ready = the video nodes (incl. Lock Camera and the face check) and the Animate Image model files are there. */
+async function probeVideoGpu(url: string): Promise<{ ready: boolean; phase?: string }> {
+  const backend = createBackend(url);
+  try {
+    // live check first (node and model lists are cached per address; a new pod can reuse an address)
+    await backend.systemInfo();
+  } catch {
+    return { ready: false, phase: 'booting the GPU' };
+  }
+  try {
+    for (const c of [...VIDEO_NODE_CLASSES.animate, ...LOCK_CAMERA_NODE_CLASSES, 'SiennaFaceCheck']) {
+      if (!(await backend.nodeInfo(c))) return { ready: false, phase: 'downloading models and installing the video nodes' };
+    }
+    for (const [cls, input, file] of VIDEO_FILES.animate) {
+      if (!(await backend.inputChoices(cls, input)).includes(file)) return { ready: false, phase: 'downloading models and installing the video nodes' };
+    }
+    return { ready: true };
+  } catch {
+    return { ready: false, phase: 'downloading models and installing the video nodes' };
+  }
+}
+
+const gpuWaiting = (r: GenerationRecord) => !!r.video?.gpu && r.video.gpu.phase === 'starting' && r.status === 'queued' && !r.promptId;
+const gpuBusy = (r: GenerationRecord) => !!r.video?.gpu && (r.status === 'queued' || r.status === 'running');
+let submitting: Promise<void> | null = null;
+
+/**
+ * Runs every 30 s (and on every status poll): checks the GPU, submits waiting videos once it is ready, fails them with
+ * a readable reason if it can't start, and lets the GPU stop when nothing needs it.
+ */
+export async function videoGpuHousekeeping(): Promise<void> {
+  const gpu = videoGpuConfig();
+  if (!gpu) return;
+  const recs = await listHistory();
+  const session = await tickVideoGpu(recs.filter(gpuBusy).length, probeVideoGpu);
+  const waiting = recs.filter(gpuWaiting).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  if (!waiting.length) return;
+  if (!session || session.status === 'failed' || session.status === 'stopped') {
+    const why = session?.error ?? session?.stopReason ?? 'the video GPU is not running';
+    for (const r of waiting) {
+      if (session?.endedAt && Date.parse(session.endedAt) < Date.parse(r.createdAt)) {
+        // queued after the last session ended (e.g. the app restarted): start a new one
+        await ensureVideoGpu().catch(async (e: any) => failWaiting(r, e.message));
+        continue;
+      }
+      await failWaiting(r, `The video GPU couldn't run this video: ${why}. Nothing was retried automatically — use “Make again” to try once more.`);
+    }
+    return;
+  }
+  if (session.status !== 'ready') {
+    for (const r of waiting) if (r.video!.gpu!.waitingFor !== session.phase) await patchRecord(r.id, { video: { ...r.video!, gpu: { ...r.video!.gpu!, waitingFor: session.phase } } });
+    return;
+  }
+  if (submitting) return submitting;
+  submitting = (async () => {
+    for (const r of waiting) {
+      const fresh = await getRecord(r.id);
+      if (!fresh || !gpuWaiting(fresh)) continue;
+      try {
+        const plan = await planVideo(fresh.video!.request as unknown as VideoRequest);
+        const backend = createBackend(session.url);
+        await checkGpuCanRun(plan, await videoAvailability(session.url));
+        await submitPlan(plan, backend, fresh, session.url);
+        await touchVideoGpu(session.startupBilledTo ? {} : { startupBilledTo: fresh.id });
+      } catch (e: any) {
+        await failWaiting(fresh, `Sending the video to the GPU failed: ${e.message}`);
+      }
+    }
+  })().finally(() => {
+    submitting = null;
+  });
+  return submitting;
+}
+
+async function failWaiting(r: GenerationRecord, error: string) {
+  await patchRecord(r.id, { status: 'error', error, completedAt: new Date().toISOString(), video: { ...r.video!, gpu: { ...r.video!.gpu!, phase: 'failed' } } });
+}
+
+/** GPU cost of one finished video: its own GPU time, plus the start-up minutes for the video that started the GPU. */
+async function videoCost(rec: GenerationRecord): Promise<NonNullable<VideoInfo['gpu']>['cost'] | undefined> {
+  const g = rec.video?.gpu;
+  const s = await currentSession();
+  if (!g?.submittedAt || !s) return undefined;
+  const gpuSeconds = Math.max(0, (Date.now() - Date.parse(g.submittedAt)) / 1000);
+  const startupUsd = s.startupBilledTo === rec.id && s.readyAt ? (s.rate * (Date.parse(s.readyAt) - Date.parse(s.createdAt))) / 3_600_000 : 0;
+  const usd = (s.rate * gpuSeconds) / 3600 + startupUsd;
+  return { usd: Math.round(usd * 1000) / 1000, gpuSeconds: Math.round(gpuSeconds), startupUsd: Math.round(startupUsd * 1000) / 1000, rate: s.rate, gpu: s.gpu };
+}
+
+// ── Storage ───────────────────────────────────────────────────────────────────
+
+export interface StorageInfo {
+  totalBytes: number;
+  freeBytes: number;
+  /** Bytes of stored videos (natural + locked + movement videos). */
+  videoBytes: number;
+  videoCount: number;
+}
+const MIN_FREE_BYTES = 150 * 1024 * 1024;
+
+export async function storageInfo(): Promise<StorageInfo | undefined> {
+  try {
+    const st = await fs.statfs(DATA_DIR);
+    let videoBytes = 0;
+    let videoCount = 0;
+    for (const f of await fs.readdir(IMAGES_DIR).catch(() => [] as string[])) {
+      if (!/\.mp4$/i.test(f)) continue;
+      const x = await fs.stat(path.join(IMAGES_DIR, f)).catch(() => null);
+      if (x) {
+        videoBytes += x.size;
+        videoCount++;
+      }
+    }
+    return { totalBytes: st.blocks * st.bsize, freeBytes: st.bavail * st.bsize, videoBytes, videoCount };
+  } catch {
+    return undefined;
   }
 }
 
@@ -488,10 +727,26 @@ export function refreshVideo(id: string): Promise<GenerationRecord | null> {
 }
 
 async function doRefresh(id: string): Promise<GenerationRecord | null> {
-  const rec = await getRecord(id);
+  let rec = await getRecord(id);
+  if (rec && gpuWaiting(rec)) {
+    startVideoGpuTimer(videoGpuHousekeeping);
+    await videoGpuHousekeeping().catch((e) => console.error('[video-gpu]', e?.message ?? e));
+    rec = await getRecord(id);
+  }
   if (!rec || !rec.video || rec.status === 'done' || rec.status === 'error' || !rec.promptId) return rec;
   const [settings, comfyUrl] = await Promise.all([getSettings(), getComfyUrl()]);
-  const backend = createBackend(rec.backend === 'mock' ? 'mock' : comfyUrl);
+  const gpu = rec.video.gpu;
+  const backend = createBackend(rec.backend === 'mock' ? 'mock' : gpu?.url ?? comfyUrl);
+  if (gpu?.submittedAt) {
+    const cfg = videoGpuConfig();
+    const session = await currentSession();
+    if (session && session.url === gpu.url && (session.status === 'stopped' || session.status === 'failed'))
+      return finishGpuJob(rec, `The video GPU stopped before this video finished (${session.error ?? session.stopReason ?? 'unknown reason'}). Nothing was retried automatically.`);
+    if (cfg && Date.now() - Date.parse(gpu.submittedAt) > cfg.jobTimeoutMin * 60_000) {
+      await backend.interrupt().catch(() => {});
+      return finishGpuJob(rec, `The video took longer than ${cfg.jobTimeoutMin} min on the GPU and was stopped. Nothing was retried automatically.`);
+    }
+  }
   let state;
   try {
     state = await backend.jobState(rec.promptId, []);
@@ -505,6 +760,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
     case 'running':
       return patchRecord(id, { status: 'running', queuePosition: 0 });
     case 'error':
+      if (gpu) return finishGpuJob(rec, state.message, state.details);
       return patchRecord(id, { status: 'error', error: state.message, errorDetails: state.details, completedAt: new Date().toISOString() });
     case 'unknown':
       if (ageSec > Math.max(120, settings.generationTimeoutSec)) {
@@ -568,6 +824,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         if (status === 'rejected' || status === 'unavailable') warnings.push(`Lock Camera wasn’t applied: ${reason}. The natural camera video is kept.`);
         lockCamera = { status, reason, report: lc, result: locked };
       }
+      const cost = gpu ? await videoCost(rec) : undefined;
+      if (gpu) await touchVideoGpu();
       const report = v.faceCheck.status === 'on' ? parseFrameFaces(state.texts?.[VIDEO_NODES.face]?.[0]) : null;
       const identity = videoIdentity(report, FACE_THRESHOLD, FACE_MIN_SIZE, v.faceCheck.status === 'unavailable' ? v.faceCheck.reason : undefined);
       return patchRecord(id, {
@@ -582,12 +840,26 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           ...(report ? { frameFaces: report.frames } : {}),
           ...(safeFraming ? { safeFraming } : {}),
           ...(lockCamera ? { lockCamera } : {}),
+          ...(gpu ? { gpu: { ...gpu, ...(cost ? { cost } : {}) } } : {}),
         },
         completedAt: new Date().toISOString(),
         queuePosition: 0,
       });
     }
   }
+}
+
+/** A video on the on-demand GPU ended in an error: record it (with its GPU cost) and let the GPU's idle timer run. */
+async function finishGpuJob(rec: GenerationRecord, error: string, details?: unknown) {
+  const cost = await videoCost(rec);
+  await touchVideoGpu();
+  return patchRecord(rec.id, {
+    status: 'error',
+    error,
+    ...(details ? { errorDetails: details as GenerationRecord['errorDetails'] } : {}),
+    completedAt: new Date().toISOString(),
+    video: { ...rec.video!, gpu: { ...rec.video!.gpu!, phase: 'failed', ...(cost ? { cost } : {}) } },
+  });
 }
 
 /** Writes a video from the GPU, makes it stream-friendly (fast start) and stores it. */
