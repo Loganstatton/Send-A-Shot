@@ -1,6 +1,7 @@
 /**
  * Face check: after each Sienna photo, SiennaFaceCheck (OpenCV SFace, Apache-2.0) compares the main face with
- * Sienna's reference embedding — the mean of four approved photos, which score 0.88–0.93 against it. A photo
+ * Sienna's reference embedding — the mean of eight photos in different outfits and scenes made with her face reference
+ * in the face redraw (2026-10), which score 0.87–0.93 against it (other people: at most 0.50). A photo
  * below FACE_THRESHOLD is redone with a new seed (shares the retry budget with the top check) — unless her face is
  * turned away, see faceVerdict. Faces smaller than FACE_MIN_SIZE px can't be judged: their embedding is too noisy.
  */

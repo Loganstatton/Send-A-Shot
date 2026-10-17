@@ -125,7 +125,7 @@ export interface GenerationParams {
   faceRefineThreshold: number;
   /** With style packs: the face redraw uses Sienna's LoRA alone, so outfit packs don't pull her face away (on unless false). */
   faceKeepsSiennaLora?: boolean;
-  /** The face reference shapes only the face redraw (with Sienna's LoRA alone); body, outfit and scene come from the main pass (off by default). */
+  /** The face reference shapes only the face redraw (with Sienna's LoRA alone); body, outfit and scene come from the main pass (on unless false). */
   faceRefFacePassOnly?: boolean;
   /** Hand touch-up: finds hands after the face pass and redraws them in more detail (needs the face pass). */
   handRefine?: boolean;

@@ -453,7 +453,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
 
   // ── Face reference only in the face redraw: the main pass keeps body, outfit and scene; the redraw takes her face ──
-  if (p.faceRefFacePassOnly && faceRefine?.status === 'on' && refineId && graph[refineId]) {
+  if (p.faceRefFacePassOnly !== false && faceRefine?.status === 'on' && refineId && graph[refineId]) {
     const loadId = bindings.face_reference_image?.[0]?.nodeId;
     const applyId = loadId ? Object.keys(graph).find((id) => /^IPAdapter(Advanced|FaceID)$/.test(graph[id].class_type) && isLink(graph[id].inputs.image) && graph[id].inputs.image[0] === loadId) : undefined;
     const ipa = applyId ? graph[applyId].inputs.ipadapter : undefined;
