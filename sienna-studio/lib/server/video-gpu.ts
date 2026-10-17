@@ -56,7 +56,8 @@ const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v
 export function videoGpuMissing(): string[] {
   if (process.env.VIDEO_GPU !== 'runpod') return [];
   const m: string[] = [];
-  if (!process.env.RUNPOD_API_KEY?.trim()) m.push('RUNPOD_API_KEY');
+  // its own key, never RUNPOD_API_KEY: that name may already hold another credential on the server
+  if (!process.env.VIDEO_RUNPOD_API_KEY?.trim()) m.push('VIDEO_RUNPOD_API_KEY');
   if (!process.env.PUBLIC_URL?.trim()) m.push('PUBLIC_URL (this site’s address, e.g. https://sienna-studio.onrender.com)');
   return m;
 }
@@ -66,7 +67,7 @@ export function videoGpuConfig(): VideoGpuConfig | null {
   if (process.env.VIDEO_GPU !== 'runpod' || videoGpuMissing().length) return null;
   const e = process.env;
   return {
-    apiKey: e.RUNPOD_API_KEY!.trim(),
+    apiKey: e.VIDEO_RUNPOD_API_KEY!.trim(),
     apiBase: (e.VIDEO_GPU_API_BASE || 'https://rest.runpod.io/v1').replace(/\/+$/, ''),
     publicUrl: e.PUBLIC_URL!.trim().replace(/\/+$/, ''),
     gpuTypes: (e.VIDEO_GPU_TYPES || 'NVIDIA A40,NVIDIA GeForce RTX 4090').split(',').map((s) => s.trim()).filter(Boolean),
