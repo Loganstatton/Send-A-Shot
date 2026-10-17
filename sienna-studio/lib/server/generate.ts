@@ -445,7 +445,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       if (graph[spliced.nodeId].class_type === 'LoraLoader') after = spliced.nodeId;
     }
     // The face redraw goes back to Sienna's LoRA alone: packs shape the body and outfit, not her face.
-    if (p.faceKeepsSiennaLora && siennaLoraId && faceRefine?.status === 'on' && refineId && graph[refineId]) {
+    if (p.faceKeepsSiennaLora !== false && siennaLoraId && faceRefine?.status === 'on' && refineId && graph[refineId]) {
       graph[refineId].inputs.model = [siennaLoraId, 0];
       graph[refineId].inputs.clip = [siennaLoraId, 1];
       faceRefine = { ...faceRefine, siennaLoraOnly: true };
