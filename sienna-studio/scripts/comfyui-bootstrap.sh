@@ -48,6 +48,7 @@
 #                      (xinsir/controlnet-openpose-sdxl-1.0, ~2.5 GB)
 #   --with-qwen-edit   also install the optional Edit Outfit editor (Qwen-Image-Edit-2509 fp8, ~30 GB)
 #   --with-wan-video   also install Video Studio: Wan2.2 image-to-video + Wan2.2 Animate (~62 GB)
+#   --with-wan-i2v     also install only Animate Image (Wan2.2 image-to-video 14B fp8 + 4-step LoRAs, text encoder, VAE, ~36 GB)
 #   --with-wan-animate also install only Copy Motion v1 (Wan2.2 Animate 14B fp8 + DWPose, ~27 GB)
 #   --with-wan-animate2 also install Copy Motion's default model, Wan2.2-Animate-2 14B int8 (Comfy-Org/Wan-Animate-2, ~24 GB)
 #   --with-style-packs also download the Create screen's style packs from Civitai (~2.5 GB):
@@ -89,6 +90,7 @@ for arg in "$@"; do
     --with-pose) POSE=1 ;;
     --with-qwen-edit) QWEN=1 ;;
     --with-wan-video) WAN=1; WAN1=1 ;;
+    --with-wan-i2v) WAN=1 ;;
     --with-wan-animate) WAN1=1 ;;
     --with-wan-animate2) WAN2=1 ;;
     --with-style-packs) PACKS=1 ;;
@@ -337,13 +339,21 @@ if (( WAN1 )); then
   # batch-of-5 TorchScript pose model on the GPU: much faster than ONNX on CPU for hundreds of video frames
   fetch_model "$HF/hr16/DWPose-TorchScript-BatchSize5/resolve/main/dw-ll_ucoco_384_bs5.torchscript.pt" \
     "$COMFYUI_DIR/custom_nodes/comfyui_controlnet_aux/ckpts/hr16/DWPose-TorchScript-BatchSize5/dw-ll_ucoco_384_bs5.torchscript.pt" 100000000
+  W21="$HF/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files"
+  fetch_model "$W21/clip_vision/clip_vision_h.safetensors" "$COMFYUI_DIR/models/clip_vision/clip_vision_h.safetensors" 1000000000
+fi
+if (( WAN || WAN1 )); then
+  # shared by Animate Image and Copy Motion v1: text encoder + VAE
   W22="$HF/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files"
   W21="$HF/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/main/split_files"
   fetch_model "$W21/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" "$COMFYUI_DIR/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" 6000000000
   fetch_model "$W22/vae/wan_2.1_vae.safetensors" "$COMFYUI_DIR/models/vae/wan_2.1_vae.safetensors" 200000000
-  fetch_model "$W21/clip_vision/clip_vision_h.safetensors" "$COMFYUI_DIR/models/clip_vision/clip_vision_h.safetensors" 1000000000
 fi
 if (( WAN )); then
+  if (( ! WAN1 )); then
+    log "Animate Image model license (Hugging Face model card)"
+    check_licenses "Wan-AI/Wan2.2-I2V-A14B:apache-2.0"
+  fi
   W22="$HF/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files"
   # Animate Image
   for f in wan2.2_i2v_high_noise_14B_fp8_scaled wan2.2_i2v_low_noise_14B_fp8_scaled; do
