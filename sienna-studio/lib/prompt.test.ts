@@ -159,6 +159,28 @@ describe('automatic full-body framing', () => {
   });
 });
 
+describe('rear-view requests', () => {
+  const rearFields = { ...EMPTY_FIELDS, framing: 'Full-body rear-view photograph, head to feet visible', pose: 'standing at the shoreline with her back fully toward the camera', outfit: 'white string bikini' };
+  it('puts weighted rear wording first, turns her face away and drops the eye wording', () => {
+    const r = buildPrompt({ fields: rearFields, character, siennaLock: true, contentMode: 'sfw' });
+    expect(r.positive.startsWith('(view from behind:1.3), (back view:1.3), (head facing away from the camera:1.2), full body head to toe')).toBe(true);
+    expect(r.positive).not.toMatch(/hazel-green|iris/);
+    expect(r.negative).toContain('(looking at viewer:1.3), (facing the camera:1.3), (front view:1.3)');
+  });
+  it('a looking-back pose keeps her face and eyes', () => {
+    const r = buildPrompt({ fields: { ...rearFields, pose: 'from behind, looking back over her shoulder' }, character, siennaLock: true, contentMode: 'sfw' });
+    expect(r.positive.startsWith('(view from behind:1.3), (back view:1.3), full body')).toBe(true);
+    expect(r.positive).toContain('hazel-green');
+    expect(r.negative).toContain('(front view:1.2)');
+    expect(r.negative).not.toContain('looking at viewer');
+  });
+  it('front-facing requests are unchanged', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, pose: 'standing facing the camera', outfit: 'red dress' }, character, siennaLock: true, contentMode: 'sfw' });
+    expect(r.positive).not.toContain('view from behind');
+    expect(r.negative).not.toContain('front view');
+  });
+});
+
 describe('joinParts', () => {
   it('dedupes and drops empties', () => {
     expect(joinParts(['a', '', ' A ', 'b', null])).toBe('a, b');

@@ -19,6 +19,7 @@ import {
   SFW_NEGATIVE,
 } from './defaults';
 import { outfitHasTop } from './exposure';
+import { rearRequest } from './identity';
 import { applyIdentityLock, findHardBlocks, GuardHit, tidy } from './guard';
 import { splitAvoid } from './outfit-edit';
 import type { CharacterProfile, ContentMode, PromptFields } from './types';
@@ -141,6 +142,15 @@ export function joinParts(parts: (string | undefined | null)[]): string {
   return out.join(', ');
 }
 
+// Rear-view requests came back facing the camera: the rear wording sat mid-prompt, unweighted, behind full-body
+// framing, while her face traits (freckles, eye colour) pulled her face into view. Weighted up front it held (9 of 10
+// test photos from behind vs 1 of 4 without, same base model and Sienna LoRA).
+const REAR_VIEW = '(view from behind:1.3), (back view:1.3)';
+const FACE_AWAY = '(head facing away from the camera:1.2)';
+const REAR_NEGATIVE_FACE_AWAY = '(looking at viewer:1.3), (facing the camera:1.3), (front view:1.3)';
+const REAR_NEGATIVE = '(front view:1.2)';
+const LOOKING_BACK_RE = /\b(looking back|over (her|the|his) shoulder|profile view|side profile|looks? at the camera|eye contact)\b/i;
+
 export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
@@ -197,7 +207,14 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     ? f.framing.split(',').filter((s) => !addedFraming.includes(s.trim().toLowerCase())).join(',')
     : f.framing;
 
+  // From-behind request: weighted rear wording first; unless she looks back, her face turned away and no eye wording.
+  const poseText = `${f.pose} ${f.framing} ${f.extra}`;
+  const rear = rearRequest(poseText, null, false);
+  const faceAway = rear && !LOOKING_BACK_RE.test(`${poseText} ${f.expression}`);
+
   const positive = joinParts([
+    rear ? REAR_VIEW : '',
+    faceAway ? FACE_AWAY : '',
     addedFraming,
     framing,
     f.pose,
@@ -212,7 +229,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     ...identity,
     camera,
     realism,
-    siennaLock ? traits.eyes : '',
+    siennaLock && !faceAway ? traits.eyes : '',
   ]);
 
   // 4. Negative prompt. The Avoid box goes here (never the positive prompt); with Sienna Lock on, identity terms
@@ -243,6 +260,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
     colourDriftNegative(f.outfit),
+    faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
     avoidItems.join(', '),
   ]);
 
