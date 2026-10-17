@@ -35,10 +35,11 @@ import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt, fullBodyFraming } from '../prompt';
-import { posePreset } from '../pose-presets';
+import { matchPosePreset, POSE_PRESET_LABELS, posePreset } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
 import { ensurePhotoGpu, photoGpuEnabled, photoGpuReady, tickPhotoGpu, touchPhotoGpu } from './photo-gpu';
@@ -125,7 +126,15 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
 
   // ── Prompt ─────────────────────────────────────────────────────────────
   // ── Pose preset: its skeleton stands in for a pose photo (wired straight to the ControlNet below) ──
-  const posePre = !req.images.poseImage ? posePreset(req.params.posePreset) : undefined;
+  let posePre = !req.images.poseImage ? posePreset(req.params.posePreset) : undefined;
+  if (!posePre && !req.images.poseImage && !req.params.posePreset && req.params.autoPosePreset !== false) {
+    // no preset or pose photo chosen: use the preset the Pose text describes (text alone often loses the position)
+    posePre = matchPosePreset(req.fields.pose, fullBodyFraming(req.fields).add);
+    if (posePre) {
+      warnings.push(`Used the “${POSE_PRESET_LABELS[posePre.id] ?? posePre.id}” pose preset to hold the position your Pose text describes.`);
+      req = { ...req, params: { ...req.params, posePreset: posePre.id } };
+    }
+  }
   if (posePre) {
     req = {
       ...req,
@@ -519,10 +528,23 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         added.push(nodeId);
       }
     }
+    // full-body framing from her joints (a full-body request only; skipped when a node is missing)
+    let body = false;
+    const bodyNodes = saveId && fullBodyFraming(req.fields).add ? bodyFrameNodes(graph, saveId) : null;
+    if (bodyNodes) {
+      const missing = await missingClasses(backend, bodyNodes, Object.keys(bodyNodes));
+      // the person segmenter must be installed too (a missing model would fail the whole photo, not just the check)
+      const segm = !missing.length && (await backend.inputChoices('UltralyticsDetectorProvider', 'model_name').catch(() => [] as string[])).includes(BODY_SEGM_MODEL);
+      if (segm) {
+        graph = { ...graph, ...bodyNodes };
+        added.push(BODY_FRAME_NODE_ID);
+        body = true;
+      }
+    }
     if (added.length) {
       exposureGuard = {
         status: 'on',
-        checks: { top: added.includes(EXPOSURE_NODE_ID), face: added.includes(FACE_NODE_ID) },
+        checks: { top: added.includes(EXPOSURE_NODE_ID), face: added.includes(FACE_NODE_ID), body },
         maxAttempts: EXPOSURE_MAX_ATTEMPTS,
         attempts: [],
       };
@@ -759,6 +781,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         const checks = guard.checks ?? { top: true, face: false };
         const top = checks.top ? parseExposure(state.texts?.[EXPOSURE_NODE_ID]) : null;
         const face = checks.face ? parseFace(state.texts?.[FACE_NODE_ID]) : null;
+        const bodyFraming = checks.body ? bodyFramingOk(fullBodyFraming(rec.fields).add, parseBodyFrame(state.texts?.[BODY_FRAME_NODE_ID])) : undefined;
         const notes: string[] = [];
         if (top && !top.available) notes.push(`Top check didn't run on the GPU (${top.error ?? 'detector not installed'}).`);
         if (face && !face.available) notes.push(`Face check didn't run on the GPU (${face.error ?? 'models not installed'}).`);
@@ -766,7 +789,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         const faceOn = !!face?.available;
         if (checks.face && !face) faceProblem = 'the face check returned no result';
         else if (face && !face.available) faceProblem = `the face check could not run (${face.error ?? 'models not installed'})`;
-        if (topOn || faceOn) {
+        if (topOn || faceOn || bodyFraming !== undefined) {
           const attempts = [
             ...guard.attempts,
             {
@@ -774,6 +797,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               exposed: topOn ? top!.exposed : false,
               score: topOn ? top!.score : 0,
               ...(faceOn ? identityFields(face!, rec) : {}),
+              // her joints beat the face-size guess whenever the body could be judged
+              ...(bodyFraming !== undefined ? { framingOk: bodyFraming } : {}),
               images: state.images,
             },
           ];

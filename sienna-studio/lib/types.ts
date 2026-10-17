@@ -133,6 +133,8 @@ export interface GenerationParams {
   faceCheck?: boolean;
   /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */
   posePreset?: string | null;
+  /** Use the pose preset the Pose text describes when none is chosen (default on). */
+  autoPosePreset?: boolean;
   /** Outfit-reference conditioning weight (independent of the LoRA strength). */
   outfitStrength?: number;
   /**
@@ -352,7 +354,7 @@ export interface GenerationRecord {
     status: 'on' | 'unavailable';
     reason?: string;
     /** Which checks are running. Missing = top check only (records from before the face check). */
-    checks?: { top: boolean; face: boolean };
+    checks?: { top: boolean; face: boolean; body?: boolean };
     maxAttempts: number;
     attempts: {
       seed: number;

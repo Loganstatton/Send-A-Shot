@@ -37,6 +37,25 @@ P = {
       {0: (300, 330), 14: (285, 305), 15: (310, 300), 17: (345, 315)}, {1: (390, 380), 2: (380, 400), 5: (420, 390),
       3: (360, 570), 6: (420, 575), 4: (290, 460), 7: (320, 470), 8: (720, 470), 11: (730, 480), 9: (930, 520), 12: (940, 530),
       10: (1010, 330), 13: (1040, 350)})),
+  # Added after the position test (2026-10-17): text alone gave sitting-up photos for "lying on her back/side" and
+  # never full body for "standing ... head to feet".
+  'standing_full_body': (832, 1216, 'standing, full body from head to feet, arms relaxed at her sides', merge(face(416, 175, 0.85), {
+      1: (416, 265), 2: (332, 285), 5: (500, 285), 3: (318, 450), 6: (514, 450), 4: (322, 600), 7: (510, 600),
+      8: (370, 640), 11: (462, 640), 9: (366, 880), 12: (466, 880), 10: (370, 1105), 13: (462, 1105)})),
+  # head at image-left, face turned to the camera (top of her head points left), one arm above her head
+  'lying_on_back': (1216, 832, 'lying on her back on the bed, legs together and straight, one arm above her head', merge(
+      {0: (250, 400), 14: (228, 378), 15: (228, 422), 16: (238, 345), 17: (238, 455)}, {1: (330, 410), 2: (335, 440), 5: (330, 375),
+      3: (250, 330), 4: (170, 290), 6: (450, 470), 7: (580, 480), 8: (650, 440), 11: (650, 405),
+      9: (880, 440), 12: (880, 412), 10: (1100, 448), 13: (1100, 420)})),
+  # on her right side facing the camera, propped on her right elbow, top hand resting on her hip, knees slightly bent
+  'lying_on_side': (1216, 832, 'lying on her side on the bed, propped up on one elbow, legs together and slightly bent', merge(face(330, 250, 0.8), {
+      1: (345, 335), 2: (325, 410), 5: (385, 345), 3: (300, 560), 4: (420, 575), 6: (520, 450), 7: (640, 520),
+      8: (690, 580), 11: (700, 530), 9: (900, 600), 12: (910, 565), 10: (1110, 640), 13: (1120, 610)})),
+  # thighs upright, shins folded back along the bed (ankles behind and to the side, lower than the knees) so it can't
+  # read as standing cut off at the knees — the earlier kneeling preset without shins gave standing photos
+  'kneeling_upright': (832, 1216, 'kneeling upright on the bed, knees together, hands resting on her thighs', merge(face(430, 240), {
+      1: (430, 350), 2: (336, 370), 5: (524, 370), 3: (318, 545), 6: (540, 545), 4: (378, 720), 7: (486, 720),
+      8: (382, 700), 11: (476, 700), 9: (392, 980), 12: (474, 990), 10: (230, 1060), 13: (300, 1080)})),
 }
 
 # pose ControlNet strength for presets: 0.85 followed arms-crossed 4/4 and hand-in-hair 2/2 (0.65: 2/4, 1/2).

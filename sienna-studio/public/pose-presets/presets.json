@@ -40,5 +40,33 @@
   "height": 832,
   "pose": "lying on her stomach on the bed, propped up on her elbows, chin resting on her hands, feet up behind her",
   "strength": 0.85
+ },
+ {
+  "id": "standing_full_body",
+  "width": 832,
+  "height": 1216,
+  "pose": "standing, full body from head to feet, arms relaxed at her sides",
+  "strength": 0.85
+ },
+ {
+  "id": "lying_on_back",
+  "width": 1216,
+  "height": 832,
+  "pose": "lying on her back on the bed, legs together and straight, one arm above her head",
+  "strength": 0.85
+ },
+ {
+  "id": "lying_on_side",
+  "width": 1216,
+  "height": 832,
+  "pose": "lying on her side on the bed, propped up on one elbow, legs together and slightly bent",
+  "strength": 0.85
+ },
+ {
+  "id": "kneeling_upright",
+  "width": 832,
+  "height": 1216,
+  "pose": "kneeling upright on the bed, knees together, hands resting on her thighs",
+  "strength": 0.85
  }
 ]
