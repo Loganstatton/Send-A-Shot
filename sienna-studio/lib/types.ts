@@ -308,6 +308,8 @@ export type ReviewMark = 'ok' | 'issue';
 
 export interface GenerationRecord {
   id: string;
+  /** Waiting for the on-demand photo GPU to start (the request is kept and submitted when it is ready). */
+  photoGpu?: { phase: 'starting' | 'failed'; requestedAt: string; waitingFor?: string; request?: GenerateRequest };
   createdAt: string;
   completedAt?: string;
   status: GenerationStatus;

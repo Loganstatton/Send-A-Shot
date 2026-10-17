@@ -1,5 +1,6 @@
 import { createBackend } from '@/lib/comfy/client';
 import { handle, json } from '@/lib/server/http';
+import { photoGpuEnabled, photoGpuReady } from '@/lib/server/photo-gpu';
 import { getComfyUrl, getSettings, getWorkflow } from '@/lib/server/store';
 import type { ControlKey } from '@/lib/types';
 
@@ -11,6 +12,8 @@ export const dynamic = 'force-dynamic';
  * SDXL workflows list checkpoints, etc.).
  */
 export const GET = handle(async (req: Request) => {
+  // the on-demand photo GPU is off: no lists to load (and opening Create must not start a GPU)
+  if (photoGpuEnabled() && !(await photoGpuReady())) return json({ options: {}, error: null, backend: 'comfyui', gpuOff: true });
   const url = new URL(req.url);
   const settings = await getSettings();
   const wfId = url.searchParams.get('workflowId') || settings.defaultWorkflowId || '';

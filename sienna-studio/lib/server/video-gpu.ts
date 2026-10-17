@@ -78,7 +78,7 @@ export function videoGpuConfig(): VideoGpuConfig | null {
     urlTemplate: e.VIDEO_GPU_URL_TEMPLATE || 'https://{id}-8188.proxy.runpod.net',
     startupTimeoutMin: num(e.VIDEO_GPU_STARTUP_TIMEOUT_MIN, 25),
     jobTimeoutMin: num(e.VIDEO_GPU_JOB_TIMEOUT_MIN, 15),
-    idleMin: num(e.VIDEO_GPU_IDLE_MIN, 5),
+    idleMin: num(e.VIDEO_GPU_IDLE_MIN, 10),
     maxSessionMin: num(e.VIDEO_GPU_MAX_SESSION_MIN, 90),
     monthlyBudgetUsd: num(e.VIDEO_GPU_MONTHLY_BUDGET_USD, 5),
     estRate: num(e.VIDEO_GPU_EST_RATE, 0.69),
@@ -174,7 +174,7 @@ export class GpuError extends Error {
   }
 }
 
-async function runpod<T = any>(c: VideoGpuConfig, method: string, p: string, body?: unknown): Promise<T> {
+export async function runpod<T = any>(c: Pick<VideoGpuConfig, 'apiBase' | 'apiKey'>, method: string, p: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(c.apiBase + p, {

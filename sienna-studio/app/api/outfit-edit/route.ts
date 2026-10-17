@@ -1,3 +1,4 @@
+import { wakePhotoGpu } from '@/lib/server/photo-gpu-wake';
 import { z } from 'zod';
 import { MAX_DESCRIPTION } from '@/lib/outfit-edit';
 import { storedImageSchema } from '@/lib/schemas';
@@ -11,6 +12,7 @@ export const GET = handle(async () => json(await availability()));
 
 /** Queue an outfit edit of an existing image. Returns the new history record; poll /api/history/:id/status. */
 export const POST = handle(async (req: Request) => {
+  await wakePhotoGpu();
   const body = await parseBody(
     req,
     z.object({

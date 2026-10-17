@@ -19,6 +19,7 @@ import { PROMPT_FIELD_LABELS } from '@/lib/types';
 import { ImagePicker } from './ImagePicker';
 import { JobCard } from './JobCard';
 import { OutfitReference } from './OutfitReference';
+import { PhotoGpuCard } from './PhotoGpuCard';
 import { PoseCheck } from './PoseCheck';
 import { detectFramingConflicts, FramingLevel } from '@/lib/framing';
 import { Badge, Button, Card, Chip, Collapsible, Notice, PageHeader, SectionTitle, Select, Slider, Spinner, TextArea, Toggle, cx, toast } from './ui';
@@ -344,6 +345,7 @@ export function CreateScreen() {
           </Link>
         }
       />
+      <PhotoGpuCard />
 
       {jobs.length > 0 && (
         <div className="space-y-3">

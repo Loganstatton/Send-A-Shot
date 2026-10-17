@@ -127,8 +127,18 @@ export function updateSettings(patch: Partial<AppSettings>): Promise<AppSettings
 
 /** Effective ComfyUI URL: settings override env. "mock" or empty → mock backend. */
 export async function getComfyUrl(): Promise<string> {
+  if (process.env.PHOTO_GPU === 'runpod') return (await onDemandPhotoUrl()) ?? PHOTO_GPU_OFF_URL;
   const s = await getSettings();
   return (s.comfyUrl || process.env.COMFYUI_URL || 'mock').trim();
+}
+
+/** Stands in for the ComfyUI address while the on-demand photo GPU is off (requests fail with a readable error). */
+export const PHOTO_GPU_OFF_URL = 'http://photo-gpu-off.invalid';
+
+/** The on-demand photo GPU's address (photo-gpu.ts keeps its state in DATA_DIR/photo-gpu.json; read here to avoid an import cycle). */
+async function onDemandPhotoUrl(): Promise<string | null> {
+  const s = (await readJson<{ session?: { status?: string; url?: string } | null }>(path.join(DATA_DIR, 'photo-gpu.json')).catch(() => null))?.session;
+  return s && s.url && (s.status === 'starting' || s.status === 'ready' || s.status === 'stopping') ? s.url : null;
 }
 
 export function adultContentAllowed(): boolean {

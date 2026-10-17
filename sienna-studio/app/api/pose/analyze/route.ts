@@ -1,3 +1,4 @@
+import { wakePhotoGpu } from '@/lib/server/photo-gpu-wake';
 import { z } from 'zod';
 import { storedImageSchema } from '@/lib/schemas';
 import { handle, HttpError, json, parseBody } from '@/lib/server/http';
@@ -7,6 +8,7 @@ export const dynamic = 'force-dynamic';
 
 /** Start a pose check (skeleton preview + visible extent). Poll with GET ?promptId=. */
 export const POST = handle(async (req: Request) => {
+  await wakePhotoGpu();
   const b = await parseBody(
     req,
     z.object({

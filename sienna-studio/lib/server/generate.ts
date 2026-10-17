@@ -41,6 +41,7 @@ import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
+import { ensurePhotoGpu, photoGpuEnabled, photoGpuReady, tickPhotoGpu, touchPhotoGpu } from './photo-gpu';
 import { activeStylePacks, nudeOnlyAllowed, packCoverage, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
@@ -49,6 +50,7 @@ import {
   getComfyUrl,
   getRecord,
   getSettings,
+  listHistory,
   experimentsEnabled,
   getWorkflow,
   listPresets,
@@ -580,11 +582,17 @@ async function loraFiles(backend: ComfyBackend): Promise<string[] | null> {
 }
 
 export async function startGeneration(req: GenerateRequest): Promise<GenerationRecord> {
+  if (photoGpuEnabled() && !(await photoGpuReady())) return queueForPhotoGpu(req);
+  return submitGeneration(req, { id: newId('g'), createdAt: new Date().toISOString() });
+}
+
+async function submitGeneration(req: GenerateRequest, keep: { id: string; createdAt: string }): Promise<GenerationRecord> {
   const prep = await prepareGeneration(req);
   const clientId = newId('sienna-');
-  const base = { ...prep.record, id: newId('g'), createdAt: new Date().toISOString(), clientId };
+  const base = { ...prep.record, ...keep, clientId, photoGpu: undefined };
   try {
     const { promptId } = await prep.backend.queuePrompt(prep.graph, clientId);
+    if (photoGpuEnabled()) await touchPhotoGpu();
     return saveRecord({ ...base, status: 'queued', promptId });
   } catch (e) {
     if (!(e instanceof ComfyError)) throw e;
@@ -594,19 +602,120 @@ export async function startGeneration(req: GenerateRequest): Promise<GenerationR
   }
 }
 
+// ── On-demand photo GPU (PHOTO_GPU=runpod) ────────────────────────────────────
+
+const STARTING_NOTE = 'Starting the photo GPU (usually 1–3 min; it switches off by itself after a while without photos).';
+
+/** The photo GPU is off: keep the request in a waiting record, start the GPU, submit when it is ready. */
+async function queueForPhotoGpu(req: GenerateRequest): Promise<GenerationRecord> {
+  const now = new Date().toISOString();
+  const rec = await saveRecord({
+    id: newId('g'),
+    createdAt: now,
+    status: 'queued',
+    backend: 'comfyui',
+    presetId: req.presetId,
+    presetName: null,
+    workflowId: req.workflowId ?? '',
+    workflowName: '',
+    siennaLock: req.siennaLock,
+    contentMode: req.contentMode,
+    fields: req.fields,
+    params: req.params,
+    seed: req.params.seed,
+    positivePrompt: '',
+    negativePrompt: '',
+    lora: null,
+    faceReference: null,
+    initImage: req.images.initImage,
+    poseImage: req.images.poseImage,
+    images: [],
+    warnings: [STARTING_NOTE],
+    favorite: false,
+    review: {},
+    notes: '',
+    photoGpu: { phase: 'starting', requestedAt: now, waitingFor: 'requesting a GPU', request: req },
+  });
+  try {
+    await ensurePhotoGpu();
+  } catch (e: any) {
+    return (await patchRecord(rec.id, { status: 'error', error: e.message, completedAt: new Date().toISOString(), photoGpu: { ...rec.photoGpu!, phase: 'failed' } }))!;
+  }
+  return rec;
+}
+
+const photoBusy = (r: GenerationRecord) => !r.video && (r.status === 'queued' || r.status === 'running');
+const photoWaiting = (r: GenerationRecord) => r.photoGpu?.phase === 'starting';
+let submitting: Promise<void> | null = null;
+
+/** Starts/stops the photo GPU as needed and submits photos that were waiting for it (timer + status polls). */
+export async function photoGpuHousekeeping(): Promise<void> {
+  if (!photoGpuEnabled()) return;
+  const recs = await listHistory();
+  const probe = async (url: string) => (await createBackend(url).systemInfo().then(() => true, () => false));
+  const session = await tickPhotoGpu(recs.filter(photoBusy).length, probe);
+  const waiting = recs.filter(photoWaiting).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  if (!waiting.length) return;
+  if (!session || session.status === 'failed' || session.status === 'stopped') {
+    for (const r of waiting) {
+      if (session?.endedAt && Date.parse(session.endedAt) < Date.parse(r.createdAt)) {
+        await ensurePhotoGpu().catch((e: any) => failWaiting(r, e.message));
+        continue;
+      }
+      await failWaiting(r, `The photo GPU couldn't start: ${session?.error ?? session?.stopReason ?? 'it is not running'}. Nothing was retried automatically — tap “Make again” to try once more.`);
+    }
+    return;
+  }
+  if (session.status !== 'ready') {
+    for (const r of waiting) if (r.photoGpu!.waitingFor !== session.phase) await patchRecord(r.id, { photoGpu: { ...r.photoGpu!, waitingFor: session.phase } });
+    return;
+  }
+  if (submitting) return submitting;
+  submitting = (async () => {
+    for (const r of waiting) {
+      const fresh = await getRecord(r.id);
+      if (!fresh || !photoWaiting(fresh) || !fresh.photoGpu?.request) continue;
+      try {
+        const done = await submitGeneration(fresh.photoGpu.request, { id: fresh.id, createdAt: fresh.createdAt });
+        // submitGeneration saved the full record under the same id; drop the stored request
+        if (done.photoGpu) await patchRecord(done.id, { photoGpu: undefined });
+      } catch (e: any) {
+        await failWaiting(fresh, e.message);
+      }
+    }
+  })().finally(() => {
+    submitting = null;
+  });
+  return submitting;
+}
+
+function failWaiting(r: GenerationRecord, error: string) {
+  return patchRecord(r.id, { status: 'error', error, completedAt: new Date().toISOString(), photoGpu: { ...r.photoGpu!, phase: 'failed', request: undefined } });
+}
+
 // Avoid two concurrent polls downloading the same outputs twice.
 const inflight = new Map<string, Promise<GenerationRecord | null>>();
 
 export function refreshStatus(id: string): Promise<GenerationRecord | null> {
   const existing = inflight.get(id);
   if (existing) return existing;
-  const p = doRefresh(id).finally(() => inflight.delete(id));
+  const p = doRefresh(id)
+    .then(async (rec) => {
+      // a photo just finished: the idle timer of the on-demand photo GPU starts from now
+      if (photoGpuEnabled() && rec?.promptId && rec.completedAt && Date.now() - Date.parse(rec.completedAt) < 60_000) await touchPhotoGpu();
+      return rec;
+    })
+    .finally(() => inflight.delete(id));
   inflight.set(id, p);
   return p;
 }
 
 async function doRefresh(id: string): Promise<GenerationRecord | null> {
-  const rec = await getRecord(id);
+  let rec = await getRecord(id);
+  if (rec && photoWaiting(rec)) {
+    await photoGpuHousekeeping();
+    rec = await getRecord(id);
+  }
   if (!rec || rec.status === 'done' || rec.status === 'error' || !rec.promptId) return rec;
 
   const [settings, comfyUrl, workflow] = await Promise.all([getSettings(), getComfyUrl(), getWorkflow(rec.workflowId)]);

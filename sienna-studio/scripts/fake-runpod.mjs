@@ -5,6 +5,7 @@
 //   node scripts/fake-runpod.mjs [--port 8189]
 //   FAKE_NO_CAPACITY="NVIDIA A40"   GPU types that answer "no capacity" (comma-separated; "*" = all)
 //   FAKE_NEVER_READY=1              the pod never gets a working ComfyUI (startup-timeout test)
+//   FAKE_NEVER_READY_FIRST=1        only the first pod never gets one (a stuck machine that gets replaced)
 //   FAKE_COMFY_FLAGS="--hang-exec"  extra flags for the fake ComfyUI
 //   FAKE_BAD_KEY=1                  every call answers 401
 // GET /debug → { creates, deletes, kit: [{file, status}], pods }
@@ -65,7 +66,7 @@ http
     if (p === '/v1/pods' && req.method === 'GET') return send(res, 200, [...pods.values()].filter((x) => x.desiredStatus === 'RUNNING'));
     if (p === '/v1/pods' && req.method === 'POST') {
       const gpu = j.gpuTypeIds?.[0];
-      debug.creates.push({ name: j.name, gpu, ports: j.ports, volumeInGb: j.volumeInGb, networkVolumeId: j.networkVolumeId ?? null, env: j.env, image: j.imageName, startCmd: j.dockerStartCmd, entrypoint: j.dockerEntrypoint ?? null });
+      debug.creates.push({ name: j.name, gpu, ports: j.ports, volumeInGb: j.volumeInGb, networkVolumeId: j.networkVolumeId ?? null, env: j.env, image: j.imageName, startCmd: j.dockerStartCmd, entrypoint: j.dockerEntrypoint ?? null, dataCenterIds: j.dataCenterIds ?? null, gpuTypeIds: j.gpuTypeIds });
       if (noCap.includes('*') || noCap.includes(gpu)) return send(res, 500, { error: `There are no longer any instances available with the requested specifications (${gpu}).` });
       const id = 'fakepod' + Math.random().toString(36).slice(2, 9);
       const pod = { id, name: j.name, desiredStatus: 'RUNNING', costPerHr: gpu.includes('A40') ? 0.59 : 0.69, gpu };
@@ -75,7 +76,7 @@ http
       const shell = JSON.stringify(j.dockerEntrypoint ?? ['/start.sh']) === JSON.stringify(['bash', '-c']);
       if (shell) fetchKit((j.dockerStartCmd || []).join(' '));
       else debug.kit.push({ file: 'setup.sh', status: 'start command ignored: image entrypoint /start.sh not replaced' });
-      setTimeout(startComfy, READY_S * 1000);
+      if (!(process.env.FAKE_NEVER_READY_FIRST === '1' && debug.creates.length === 1)) setTimeout(startComfy, READY_S * 1000);
       return send(res, 200, pod);
     }
     const m = /^\/v1\/pods\/([^/]+)$/.exec(p);
