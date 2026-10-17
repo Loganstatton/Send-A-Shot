@@ -436,12 +436,19 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   if (stylePacks.length) {
     let after = bindings.lora_name?.[0]?.nodeId;
     if (after && graph[after]?.class_type !== 'LoraLoader') after = undefined;
+    const siennaLoraId = after;
     for (const a of stylePacks) {
       const title = `Style pack: ${a.pack.label}`;
       const spliced = after ? chainLora(graph, after, a.pack.file, a.strength, title) : injectLora(graph, a.pack.file, a.strength, a.strength);
       graph = spliced.graph;
       graph[spliced.nodeId]._meta = { title };
       if (graph[spliced.nodeId].class_type === 'LoraLoader') after = spliced.nodeId;
+    }
+    // The face redraw goes back to Sienna's LoRA alone: packs shape the body and outfit, not her face.
+    if (p.faceKeepsSiennaLora && siennaLoraId && faceRefine?.status === 'on' && refineId && graph[refineId]) {
+      graph[refineId].inputs.model = [siennaLoraId, 0];
+      graph[refineId].inputs.clip = [siennaLoraId, 1];
+      faceRefine = { ...faceRefine, siennaLoraOnly: true };
     }
   }
 

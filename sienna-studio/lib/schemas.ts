@@ -52,6 +52,7 @@ export const paramsSchema = z.object({
   posePreset: z.string().max(40).nullable().optional(),
   faceRefineDenoise: z.number().min(0.05).max(1).default(0.3),
   faceRefineThreshold: z.number().int().min(64).max(2048).default(384),
+  faceKeepsSiennaLora: z.boolean().optional(),
   outfitStrength: z.number().min(0).max(1.5).default(0.7),
   outfitMode: z.enum(['design', 'close']).default('design'),
   poseFit: z.enum(['crop', 'pad']).default('pad'),
