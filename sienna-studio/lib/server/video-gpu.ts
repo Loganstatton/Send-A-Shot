@@ -221,15 +221,19 @@ async function terminatePod(c: VideoGpuConfig, id: string) {
   }
 }
 
-/** The pod's start command: a hard lifetime limit, the setup kit in the background, then the image's own start. */
-export function podStartCommand(c: VideoGpuConfig, kitUrl: string): string[] {
+/**
+ * The pod's start script: a hard lifetime limit, the setup kit in the background, then the image's own start.
+ * The image's ENTRYPOINT is /start.sh, which ignores a start command passed as its arguments, so the pod is created
+ * with the entrypoint replaced by `bash -c` and this script as its only argument.
+ */
+export function podStartCommand(c: VideoGpuConfig, kitUrl: string): string {
   const maxSec = Math.round(c.maxSessionMin * 60);
   const script = [
     `(sleep ${maxSec}; runpodctl remove pod "$RUNPOD_POD_ID") >/dev/null 2>&1 &`,
     `(curl -fsSL --retry 5 '${kitUrl}/setup.sh' -o /tmp/sienna-setup.sh && SIENNA_KIT='${kitUrl}' bash /tmp/sienna-setup.sh) > /tmp/sienna-setup.log 2>&1 &`,
     'exec /start.sh',
   ].join('\n');
-  return ['bash', '-c', script];
+  return script;
 }
 
 // ── Session control ────────────────────────────────────────────────────────────
@@ -351,7 +355,8 @@ export function ensureVideoGpu(): Promise<VideoGpuSession> {
           // only ComfyUI is exposed: no Jupyter, no SSH
           ports: ['8188/http'],
           env: { SIENNA_IDLE_MINUTES: String(c.idleMin + 3), SIENNA_COPY_MOTION: c.copyMotion ? '1' : '0' },
-          dockerStartCmd: podStartCommand(c, kitUrl),
+          dockerEntrypoint: ['bash', '-c'],
+          dockerStartCmd: [podStartCommand(c, kitUrl)],
         });
         if (!pod?.id) throw new GpuError('RunPod returned no pod id');
         const s: VideoGpuSession = {

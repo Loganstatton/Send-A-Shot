@@ -65,12 +65,16 @@ http
     if (p === '/v1/pods' && req.method === 'GET') return send(res, 200, [...pods.values()].filter((x) => x.desiredStatus === 'RUNNING'));
     if (p === '/v1/pods' && req.method === 'POST') {
       const gpu = j.gpuTypeIds?.[0];
-      debug.creates.push({ name: j.name, gpu, ports: j.ports, volumeInGb: j.volumeInGb, networkVolumeId: j.networkVolumeId ?? null, env: j.env, image: j.imageName, startCmd: j.dockerStartCmd });
+      debug.creates.push({ name: j.name, gpu, ports: j.ports, volumeInGb: j.volumeInGb, networkVolumeId: j.networkVolumeId ?? null, env: j.env, image: j.imageName, startCmd: j.dockerStartCmd, entrypoint: j.dockerEntrypoint ?? null });
       if (noCap.includes('*') || noCap.includes(gpu)) return send(res, 500, { error: `There are no longer any instances available with the requested specifications (${gpu}).` });
       const id = 'fakepod' + Math.random().toString(36).slice(2, 9);
       const pod = { id, name: j.name, desiredStatus: 'RUNNING', costPerHr: gpu.includes('A40') ? 0.59 : 0.69, gpu };
       pods.set(id, pod);
-      fetchKit((j.dockerStartCmd || []).join(' '));
+      // Like the real image (ENTRYPOINT ["/start.sh"]): a start command only runs when the entrypoint is replaced
+      // by a shell; otherwise it is passed to /start.sh as arguments and ignored.
+      const shell = JSON.stringify(j.dockerEntrypoint ?? ['/start.sh']) === JSON.stringify(['bash', '-c']);
+      if (shell) fetchKit((j.dockerStartCmd || []).join(' '));
+      else debug.kit.push({ file: 'setup.sh', status: 'start command ignored: image entrypoint /start.sh not replaced' });
       setTimeout(startComfy, READY_S * 1000);
       return send(res, 200, pod);
     }
