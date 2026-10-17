@@ -41,7 +41,9 @@ export interface FaceReport {
  * docs/FACE_CHECK_CALIBRATION.md): similarity >= FACE_THRESHOLD is verified; anything below is a mismatch and is
  * redone with a new seed, up to four photos; if none verifies, the closest is kept and filed in Needs Review, never
  * the gallery. A face that can't be compared (none found, or too small — often hidden or turned away on purpose) is
- * 'unchecked': not retried (another seed wouldn't help), never a match, filed in Needs Review.
+ * 'unchecked': not retried (another seed wouldn't help), never a match, filed in Needs Review. When the request itself
+ * turns her away (a from-behind pose, see rearRequest), a below-threshold face is 'inconclusive' instead of a mismatch:
+ * retrying chased a face that scored better, which always meant one turned to the camera — against the request.
  *
  * Experimental ('pose-aware', only with SIENNA_EXPERIMENTAL=true): a turned face scoring between FACE_TURNED_FLOOR
  * and FACE_THRESHOLD is 'inconclusive' — not retried, filed in Needs Review. Faster on from-behind shots but it
@@ -56,10 +58,20 @@ export const FACE_TURNED_FLOOR = 0.68;
 /** Landmark head turn beyond which the face counts as turned (Sienna facing the camera stays under ~0.3). */
 export const TURNED_YAW = 0.35;
 export const TURNED_EYE_RATIO = 0.38;
-const REAR_POSE_RE =
-  /\b(from behind|behind her|back view|rear view|seen from (the )?back|back to the camera|facing away|turned away|looking back|over (her|the|his) shoulder|profile view|side profile)\b/i;
+const REAR_POSE_RE = new RegExp(
+  '\\b(' +
+    [
+      'from behind', 'behind her', '(back|rear)[\\s-]+view', 'seen from (the )?back', 'from the back',
+      '(her )?back (is )?(fully |turned |facing )*(to|toward|towards) the (camera|viewer)',
+      '(fac(e|es|ing)|turn(s|ed|ing)?|look(s|ing)?|walk(s|ing)?) away', 'away from the (camera|viewer)',
+      'looking back', 'over (her|the|his) shoulder', 'profile view', 'side profile',
+    ].join('|') +
+    ')\\b',
+  'i',
+);
 
-/** The request itself turns her face away: a from-behind pose, the looking-back preset, or a rear pose pack. */
+/** The request itself turns her face away: a from-behind pose, the looking-back preset, or a rear pose pack. Reads
+ * the pose, framing and extra fields (a "rear-view photograph" usually sits in Framing). */
 export function rearRequest(poseText: string, posePresetId: string | null | undefined, rearPack: boolean): boolean {
   return rearPack || posePresetId === 'looking_back' || REAR_POSE_RE.test(poseText);
 }
@@ -74,6 +86,7 @@ export function faceVerdict(face: FaceReport, rear: boolean, policy: FacePolicy 
     return policy === 'strict' ? { status: 'unchecked', reason } : { status: 'inconclusive', reason };
   }
   if (sim >= FACE_THRESHOLD) return { status: 'verified', reason: '' };
+  if (policy === 'strict' && rear) return { status: 'inconclusive', reason: 'her face is turned away (a rear view was asked for)' };
   if (policy === 'pose-aware') {
     const turned = rear || (face.yaw ?? 0) > TURNED_YAW || (face.eyeRatio ?? 1) < TURNED_EYE_RATIO;
     if (turned && sim >= FACE_TURNED_FLOOR) return { status: 'inconclusive', reason: 'her face is turned away' };

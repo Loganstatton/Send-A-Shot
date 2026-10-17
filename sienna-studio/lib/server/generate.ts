@@ -839,7 +839,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
 function identityFields(face: FaceReport, rec: GenerationRecord) {
   const policy: FacePolicy = experimentsEnabled() ? 'pose-aware' : 'strict';
   const rearPack = (rec.stylePacks ?? []).some((p) => STYLE_PACKS.find((sp) => sp.id === p.id)?.rearPose);
-  const rear = rearRequest(`${rec.fields.pose} ${rec.fields.extra}`, rec.params.posePreset, rearPack);
+  const rear = rearRequest(`${rec.fields.pose} ${rec.fields.framing} ${rec.fields.extra}`, rec.params.posePreset, rearPack);
   const v = faceVerdict(face, rear, policy);
   return {
     similarity: face.similarity,

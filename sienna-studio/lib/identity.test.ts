@@ -13,10 +13,16 @@ describe('faceVerdict — production (strict 0.74)', () => {
     expect(faceVerdict(face(0.74), true).status).toBe('verified');
   });
 
-  it('anything below 0.74 is a mismatch and is redone — including turned faces', () => {
+  it('anything below 0.74 is a mismatch and is redone — including faces that happen to be turned', () => {
     expect(faceVerdict(face(0.73), false)).toEqual({ status: 'mismatch', reason: "didn't look enough like Sienna" });
-    expect(faceVerdict(face(0.72), true).status).toBe('mismatch');
-    expect(faceVerdict(face(0.7, { yaw: 0.9, eyeRatio: 0.2 }), true, 'strict').status).toBe('mismatch');
+    expect(faceVerdict(face(0.7, { yaw: 0.9, eyeRatio: 0.2 }), false, 'strict').status).toBe('mismatch');
+  });
+
+  it('when a rear view was asked for, a low face score is inconclusive: not redone, never a match', () => {
+    // redoing chased a better-scoring face, i.e. one turned to the camera — the opposite of the request
+    expect(faceVerdict(face(0.72), true)).toEqual({ status: 'inconclusive', reason: 'her face is turned away (a rear view was asked for)' });
+    expect(faceVerdict(face(0.3, { yaw: 0.9 }), true, 'strict').status).toBe('inconclusive');
+    expect(faceVerdict(face(0.8), true).status).toBe('verified');
   });
 
   it('a face that cannot be compared is unchecked: not a match, and not a retry', () => {
@@ -26,7 +32,7 @@ describe('faceVerdict — production (strict 0.74)', () => {
 
   it('hair and skin colour never change a decision', () => {
     expect(faceVerdict(face(0.8, { hairRel: 2.5, skinHue: 10 }), true).status).toBe('verified');
-    expect(faceVerdict(face(0.6, { hairRel: 0.3, skinHue: 47 }), true).status).toBe('mismatch');
+    expect(faceVerdict(face(0.6, { hairRel: 0.3, skinHue: 47 }), false).status).toBe('mismatch');
     expect(faceVerdict(face(0.7, { hairRel: 2.5 }), true, 'pose-aware').status).toBe('inconclusive');
   });
 });
@@ -48,6 +54,18 @@ describe('rearRequest', () => {
     expect(rearRequest('standing', 'looking_back', false)).toBe(true);
     expect(rearRequest('sitting on the sink', null, true)).toBe(true);
     expect(rearRequest('standing, facing the camera', 'arms_crossed', false)).toBe(false);
+  });
+  it('spots the wordings people actually use (a missed rear request got turned to face the camera)', () => {
+    for (const t of [
+      'Full-body rear-view photograph, head to feet visible',
+      'Standing at the shoreline with her back fully toward the camera, facing the ocean',
+      'Her entire body faces away from the camera toward the ocean',
+      'walking away from the camera along the waterline',
+      'back view, head out of frame',
+      'photographed from the back',
+    ]) expect(rearRequest(t, null, false), t).toBe(true);
+    for (const t of ['standing on the beach facing the camera, smiling', 'back straight, sitting on the bed', 'walking toward the camera', 'lying on her back'])
+      expect(rearRequest(t, null, false), t).toBe(false);
   });
 });
 
