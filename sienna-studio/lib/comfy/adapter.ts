@@ -116,7 +116,7 @@ export function cloneGraph(g: ComfyGraph): ComfyGraph {
 }
 
 type Link = [string, number];
-function isLink(v: unknown): v is Link {
+export function isLink(v: unknown): v is Link {
   return Array.isArray(v) && v.length === 2 && typeof v[0] === 'string' && typeof v[1] === 'number';
 }
 

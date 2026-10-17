@@ -15,7 +15,7 @@
  */
 
 import 'server-only';
-import { applyBindings, bypassLora, capabilities, chainLora, ControlValue, injectLora, validateBindings } from '../comfy/adapter';
+import { applyBindings, bypassLora, capabilities, chainLora, ControlValue, injectLora, isLink, validateBindings } from '../comfy/adapter';
 import { ComfyBackend, ComfyError, createBackend } from '../comfy/client';
 import { missingModelFile } from '../comfy/model-files';
 import {
@@ -449,6 +449,29 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       graph[refineId].inputs.model = [siennaLoraId, 0];
       graph[refineId].inputs.clip = [siennaLoraId, 1];
       faceRefine = { ...faceRefine, siennaLoraOnly: true };
+    }
+  }
+
+  // ── Face reference only in the face redraw: the main pass keeps body, outfit and scene; the redraw takes her face ──
+  if (p.faceRefFacePassOnly && faceRefine?.status === 'on' && refineId && graph[refineId]) {
+    const loadId = bindings.face_reference_image?.[0]?.nodeId;
+    const applyId = loadId ? Object.keys(graph).find((id) => /^IPAdapter(Advanced|FaceID)$/.test(graph[id].class_type) && isLink(graph[id].inputs.image) && graph[id].inputs.image[0] === loadId) : undefined;
+    const ipa = applyId ? graph[applyId].inputs.ipadapter : undefined;
+    const loaderId = isLink(ipa) ? ipa[0] : undefined;
+    const base = loaderId ? graph[loaderId]?.inputs.model : undefined;
+    if (applyId && loaderId && isLink(base)) {
+      // everything except the face redraw goes back to the model the identity module was applied to (LoRA + packs)
+      for (const [id, node] of Object.entries(graph)) {
+        if (id === refineId) continue;
+        for (const [k, v] of Object.entries(node.inputs)) if (isLink(v) && v[0] === applyId && v[1] === 0) node.inputs[k] = [base[0], base[1]];
+      }
+      const lora = bindings.lora_name?.[0]?.nodeId;
+      if (lora && graph[lora]?.class_type === 'LoraLoader') {
+        graph[loaderId].inputs.model = [lora, 0];
+        graph[refineId].inputs.clip = [lora, 1];
+      }
+      graph[refineId].inputs.model = [applyId, 0];
+      faceRefine = { ...faceRefine, faceReferenceOnly: true };
     }
   }
 
