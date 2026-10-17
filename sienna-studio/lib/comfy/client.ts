@@ -377,8 +377,8 @@ export class MockComfy implements ComfyBackend {
     const elapsed = Date.now() - job.at;
     if (elapsed < 1200) return { state: 'pending', position: 1 };
     if (elapsed < 3500) return { state: 'running' };
-    const saveVideo = Object.entries(job.graph).find(([, n]) => n.class_type === 'SaveVideo');
-    if (saveVideo) return this.videoJobState(promptId, job, saveVideo[0]);
+    const saveVideos = Object.entries(job.graph).filter(([, n]) => n.class_type === 'SaveVideo').map(([id]) => id);
+    if (saveVideos.length) return this.videoJobState(promptId, job, saveVideos);
     if (!job.images) {
       const latent = Object.values(job.graph).find((n) => /Latent|ImageScale/.test(n.class_type) && typeof n.inputs.width === 'number');
       const sampler = Object.values(job.graph).find((n) => typeof n.inputs.seed === 'number' || typeof n.inputs.noise_seed === 'number');
@@ -420,7 +420,7 @@ export class MockComfy implements ComfyBackend {
     };
   }
   /** Video graphs finish with the poster frame (SaveImage), the frame face check and the video (SaveVideo). */
-  private async videoJobState(promptId: string, job: MockJob, saveId: string): Promise<JobState> {
+  private async videoJobState(promptId: string, job: MockJob, saveIds: string[]): Promise<JobState> {
     const sizeNode = Object.values(job.graph).find((n) => /^Wan(Image|Animate)ToVideo$/.test(n.class_type));
     const w = Number(sizeNode?.inputs.width ?? 480);
     const h = Number(sizeNode?.inputs.height ?? 704);
@@ -442,13 +442,15 @@ export class MockComfy implements ComfyBackend {
     const texts: Record<string, string[]> = {};
     for (const [id, n] of Object.entries(job.graph)) {
       if (n.class_type === 'SiennaFaceCheck') texts[id] = [JSON.stringify({ available: false, error: 'mock backend: no face check runs' })];
+      if (n.class_type === 'SiennaLockCamera') texts[id] = [JSON.stringify({ status: 'applied', reason: 'test mode: no stabilization runs' })];
     }
     const posterId = Object.entries(job.graph).find(([, n]) => n.class_type === 'SaveImage')?.[0] ?? 'mock';
     return {
       state: 'done',
       images: [
         { filename: job.images[0].name, subfolder: '', type: 'output', nodeId: posterId },
-        { filename: job.video.name, subfolder: 'video', type: 'output', nodeId: saveId },
+        // every SaveVideo node (natural and locked camera) gets the same mock clip
+        ...saveIds.map((nodeId) => ({ filename: job.video && 'name' in job.video ? job.video.name : '', subfolder: 'video', type: 'output', nodeId })),
       ],
       ...(Object.keys(texts).length ? { texts } : {}),
     };

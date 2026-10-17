@@ -11,8 +11,10 @@ Sienna Studio custom ComfyUI nodes (installed by scripts/comfyui-bootstrap.sh).
   SiennaExposureCheck    image(s) → did a nipple show? (NudeNet; JSON per image, for the app's retry)
   SiennaFaceCheck        image(s) + reference embedding → how close the face is to Sienna (OpenCV SFace; JSON)
   SiennaSafeFrame        photo + movement margins → photo with the missing room around her added + outpaint mask (video)
+  SiennaLockCamera       video frames → frames with the camera's drift removed (background held still) + JSON report (video)
 
-The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py / sienna_body.py / sienna_frame.py (no ComfyUI imports; unit-tested).
+The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py / sienna_body.py / sienna_frame.py / sienna_stabilize.py
+(no ComfyUI imports; unit-tested).
 """
 
 import json
@@ -24,6 +26,7 @@ import torch
 from .sienna_body import SCENE_CHANGED, body_sheet, compare, garment_only, keypoints_from_pose, measure_body, scale_points, scene_backdrop, scene_change
 from .sienna_crop import chin_crop
 from . import sienna_frame
+from . import sienna_stabilize
 from .sienna_exposure import DEFAULT_THRESHOLD, detector, detector_error, summarize
 from . import sienna_face
 from .sienna_redraw import GROW_MODES, erase, garment_region, overlay, segment_classes, segmenter_error
@@ -421,6 +424,42 @@ class SiennaSafeFrame:
                 "result": (torch.from_numpy(padded[None]).float(), torch.from_numpy(mask[None]).float(), vw, vh, text)}
 
 
+class SiennaLockCamera:
+    """Lock Camera for videos: removes the camera's drift so the background stays where it is in the first frame
+    (sienna_stabilize.py). Her body is found with the segmenter and left out of the tracking; frames are only moved
+    as a whole (no warping), never cropped, and keep their count and timing. If a safety check fails the frames come
+    back unchanged and the report says why (status applied / steady / rejected / unavailable)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"images": ("IMAGE",)}}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("images", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, images):
+        frames = (images.detach().cpu().numpy().clip(0, 1) * 255).round().astype(np.uint8)
+        masks = []
+        for f in frames:
+            classes = segment_classes(f.astype(np.float32) / 255.0)
+            if classes is None:
+                masks = None
+                break
+            masks.append(classes[0] < 0.5)  # anything that isn't background is her (body, hair, clothes)
+        try:
+            out, report = sienna_stabilize.lock_camera(frames, masks)
+        except Exception as e:  # never lose the video over the optional copy
+            out, report = frames, {"status": "rejected", "reason": f"Lock Camera failed: {e}"}
+        if masks is None and segmenter_error():
+            report["segmenter_error"] = segmenter_error()
+        text = json.dumps(report)
+        result = images if out is frames else torch.from_numpy(out.astype(np.float32) / 255.0)
+        return {"ui": {"text": [text]}, "result": (result, text)}
+
+
 NODE_CLASS_MAPPINGS = {
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
@@ -433,6 +472,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaExposureCheck": SiennaExposureCheck,
     "SiennaFaceCheck": SiennaFaceCheck,
     "SiennaSafeFrame": SiennaSafeFrame,
+    "SiennaLockCamera": SiennaLockCamera,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaPoseRetarget": "Sienna Pose Retarget",
@@ -446,4 +486,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaExposureCheck": "Sienna Exposure Check",
     "SiennaFaceCheck": "Sienna Face Check",
     "SiennaSafeFrame": "Sienna Safe Frame (video)",
+    "SiennaLockCamera": "Sienna Lock Camera (video)",
 }

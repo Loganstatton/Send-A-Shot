@@ -27,6 +27,8 @@ export default function GenerationDetail() {
   const [notes, setNotes] = useState('');
   const { data: editAvail } = useApi<OutfitEditAvailability>('/api/outfit-edit');
   const [showBefore, setShowBefore] = useState(false);
+  // Lock Camera: show the stabilized copy when there is one, until the user switches back to the natural camera
+  const [naturalCamera, setNaturalCamera] = useState(false);
   const { data: settings } = useApi<{ env: { experiments?: boolean; video?: boolean } }>('/api/settings');
   const experiments = !!settings?.env.experiments;
   const { data: bodyRefs, setData: setBodyRefs } = useApi<BodyReference[]>(experiments ? '/api/character/body-references' : null);
@@ -89,6 +91,7 @@ export default function GenerationDetail() {
 
   const issues = REVIEW_ITEMS.filter((i) => rec.review[i] === 'issue');
   const date = new Date(rec.createdAt);
+  const shownVideo = rec.video ? ((!naturalCamera && rec.video.lockCamera?.result) || rec.video.result || null) : null;
 
   return (
     <div className="pb-nav">
@@ -112,14 +115,24 @@ export default function GenerationDetail() {
           </Chip>
         </div>
       )}
+      {rec.video?.lockCamera?.result && !showBefore && (
+        <div className="mb-2 grid grid-cols-2 gap-2" role="group" aria-label="Camera">
+          <Chip active={naturalCamera} onClick={() => setNaturalCamera(true)} className="w-full">
+            Natural camera
+          </Chip>
+          <Chip active={!naturalCamera} onClick={() => setNaturalCamera(false)} className="w-full">
+            🔒 Locked camera
+          </Chip>
+        </div>
+      )}
       {/* Images: horizontal swipe when there are several */}
       {rec.video && showBefore ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={fileUrl(rec.video.sourceImage.file)} alt="The photo the video was made from" className="max-h-[75vh] w-full rounded-2xl bg-black object-contain" />
-      ) : rec.video?.result ? (
+      ) : shownVideo ? (
         <video
-          key={rec.video.result.file}
-          src={fileUrl(rec.video.result.file)}
+          key={shownVideo.file}
+          src={fileUrl(shownVideo.file)}
           poster={rec.images[0] ? fileUrl(rec.images[0].file) : undefined}
           controls
           autoPlay
@@ -172,10 +185,10 @@ export default function GenerationDetail() {
         <Button
           variant="primary"
           className="col-span-3"
-          disabled={rec.video ? !rec.video.result : !rec.images[0]}
+          disabled={rec.video ? !shownVideo : !rec.images[0]}
           onClick={async () => {
-            if (rec.video?.result) {
-              const r = await shareVideo(fileUrl(rec.video.result.file), `sienna_${rec.seed}.mp4`);
+            if (shownVideo) {
+              const r = await shareVideo(fileUrl(shownVideo.file), `sienna_${rec.seed}${shownVideo === rec.video?.lockCamera?.result ? '_locked' : ''}.mp4`);
               if (r === 'downloaded') toast('Downloaded');
               return;
             }
@@ -423,6 +436,26 @@ function OutfitEditCard({ rec }: { rec: GenerationRecord }) {
   );
 }
 
+function LockCameraSummary({ lc }: { lc: NonNullable<NonNullable<GenerationRecord['video']>['lockCamera']> }) {
+  const r = lc.report;
+  if (lc.status === 'on') return <>on — runs after the video is made</>;
+  if (lc.status === 'applied')
+    return (
+      <>
+        ✓ applied — both versions kept (switch above the video)
+        {r?.before && r.after ? (
+          <span className="block text-ink-400">
+            Background drift {r.before.maxPx} px → {r.after.maxPx} px
+            {r.fillPct ? ` · edges filled ${r.fillPct}%` : ''}
+            {r.sharpness ? ` · sharpness ${Math.round(r.sharpness * 100)}%` : ''}
+          </span>
+        ) : null}
+      </>
+    );
+  if (lc.status === 'steady') return <>not needed — the camera was already steady{r?.before ? ` (${r.before.maxPx} px)` : ''}</>;
+  return <span className="text-amber-300">not applied — {lc.reason ?? 'unknown'}; the natural camera video is kept</span>;
+}
+
 function VideoCard({ rec }: { rec: GenerationRecord }) {
   const v = rec.video!;
   const faces = v.frameFaces ?? [];
@@ -475,6 +508,14 @@ function VideoCard({ rec }: { rec: GenerationRecord }) {
                   framed photo →
                 </a>
               )}
+            </dd>
+          </>
+        )}
+        {v.lockCamera && (
+          <>
+            <dt className="text-ink-400">Lock Camera</dt>
+            <dd className="text-xs">
+              <LockCameraSummary lc={v.lockCamera} />
             </dd>
           </>
         )}

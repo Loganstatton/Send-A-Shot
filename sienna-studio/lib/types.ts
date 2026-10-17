@@ -433,6 +433,11 @@ export interface VideoInfo {
   result?: StoredVideo | null;
   /** Safe framing: room added around her for the movement (filled from the photo's edges; her pixels unchanged). */
   safeFraming?: { movement: import('./video-framing').MovementKind; status: 'on'; report?: SafeFrameReport | null; framedImage?: StoredImage | null };
+  /**
+   * Lock Camera was requested: 'on' while running, then the node's verdict. `result` is the stabilized copy (only when
+   * applied); the natural video stays in `video.result` either way.
+   */
+  lockCamera?: { status: 'on' | import('./video').LockCameraStatus; reason?: string; report?: import('./video').LockCameraReport | null; result?: StoredVideo | null };
 }
 
 /** What SiennaSafeFrame measured and added (pixels of the source photo). */

@@ -16,6 +16,8 @@ import {
   checkFrames,
   motionChunks,
   parseFrameFaces,
+  parseLockCamera,
+  lockCameraAllowed,
   VIDEO_FILES,
   VIDEO_NODE_CLASSES,
   VIDEO_NODES,
@@ -454,5 +456,62 @@ describe('rear-view Copy Motion prompt', () => {
     expect(p.text).toMatch(/hips staying high/);
     expect(p.text).toMatch(/both feet planted/);
     expect(p.text).toMatch(/back to the camera the whole time/);
+  });
+});
+
+describe('Lock Camera', () => {
+  const animate = { imageName: 'sienna/p.png', width: 480, height: 832, frames: 65, positive: 'p', negative: 'n', seed: 4101, quality: 'fast' as const, face };
+
+  it('is off by default: the graph saves only the natural video', () => {
+    const g = buildAnimateGraph(animate);
+    expect(Object.values(g).some((n) => n.class_type === 'SiennaLockCamera')).toBe(false);
+    expect(Object.values(g).filter((n) => n.class_type === 'SaveVideo')).toHaveLength(1);
+  });
+
+  it('adds a locked copy beside the natural video, from the same final frames', () => {
+    const g = buildAnimateGraph({ ...animate, lockCamera: true });
+    expect(g[VIDEO_NODES.lock]).toMatchObject({ class_type: 'SiennaLockCamera', inputs: { images: ['v_decode', 0] } });
+    expect(g.v_video_locked.inputs).toMatchObject({ images: [VIDEO_NODES.lock, 0], fps: 16 });
+    expect(g[VIDEO_NODES.saveLocked].inputs).toMatchObject({ video: ['v_video_locked', 0], filename_prefix: 'sienna/video_locked' });
+    // natural video, poster and face check still come from the unlocked frames
+    expect(g[VIDEO_NODES.save].inputs.video).toEqual(['v_video', 0]);
+    expect(g.v_video.inputs.images).toEqual(['v_decode', 0]);
+    expect(g.v_poster_frame.inputs.image).toEqual(['v_decode', 0]);
+  });
+
+  it('works for Copy Motion (Wan Animate 2) after the frames are cut to length', () => {
+    const g = buildMotion2Graph({ imageName: 'a.png', videoName: 'm.mp4', width: 480, height: 832, startFrame: 0, frames: 28, chunks: 1, positive: 'p', motionText: 'm', negative: 'n', seed: 1, face, lockCamera: true });
+    expect(g[VIDEO_NODES.lock].inputs.images).toEqual(['v_frames', 0]);
+    expect(g[VIDEO_NODES.saveLocked].class_type).toBe('SaveVideo');
+  });
+
+  it('is only offered where it cannot undo a deliberate camera move', () => {
+    expect(lockCameraAllowed('animate', 'still')).toBe(true);
+    expect(lockCameraAllowed('animate', undefined)).toBe(true);
+    for (const c of ['push_in', 'orbit', 'handheld'] as const) expect(lockCameraAllowed('animate', c)).toBe(false);
+    expect(lockCameraAllowed('motion', undefined)).toBe(true);
+  });
+
+  it('parses the node report', () => {
+    const r = parseLockCamera(
+      JSON.stringify({
+        status: 'applied',
+        reason: 'camera locked',
+        before: { max_px: 25.5, max_x_pct: 3.15, max_y_pct: 2.62, max_zoom_pct: 0.65, max_rot_deg: 0.49 },
+        after: { max_px: 1.47, max_x_pct: 0.15, max_y_pct: 0.17, max_zoom_pct: 0.18, max_rot_deg: 0.04 },
+        fill_pct: 5.9,
+        sharpness_ratio: 1.002,
+        seam_ratio: 0.98,
+        body_lost_pct: 0,
+        ms: 10300,
+      }),
+    );
+    expect(r).toMatchObject({ status: 'applied', fillPct: 5.9, sharpness: 1.002, seam: 0.98, bodyLostPct: 0, ms: 10300 });
+    expect(r!.before!.maxPx).toBe(25.5);
+    expect(r!.after!.maxPx).toBe(1.47);
+    expect(parseLockCamera('{"status":"rejected","reason":"she is at the frame edge"}')).toMatchObject({ status: 'rejected', reason: 'she is at the frame edge', before: null });
+    expect(parseLockCamera('{"status":"weird"}')!.status).toBe('rejected'); // unknown → never treated as applied
+    expect(parseLockCamera('not json')).toBeNull();
+    expect(parseLockCamera(undefined)).toBeNull();
   });
 });

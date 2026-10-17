@@ -232,7 +232,7 @@ export function checkFrames(frames: number, skipFirst: boolean): number[] {
 // ── Graphs ─────────────────────────────────────────────────────────────────
 
 /** Node ids the server reads back. */
-export const VIDEO_NODES = { save: 'v_save', poster: 'v_poster', face: 'v_face' } as const;
+export const VIDEO_NODES = { save: 'v_save', poster: 'v_poster', face: 'v_face', lock: 'v_lock', saveLocked: 'v_save_locked' } as const;
 
 type Node = ComfyGraph[string];
 const n = (class_type: string, inputs: Node['inputs'], title?: string): Node => ({ class_type, inputs, ...(title ? { _meta: { title } } : {}) });
@@ -244,15 +244,24 @@ export interface FaceCheckSpec {
 }
 
 /** SaveVideo inputs that validate on both older ComfyUI (plain combos) and newer (dynamic combo "format.codec"). */
-function saveVideo(video: [string, number]): Node {
+function saveVideo(video: [string, number], prefix = 'sienna/video', title = 'Save video'): Node {
   // codec "auto" = H.264 in MP4 (plays on iPhone); it has no nested inputs in either ComfyUI version
-  return n('SaveVideo', { video, filename_prefix: 'sienna/video', format: 'mp4', codec: 'auto', 'format.codec': 'auto' }, 'Save video');
+  return n('SaveVideo', { video, filename_prefix: prefix, format: 'mp4', codec: 'auto', 'format.codec': 'auto' }, title);
 }
 
-/** Poster frame + face check on sampled frames, wired to the final frames. */
-function addOutputs(g: ComfyGraph, frames: [string, number], frameCount: number, skipFirst: boolean, face: FaceCheckSpec | null) {
+/**
+ * Poster frame + face check on sampled frames, wired to the final frames. With Lock Camera, a second, stabilized copy
+ * is saved as well (SiennaLockCamera; it hands back the unchanged frames when a safety check fails, and its report
+ * says whether the locked copy may be used). The natural video is always kept.
+ */
+function addOutputs(g: ComfyGraph, frames: [string, number], frameCount: number, skipFirst: boolean, face: FaceCheckSpec | null, lockCamera = false) {
   g.v_video = n('CreateVideo', { images: frames, fps: VIDEO_FPS }, 'Frames → video');
   g[VIDEO_NODES.save] = saveVideo(['v_video', 0]);
+  if (lockCamera) {
+    g[VIDEO_NODES.lock] = n('SiennaLockCamera', { images: frames }, 'Lock camera (stabilize)');
+    g.v_video_locked = n('CreateVideo', { images: [VIDEO_NODES.lock, 0], fps: VIDEO_FPS }, 'Locked frames → video');
+    g[VIDEO_NODES.saveLocked] = saveVideo(['v_video_locked', 0], 'sienna/video_locked', 'Save video (locked camera)');
+  }
   g.v_poster_frame = n('ImageFromBatch', { image: frames, batch_index: 0, length: 1 });
   g[VIDEO_NODES.poster] = n('SaveImage', { images: ['v_poster_frame', 0], filename_prefix: 'sienna/poster' }, 'Poster');
   if (!face) return;
@@ -282,6 +291,8 @@ export interface AnimateGraphInput {
   face: FaceCheckSpec | null;
   /** Safe framing: add room around her before animating (null = use the photo as it is). */
   frame?: SafeFrameSpec | null;
+  /** Also save a stabilized (locked camera) copy. */
+  lockCamera?: boolean;
 }
 
 export const ANIMATE_STEPS: Record<VideoQuality, { steps: number; cfg: number; split: number }> = {
@@ -346,7 +357,7 @@ export function buildAnimateGraph(i: AnimateGraphInput): ComfyGraph {
   );
   g.v_ks_low = n('KSamplerAdvanced', { ...common, model: ['v_shift_low', 0], latent_image: ['v_ks_high', 0], add_noise: 'disable', start_at_step: s.split, end_at_step: 10000, return_with_leftover_noise: 'disable' }, 'Low-noise expert');
   g.v_decode = n('VAEDecode', { samples: ['v_ks_low', 0], vae: ['v_vae', 0] });
-  addOutputs(g, ['v_decode', 0], i.frames, true, i.face);
+  addOutputs(g, ['v_decode', 0], i.frames, true, i.face, i.lockCamera);
   return g;
 }
 
@@ -417,6 +428,8 @@ export interface MotionGraphInput {
   negative: string;
   seed: number;
   face: FaceCheckSpec | null;
+  /** Also save a stabilized (locked camera) copy. */
+  lockCamera?: boolean;
 }
 
 export const MOTION_STEPS = { steps: 6, cfg: 1, shift: 8 };
@@ -503,7 +516,7 @@ export function buildMotionGraph(i: MotionGraphInput): ComfyGraph {
   }
   // The last chunk may run past the driving video (Wan holds its last pose): cut back to the clip's length.
   g.v_frames = n('ImageFromBatch', { image: images!, batch_index: 0, length: i.frames });
-  addOutputs(g, ['v_frames', 0], i.frames, false, i.face);
+  addOutputs(g, ['v_frames', 0], i.frames, false, i.face, i.lockCamera);
   return g;
 }
 
@@ -613,7 +626,7 @@ export function buildMotion2Graph(i: Motion2GraphInput): ComfyGraph {
     anim = a;
   }
   g.v_frames = n('ImageFromBatch', { image: images!, batch_index: 0, length: i.frames });
-  addOutputs(g, ['v_frames', 0], i.frames, false, i.face);
+  addOutputs(g, ['v_frames', 0], i.frames, false, i.face, i.lockCamera);
   return g;
 }
 
@@ -788,4 +801,72 @@ export function animatePrompt(motion: string, camera: CameraMove): string {
 export function motionPrompt(scene: string): string {
   const s = scene.trim().replace(/[.\s]+$/, '');
   return [s || 'a woman performing the movement naturally', 'realistic video, natural motion, consistent face'].join(', ');
+}
+
+// ── Lock Camera ──────────────────────────────────────────────────────────────
+
+/** GPU node for Lock Camera (sienna_nodes, installed by comfyui-bootstrap.sh). */
+export const LOCK_CAMERA_NODE_CLASSES = ['SiennaLockCamera'];
+
+/** applied = the locked copy is good to use; steady = nothing to fix; rejected = a safety check failed (natural kept). */
+export type LockCameraStatus = 'applied' | 'steady' | 'rejected' | 'unavailable';
+
+export interface CameraDrift {
+  /** Largest movement of the frame's corners vs the first frame, px. */
+  maxPx: number;
+  maxXPct: number;
+  maxYPct: number;
+  maxZoomPct: number;
+  maxRotDeg: number;
+}
+
+export interface LockCameraReport {
+  status: LockCameraStatus;
+  reason: string;
+  before: CameraDrift | null;
+  after: CameraDrift | null;
+  /** Largest filled edge strip, % of the frame. */
+  fillPct: number | null;
+  /** Her body's sharpness vs the original (1 = same). */
+  sharpness: number | null;
+  /** Edge texture where the fill meets the frame vs nearby background (1 = indistinguishable). */
+  seam: number | null;
+  bodyLostPct: number | null;
+  ms: number | null;
+}
+
+/**
+ * Lock Camera removes unwanted drift; it is not offered with the deliberate camera moves (push-in, orbit, handheld),
+ * which it would undo. Copy Motion has no camera setting, so it can always be locked.
+ */
+export function lockCameraAllowed(mode: VideoMode, camera: CameraMove | undefined): boolean {
+  return mode === 'motion' || (camera ?? 'still') === 'still';
+}
+
+/** SiennaLockCamera's JSON report (null when missing or unreadable). */
+export function parseLockCamera(text: string | undefined): LockCameraReport | null {
+  try {
+    const r = JSON.parse(text ?? '');
+    if (!r || typeof r !== 'object') return null;
+    const statuses: LockCameraStatus[] = ['applied', 'steady', 'rejected', 'unavailable'];
+    const status: LockCameraStatus = statuses.includes(r.status) ? r.status : 'rejected';
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const drift = (d: any): CameraDrift | null =>
+      d && typeof d === 'object'
+        ? { maxPx: num(d.max_px) ?? 0, maxXPct: num(d.max_x_pct) ?? 0, maxYPct: num(d.max_y_pct) ?? 0, maxZoomPct: num(d.max_zoom_pct) ?? 0, maxRotDeg: num(d.max_rot_deg) ?? 0 }
+        : null;
+    return {
+      status,
+      reason: typeof r.reason === 'string' ? r.reason : status === 'applied' ? 'camera locked' : 'no reason given',
+      before: drift(r.before),
+      after: drift(r.after),
+      fillPct: num(r.fill_pct),
+      sharpness: num(r.sharpness_ratio),
+      seam: num(r.seam_ratio),
+      bodyLostPct: num(r.body_lost_pct),
+      ms: num(r.ms),
+    };
+  } catch {
+    return null;
+  }
 }

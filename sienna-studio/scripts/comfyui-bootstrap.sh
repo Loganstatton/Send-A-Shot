@@ -30,7 +30,8 @@
 #   - Copy Motion:   Wan2.2 Animate 14B fp8 (Kijai/WanVideo_comfy_fp8_scaled) + lightx2v 480p and relight LoRAs
 #                    (Kijai/WanVideo_comfy), clip_vision_h, comfyui_controlnet_aux (DWPose) + its batch-5 TorchScript
 #                    pose model (hr16/DWPose-TorchScript-BatchSize5) and yolox_l (yzd-v/DWPose)
-#   - shared: umt5_xxl_fp8 text encoder, wan_2.1_vae (Comfy-Org/Wan_2.1/2.2 repackaged), sienna_nodes (frame face check)
+#   - shared: umt5_xxl_fp8 text encoder, wan_2.1_vae (Comfy-Org/Wan_2.1/2.2 repackaged), sienna_nodes (frame face check,
+#     safe framing, Lock Camera — the last two use the MediaPipe segmenter above to find her)
 #   Needs a GPU with 24 GB+ VRAM (48 GB+ is faster for 720p / long Copy Motion), ~64 GB RAM and ~80 GB free disk.
 # Before downloading, it prints each model repo's declared license and stops
 # if one isn't on the expected list (override: OUTFIT_LICENSE_OK=1).
@@ -276,11 +277,11 @@ fi
 
 # ── Edit Outfit (Qwen-Image-Edit-2509, optional) ──────────────────────────────
 # MediaPipe's multiclass selfie segmenter (Apache-2.0): tells hair, skin and clothes apart. Used by "Change only the
-# clothes" (garment-only redraw) and by Video Studio's safe framing (finds her outline, hair included). Installed
+# clothes" (garment-only redraw) and by Video Studio's safe framing and Lock Camera (finds her outline, hair included). Installed
 # without dependencies — it would pull opencv-contrib next to ComfyUI's opencv; what it needs at runtime is added here.
 install_segmenter() {
   "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check --no-deps "mediapipe==1.1.0" \
-    || echo "mediapipe not installed — garment-only redraw falls back to the pose; safe framing is skipped"
+    || echo "mediapipe not installed — garment-only redraw falls back to the pose; safe framing and Lock Camera are skipped"
   "$COMFYUI_PYTHON" -m pip install -q --disable-pip-version-check "absl-py>=2.1" "flatbuffers>=24" certifi || true
   fetch_model "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite" \
     "$COMFYUI_DIR/models/mediapipe/selfie_multiclass_256x256.tflite" 10000000

@@ -15,6 +15,7 @@ export interface VideoAvailability {
   adultAllowed: boolean;
   motionEngine: 'animate2' | 'animate1';
   safeFraming: { available: boolean; missing: string[] };
+  lockCamera: { available: boolean; missing: string[] };
   experiments: boolean;
 }
 
@@ -37,6 +38,8 @@ export interface VideoBody {
   start?: number;
   scene?: string;
   framing?: MovementKind | null;
+  facing?: 'camera' | 'away';
+  lockCamera?: boolean;
 }
 
 export async function startVideo(body: VideoBody): Promise<GenerationRecord> {
@@ -58,6 +61,8 @@ export function rerunVideo(rec: GenerationRecord, newSeed: boolean): Promise<Gen
     ...(v.mode === 'animate' ? { motion: v.motion ?? '', camera: v.camera, seconds: v.seconds } : {}),
     ...(v.mode === 'motion' && v.drive ? { drive: { video: v.drive.video, poster: v.drive.poster }, start: v.drive.start, seconds: v.drive.seconds, scene: v.scene ?? '' } : {}),
     framing: v.safeFraming?.movement ?? null,
+    ...(v.facing ? { facing: v.facing } : {}),
+    lockCamera: !!v.lockCamera,
   });
 }
 

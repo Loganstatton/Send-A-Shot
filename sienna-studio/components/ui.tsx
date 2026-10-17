@@ -272,13 +272,14 @@ export function Collapsible({
   );
 }
 
-export function Chip({ active, children, onClick, className }: { active?: boolean; children: ReactNode; onClick?: () => void; className?: string }) {
+export function Chip({ active, children, onClick, className, disabled }: { active?: boolean; children: ReactNode; onClick?: () => void; className?: string; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={cx(
-        'min-h-[40px] shrink-0 whitespace-nowrap rounded-full px-4 text-sm transition-colors',
+        'min-h-[40px] shrink-0 whitespace-nowrap rounded-full px-4 text-sm transition-colors disabled:opacity-40',
         active ? 'bg-accent text-ink-950' : 'bg-ink-800 text-ink-200 active:bg-ink-700',
         className,
       )}

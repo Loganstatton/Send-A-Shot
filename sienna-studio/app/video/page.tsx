@@ -11,6 +11,7 @@ import {
   CameraMove,
   DURATIONS_ANIMATE,
   estimateMinutes,
+  lockCameraAllowed,
   MAX_MOTION_SECONDS,
   MAX_MOTION_TEXT,
   MOTION_PRESETS,
@@ -59,6 +60,8 @@ function VideoStudio() {
   const [motionMovement, setMotionMovement] = useState<MovementKind>('small');
   // Safe framing: on/off follows the movement until the user chooses
   const [framingChoice, setFramingChoice] = useState<boolean | null>(null);
+  // Lock Camera: off (natural camera) unless the user picks it
+  const [lockCamera, setLockCamera] = useState(false);
   // both
   const [resolution, setResolution] = useState<VideoResolution>('480p');
   const [seed, setSeed] = useState('');
@@ -121,8 +124,8 @@ function VideoStudio() {
       const seedNum = seed.trim() === '' ? -1 : Math.max(0, Math.floor(Number(seed)) || 0);
       const rec = await startVideo(
         mode === 'animate'
-          ? { mode, sourceId: photo.id, seed: seedNum, quality, resolution, motion, camera, seconds, framing: framingUsable && framing ? movement : null }
-          : { mode, sourceId: photo.id, seed: seedNum, quality: 'fast', resolution, drive: drive!, start, seconds: length, scene, framing: framingUsable && framing ? movement : null },
+          ? { mode, sourceId: photo.id, seed: seedNum, quality, resolution, motion, camera, seconds, framing: framingUsable && framing ? movement : null, lockCamera: lockUsable && lockCamera }
+          : { mode, sourceId: photo.id, seed: seedNum, quality: 'fast', resolution, drive: drive!, start, seconds: length, scene, framing: framingUsable && framing ? movement : null, lockCamera: lockUsable && lockCamera },
       );
       toast(rec.status === 'error' ? 'Video failed — see details' : 'Video queued');
       router.push(`/gallery/${rec.id}`);
@@ -150,6 +153,8 @@ function VideoStudio() {
 
   const m = avail.modes[mode];
   const framingUsable = avail.safeFraming.available && movement !== 'still' && (mode === 'animate' || avail.motionEngine === 'animate2');
+  const lockAllowed = lockCameraAllowed(mode, camera);
+  const lockUsable = avail.lockCamera.available && lockAllowed;
   const engine =
     mode === 'animate'
       ? `Wan2.2 Animate Image (I2V 14B) · ${quality === 'fast' ? 'Fast, 4 steps' : quality === 'quality' ? 'Quality, 20 steps (testing)' : 'Hybrid (testing)'}`
@@ -399,6 +404,31 @@ function VideoStudio() {
         </Card>
 
         <Card className="space-y-3">
+          <SectionTitle>Camera stability</SectionTitle>
+          <div className="grid grid-cols-2 gap-2">
+            <Chip active={!(lockUsable && lockCamera)} onClick={() => setLockCamera(false)} className="w-full">
+              Natural camera
+            </Chip>
+            <Chip active={lockUsable && lockCamera} disabled={!lockUsable} onClick={() => setLockCamera(true)} className="w-full">
+              🔒 Lock Camera
+            </Chip>
+          </div>
+          {!lockAllowed ? (
+            <p className="text-xs text-ink-400">Lock Camera works with “Still camera”. The camera move you chose is deliberate, so it isn’t removed.</p>
+          ) : !avail.lockCamera.available ? (
+            <p className="text-xs text-amber-300">Not available: {avail.lockCamera.missing.join('; ') || 'GPU server not ready'}.</p>
+          ) : lockCamera ? (
+            <p className="text-xs text-ink-400">
+              Also makes a copy with the background held still, as if filmed from a tripod: only the camera’s drift is removed — her body, speed and timing are untouched,
+              and nothing is cropped. You can switch between both versions afterwards. If it would cut off part of her, leave a visible edge or soften the picture, the
+              copy is dropped and the natural video kept. A few seconds more.
+            </p>
+          ) : (
+            <p className="text-xs text-ink-400">Keeps the camera movement the video was made with — a little natural drift can look more like real phone footage.</p>
+          )}
+        </Card>
+
+        <Card className="space-y-3">
           <SectionTitle>Resolution</SectionTitle>
           <div className="grid grid-cols-2 gap-2">
             <Chip active={resolution === '480p'} onClick={() => setResolution('480p')} className="w-full">
@@ -416,6 +446,7 @@ function VideoStudio() {
         <p className="text-xs text-ink-400">
           Engine: {engine}
           {framingUsable && framing ? ' + safe framing (photo checkpoint fills the added room)' : ''}
+          {lockUsable && lockCamera ? ' + Lock Camera' : ''}
         </p>
         <Notice>
           About {minutes} min on the GPU (RTX 4090){mode === 'motion' && chunks.chunks > 1 ? `, made in ${chunks.chunks} parts` : ''}. Frames are checked against Sienna’s face

@@ -37,10 +37,14 @@ import {
   MotionEngine,
   estimateMinutes,
   FaceCheckSpec,
+  LOCK_CAMERA_NODE_CLASSES,
+  LockCameraReport,
+  lockCameraAllowed,
   MAX_MOTION_SECONDS,
   motionChunks,
   motionPrompt,
   parseFrameFaces,
+  parseLockCamera,
   SAFE_FRAME_NODE_CLASSES,
   SAFE_FRAME_NODES,
   SafeFrameSpec,
@@ -109,6 +113,8 @@ export interface VideoAvailability {
   motionEngine: MotionEngine;
   /** Safe framing (room around her for big movements): SiennaSafeFrame + the photo checkpoint to fill the room. */
   safeFraming: { available: boolean; missing: string[] };
+  /** Lock Camera (stabilized copy of the video): SiennaLockCamera on the GPU server. */
+  lockCamera: { available: boolean; missing: string[] };
   /** Testing-only options (hybrid sampler) are offered. */
   experiments: boolean;
 }
@@ -132,11 +138,11 @@ export async function videoAvailability(): Promise<VideoAvailability> {
   const ffmpeg = !!(await ffmpegPath());
   const none = { available: false, missing: [] as string[] };
   const base = { enabled, backend: backend.kind, ffmpeg, adultAllowed: adultContentAllowed(), motionEngine: motionEngine(), experiments: experimentsEnabled() };
-  if (!enabled) return { ...base, modes: { animate: none, motion: none }, faceCheck: false, safeFraming: none };
+  if (!enabled) return { ...base, modes: { animate: none, motion: none }, faceCheck: false, safeFraming: none, lockCamera: none };
   const noFfmpeg = 'ffmpeg on the app server (npm install, or set FFMPEG_PATH)';
   if (backend.kind === 'mock') {
     const m = { available: ffmpeg, missing: ffmpeg ? [] : [noFfmpeg] };
-    return { ...base, modes: { animate: m, motion: m }, faceCheck: false, safeFraming: m };
+    return { ...base, modes: { animate: m, motion: m }, faceCheck: false, safeFraming: m, lockCamera: m };
   }
   const check = async (mode: VideoMode) => {
     const missing: string[] = [];
@@ -177,12 +183,23 @@ export async function videoAvailability(): Promise<VideoAvailability> {
     }
     return { available: missing.length === 0, missing };
   };
-  const [animate, motion, safeFraming] = await Promise.all([check('animate'), check('motion'), checkFraming()]);
+  const checkLock = async () => {
+    const missing: string[] = [];
+    try {
+      const absent: string[] = [];
+      for (const c of LOCK_CAMERA_NODE_CLASSES) if (!(await backend.nodeInfo(c))) absent.push(c);
+      if (absent.length) missing.push(`${describeMissing(absent)} — run comfyui-bootstrap.sh (sienna_nodes)`);
+    } catch (e: any) {
+      missing.push(`GPU server not reachable (${e.message})`);
+    }
+    return { available: missing.length === 0, missing };
+  };
+  const [animate, motion, safeFraming, lockCamera] = await Promise.all([check('animate'), check('motion'), checkFraming(), checkLock()]);
   let faceCheck = false;
   try {
     faceCheck = !!(await backend.nodeInfo('SiennaFaceCheck'));
   } catch {}
-  return { ...base, modes: { animate, motion }, faceCheck, safeFraming };
+  return { ...base, modes: { animate, motion }, faceCheck, safeFraming, lockCamera };
 }
 
 // ── Driving video intake (Copy Motion) ───────────────────────────────────────
@@ -252,6 +269,8 @@ export interface VideoRequest {
   scene?: string;
   /** Copy Motion: 'away' = she is filmed from behind and must keep her back to the camera (rear-view prompt). */
   facing?: Facing;
+  /** Lock Camera: also make a stabilized copy (background held still). Off by default; the natural video is always kept. */
+  lockCamera?: boolean;
 }
 
 const faceSpec: FaceCheckSpec = { reference: JSON.stringify(SIENNA_FACE_EMBEDDING), threshold: FACE_THRESHOLD, minFace: FACE_MIN_SIZE };
@@ -307,6 +326,11 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
     : null;
   const engine = motionEngine();
   const wf = req.mode === 'motion' && engine === 'animate2' ? MOTION2_WORKFLOW : VIDEO_WORKFLOWS[req.mode];
+  let lockCamera = req.lockCamera === true;
+  if (lockCamera && !lockCameraAllowed(req.mode, req.camera)) {
+    lockCamera = false;
+    warnings.push('Lock Camera only works with “Still camera” — the chosen camera move is deliberate, so it was kept as it is.');
+  }
 
   let info: VideoInfo;
   let positive: string;
@@ -316,7 +340,7 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
     const frames = animateLength(seconds);
     const camera = req.camera ?? 'still';
     positive = animatePrompt(lock.text, camera);
-    build = (imageName, _v, face) => buildAnimateGraph({ imageName, width, height, frames, positive, negative, seed, quality: req.quality, face, frame });
+    build = (imageName, _v, face) => buildAnimateGraph({ imageName, width, height, frames, positive, negative, seed, quality: req.quality, face, frame, lockCamera });
     info = {
       mode: 'animate',
       model: wf.model,
@@ -333,6 +357,7 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
       estimateMinutes: estimateMinutes({ mode: 'animate', quality: req.quality, width, height, frames }),
       faceCheck: { status: 'on' },
       ...(movement ? { safeFraming: { movement, status: 'on' as const } } : {}),
+      ...(lockCamera ? { lockCamera: { status: 'on' as const } } : {}),
     };
   } else {
     const drive = req.drive;
@@ -358,8 +383,8 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
     const motionText = away ? MOTION2_REAR_TEXT : MOTION2_TEXT;
     build = (imageName, videoName, face) =>
       v2
-        ? buildMotion2Graph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, motionText, negative, seed, face, frame })
-        : buildMotionGraph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, negative, seed, face });
+        ? buildMotion2Graph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, motionText, negative, seed, face, frame, lockCamera })
+        : buildMotionGraph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, negative, seed, face, lockCamera });
     info = {
       mode: 'motion',
       model: wf.model,
@@ -378,6 +403,7 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
       estimateMinutes: estimateMinutes({ mode: 'motion', quality: 'fast', width, height, frames, chunks: chunks.chunks }),
       faceCheck: { status: 'on' },
       ...(movement ? { safeFraming: { movement, status: 'on' as const } } : {}),
+      ...(lockCamera ? { lockCamera: { status: 'on' as const } } : {}),
     };
   }
 
@@ -388,6 +414,7 @@ export async function startVideo(req: VideoRequest): Promise<GenerationRecord> {
     const m = avail.modes[req.mode];
     if (!m.available) throw new GenerationError(`${VIDEO_MODE_LABELS[req.mode]} can't run — the GPU server is missing ${m.missing.join('; ')}.`);
     if (movement && !avail.safeFraming.available) throw new GenerationError(`Safe framing can't run — the GPU server is missing ${avail.safeFraming.missing.join('; ')}. Turn it off to use the photo as it is.`);
+    if (lockCamera && !avail.lockCamera.available) throw new GenerationError(`Lock Camera can't run — the GPU server is missing ${avail.lockCamera.missing.join('; ')}. Choose Natural camera instead.`);
     if (!avail.faceCheck) {
       face = null;
       info.faceCheck = { status: 'unavailable', reason: 'the face check could not run (server is missing SiennaFaceCheck — run comfyui-bootstrap.sh)' };
@@ -492,24 +519,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
       const { bytes } = await backend.fetchImage(videoRef);
       const posterRef = state.images.find((i) => i.nodeId === VIDEO_NODES.poster);
       const stored = await withTempDir(async (dir) => {
-        const rawFile = path.join(dir, 'raw.mp4');
-        const fast = path.join(dir, 'fast.mp4');
-        await fs.writeFile(rawFile, bytes);
-        let file = rawFile;
-        try {
-          await faststart(rawFile, fast);
-          file = fast;
-        } catch (e: any) {
-          warnings.push(`Saved the video as it came from the GPU (could not optimise it for streaming: ${e.message}).`);
-        }
-        const probe = await probeVideo(file).catch(() => null);
-        const result = await storeVideoFile(file, 'vid', {
-          width: probe?.width ?? v.width,
-          height: probe?.height ?? v.height,
-          fps: VIDEO_FPS,
-          frames: probe?.frames || v.frames,
-          seconds: Math.round(((probe?.frames || v.frames) / VIDEO_FPS) * 100) / 100,
-        });
+        const { file, result } = await storeGpuVideo(dir, 'raw', bytes, v, warnings);
         let poster: StoredImage | null = null;
         if (posterRef) {
           const p = await backend.fetchImage(posterRef);
@@ -539,6 +549,25 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         else if (sf.plan?.capped) warnings.push('Safe framing added as much room as it may (40% of the photo); fast movements may still reach the edge.');
         safeFraming = { ...safeFraming, report: sf, framedImage };
       }
+      // Lock Camera: the stabilized copy is kept only when every safety check passed; the natural video always is.
+      let lockCamera = v.lockCamera;
+      if (lockCamera) {
+        const lc = rec.backend === 'mock' ? MOCK_LOCK_REPORT : parseLockCamera(state.texts?.[VIDEO_NODES.lock]?.[0]);
+        const lockedRef = state.images.find((i) => i.nodeId === VIDEO_NODES.saveLocked);
+        let locked: StoredVideo | null = null;
+        if (lc?.status === 'applied' && lockedRef) {
+          try {
+            const b = await backend.fetchImage(lockedRef);
+            locked = await withTempDir(async (dir) => (await storeGpuVideo(dir, 'locked', b.bytes, v, warnings)).result);
+          } catch (e: any) {
+            warnings.push(`Lock Camera’s video couldn’t be saved (${e.message}); the natural camera video is kept.`);
+          }
+        }
+        const status = locked ? 'applied' : lc?.status === 'applied' ? 'rejected' : (lc?.status ?? 'unavailable');
+        const reason = locked ? lc!.reason : lc?.status === 'applied' ? 'the locked video file was missing' : (lc?.reason ?? 'the GPU returned no Lock Camera report');
+        if (status === 'rejected' || status === 'unavailable') warnings.push(`Lock Camera wasn’t applied: ${reason}. The natural camera video is kept.`);
+        lockCamera = { status, reason, report: lc, result: locked };
+      }
       const report = v.faceCheck.status === 'on' ? parseFrameFaces(state.texts?.[VIDEO_NODES.face]?.[0]) : null;
       const identity = videoIdentity(report, FACE_THRESHOLD, FACE_MIN_SIZE, v.faceCheck.status === 'unavailable' ? v.faceCheck.reason : undefined);
       return patchRecord(id, {
@@ -552,6 +581,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           result: stored.result,
           ...(report ? { frameFaces: report.frames } : {}),
           ...(safeFraming ? { safeFraming } : {}),
+          ...(lockCamera ? { lockCamera } : {}),
         },
         completedAt: new Date().toISOString(),
         queuePosition: 0,
@@ -559,6 +589,42 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
     }
   }
 }
+
+/** Writes a video from the GPU, makes it stream-friendly (fast start) and stores it. */
+async function storeGpuVideo(dir: string, name: string, bytes: Buffer, v: VideoInfo, warnings: string[]) {
+  const rawFile = path.join(dir, `${name}.mp4`);
+  const fast = path.join(dir, `${name}_fast.mp4`);
+  await fs.writeFile(rawFile, bytes);
+  let file = rawFile;
+  try {
+    await faststart(rawFile, fast);
+    file = fast;
+  } catch (e: any) {
+    warnings.push(`Saved the video as it came from the GPU (could not optimise it for streaming: ${e.message}).`);
+  }
+  const probe = await probeVideo(file).catch(() => null);
+  const result = await storeVideoFile(file, 'vid', {
+    width: probe?.width ?? v.width,
+    height: probe?.height ?? v.height,
+    fps: VIDEO_FPS,
+    frames: probe?.frames || v.frames,
+    seconds: Math.round(((probe?.frames || v.frames) / VIDEO_FPS) * 100) / 100,
+  });
+  return { file, result };
+}
+
+/** Test mode makes no real video, so Lock Camera is reported as applied to the mock clip (same file, for the UI). */
+const MOCK_LOCK_REPORT: LockCameraReport = {
+  status: 'applied',
+  reason: 'test mode: no stabilization runs, the locked copy is the same mock video',
+  before: null,
+  after: null,
+  fillPct: null,
+  sharpness: null,
+  seam: null,
+  bodyLostPct: null,
+  ms: null,
+};
 
 /** SiennaSafeFrame's JSON report (what was measured and how much room was added). */
 export function parseSafeFrame(text: string | undefined): SafeFrameReport | null {
