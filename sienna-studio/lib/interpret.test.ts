@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CHARACTER } from './defaults';
-import { interpretPrompt, referenceIntent, splitNegatives } from './interpret';
+import { applyClothingChanges, clothingChanges, interpretPrompt, referenceIntent, splitNegatives } from './interpret';
 import { buildPrompt } from './prompt';
 
 const character = { ...DEFAULT_CHARACTER, triggerToken: 'sienna_v1' };
@@ -12,7 +12,7 @@ describe('interpretPrompt — the kitchen example', () => {
   it('files each sentence, in the user’s own words, under the right field', () => {
     expect(r.fields.outfit).toBe("She's wearing gray pajama shorts and a loose white crop top");
     expect(r.fields.pose).toContain('one leg resting straight on the kitchen counter');
-    expect(r.fields.pose).toContain('standing in her kitchen taking a casual iPhone 16 photo');
+    expect(r.fields.pose).toMatch(/^standing in her kitchen taking a casual iPhone 16 photo/);
     expect(r.fields.setting).toBe('The kitchen is modern with white cabinets and natural morning lighting');
     expect(r.fields.bodyPresentation).toBe('Her long brunette hair is slightly messy');
     expect(r.fields.camera).toBe('a real, unedited photograph taken on an iPhone');
@@ -66,7 +66,7 @@ describe('reference photos', () => {
     expect(Object.values(r.fields).join(' ')).not.toMatch(/use this photograph|keep the same/i);
   });
   it('edits in place when the composition is kept and only small changes are asked', () => {
-    expect(referenceIntent('Keep everything the same, just change her top to a red tank top', true)).toMatchObject({ mode: 'edit', denoise: 0.5 });
+    expect(referenceIntent('Keep everything the same, just change her hair to a ponytail', true)).toMatchObject({ mode: 'edit', denoise: 0.5 });
   });
   it('recreates the photo as Sienna when no instructions are given', () => {
     expect(referenceIntent('Sienna at the beach', true)).toMatchObject({ mode: 'edit+pose', denoise: 0.62 });
@@ -81,5 +81,29 @@ describe('long descriptions', () => {
     const r = interpretPrompt(long);
     const joined = Object.values(r.fields).join(' ');
     for (let i = 0; i < 25; i++) expect(joined).toContain(`Detail number ${i} `);
+  });
+});
+
+describe('editing a studio photo (live test: "change her top to a red tank top" left the top gray and redrew the shorts)', () => {
+  const EDIT = 'Keep everything the same, just change her top to a red tank top.';
+  it('reads the garment swap instead of filing the instruction as outfit text', () => {
+    expect(clothingChanges(EDIT)).toEqual([{ part: 'top', to: 'a red tank top' }]);
+    expect(clothingChanges('Make her shorts black')).toEqual([{ part: 'bottom', to: 'black shorts' }]);
+    expect(clothingChanges('Change her outfit to a blue sundress')).toEqual([{ part: 'outfit', to: 'a blue sundress' }]);
+    const r = interpretPrompt(EDIT, { hasReference: true });
+    expect(r.fields.outfit).toBe('wearing a red tank top');
+    expect(Object.values(r.fields).join(' ')).not.toMatch(/keep everything|just change/i);
+  });
+  it('swaps only that garment in the original outfit', () => {
+    const outfit = "She's wearing gray pajama shorts and a loose white crop top";
+    expect(applyClothingChanges(outfit, clothingChanges(EDIT))).toBe("She's wearing gray pajama shorts and a red tank top");
+    expect(applyClothingChanges(outfit, clothingChanges('Make her shorts black'))).toBe("She's wearing black shorts and a loose white crop top");
+    expect(applyClothingChanges(outfit, clothingChanges('Change her outfit to a blue sundress'))).toBe('wearing a blue sundress');
+    expect(applyClothingChanges('wearing a red dress', [{ part: 'shoes', to: 'white sneakers' }])).toBe('wearing a red dress, white sneakers');
+  });
+  it('uses enough change for a recolour, with her pose held by the ControlNet', () => {
+    expect(referenceIntent(EDIT, true)).toMatchObject({ mode: 'edit+pose', denoise: 0.62 });
+    // small non-clothing edits stay gentle
+    expect(referenceIntent('Keep everything the same, just make her smile', true)).toMatchObject({ mode: 'edit', denoise: 0.5 });
   });
 });

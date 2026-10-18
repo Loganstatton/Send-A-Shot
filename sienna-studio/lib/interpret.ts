@@ -20,8 +20,62 @@ export interface Interpretation {
   contentMode: ContentMode;
   /** How an uploaded reference photo is used: img2img start image, pose ControlNet, or both. */
   reference: { mode: ReferenceMode; denoise: number | null; why: string };
+  /** "change her top to a red tank top" — garment swaps, applied to the source photo's outfit when editing one. */
+  changes: ClothingChange[];
   /** Plain-language notes on what was understood (shown under the prompt box). */
   notes: string[];
+}
+
+export type GarmentPart = 'top' | 'bottom' | 'dress' | 'shoes' | 'outfit';
+export interface ClothingChange {
+  part: GarmentPart;
+  to: string;
+}
+
+const PART_NOUNS: Record<Exclude<GarmentPart, 'outfit'>, string> = {
+  top: 'crop top|tank top|bikini top|t-shirt|tee|shirt|top|blouse|sweater|hoodie|cardigan|camisole|cami|bralette|bra|jacket',
+  bottom: 'pajama shorts|shorts|pants|jeans|trousers|skirt|leggings|bikini bottoms?|bottoms?|panties|thong',
+  dress: 'sundress|dress|gown',
+  shoes: 'shoes|sneakers|heels|boots|sandals|slippers',
+};
+const GARMENT = `${Object.values(PART_NOUNS).join('|')}|clothing|clothes|outfit`;
+const CHANGE_RE = new RegExp(`\\b(?:(?:just|only)\\s+)?(?:change|swap|replace|switch)\\s+(?:the\\s+|her\\s+)?(${GARMENT})\\s+(?:to|into|with|for)\\s+(.+)$`, 'i');
+const MAKE_RE = new RegExp(`\\b(?:(?:just|only)\\s+)?make\\s+(?:the\\s+|her\\s+)(${GARMENT})\\s+([a-z-]+)$`, 'i');
+const KEEP_ALL_RE = /\b(keep|leave)\s+(everything|the rest|all)\s+(else\s+)?(exactly\s+)?(the\s+same|as\s+(it\s+)?is|unchanged|as\s+it\s+was)\b[,;:]?\s*(but\s+|and\s+)?/gi;
+
+function partOf(noun: string): GarmentPart {
+  const n = noun.toLowerCase();
+  for (const [part, words] of Object.entries(PART_NOUNS)) if (new RegExp(`^(${words})$`).test(n)) return part as GarmentPart;
+  return 'outfit';
+}
+
+/** The garment swaps a sentence asks for ("change her top to X", "make her shorts red"). */
+export function clothingChanges(sentence: string): ClothingChange[] {
+  const s = sentence.trim().replace(/[.!?]+$/, '').replace(KEEP_ALL_RE, '');
+  const c = CHANGE_RE.exec(s);
+  if (c) return [{ part: partOf(c[1]), to: c[2].trim() }];
+  const m = MAKE_RE.exec(s);
+  if (m) return [{ part: partOf(m[1]), to: `${m[2]} ${m[1]}` }];
+  return [];
+}
+
+/**
+ * Applies garment swaps to the outfit of the photo being edited: "change her top to a red tank top" on "gray pajama
+ * shorts and a loose white crop top" → "gray pajama shorts and a red tank top". A whole-outfit or dress change
+ * replaces the outfit; a garment the outfit doesn't mention is added.
+ */
+export function applyClothingChanges(outfit: string, changes: ClothingChange[]): string {
+  let out = outfit;
+  for (const { part, to } of changes) {
+    if (part === 'outfit' || part === 'dress' || !out.trim()) {
+      out = `wearing ${to}`;
+      continue;
+    }
+    const mod = `(?:(?!(?:and|or|with|wearing|in|she|she's|is|over|under)\\b)[\\w'-]+\\s+){0,3}`;
+    const re = new RegExp(`\\b(?:(?:an?|her|the)\\s+)?${mod}(?:${PART_NOUNS[part]})\\b`, 'i');
+    out = re.test(out) ? out.replace(re, to) : `${out}, ${to}`;
+  }
+  return out;
 }
 
 type Slot = Exclude<keyof PromptFields, 'avoid'> | 'identity';
@@ -60,6 +114,9 @@ export function tidyClause(raw: string): string {
   let s = raw.trim().replace(/^(and|but|so|then|also|plus)\s+/i, '');
   // "make X look like Y" → Y (before the lead-in rule, which would eat the "make")
   s = s.replace(/\bmake\s+(the\s+final\s+(result|image|photo|picture)|it|everything|the\s+(photo|image|picture|result|whole\s+(photo|image|picture)))\s+(look|looks)\s+(like\s+)?/gi, '');
+  s = s.replace(KEEP_ALL_RE, '');
+  s = s.replace(CHANGE_RE, (m, noun: string, to: string) => (/^(background|setting|scene|location)$/i.test(noun) ? m : `wearing ${to}`));
+  s = s.replace(MAKE_RE, (_m, noun: string, adj: string) => `wearing ${/^(clothing|clothes|outfit)$/i.test(noun) ? `${adj} clothes` : `a ${adj} ${noun}`}`);
   s = s.replace(LEAD_IN_RE, '');
   s = s.replace(/\b(use|using|take|taking)\s+(this|the|my|that)\s+(uploaded\s+)?(photo|photograph|image|picture|pic|reference)(\s+as\s+(the|a)\s+reference)?\b/gi, '');
   s = s.replace(/\b(keep|preserve|maintain|retain)\s+(the\s+)?(exact\s+)?same\s+(overall\s+)?(pose|composition|framing|position|posture|angle|layout)\b/gi, '');
@@ -69,6 +126,7 @@ export function tidyClause(raw: string): string {
   s = s.replace(/\b(of|with|for|to|at|like|beside|next to)\s+Sienna(?: Brooks)?\b/g, '$1 her');
   s = s.replace(/\bSienna(?: Brooks)?'s\b/g, 'her').replace(/\bSienna(?: Brooks)?\b/g, 'she');
   s = s.replace(/^she\s+(in|wearing|with|on|at)\b/i, '$1'); // "Sienna in a red dress" → "in a red dress"
+  s = s.replace(/^she\s+(?=\w+ing\b)/i, ''); // "Generate Sienna standing in …" → "standing in …"
   return s.replace(/\s{2,}/g, ' ').replace(/^[\s,;:]+|[\s,;:]+$/g, '').trim();
 }
 
@@ -124,9 +182,11 @@ export function interpretPrompt(
   const buckets: Record<string, string[]> = {};
   const avoid: string[] = [];
   const notes: string[] = [];
+  const changes: ClothingChange[] = [];
   let identityDropped = 0;
 
   for (const raw of sentences(text)) {
+    changes.push(...clothingChanges(raw));
     const s = tidyClause(raw);
     if (!s) continue;
     const [kept, neg] = splitNegatives(s);
@@ -159,7 +219,7 @@ export function interpretPrompt(
   const reference = referenceIntent(text, !!opts.hasReference);
   if (reference.mode !== 'none') notes.push(reference.why);
   if (OUTDOOR_RE.test(`${fields.setting} ${fields.lighting}`) && !fields.lighting) notes.push('Outdoor scene: natural daylight instead of the default indoor lighting.');
-  return { fields, contentMode, reference, notes };
+  return { fields, contentMode, reference, changes, notes };
 }
 
 /**
@@ -173,7 +233,12 @@ export function referenceIntent(text: string, hasReference: boolean): Interpreta
   const pose = /\b(same|keep|copy|match|use)\b[^.]{0,30}\b(pose|position|posture|stance|body position)\b|\b(pose|position) (from|of|in) (the|this) (photo|image|picture|reference)\b/.test(t);
   const composition = /\b(same|keep|preserve|match)\b[^.]{0,30}\b(composition|framing|angle|photo|picture|image|scene|layout|everything)\b|\b(only|just) (change|replace|swap|edit|fix)\b|\b(recreate|remake|redo|touch up|retouch)\b/.test(t);
   const bigChange = /\b(replace|change|swap|different|new)\b[^.]{0,30}\b(background|setting|location|room|scene|clothes|clothing|outfit|dress)\b/.test(t);
+  const garmentSwap = clothingChanges(text.split(/(?<=[.!?])\s+|\n+/).find((x) => clothingChanges(x).length) ?? '').length > 0;
   if (pose && !composition) return { mode: 'pose', denoise: null, why: 'Reference photo: her pose is copied; outfit, background and look follow your description.' };
+  // a colour or garment swap needs more change than 0.5 allows (a gray top stayed gray), and the pose ControlNet
+  // keeps her body where it was at the higher level
+  if (composition && garmentSwap && !/\b(background|setting|location|room|scene)\b/.test(t))
+    return { mode: 'edit+pose', denoise: 0.62, why: 'Reference photo: edited in place — same pose and composition, with the clothing change you describe.' };
   if (composition && !bigChange)
     return { mode: pose ? 'edit+pose' : 'edit', denoise: 0.5, why: 'Reference photo: edited in place — composition kept, only what you describe changes.' };
   if (composition || bigChange)
