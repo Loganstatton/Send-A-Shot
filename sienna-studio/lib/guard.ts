@@ -103,9 +103,12 @@ export function applyIdentityLock(text: string, extraTerms: string[] = []): Lock
   for (const rule of rules) {
     out = out.replace(rule.re, (m) => {
       removed.push({ term: m.trim(), category: rule.category });
-      return '';
+      // "her long brunette hair is messy" → "her long hair is messy": only the colour goes, not the hair
+      return /\bhair(ed)?\s*$/i.test(m) ? ' hair ' : '';
     });
   }
+  // a hair colour that was a whole item ("black dress, blonde hair, …") goes completely
+  out = out.replace(/(^|[,;.])\s*(her\s+|with\s+)?hair\s*(?=[,;.]|$)/gi, '$1');
   return { text: tidy(out), removed };
 }
 

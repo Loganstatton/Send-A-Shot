@@ -151,6 +151,10 @@ const REAR_NEGATIVE_FACE_AWAY = '(looking at viewer:1.3), (facing the camera:1.3
 const REAR_NEGATIVE = '(front view:1.2)';
 const LOOKING_BACK_RE = /\b(looking back|over (her|the|his) shoulder|profile view|side profile|looks? at the camera|eye contact)\b/i;
 
+const OUTDOOR_SCENE_RE = /\b(beach|ocean|sea|lake|river|forest|woods|park|street|city|outdoors?|outside|garden|backyard|mountains?|desert|pool|balcony|rooftop|field|sunlight|sunlit|sunset|sunrise|golden hour|daylight)\b/i;
+const LIGHT_WORDS_RE = /\b(lighting|light|lit|sunlight|sunlit|daylight|lamp|lamplight|candlelight|neon|golden hour|sunset|sunrise|backlit|flash)\b/i;
+const NON_PHONE_CAMERA_RE = /\b(dslr|mirrorless|film camera|35mm film|medium format|professional (camera|photographer|photo ?shoot)|studio (photo|shoot|portrait)|canon|nikon|sony a\d|leica|hasselblad)\b/i;
+
 export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
@@ -197,9 +201,22 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
 
   const defaultCamera = siennaLock ? character.defaultCameraStyle : '';
   const camera = f.camera || (fullBodyMode === 'normal' ? FULL_BODY_CAMERA : fullBodyMode === 'mirror' ? '' : defaultCamera);
-  const baseRealism = fullBodyMode
-    ? character.defaultRealismPrompt.split(',').filter((s) => s.trim().toLowerCase() !== CLOSE_CAMERA_REALISM).join(',')
-    : character.defaultRealismPrompt;
+  // The profile's default realism wording must not contradict the request: its indoor-lighting phrase goes when the
+  // scene is outdoors or the lighting is described, and its phone-camera phrases go when another camera is asked for.
+  const outdoors = OUTDOOR_SCENE_RE.test(`${f.setting} ${f.lighting} ${f.pose}`);
+  // the light may be described in any field ("a modern kitchen with natural morning lighting")
+  const lightDescribed = !!f.lighting.trim() || LIGHT_WORDS_RE.test(PROMPT_FIELD_KEYS.filter((k) => k !== 'avoid').map((k) => f[k]).join(' '));
+  const otherCamera = !!f.camera && NON_PHONE_CAMERA_RE.test(f.camera) && !/\b(phone|iphone|selfie)\b/i.test(f.camera);
+  const baseRealism = character.defaultRealismPrompt
+    .split(',')
+    .filter((s) => {
+      const t = s.trim().toLowerCase();
+      if (fullBodyMode && t === CLOSE_CAMERA_REALISM) return false;
+      if ((outdoors || lightDescribed) && /\bindoor lighting\b/.test(t)) return false;
+      if (otherCamera && /\b(iphone|phone|smartphone|selfie)\b/.test(t)) return false;
+      return true;
+    })
+    .join(',');
   const realism = joinParts([baseRealism, f.realism]);
 
   // Drop Framing fragments the added wording already covers (e.g. "head to toe").

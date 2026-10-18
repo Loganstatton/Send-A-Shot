@@ -3,10 +3,14 @@
 // /history/{id}, /view). For exercising the real HTTP client + diagnostics
 // without a GPU. NOT used in production.
 //
-//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-face-refine] [--no-lora] [--fail-exec] [--hang-exec] [--qwen-edit] [--wan-video]
+//   node scripts/fake-comfyui.mjs [--port 8188] [--no-ipadapter] [--no-face-refine] [--no-lora] [--fail-exec] [--hang-exec] [--qwen-edit] [--wan-video] [--production]
+//   (--production: also every node class the Sienna production workflow uses — Plus Face IP-Adapter, pose copying —
+//    with specs taken from the workflow file, so face-reference and pose wiring are exercised end to end)
 //   (--hang-exec: jobs stay "running" forever, for timeout tests)
 import http from 'node:http';
 import { deflateSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const arg = (n) => process.argv.includes(n);
 const PORT = Number(process.argv[process.argv.indexOf('--port') + 1]) || 8188;
@@ -23,6 +27,7 @@ const MODELS = {
   clip_name: ['clip_l.safetensors', 't5xxl_fp8_e4m3fn.safetensors'],
 };
 const combo = (list) => [list];
+if (arg('--production')) MODELS.control_net_name.push('sdxl_openpose.safetensors');
 const SPECS = {
   CheckpointLoaderSimple: { ckpt_name: combo(MODELS.ckpt_name) },
   UNETLoader: { unet_name: combo(MODELS.unet_name), weight_dtype: combo(['default', 'fp8_e4m3fn']) },
@@ -188,6 +193,28 @@ const send = (res, code, body, type = 'application/json') => {
 };
 const readBody = (req) => new Promise((r) => { const parts = []; req.on('data', (d) => parts.push(d)); req.on('end', () => r(Buffer.concat(parts))); });
 
+const OPTIONAL = {};
+if (arg('--production')) {
+  // every class in the production workflow, with its inputs as the workflow sets them (strings become one-item
+  // combos, so model-file checks pass for the files the workflow names), plus the body-check nodes
+  const wf = JSON.parse(readFileSync(fileURLToPath(new URL('../workflows/examples/sienna-sdxl-production.json', import.meta.url)), 'utf8'));
+  const graph = wf.prompt ?? wf;
+  for (const n of Object.values(graph)) {
+    if (!n || typeof n !== 'object' || !n.class_type) continue;
+    const spec = { ...(SPECS[n.class_type] ?? {}) };
+    // inputs taken from the workflow are optional: two nodes of one class may use different ones
+    (OPTIONAL[n.class_type] ??= new Set());
+    for (const [k, v] of Object.entries(n.inputs ?? {})) {
+      if (k in spec) continue;
+      OPTIONAL[n.class_type].add(k);
+      spec[k] = Array.isArray(v) ? ['*'] : typeof v === 'string' ? combo(k === 'lora_name' ? MODELS.lora_name : [v]) : typeof v === 'boolean' ? ['BOOLEAN'] : Number.isInteger(v) ? ['INT'] : ['FLOAT'];
+    }
+    SPECS[n.class_type] = spec;
+  }
+  SPECS.SiennaBodyMeasure = { image: ['IMAGE'], pose_keypoint: ['POSE_KEYPOINT'], person_mask: ['MASK'] };
+  SPECS.SiennaTextOutput = { text: ['STRING'] };
+}
+
 http
   .createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -218,6 +245,7 @@ http
         const errs = [];
         for (const [k, spec] of Object.entries(SPECS[n.class_type])) {
           const v = n.inputs[k];
+          if (v === undefined && OPTIONAL[n.class_type]?.has(k)) continue;
           if (v === undefined) errs.push({ type: 'required_input_missing', message: 'Required input is missing', details: k });
           else if (n.class_type === 'LoadImage' && k === 'image') { if (!uploads.has(v)) errs.push({ type: 'custom_validation_failed', message: 'Custom validation failed for node', details: `image - Invalid image file: ${v}` }); }
           else if (n.class_type === 'LoadVideo' && k === 'file') { if (!uploads.has(v)) errs.push({ type: 'custom_validation_failed', message: 'Custom validation failed for node', details: `Invalid video file: ${v}` }); }

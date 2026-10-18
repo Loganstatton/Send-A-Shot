@@ -25,7 +25,7 @@ export const fieldsSchema = z.object({
   framing: str(),
   realism: str(),
   extra: str(),
-  avoid: str(300).optional().default(''),
+  avoid: str(2000).optional().default(''),
 });
 
 export const paramsSchema = z.object({
@@ -84,6 +84,17 @@ export const generateSchema = z.object({
     outfitGarmentImage: storedImageSchema.nullable().default(null),
   }),
   parentId: z.string().max(64).optional(),
+  simple: z
+    .object({ prompt: z.string().max(8000), notes: z.array(z.string().max(500)).max(20), reference: z.enum(['none', 'edit', 'pose', 'edit+pose']) })
+    .optional(),
+});
+
+/** Simple Mode: one description (+ an optional reference photo). */
+export const simpleCreateSchema = z.object({
+  prompt: z.string().trim().min(1, 'Describe the photo first').max(8000),
+  reference: storedImageSchema.nullable().default(null),
+  /** optional overrides from Advanced (seed only for now; everything else uses the studio defaults) */
+  seed: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).optional(),
 });
 
 export const characterPatchSchema = z

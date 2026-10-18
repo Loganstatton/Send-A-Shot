@@ -91,7 +91,7 @@ describe('buildPrompt', () => {
       siennaLock: true,
       contentMode: 'sfw',
     });
-    expect(r.positive).toBe("close-up iPhone portrait, soft natural daylight, sienna_v1 woman, 24-year-old adult woman, fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, (large round natural breasts:1.2), slim toned waist with defined abs, curvy hips, shot on iPhone 15 Pro, 24mm main camera, natural phone processing, realistic candid iPhone photo, natural skin texture with subtle visible pores, fine flyaway hair strands, natural facial asymmetry, believable ambient indoor lighting, slight wide-angle phone lens distortion, casual non-cinematic snapshot, imperfect slightly off-center framing, anatomically correct hands with five fingers, believable reflections, soft natural shadows, natural hazel-green eyes with realistic muted iris color");
+    expect(r.positive).toBe("close-up iPhone portrait, soft natural daylight, sienna_v1 woman, 24-year-old adult woman, fictional adult woman, long dark-brown wavy hair with lighter caramel ends, light freckles across nose and cheeks, (large round natural breasts:1.2), slim toned waist with defined abs, curvy hips, shot on iPhone 15 Pro, 24mm main camera, natural phone processing, realistic candid iPhone photo, natural skin texture with subtle visible pores, fine flyaway hair strands, natural facial asymmetry, slight wide-angle phone lens distortion, casual non-cinematic snapshot, imperfect slightly off-center framing, anatomically correct hands with five fingers, believable reflections, soft natural shadows, natural hazel-green eyes with realistic muted iris color"); // the lighting is described, so the profile's indoor-lighting phrase is dropped
     expect(r.negative).toBe("over-smoothed skin, airbrushed, plastic skin, waxy skin, doll-like face, cgi, 3d render, illustration, anime, over-sharpened, excessive HDR, oversaturated, perfect symmetry, beauty filter, extra fingers, fused fingers, deformed hands, extra limbs, bad anatomy, distorted teeth, warped background, duplicate objects, watermark, text, logo, lowres, small breasts, flat chest, small bust, petite chest, blurry, jpeg artifacts, studio lighting, glossy fashion editorial, cinematic color grading, different person, altered face, different face shape, different hair color, different eye color, child, teen, minor, childlike, school uniform, nsfw, nude, nudity, topless, explicit, sexual, lingerie, see-through, older woman, middle-aged, wrinkles, aged skin, mature face");
   });
 });
@@ -178,6 +178,21 @@ describe('rear-view requests', () => {
     const r = buildPrompt({ fields: { ...EMPTY_FIELDS, pose: 'standing facing the camera', outfit: 'red dress' }, character, siennaLock: true, contentMode: 'sfw' });
     expect(r.positive).not.toContain('view from behind');
     expect(r.negative).not.toContain('front view');
+  });
+});
+
+describe('profile defaults never contradict the request', () => {
+  const b = (f: Partial<typeof EMPTY_FIELDS>) => buildPrompt({ fields: { ...EMPTY_FIELDS, ...f }, character, siennaLock: true, contentMode: 'sfw' }).positive;
+  it('keeps the indoor-lighting phrase only for an indoor scene with no lighting described', () => {
+    expect(b({ setting: 'cosy bedroom' })).toContain('believable ambient indoor lighting');
+    expect(b({ setting: 'sunny beach at the shoreline' })).not.toContain('indoor lighting');
+    expect(b({ setting: 'kitchen', lighting: 'natural morning light from the window' })).not.toContain('indoor lighting');
+  });
+  it('drops the phone-camera phrases when another camera is asked for', () => {
+    const p = b({ camera: 'professional studio photo shoot, DSLR, 85mm lens' });
+    expect(p).toContain('DSLR');
+    expect(p).not.toMatch(/iPhone|phone lens/);
+    expect(b({ camera: 'iPhone 16 selfie' })).toContain('realistic candid iPhone photo');
   });
 });
 

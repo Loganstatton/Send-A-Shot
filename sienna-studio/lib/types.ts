@@ -395,6 +395,8 @@ export interface GenerationRecord {
   notes: string;
   /** If this was a regenerate/edit of another record. */
   parentId?: string;
+  /** Simple Mode request (description as typed + what was understood), when made from the simple screen. */
+  simple?: SimpleRequestInfo;
   /** Set when this image was made by Edit Outfit (Qwen-Image-Edit) from another record's image. */
   outfitEdit?: OutfitEditInfo;
   /** Set for Video Studio results: `images` holds the poster frame, the video is `video.result`. */
@@ -529,6 +531,14 @@ export interface GenerateRequest {
   params: GenerationParams;
   images: GenerationImages;
   parentId?: string;
+  /** Simple Mode: the description as typed and what the interpreter understood (kept on the record). */
+  simple?: SimpleRequestInfo;
+}
+
+export interface SimpleRequestInfo {
+  prompt: string;
+  notes: string[];
+  reference: 'none' | 'edit' | 'pose' | 'edit+pose';
 }
 
 /** Full settings export. */

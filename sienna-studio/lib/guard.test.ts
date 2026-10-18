@@ -49,3 +49,10 @@ describe('applyIdentityLock', () => {
     expect(applyIdentityLock('dark skinny jeans').text).toBe('dark skinny jeans');
   });
 });
+
+describe('applyIdentityLock keeps the sentence readable', () => {
+  it('removes only the hair colour from a longer phrase', () => {
+    expect(applyIdentityLock('Her long brunette hair is slightly messy').text).toBe('Her long hair is slightly messy');
+    expect(applyIdentityLock('messy blonde hair in a bun').text).toBe('messy hair in a bun');
+  });
+});

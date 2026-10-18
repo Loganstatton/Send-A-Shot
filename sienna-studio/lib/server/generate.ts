@@ -609,6 +609,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       review: {},
       notes: '',
       parentId: req.parentId,
+      ...(req.simple ? { simple: req.simple } : {}),
     },
   };
 }

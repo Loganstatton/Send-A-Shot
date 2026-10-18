@@ -1,10 +1,10 @@
 import { Suspense } from 'react';
-import { CreateScreen } from '@/components/CreateScreen';
+import { SimpleCreate } from '@/components/SimpleCreate';
 
 export default function Page() {
   return (
     <Suspense>
-      <CreateScreen />
+      <SimpleCreate />
     </Suspense>
   );
 }
