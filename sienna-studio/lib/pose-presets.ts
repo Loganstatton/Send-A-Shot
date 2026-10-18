@@ -69,13 +69,20 @@ const AUTO_PRESETS: [string, RegExp][] = [
 ];
 const NOT_STANDING_RE = /\b(sit|sitting|sits|seated|lying|laying|lies|kneel|kneeling|crouch|crouching|squat|squatting|bend|bending|bent over|leaning|walking|running|dancing|jumping)\b/i;
 
+const POSED_LIMBS_RE =
+  /\b(hands?|arms?|hips?|elbows?|wrists?|fingers?|legs?|knees?|foot|feet|shoulders?|holding|holds|touching|brushing|running (her|a) hand|reaching|pointing|waving|crossed|leaning|lean(s|ing)? (on|against)|weight on|contrapposto|twist(ed|ing)?|turned|stretching|posing|pose)\b/i;
+
+// what the preset already shows: arms hanging down
+const RELAXED_ARMS_RE = /\b(her )?arms? (relaxed|down|hanging|at (her|its) sides?|by her sides?)\b|\b(relaxed|hanging) arms\b/gi;
+
 export function matchPosePreset(poseText: string, fullBody: boolean): PosePreset | undefined {
   const text = poseText.trim();
   if (!text) return undefined;
   if (BEND_RE.test(text) && rearRequest(text, null, false)) return posePreset('bent_over_rear');
   for (const [id, re] of AUTO_PRESETS) if (re.test(text)) return posePreset(id);
-  // a plain standing pose, framed head to feet
-  if (fullBody && /\bstand(ing|s)?\b/i.test(text) && !NOT_STANDING_RE.test(text)) return posePreset('standing_full_body');
+  // a plain standing pose, framed head to feet — not when the pose says what her arms or legs do: the preset's
+  // skeleton (arms down, feet together) overrode "one hand on her hip, the other brushing her hair back" (live, 18 Oct)
+  if (fullBody && /\bstand(ing|s)?\b/i.test(text) && !NOT_STANDING_RE.test(text) && !POSED_LIMBS_RE.test(text.replace(RELAXED_ARMS_RE, ''))) return posePreset('standing_full_body');
   return undefined;
 }
 

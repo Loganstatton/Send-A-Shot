@@ -40,6 +40,9 @@ describe('pose preset from the Pose text', () => {
     expect(id('standing with her arms crossed')).toBe('arms_crossed');
     expect(id('mirror selfie in the bathroom')).toBe('mirror_selfie');
     expect(id('standing beside the bed, arms relaxed', true)).toBe('standing_full_body');
+    // live: the preset's arms-down skeleton overrode the hand-on-hip pose that was asked for
+    expect(id('standing by the pool, one hand resting on her hip and the other brushing her hair back', true)).toBeUndefined();
+    expect(id('standing naturally with one leg slightly forward', true)).toBeUndefined();
   });
   it('leaves other poses alone', () => {
     expect(id('standing beside the bed, arms relaxed', false)).toBeUndefined(); // not a full-body request
