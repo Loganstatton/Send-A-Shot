@@ -140,7 +140,11 @@ function sentences(text: string): string[] {
     const t = s.trim().replace(/[.!?]+$/, '');
     if (!t) continue;
     // a long comma list (keyword-style prompt) is split into clauses so each lands in the right field
-    const parts = t.length > 140 && (t.match(/,/g)?.length ?? 0) >= 3 ? t.split(/\s*,\s*/) : [t];
+    // "standing by the pool …, wearing a pink bikini …" → the outfit is its own piece (else the place rides in Outfit)
+    // ("She's wearing …" stays whole: only a clause of four or more words before "wearing" is split off)
+    const m = /^(.{12,}?\S+(?:\s+\S+){3,}?),?\s+((?:and\s+)?wearing\b.*)$/i.exec(t);
+    const pieces = m && m[1].split(/\s+/).length >= 4 ? [m[1], m[2]] : [t];
+    const parts = pieces.flatMap((p) => (p.length > 140 && (p.match(/,/g)?.length ?? 0) >= 3 ? p.split(/\s*,\s*/) : [p]));
     out.push(...parts.map((p) => p.trim()).filter(Boolean));
   }
   return out;

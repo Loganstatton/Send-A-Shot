@@ -139,3 +139,11 @@ describe('style packs from the description', () => {
     expect(interpretPrompt('Sienna in a black micro bikini').notes.join(' ')).toContain('Micro bikini (0.85)');
   });
 });
+
+describe('outfit split from the place (live prompt: the pool and villa were filed under Outfit)', () => {
+  it('"standing beside a pool …, wearing a pink micro bikini …" files the bikini alone as the outfit', () => {
+    const r = interpretPrompt('Sienna standing beside a beautiful infinity pool at a luxury villa in Miami, wearing a tiny pastel pink micro bikini with thin side ties and matching thong bottoms.');
+    expect(r.fields.outfit).toBe('wearing a tiny pastel pink micro bikini with thin side ties and matching thong bottoms');
+    expect(Object.values(r.fields).join(' ')).toContain('infinity pool at a luxury villa in Miami');
+  });
+});
