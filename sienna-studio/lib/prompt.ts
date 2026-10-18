@@ -64,6 +64,8 @@ export function splitEyeTraits(traits: string): { rest: string; eyes: string } {
   };
 }
 
+/** With "barefoot": the model still added sandals from habit. */
+const BAREFOOT_NEGATIVE = 'shoes, sandals, flip-flops, footwear';
 const FULL_BODY_RE = /\b(full[\s-]?body|head[\s-]?to[\s-]?toe|full[\s-]?length|entire\s+body)\b/i;
 const NOT_FULL_BODY_RE = /\b(close[\s-]?up|portrait|waist[\s-]?up|chest[\s-]?up|half[\s-]?body|head[\s-]?and[\s-]?shoulders|headshot)\b/i;
 
@@ -197,7 +199,18 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   // normal shots get a "taken by another person" camera and anti-crop
   // negatives; mirror selfies get a full-length mirror composition instead.
   const fullBodyMode = !fullBody.add ? null : fullBody.mirror ? 'mirror' : 'normal';
-  const addedFraming = fullBodyMode === 'mirror' ? MIRROR_FULL_BODY_FRAMING : fullBodyMode ? FULL_BODY_FRAMING : '';
+  // "barefoot" anywhere (or shoes in Avoid): the full-body wording's "feet and shoes" put sandals on her (live, 18 Oct)
+  const barefoot =
+    /\b(barefoot(ed)?|bare[- ]feet|bare[- ]foot)\b/i.test([f.outfit, f.pose, f.bodyPresentation, f.setting, f.framing, f.extra].join(' ')) ||
+    /\b(shoes|sandals|footwear|flip[- ]flops)\b/i.test(f.avoid ?? '');
+  const addedFraming =
+    fullBodyMode === 'mirror'
+      ? MIRROR_FULL_BODY_FRAMING
+      : fullBodyMode
+        ? barefoot
+          ? FULL_BODY_FRAMING.replace('including feet and shoes', 'including her bare feet')
+          : FULL_BODY_FRAMING
+        : '';
 
   const defaultCamera = siennaLock ? character.defaultCameraStyle : '';
   const camera = f.camera || (fullBodyMode === 'normal' ? FULL_BODY_CAMERA : fullBodyMode === 'mirror' ? '' : defaultCamera);
@@ -275,6 +288,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     contentMode === 'sfw' ? SFW_NEGATIVE : '',
     siennaLock ? (cleanup ? AGE_DRIFT_NEGATIVE_CLEAN : AGE_DRIFT_NEGATIVE) : '',
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
+    barefoot ? BAREFOOT_NEGATIVE : '',
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
     colourDriftNegative(f.outfit),
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',

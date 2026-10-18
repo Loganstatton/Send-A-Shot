@@ -147,3 +147,42 @@ describe('outfit split from the place (live prompt: the pool and villa were file
     expect(Object.values(r.fields).join(' ')).toContain('infinity pool at a luxury villa in Miami');
   });
 });
+
+describe('live pool prompt, 18 Oct (arms-down preset from the photographer sentence; sandals despite "barefoot")', () => {
+  const POOL = `Sienna posing beside a beautiful infinity pool at a luxury villa in Miami.
+
+She’s wearing a tiny pastel pink string bikini with thin side straps and matching thong bottoms. She’s barefoot.
+
+Her body is turned at a three-quarter angle with her right hip slightly toward the camera. Her left hand rests on her hip while her right hand brushes her hair behind her ear. Her left leg supports her weight and her right foot is positioned slightly forward.
+
+She’s looking over her shoulder toward the camera with a relaxed, confident smile.
+
+The background features a turquoise infinity pool, white stone patio, palm trees, and a modern luxury villa.
+
+Golden hour, low warm sun, long natural shadows.
+
+A friend is taking the picture using an iPhone 16 Pro, standing approximately seven feet away and holding the phone vertically at waist height.
+
+Full-body photograph, head to toe, with her entire figure and both bare feet visible.
+
+Realistic, unedited, natural skin texture, authentic smartphone photography.
+
+No sunglasses, no jewelry, no cover-up.`;
+  const r = interpretPrompt(POOL, { adultAllowed: true });
+  it('the photographer sentence is camera, not her pose', () => {
+    expect(r.fields.camera).toContain('A friend is taking the picture');
+    expect(r.fields.pose).not.toMatch(/standing|friend/);
+  });
+  it('no automatic standing preset: her hands and legs are described', async () => {
+    const { matchPosePreset } = await import('./pose-presets');
+    const { fullBodyFraming } = await import('./prompt');
+    expect(fullBodyFraming(r.fields).add).toBe(true);
+    expect(matchPosePreset(r.fields.pose, true)).toBeUndefined();
+  });
+  it('barefoot: bare feet in the framing, footwear in the negative', () => {
+    const b = buildPrompt({ fields: r.fields, character, siennaLock: true, contentMode: 'adult' });
+    expect(b.positive).toContain('including her bare feet');
+    expect(b.positive).not.toContain('feet and shoes');
+    expect(b.negative).toContain('sandals');
+  });
+});

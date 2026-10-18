@@ -122,7 +122,9 @@ export function tidyClause(raw: string): string {
   s = s.replace(MAKE_RE, (_m, noun: string, adj: string) => `wearing ${/^(clothing|clothes|outfit)$/i.test(noun) ? `${adj} clothes` : `a ${adj} ${noun}`}`);
   s = s.replace(/^\s*(?:(?:just|only)\s+)?make\s+it\s+(?:into\s+)?(?=(an?|the)\b)/i, ''); // "make it a beach at sunset" → "a beach at sunset"
   s = s.replace(LEAD_IN_RE, '');
-  s = s.replace(/\b(use|using|take|taking)\s+(this|the|my|that)\s+(uploaded\s+)?(photo|photograph|image|picture|pic|reference)(\s+as\s+(the|a)\s+reference)?\b/gi, '');
+  // ("a friend is taking the picture" describes the photo: only "take … as the reference" is an instruction)
+  s = s.replace(/\b(use|using)\s+(this|the|my|that)\s+(uploaded\s+)?(photo|photograph|image|picture|pic|reference)(\s+as\s+(the|a)\s+reference)?\b/gi, '');
+  s = s.replace(/\b(take|taking)\s+(this|the|my|that)\s+(uploaded\s+)?(photo|photograph|image|picture|pic)\s+as\s+(the|a)\s+reference\b/gi, '');
   s = s.replace(/\b(keep|preserve|maintain|retain)\s+(the\s+)?(exact\s+)?same\s+(overall\s+)?(pose|composition|framing|position|posture|angle|layout)\b/gi, '');
   s = s.replace(/\b(replace|change|swap)\s+(the\s+)?(background|setting|scene|location)\s+(with|to|for|into)\s+(.+)$/i, '$5 background');
   s = s.replace(/\b(change|replace|swap)\s+(the\s+|her\s+)?(clothing|clothes|outfit)\s+(with|to|for|into)\s+(.+)$/i, 'wearing $5');
@@ -154,7 +156,12 @@ function score(s: string, re: RegExp) {
   return (s.match(re) ?? []).length;
 }
 
+/** A sentence about the photographer, not about her ("a friend is taking the picture, standing seven feet away"). */
+const PHOTOGRAPHER_RE =
+  /\b(friend|photographer|boyfriend|girlfriend|someone|somebody|he|they|camera(wo)?man)\b[^.]{0,40}\b(tak(e|es|ing)|took|hold(s|ing)?|shoot(s|ing)?|snap(s|ping)?)\b|\b(taking|takes|took|snapping) (the|a|this) (picture|photo|shot|pic)\b|\bholding the (phone|camera)\b|\bphone (held )?(vertically|horizontally)\b|\bcamera (at|held at) (waist|chest|eye|hip) (height|level)\b/i;
+
 function classify(s: string): Slot {
+  if (PHOTOGRAPHER_RE.test(s)) return 'camera';
   if (IDENTITY_ONLY_RE.test(s) && !/\b(wear|wearing|standing|sitting|lying|holding|in (her|a|the))\b/i.test(s)) return 'identity';
   let best: Slot = 'extra';
   let bestScore = 0;
