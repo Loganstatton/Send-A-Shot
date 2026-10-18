@@ -482,8 +482,8 @@ export interface OutfitEditInfo {
   sourceId: string;
   /** The image that was edited (belongs to the source record). */
   sourceImage: StoredImage;
-  /** Clothing photo as uploaded (or as cropped by hand in the editor). */
-  reference: StoredImage;
+  /** Clothing photo as uploaded (or as cropped by hand in the editor); null for a change described in words only. */
+  reference: StoredImage | null;
   manualCrop: boolean;
   /** The clothing photo exactly as the editor saw it (after the automatic below-the-chin crop). */
   referenceCrop?: StoredImage | null;

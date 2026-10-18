@@ -19,7 +19,7 @@ export interface OutfitEditAvailability {
 export interface OutfitEditBody {
   sourceId: string;
   imageIndex?: number;
-  reference: StoredImage;
+  reference: StoredImage | null;
   manualCrop: boolean;
   description: string;
   scope: OutfitEditScope;

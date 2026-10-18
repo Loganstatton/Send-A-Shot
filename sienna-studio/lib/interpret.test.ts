@@ -93,6 +93,7 @@ describe('editing a studio photo (live test: "change her top to a red tank top" 
     const r = interpretPrompt(EDIT, { hasReference: true });
     expect(r.fields.outfit).toBe('wearing a red tank top');
     expect(Object.values(r.fields).join(' ')).not.toMatch(/keep everything|just change/i);
+    expect(interpretPrompt('Keep everything the same, but make it a beach at sunset.').fields.setting).toBe('a beach at sunset');
   });
   it('swaps only that garment in the original outfit', () => {
     const outfit = "She's wearing gray pajama shorts and a loose white crop top";

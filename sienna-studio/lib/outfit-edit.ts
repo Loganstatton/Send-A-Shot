@@ -158,6 +158,8 @@ export interface EditPromptInput {
   protect?: BodyProtect;
   /** Garment-only redraw: image 1 shows the old garment greyed out. */
   redraw?: boolean;
+  /** No clothing photo: the change is described in words only (Simple Mode "change her top to …"). */
+  textOnly?: boolean;
 }
 
 const NOCOPY =
@@ -244,9 +246,10 @@ export function namedOriginal(originalOutfit: string, description: string): stri
  * The instruction sent to Qwen-Image-Edit. The 'full' wording is the one validated in the second GPU
  * test (old outfit named for removal, piece-by-piece match, nothing added).
  */
-export function buildEditPrompt({ scope, description, originalOutfit, footwear, protect, redraw }: EditPromptInput): string {
+export function buildEditPrompt({ scope, description, originalOutfit, footwear, protect, redraw, textOnly }: EditPromptInput): string {
   const desc = splitNegations(description).positive;
   const named = namedOriginal(originalOutfit, desc);
+  if (textOnly) return buildTextEditPrompt(scope, desc, named, footwear, !!redraw);
   const swim = SWIMWEAR_RE.test(desc);
   const ignoreRefShoes = footwear === 'reference' ? '' : ' Ignore any shoes or sandals shown in image 2.';
   // Live case: a white micro bikini photo + "black micro bikini" text came out as her old full-cup bikini recoloured.
@@ -290,6 +293,31 @@ export function buildEditPrompt({ scope, description, originalOutfit, footwear, 
   );
 }
 
+/**
+ * The instruction for a described change with no clothing photo. Live case: img2img at 0.5–0.62 kept a gray top gray
+ * when asked for a red one, so the colour is stated as a requirement and only the garment region is redrawn.
+ */
+function buildTextEditPrompt(scope: OutfitEditScope, desc: string, named: string, footwear: OutfitEditFootwear, redraw: boolean): string {
+  const exact = ' The new clothing must match this description exactly, including its colour and style.';
+  const tail = ` ${redraw ? REDRAW_TEXT : ''}${KEEP}`;
+  if (scope === 'full') {
+    const keepShoes = footwear === 'keep' ? ' Keep her footwear from image 1 exactly as it is, if it is in the picture.' : ' If her feet are in the picture, they are bare.';
+    return (
+      `Replace the woman's entire outfit in image 1: she now wears only ${desc}.${exact} Completely remove all of her original clothing${named ? ` (${named})` : ''}${footwear === 'keep' ? ', but not her footwear' : ''}; ` +
+      `none of it may remain. Do not add any other clothing.${keepShoes}${tail}`
+    );
+  }
+  const piece = scope === 'top' ? 'top (her upper-body garment)' : 'bottom (her lower-body garment: trousers, skirt, shorts or bikini bottoms)';
+  const other = scope === 'top' ? 'lower-body clothing' : 'top';
+  const what = scope === 'top' ? 'top' : 'bottom';
+  return (
+    `Replace only the ${piece} of the woman in image 1: she now wears ${desc}.${exact} ` +
+    `Remove her original ${what} completely; none of it may remain.${named ? ` In image 1 she wears ${named}.` : ''} ` +
+    `Keep her ${other} from image 1 exactly as it is. Keep her footwear from image 1 exactly as it is, if it is in the picture. ` +
+    `Do not add any other clothing.${tail}`
+  );
+}
+
 /** The outfit text stored on the new record (used as "what she wears" for a later edit). */
 export function resultOutfitText(scope: OutfitEditScope, description: string, originalOutfit: string): string {
   const d = clean(description);
@@ -329,7 +357,8 @@ export interface FaceRestoreSpec {
 export interface EditGraphInput {
   sourceName: string;
   sourceSize: { width: number; height: number };
-  referenceName: string;
+  /** null = no clothing photo (a described change): the editor gets the source image only. */
+  referenceName: string | null;
   /** false when the clothing photo was already cropped by hand in the editor. */
   autoCrop: boolean;
   prompt: string;
@@ -360,12 +389,12 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
       inputs: { image: ['src', 0], upscale_method: 'lanczos', width: work.width, height: work.height, crop: 'disabled' },
       _meta: { title: 'Working size (same aspect)' },
     },
-    ref: { class_type: 'LoadImage', inputs: { image: i.referenceName }, _meta: { title: 'Clothing photo' } },
     q_unet: { class_type: 'UNETLoader', inputs: { unet_name: QWEN_EDIT_FILES.unet, weight_dtype: 'default' } },
     q_clip: { class_type: 'CLIPLoader', inputs: { clip_name: QWEN_EDIT_FILES.clip, type: 'qwen_image', device: 'default' } },
     q_vae: { class_type: 'VAELoader', inputs: { vae_name: QWEN_EDIT_FILES.vae } },
   };
-  const pr = i.protect ?? NO_PROTECT;
+  if (i.referenceName) g.ref = { class_type: 'LoadImage', inputs: { image: i.referenceName }, _meta: { title: 'Clothing photo' } };
+  const pr = i.referenceName ? (i.protect ?? NO_PROTECT) : NO_PROTECT;
   const refs = pr.bodyRef || pr.bodyCheck ? (i.bodyRefNames ?? []).slice(0, 4) : [];
   // Shared detectors (each only added when something uses it).
   const faceDet = (): [string, number] => {
@@ -390,8 +419,8 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
   };
   refs.forEach((name, k) => (g[`body_ref_${k + 1}`] = { class_type: 'LoadImage', inputs: { image: name }, _meta: { title: `Sienna body reference ${k + 1}` } }));
 
-  let refOut: [string, number] = ['ref', 0];
-  if (i.autoCrop) {
+  let refOut: [string, number] | null = i.referenceName ? ['ref', 0] : null;
+  if (refOut && i.autoCrop) {
     g.ref_crop = pr.garmentOnly
       ? {
           class_type: 'SiennaGarmentOnly',
@@ -413,7 +442,7 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
     g.save_crop = { class_type: 'SaveImage', inputs: { images: ['ref_crop', 0], filename_prefix: 'sienna/outfit-ref' } };
     refOut = ['ref_crop', 0];
   }
-  if (pr.bodyRef && refs.length) {
+  if (refOut && pr.bodyRef && refs.length) {
     // image 2 = [clothing | her body cut out ×3, on her own blurred scene]
     const sheetRefs = refs.slice(0, 3);
     g.body_sheet = {
@@ -434,11 +463,11 @@ export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
   Object.assign(g, {
     q_pos: {
       class_type: 'TextEncodeQwenImageEditPlus',
-      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: i.prompt },
+      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], ...(refOut ? { image2: refOut } : {}), prompt: i.prompt },
     },
     q_neg: {
       class_type: 'TextEncodeQwenImageEditPlus',
-      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], image2: refOut, prompt: i.negativePrompt ?? '' },
+      inputs: { clip: ['q_clip', 0], vae: ['q_vae', 0], image1: ['src_scale', 0], ...(refOut ? { image2: refOut } : {}), prompt: i.negativePrompt ?? '' },
     },
     q_shift: { class_type: 'ModelSamplingAuraFlow', inputs: { model: ['q_unet', 0], shift: QWEN_SAMPLING.shift } },
     q_cfgnorm: { class_type: 'CFGNorm', inputs: { model: ['q_shift', 0], strength: 1 } },

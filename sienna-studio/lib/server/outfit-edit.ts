@@ -77,7 +77,8 @@ export interface OutfitEditRequest {
   sourceId: string;
   /** Which image of the source record (records can hold a batch). */
   imageIndex: number;
-  reference: StoredImage;
+  /** null = no clothing photo: the change is described in words (Simple Mode). */
+  reference: StoredImage | null;
   /** The reference was already cropped by hand in the editor: skip the automatic crop. */
   manualCrop: boolean;
   description: string;
@@ -220,7 +221,7 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
   }
 
   // ── Experimental body protection ────────────────────────────────────────
-  const protect: BodyProtect = experimentsEnabled() ? { ...NO_PROTECT, ...(req.protect ?? {}) } : NO_PROTECT;
+  const protect: BodyProtect = experimentsEnabled() && req.reference ? { ...NO_PROTECT, ...(req.protect ?? {}) } : { ...NO_PROTECT };
   if (protect.garmentOnly && req.manualCrop) {
     protect.garmentOnly = false;
     warnings.push('Clothing-only isolation needs the uncropped photo (it learns the skin colour from the face) — skipped because the photo was cropped by hand.');
@@ -245,7 +246,7 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
       return !locked && !trait;
     })
     .join(', ');
-  const prompt = buildEditPrompt({ scope: req.scope, description, originalOutfit, footwear: req.footwear, protect, redraw: !!redraw });
+  const prompt = buildEditPrompt({ scope: req.scope, description, originalOutfit, footwear: req.footwear, protect, redraw: !!redraw, textOnly: !req.reference });
   const seed = req.seed >= 0 ? Math.floor(req.seed) : Math.floor(Math.random() * 2 ** 48);
 
   // ── Sienna FaceDetailer (production settings, Sienna LoRA) ──────────────
@@ -282,19 +283,19 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
     footwearChanged: req.footwear !== 'keep',
     legsHidden: legsHidden(description, originalOutfit),
   };
-  const graphFor = (sourceName: string, referenceName: string, bodyRefNames: string[] = bodyRefs.map((r) => `probe_${r.image.file}`)) =>
-    buildOutfitEditGraph({ sourceName, sourceSize, referenceName, autoCrop: !req.manualCrop, prompt, negativePrompt: buildEditNegative(description, avoid), redraw, seed, faceRestore, bodyRefNames, ...graphExtras });
+  const graphFor = (sourceName: string, referenceName: string | null, bodyRefNames: string[] = bodyRefs.map((r) => `probe_${r.image.file}`)) =>
+    buildOutfitEditGraph({ sourceName, sourceSize, referenceName, autoCrop: !req.manualCrop && !!req.reference, prompt, negativePrompt: buildEditNegative(description, avoid), redraw, seed, faceRestore, bodyRefNames, ...graphExtras });
   if (backend.kind !== 'mock') {
     const avail = await availability();
     if (!avail.available) throw new GenerationError(`Edit Outfit can't run — the GPU server is missing ${avail.missing.join('; ')}.`);
-    await preflight(backend, graphFor('probe.png', 'probe.png'), 'Edit Outfit');
+    await preflight(backend, graphFor('probe.png', req.reference ? 'probe.png' : null), 'Edit Outfit');
   }
 
   let graph;
   try {
     const refNames: string[] = [];
     for (const r of bodyRefs) refNames.push(await upload(backend, r.image));
-    graph = graphFor(await upload(backend, sourceImage), await upload(backend, req.reference), refNames);
+    graph = graphFor(await upload(backend, sourceImage), req.reference ? await upload(backend, req.reference) : null, refNames);
   } catch (e) {
     if (e instanceof ComfyError) throw new GenerationError(`Uploading images failed: ${e.message}`, e.status, e.details);
     throw e;

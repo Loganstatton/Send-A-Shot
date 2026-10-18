@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, fileUrl, useApi } from '@/lib/client/api';
+import { api, ApiError, fileUrl, useApi } from '@/lib/client/api';
 import { interpretPrompt } from '@/lib/interpret';
 import { PROMPT_FIELD_LABELS, type CharacterProfile, type GenerationRecord, type PromptFields, type StoredImage } from '@/lib/types';
 import { CreateScreen } from './CreateScreen';
@@ -103,7 +103,17 @@ export function SimpleCreate() {
     if (!text.trim()) return toast('Describe the photo first', 'error');
     setBusy(true);
     try {
-      const rec = await api<GenerationRecord>('/api/create', { method: 'POST', json: { prompt: text, reference: ref } });
+      // a clothing edit needs the photo GPU right away: while it boots the server answers 503, so keep asking
+      let rec: GenerationRecord | null = null;
+      for (let tries = 0; !rec; tries++) {
+        try {
+          rec = await api<GenerationRecord>('/api/create', { method: 'POST', json: { prompt: text, reference: ref } });
+        } catch (e) {
+          if (!(e instanceof ApiError && e.status === 503) || tries >= 24) throw e;
+          if (tries === 0) toast('Starting the photo GPU (1–3 minutes) — your edit will start by itself');
+          await new Promise((r) => setTimeout(r, 15000));
+        }
+      }
       setJobs((prev) => [rec, ...prev].slice(0, 8));
       window.scrollTo({ top: document.getElementById('results')?.offsetTop ?? 0, behavior: 'smooth' });
     } catch (e: any) {

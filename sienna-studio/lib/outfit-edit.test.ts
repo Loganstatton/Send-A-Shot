@@ -363,3 +363,26 @@ describe('garment-only redraw', () => {
     expect(buildEditNegative('black bikini. No wide cups.', 'thick straps, no beige fabric\nwide cups')).toBe('thick straps, beige fabric, wide cups');
   });
 });
+
+describe('described change, no clothing photo (Simple Mode "change her top to a red tank top")', () => {
+  const base = { sourceName: 's.png', sourceSize: { width: 832, height: 1216 }, referenceName: null, autoCrop: false, prompt: 'p', seed: 1, faceRestore: null };
+  it('the editor sees only her photo, with the old top masked for redraw', () => {
+    const g: any = buildOutfitEditGraph({ ...base, redraw: { scope: 'top', grow: 'garment', includeFeet: false } } as any);
+    expect(g.ref).toBeUndefined();
+    expect(g.ref_crop).toBeUndefined();
+    expect(g.q_pos.inputs.image2).toBeUndefined();
+    expect(g.q_neg.inputs.image2).toBeUndefined();
+    expect(g.q_pos.inputs.image1).toEqual(['redraw_mask', 2]);
+    expect(g.redraw_mask.inputs.scope).toBe('top');
+  });
+  it('the instruction names the colour as a requirement and never mentions an image 2', () => {
+    const p = buildEditPrompt({ scope: 'top', description: 'a red tank top', originalOutfit: "She's wearing gray pajama shorts and a loose white crop top", footwear: 'keep', redraw: true, textOnly: true });
+    expect(p).toContain('she now wears a red tank top');
+    expect(p).toContain('including its colour');
+    expect(p).toContain('Keep her lower-body clothing from image 1 exactly as it is');
+    expect(p).not.toMatch(/image 2|recolour/);
+    const f = buildEditPrompt({ scope: 'full', description: 'a blue sundress', originalOutfit: 'gray shorts and a white top', footwear: 'keep', textOnly: true });
+    expect(f).toContain('she now wears only a blue sundress');
+    expect(f).not.toMatch(/image 2/);
+  });
+});

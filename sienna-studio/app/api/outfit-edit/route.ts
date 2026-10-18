@@ -18,7 +18,7 @@ export const POST = handle(async (req: Request) => {
     z.object({
       sourceId: z.string().min(1).max(64),
       imageIndex: z.number().int().min(0).max(7).default(0),
-      reference: storedImageSchema,
+      reference: storedImageSchema.nullable(),
       manualCrop: z.boolean().default(false),
       description: z.string().trim().min(3, 'Describe the clothing in the photo').max(MAX_DESCRIPTION),
       scope: z.enum(['full', 'top', 'bottom']).default('full'),

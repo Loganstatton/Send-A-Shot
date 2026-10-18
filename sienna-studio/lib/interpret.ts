@@ -117,6 +117,7 @@ export function tidyClause(raw: string): string {
   s = s.replace(KEEP_ALL_RE, '');
   s = s.replace(CHANGE_RE, (m, noun: string, to: string) => (/^(background|setting|scene|location)$/i.test(noun) ? m : `wearing ${to}`));
   s = s.replace(MAKE_RE, (_m, noun: string, adj: string) => `wearing ${/^(clothing|clothes|outfit)$/i.test(noun) ? `${adj} clothes` : `a ${adj} ${noun}`}`);
+  s = s.replace(/^\s*(?:(?:just|only)\s+)?make\s+it\s+(?:into\s+)?(?=(an?|the)\b)/i, ''); // "make it a beach at sunset" → "a beach at sunset"
   s = s.replace(LEAD_IN_RE, '');
   s = s.replace(/\b(use|using|take|taking)\s+(this|the|my|that)\s+(uploaded\s+)?(photo|photograph|image|picture|pic|reference)(\s+as\s+(the|a)\s+reference)?\b/gi, '');
   s = s.replace(/\b(keep|preserve|maintain|retain)\s+(the\s+)?(exact\s+)?same\s+(overall\s+)?(pose|composition|framing|position|posture|angle|layout)\b/gi, '');
