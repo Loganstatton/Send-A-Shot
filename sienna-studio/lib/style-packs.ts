@@ -298,3 +298,52 @@ export function withTriggers(positive: string, active: ActiveStylePack[]): strin
   const triggers = active.map((a) => a.pack.trigger).filter((t) => t && !positive.includes(t));
   return triggers.length ? `${triggers.join(', ')}, ${positive}` : positive;
 }
+
+/**
+ * Simple Mode: packs switched on by the description itself, at their default strengths. Matched on the interpreted
+ * fields (so "no lingerie" — already moved to Avoid — doesn't switch anything on), adult packs only in adult mode,
+ * the nude-only pack only when nudeOnlyAllowed says so, at most STYLE_PACK_STACK_LIMIT packs (first match wins, in
+ * this order). Real-photo look and Natural anatomy are left to the Advanced screen: "real photo" is in most
+ * descriptions and that pack changes outfits; the anatomy pack is a deliberate choice.
+ */
+const AUTO_PACKS: [string, RegExp][] = [
+  ['monokini', /\b(monokini|slingshot (swimsuit|bikini|one-piece))\b/i],
+  ['string_swimsuit', /\bstring\s+(thong\s+)?(bikini|swimsuit)\b|\bstring thong bottoms?\b/i],
+  ['micro_bikini', /\bmicro[- ]?(triangle\s+)?bikini\b/i],
+  ['lace_bodysuit', /\b(lace\s+)?(high-cut\s+)?(bodysuit|leotard)\b/i],
+  ['french_lace', /\bfrench lace\b|\blace\s+(lingerie|bra|bralette|panties|underwear|teddy)\b|\blingerie\b[^.]{0,40}\blace\b/i],
+  ['belly_cutout_dress', /\b(belly\s+)?cut-?out dress\b|\bbelly cut-?out\b/i],
+  ['mesh_top', /\b(shiny|metallic|chain(-?mail)?|chain-mesh)\s+(mesh\s+)?top\b|\bmesh top\b/i],
+  ['underboob_shirt', /\bunderboob\b/i],
+  ['lace_bandeau', /\b(lace\s+)?bandeau top\b|\blace bandeau\b/i],
+  ['wet_tshirt', /\b(thin|wet|damp|clingy|clinging)\s+(white\s+)?(cotton\s+)?(t-shirt|tshirt|tee|shirt)\b/i],
+  ['all_fours', /\bon all fours\b|\bon (her )?hands and knees\b/i],
+  ['sink_selfie', /\bsink selfie\b|\b(sitting|sat|perched) on the (bathroom )?(sink|vanity|counter by the sink)\b/i],
+  ['realistic_nudes', /\b(nude|naked)\b/i],
+  ['natural_skin', /\b(natural|matte|textured|real) skin( texture)?\b|\bvisible pores\b|\bno makeup\b/i],
+];
+
+export function packsForDescription(
+  fields: { outfit?: string; pose?: string; bodyPresentation?: string; extra?: string },
+  contentMode: 'sfw' | 'adult',
+): Record<string, number> {
+  const text = Object.entries(fields as Record<string, string | undefined>)
+    .filter(([k, v]) => k !== 'avoid' && v)
+    .map(([, v]) => v)
+    .join('. ');
+  const offered = new Set(stylePacksFor(contentMode).map((p) => p.id));
+  const out: Record<string, number> = {};
+  for (const [id, re] of AUTO_PACKS) {
+    if (Object.keys(out).length >= STYLE_PACK_STACK_LIMIT) break;
+    const pack = STYLE_PACKS.find((p) => p.id === id);
+    if (!pack || !offered.has(id) || !re.test(text)) continue;
+    // "completely nude on her bed" → "completely nude": the place and pose aren't outfit items (the check stays strict)
+    const outfit = (fields.outfit ?? '').replace(/^\s*(she'?s|she is|she|her)\s+/i, '').replace(/\s+\b(on|in|at|by|near|lying|sitting|standing|kneeling|posing)\b.*$/i, '');
+    if (pack.nudeOnly && !nudeOnlyAllowed(contentMode, { ...fields, outfit })) continue;
+    // a string bikini already has the string swimsuit pack; the micro pack on top lowers coverage (see its hint)
+    if (id === 'micro_bikini' && out.string_swimsuit) continue;
+    if (id === 'french_lace' && out.lace_bodysuit) continue;
+    out[id] = pack.default;
+  }
+  return out;
+}

@@ -1,4 +1,5 @@
-import { applyClothingChanges, interpretPrompt } from '@/lib/interpret';
+import { applyClothingChanges, interpretPrompt, packNote } from '@/lib/interpret';
+import { packsForDescription } from '@/lib/style-packs';
 import { simpleCreateSchema } from '@/lib/schemas';
 import { startGeneration } from '@/lib/server/generate';
 import { availability, outfitEditEnabled, startOutfitEdit } from '@/lib/server/outfit-edit';
@@ -12,8 +13,8 @@ export const dynamic = 'force-dynamic';
 /**
  * Simple Mode: one description (+ an optional reference photo) → a normal generation. The interpreter files the
  * description into the prompt fields; everything else is the studio's own defaults: Sienna Lock on (her LoRA, her
- * face reference in the face redraw, the face check), the default workflow and parameters, no hidden preset and no
- * style packs (the description decides the outfit). A pose preset is still picked from the pose wording, and the
+ * face reference in the face redraw, the face check), the default workflow and parameters, no hidden preset; style
+ * packs only when the description names what they draw (packsForDescription). A pose preset is still picked from the pose wording, and the
  * on-demand GPU, its budget and the photo checks apply exactly as for the advanced screen.
  */
 export const POST = handle(async (req: Request) => {
@@ -63,6 +64,11 @@ export const POST = handle(async (req: Request) => {
     it.fields = merged;
     if (source.contentMode === 'adult' && adultContentAllowed()) it.contentMode = 'adult';
     it.notes.push('Editing a studio photo: its original description is kept and only what you asked changes.');
+    // packs follow the merged description (the original photo's outfit may have switched one on)
+    const before = packNote(it.packs);
+    it.packs = packsForDescription(it.fields, it.contentMode);
+    it.notes = it.notes.filter((n) => n !== before);
+    if (Object.keys(it.packs).length) it.notes.push(packNote(it.packs));
   }
   const edit = it.reference.mode === 'edit' || it.reference.mode === 'edit+pose';
   const pose = it.reference.mode === 'pose' || it.reference.mode === 'edit+pose';
@@ -76,7 +82,7 @@ export const POST = handle(async (req: Request) => {
       ...settings.defaultParams,
       seed: body.seed ?? -1,
       batchSize: 1,
-      stylePacks: {},
+      stylePacks: it.packs,
       posePreset: null,
       ...(edit && it.reference.denoise !== null ? { denoise: it.reference.denoise } : { denoise: 1 }),
     },

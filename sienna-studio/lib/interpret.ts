@@ -11,6 +11,7 @@
  *  - "Sienna" becomes "she", because the character token is added by the prompt builder.
  * Everything else — outfit, pose, scene, camera — is the user's own words, so presets and defaults can't override it.
  */
+import { packsForDescription, STYLE_PACKS } from './style-packs';
 import { PROMPT_FIELD_KEYS, type ContentMode, type PromptFields } from './types';
 
 export type ReferenceMode = 'none' | 'edit' | 'pose' | 'edit+pose';
@@ -22,6 +23,8 @@ export interface Interpretation {
   reference: { mode: ReferenceMode; denoise: number | null; why: string };
   /** "change her top to a red tank top" — garment swaps, applied to the source photo's outfit when editing one. */
   changes: ClothingChange[];
+  /** Style packs the description switches on (id → strength). */
+  packs: Record<string, number>;
   /** Plain-language notes on what was understood (shown under the prompt box). */
   notes: string[];
 }
@@ -127,7 +130,7 @@ export function tidyClause(raw: string): string {
   s = s.replace(/\b(of|with|for|to|at|like|beside|next to)\s+Sienna(?: Brooks)?\b/g, '$1 her');
   s = s.replace(/\bSienna(?: Brooks)?'s\b/g, 'her').replace(/\bSienna(?: Brooks)?\b/g, 'she');
   s = s.replace(/^she\s+(in|wearing|with|on|at)\b/i, '$1'); // "Sienna in a red dress" → "in a red dress"
-  s = s.replace(/^she\s+(?=\w+ing\b)/i, ''); // "Generate Sienna standing in …" → "standing in …"
+  s = s.replace(/^she\s+(?=\w+ing\b|(completely|fully|totally|nude|naked|topless|barefoot)\b)/i, ''); // "Sienna standing in …" / "Sienna completely nude" → "standing in …" / "completely nude"
   return s.replace(/\s{2,}/g, ' ').replace(/^[\s,;:]+|[\s,;:]+$/g, '').trim();
 }
 
@@ -217,10 +220,27 @@ export function interpretPrompt(
     } else notes.push('The description asks for nudity or adult wardrobe, but adult mode is off on this server — it will be generated as SFW.');
   }
 
+  // a pack that only runs in adult mode (string bikini, lace lingerie, monokini …) asks for adult wardrobe too
+  let packs = packsForDescription(fields, contentMode);
+  if (contentMode === 'sfw' && opts.adultAllowed) {
+    const adultPacks = packsForDescription(fields, 'adult');
+    if (STYLE_PACKS.some((p) => p.section === 'adult' && adultPacks[p.id])) {
+      contentMode = 'adult';
+      packs = adultPacks;
+      notes.push('Adult mode, because the outfit you describe uses an adult style pack.');
+    }
+  }
+  if (Object.keys(packs).length) notes.push(packNote(packs));
+
   const reference = referenceIntent(text, !!opts.hasReference);
   if (reference.mode !== 'none') notes.push(reference.why);
   if (OUTDOOR_RE.test(`${fields.setting} ${fields.lighting}`) && !fields.lighting) notes.push('Outdoor scene: natural daylight instead of the default indoor lighting.');
-  return { fields, contentMode, reference, changes, notes };
+  return { fields, contentMode, reference, changes, packs, notes };
+}
+
+export function packNote(packs: Record<string, number>): string {
+  const names = Object.entries(packs).map(([id, v]) => `${STYLE_PACKS.find((p) => p.id === id)?.label ?? id} (${v})`);
+  return `Style ${names.length > 1 ? 'packs' : 'pack'} switched on by your description: ${names.join(', ')}.`;
 }
 
 /**

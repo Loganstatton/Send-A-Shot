@@ -108,3 +108,34 @@ describe('editing a studio photo (live test: "change her top to a red tank top" 
     expect(referenceIntent('Keep everything the same, just make her smile', true)).toMatchObject({ mode: 'edit', denoise: 0.5 });
   });
 });
+
+describe('style packs from the description', () => {
+  const packs = (t: string, adultAllowed = true) => interpretPrompt(t, { adultAllowed }).packs;
+  it('switches on the pack the outfit names, at its default strength', () => {
+    expect(packs('Sienna on the beach in a black micro bikini', false)).toEqual({ micro_bikini: 0.85 });
+    expect(packs('Sienna in a white lace bra and panties on her bed')).toEqual({ french_lace: 0.6 });
+    expect(packs('Sienna in a black plunging monokini by the pool')).toEqual({ monokini: 0.5 });
+    expect(packs('Sienna in a thin white cotton t-shirt and denim shorts, real photo')).toEqual({ wet_tshirt: 0.4 });
+  });
+  it('adult packs only in adult mode', () => {
+    expect(packs('Sienna in a red string bikini', false)).toEqual({});
+    expect(packs('Sienna in a red string bikini')).toEqual({ string_swimsuit: 0.6 });
+  });
+  it('a micro string bikini gets one bikini pack, not two', () => {
+    expect(packs('Sienna in a micro string bikini')).toEqual({ string_swimsuit: 0.6 });
+  });
+  it('nothing for "no lingerie", nothing for ordinary outfits', () => {
+    expect(packs('Sienna in a red dress, no lingerie showing')).toEqual({});
+    expect(packs('Sienna in gray pajama shorts and a loose white crop top in her kitchen')).toEqual({});
+  });
+  it('the nude pack only for a fully nude outfit', () => {
+    expect(packs('Sienna completely nude on her bed')).toEqual({ realistic_nudes: 0.4 });
+    expect(packs('Sienna nude except for a white towel')).not.toHaveProperty('realistic_nudes');
+  });
+  it('at most two packs', () => {
+    expect(Object.keys(packs('Sienna in a black micro bikini on all fours, natural skin texture with visible pores'))).toHaveLength(2);
+  });
+  it('the note says which packs', () => {
+    expect(interpretPrompt('Sienna in a black micro bikini').notes.join(' ')).toContain('Micro bikini (0.85)');
+  });
+});
