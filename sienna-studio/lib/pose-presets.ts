@@ -93,12 +93,25 @@ const SWIM_RE = /\b(bikini|swimsuit|swimwear|monokini)\b/i;
 const SHORTS_RE = /\b(shorts|hot ?pants)\b/i;
 const FOOTWEAR_RE = /\b(shoes?|sandals?|heels|boots?|sneakers?|trainers|flip[- ]?flops|slides|socks)\b/i;
 
-export function presetOutfitPrompt(presetId: string | undefined | null, outfit: string): { positive: string; negative: string } | null {
+const NUDE_RE = /\b(nude|naked|topless|bottomless|unclothed|no clothing|no clothes)\b/i;
+
+/** The bent-over preset's thong uses the String swimsuit add-on (thin string back) at its own default strength. */
+export function presetThongPack(presetId: string | undefined | null, outfit: string): boolean {
+  return !!presetId && OUTFIT_GUARDED.has(presetId) && THONG_RE.test(outfit) && !NUDE_RE.test(outfit);
+}
+
+/**
+ * The heavier outfit wording crowded the scene out (6-photo test: blurred backgrounds, the sea gone in 3 of 6), so
+ * the Setting is repeated right after the outfit with a sharp, deep-focus phone-photo look.
+ */
+export function presetOutfitPrompt(presetId: string | undefined | null, outfit: string, setting = ''): { positive: string; negative: string } | null {
   if (!presetId || !OUTFIT_GUARDED.has(presetId)) return null;
   const o = outfit.replace(/[()]/g, '').trim();
   if (!o) return null;
-  const pos: string[] = [`(wearing ${o}:1.35)`, '(real fabric with thickness, seams and natural folds:1.1)'];
+  const pos: string[] = [`(wearing ${o}:1.3)`, '(real fabric with thickness, seams and natural folds:1.05)'];
   const neg: string[] = ['(extra people:1.3), (second person:1.3), (people in the background:1.3)', 'hat, bag, sunglasses, jewelry'];
+  // a clothed request stays clothed in this pose, also in adult mode (which drops the SFW cover-up negatives)
+  if (!NUDE_RE.test(o)) neg.push('(nude:1.3), (exposed genitals:1.5), (pubic hair:1.4), (wardrobe malfunction:1.3)');
   if (DRESS_RE.test(o)) {
     pos.push('(the dress skirt hangs down from her hips with gravity, loose draping fabric, soft folds:1.3)', '(hem at mid-thigh:1.15)');
     neg.push('(swimsuit:1.4), (bikini:1.4), (bodysuit:1.4), (leotard:1.3), (one-piece swimsuit:1.4), (underwear:1.2), (bare buttocks:1.2)');
@@ -116,6 +129,11 @@ export function presetOutfitPrompt(presetId: string | undefined | null, outfit: 
   if (!FOOTWEAR_RE.test(o)) {
     pos.push('barefoot');
     neg.push('(sandals:1.3), (shoes:1.2), footwear');
+  }
+  const scene = setting.replace(/[()]/g, '').trim();
+  if (scene) {
+    pos.push(`(${scene}:1.2)`, '(sharp detailed background in focus, deep depth of field, natural iPhone photo:1.15)');
+    neg.push('(blurry background:1.3), (bokeh:1.3), (shallow depth of field:1.2), plain empty background, studio backdrop');
   }
   return { positive: pos.join(', '), negative: neg.join(', ') };
 }

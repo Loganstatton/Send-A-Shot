@@ -35,7 +35,7 @@ import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt, fullBodyFraming } from '../prompt';
-import { matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt } from '../pose-presets';
+import { matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -144,6 +144,16 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       fields: req.fields.pose.trim() ? req.fields : { ...req.fields, pose: posePre.pose },
       params: { ...req.params, width: posePre.width, height: posePre.height, poseRetarget: 0, controlStrength: posePre.strength },
     };
+  }
+
+  // Bent over + string thong: the thin string back needs the String swimsuit add-on (prompting alone gave cheeky
+  // bottoms 3/3). Added at its own default strength, only where the add-on applies at all (adult mode).
+  if (posePre && contentMode === 'adult' && presetThongPack(posePre.id, req.fields.outfit) && !(req.params.stylePacks?.string_swimsuit ?? 0)) {
+    const sp = STYLE_PACKS.find((p) => p.id === 'string_swimsuit');
+    if (sp) {
+      req = { ...req, params: { ...req.params, stylePacks: { ...(req.params.stylePacks ?? {}), string_swimsuit: sp.default } } };
+      warnings.push(`Added the “${sp.label}” add-on (${sp.default}) for the string thong in this pose.`);
+    }
   }
 
   // Experiments not approved for production are ignored unless SIENNA_EXPERIMENTAL=true.
@@ -390,7 +400,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // a preset's own wording (bent over: the hinge spelled out, and the squat/kneel misreads pushed away)
   const presetPrompt = posePre ? POSE_PRESET_PROMPTS[posePre.id] : undefined;
   // presets that lose the outfit (bent over) also repeat the garment, weighted, right after their pose wording
-  const presetOutfit = posePre ? presetOutfitPrompt(posePre.id, packOutfit) : null;
+  const presetOutfit = posePre ? presetOutfitPrompt(posePre.id, packOutfit, req.fields.setting) : null;
   const presetPos = [presetPrompt?.positive, presetOutfit?.positive].filter(Boolean).join(', ');
   const presetNeg = [presetPrompt?.negative, presetOutfit?.negative].filter(Boolean).join(', ');
   // the standard full-body wording asks for "feet and shoes" — it added sandals to bent-over photos; barefoot here

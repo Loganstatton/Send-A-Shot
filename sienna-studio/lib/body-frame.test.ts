@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BODY_FRAME_NODE_ID, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from './body-frame';
-import { matchPosePreset, presetOutfitPrompt } from './pose-presets';
+import { matchPosePreset, presetOutfitPrompt, presetThongPack } from './pose-presets';
 
 const joints = (present: number[]) => Array.from({ length: 14 }, (_, i) => (present.includes(i) ? [100 + i, 200 + i] : null));
 const report = (present: number[], valid = true) => [JSON.stringify({ valid, joints: joints(present) })];
@@ -108,7 +108,7 @@ describe('bent-over preset from the Pose text', () => {
 describe('garment wording for the bent-over preset', () => {
   it('spells out a thong and pushes away fuller bottoms', () => {
     const p = presetOutfitPrompt('bent_over_rear', 'sage green string thong bikini')!;
-    expect(p.positive.startsWith('(wearing sage green string thong bikini:1.35)')).toBe(true);
+    expect(p.positive.startsWith('(wearing sage green string thong bikini:1.3)')).toBe(true);
     expect(p.positive).toContain('thin string back');
     expect(p.negative).toContain('(full coverage bottoms:1.4), (briefs:1.3)');
   });
@@ -132,5 +132,26 @@ describe('garment wording for the bent-over preset', () => {
     expect(presetOutfitPrompt('standing_full_body', 'red bikini')).toBeNull();
     expect(presetOutfitPrompt(null, 'red bikini')).toBeNull();
     expect(presetOutfitPrompt('bent_over_rear', '')).toBeNull();
+  });
+});
+
+describe('bent-over thong add-on, coverage and scene', () => {
+  it('asks for the String swimsuit add-on only for a clothed string thong in this preset', () => {
+    expect(presetThongPack('bent_over_rear', 'sage green string thong bikini')).toBe(true);
+    expect(presetThongPack('bent_over_rear', 'black g-string bikini')).toBe(true);
+    expect(presetThongPack('bent_over_rear', 'light floral sundress')).toBe(false);
+    expect(presetThongPack('bent_over_rear', 'nude, thong tan lines')).toBe(false);
+    expect(presetThongPack('standing_full_body', 'string thong bikini')).toBe(false);
+  });
+  it('keeps a clothed outfit covered, but not a nude request', () => {
+    expect(presetOutfitPrompt('bent_over_rear', 'string thong bikini')!.negative).toContain('(exposed genitals:1.5)');
+    expect(presetOutfitPrompt('bent_over_rear', 'nude')!.negative).not.toContain('exposed genitals');
+  });
+  it('repeats the setting with a sharp, deep-focus background', () => {
+    const p = presetOutfitPrompt('bent_over_rear', 'string thong bikini', "sunny beach with wet sand at the water's edge")!;
+    expect(p.positive).toContain("(sunny beach with wet sand at the water's edge:1.2)");
+    expect(p.positive).toContain('deep depth of field');
+    expect(p.negative).toContain('(blurry background:1.3), (bokeh:1.3)');
+    expect(presetOutfitPrompt('bent_over_rear', 'string thong bikini')!.positive).not.toContain('depth of field');
   });
 });
