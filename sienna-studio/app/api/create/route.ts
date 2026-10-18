@@ -28,7 +28,9 @@ export const POST = handle(async (req: Request) => {
   // region with Qwen-Image-Edit. Live test: whole-photo img2img (0.5 and 0.62) kept a gray top gray when asked for
   // a red one, and at 0.5 also redrew her shorts.
   const changeOnly = source && it.changes.length && !Object.entries(it.fields).some(([k, v]) => k !== 'outfit' && k !== 'avoid' && v);
-  if (source && changeOnly && outfitEditEnabled()) {
+  // Off until the photo GPU can hold Qwen-Image-Edit: on the 24 GB RTX 4090 it ran out of memory loading the model
+  // (live, 18 Oct). SIENNA_SIMPLE_TEXT_EDIT=true turns it on once the photo GPU has 32 GB or more.
+  if (source && changeOnly && outfitEditEnabled() && process.env.SIENNA_SIMPLE_TEXT_EDIT === 'true') {
     await wakePhotoGpu(); // 503 "starting" while the photo GPU boots; the page retries
     const parts = new Set(it.changes.map((c) => c.part));
     const one = parts.size === 1 ? [...parts][0] : null;
