@@ -49,7 +49,7 @@ export function GenerationMeta({ rec, showPrompt = true }: { rec: GenerationReco
           <Meta
             k="Face check"
             v={
-              <Badge tone={rec.identityCheck?.status === 'verified' ? 'ok' : rec.identityCheck?.status === 'not_applicable' ? 'neutral' : 'warn'}>
+              <Badge tone={rec.identityCheck?.status === 'verified' || rec.identityCheck?.status === 'likely' ? 'ok' : rec.identityCheck?.status === 'not_applicable' ? 'neutral' : 'warn'}>
                 {identityLabel(rec.identityCheck)}
                 {typeof rec.identityCheck?.similarity === 'number' ? ` · ${rec.identityCheck.similarity.toFixed(2)}` : ''}
                 {rec.identityCheck?.reason && rec.identityCheck.status !== 'unconfirmed' ? ` · ${rec.identityCheck.reason}` : ''}

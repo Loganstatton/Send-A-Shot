@@ -13,9 +13,18 @@ describe('faceVerdict — production (strict 0.74)', () => {
     expect(faceVerdict(face(0.74), true).status).toBe('verified');
   });
 
-  it('anything below 0.74 is a mismatch and is redone — including faces that happen to be turned', () => {
-    expect(faceVerdict(face(0.73), false)).toEqual({ status: 'mismatch', reason: "didn't look enough like Sienna" });
-    expect(faceVerdict(face(0.7, { yaw: 0.9, eyeRatio: 0.2 }), false, 'strict').status).toBe('mismatch');
+  it('0.70–0.74 is likely Sienna (accepted, not redone); below 0.70 is a mismatch and is redone', () => {
+    // blind review, 21 Oct: 9 of 11 rejected faces in this band were clearly her
+    expect(faceVerdict(face(0.73), false)).toEqual({ status: 'likely', reason: '' });
+    expect(faceVerdict(face(0.7, { yaw: 0.9, eyeRatio: 0.2 }), false, 'strict').status).toBe('likely');
+    expect(faceVerdict(face(0.69), false)).toEqual({ status: 'mismatch', reason: "didn't look enough like Sienna" });
+  });
+  it('a likely face with a stronger tell is still a mismatch: much lighter hair, or a reference photo shaped it', () => {
+    // the blonde faces copied from uploaded photos scored 0.748 and passed; hair is the tell the score misses
+    expect(faceVerdict(face(0.72, { hairRel: 1.2 }), false).status).toBe('mismatch');
+    expect(faceVerdict(face(0.72, { hairRel: 0.4 }), false).status).toBe('likely');
+    expect(faceVerdict(face(0.72), false, 'strict', { referencePhoto: true }).status).toBe('mismatch');
+    expect(faceVerdict(face(0.75), false, 'strict', { referencePhoto: true }).status).toBe('verified');
   });
 
   it('when a rear view was asked for, a low face score is inconclusive: not redone, never a match', () => {
@@ -230,9 +239,10 @@ describe('legacy photos (made before face verification)', () => {
 describe('Edit Outfit results (single photo, no retries)', () => {
   const rec = { siennaLock: true, params: {} as never, exposureGuard: undefined };
   const report = (similarity: number | null, more = {}) => ({ available: true, ok: true, similarity, size: 150, found: similarity !== null, ...more });
-  it('uses the same 0.74 rule', () => {
+  it('uses the same rule (0.74 verified, 0.70 likely)', () => {
     expect(singlePhotoIdentity(rec, report(0.8)).status).toBe('verified');
-    expect(singlePhotoIdentity(rec, report(0.7))).toEqual({ status: 'unconfirmed', similarity: 0.7, reason: "didn't look enough like Sienna" });
+    expect(singlePhotoIdentity(rec, report(0.7))).toEqual({ status: 'likely', similarity: 0.7 });
+    expect(singlePhotoIdentity(rec, report(0.66))).toEqual({ status: 'unconfirmed', similarity: 0.66, reason: "didn't look enough like Sienna" });
     expect(singlePhotoIdentity(rec, report(null)).status).toBe('unchecked');
   });
   it('face check missing, failed or empty → unavailable (Needs Review), never verified', () => {

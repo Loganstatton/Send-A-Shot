@@ -39,7 +39,8 @@ import { matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, p
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
-import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { buildCorrection } from '../corrections';
+import { addCoverage, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
@@ -569,7 +570,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         status: 'on',
         checks: { top: added.includes(EXPOSURE_NODE_ID), face: added.includes(FACE_NODE_ID), body },
         // with the AI check two more tries: face-check redos alone used up all 4 in the first live test (21 Oct)
-        maxAttempts: EXPOSURE_MAX_ATTEMPTS + (req.simple?.ai?.check ? 2 : 0),
+        maxAttempts: req.simple?.ai?.check ? AI_MAX_ATTEMPTS : EXPOSURE_MAX_ATTEMPTS,
         attempts: [],
       };
     } else if (missingAll.length) {
@@ -831,32 +832,52 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
             },
           ];
           const latest = attempts[attempts.length - 1];
-          // AI check (Simple Mode): only a photo that passed the GPU checks is worth a look; no verdict = no change
-          if (!failed(latest) && rec.simple?.ai?.check && aiEnabled() && state.images[0]) {
+          // AI check (Simple Mode): every photo that kept its top on gets a verdict — pass, fail with fixes, or
+          // unavailable with the reason (never a silent pass) — so corrections are possible even after a face miss
+          if (!latest.exposed && rec.simple?.ai?.check && aiEnabled() && state.images[0]) {
             try {
               const { bytes, mime } = await backend.fetchImage(state.images[0]);
               const v = await aiCheck(rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime);
-              if (v) {
-                const major = v.issues.filter((i) => i.major);
-                latest.aiOk = v.verdict === 'pass' && !major.length;
-                latest.aiScore = Math.max(0, Math.min(10, v.score));
+              latest.aiStatus = v.status;
+              if (v.status === 'unavailable') latest.aiReason = v.reason;
+              else {
+                const major = v.result.issues.filter((i) => i.major);
+                latest.aiOk = v.status === 'pass';
+                latest.aiScore = Math.max(0, Math.min(10, v.result.score));
                 latest.aiIssues = major.map((i) => `${i.aspect}: ${i.problem}`);
+                latest.aiFixes = major;
               }
-            } catch {
-              // no verdict
+            } catch (e) {
+              latest.aiStatus = 'unavailable';
+              latest.aiReason = `the photo could not be sent to the AI check (${(e as Error).message})`;
             }
           }
-          if (failed(latest) && attempts.length < guard.maxAttempts && rec.submittedGraph) {
-            // New seed. If a nipple showed although the outfit has a top, also turn the style packs a notch lower and
-            // add their coverage wording (the first attempt keeps each pack's full look); a face miss only needs the seed.
-            const seed = Math.floor(Math.random() * 2 ** 48);
-            let graph = reseed(rec.submittedGraph, rec.seed, seed);
+          const kind = rec.submittedGraph ? nextRetry(attempts, guard.maxAttempts) : null;
+          if (kind) {
+            // safety (a nipple showed): new seed, style packs a notch lower plus their coverage wording.
+            // correction: the original prompt plus the AI check's fixes (what to stress, what to keep out); a new seed
+            //   only when the composition itself was wrong (pose, anatomy, framing).
+            // face: new seed, same prompt.
             let prompts = { positive: rec.positivePrompt, negative: rec.negativePrompt };
-            if (latest.exposed) {
+            let graph = rec.submittedGraph!;
+            let newSeed = true;
+            if (kind === 'safety') {
               const cov = addCoverage(softenPacks(graph), prompts, packCoverage((rec.stylePacks ?? []).map((p) => p.id)));
               graph = cov.graph;
               prompts = { positive: cov.positive, negative: cov.negative };
+            } else if (kind === 'correction') {
+              const fix = buildCorrection(latest.aiFixes ?? [], prompts);
+              if (latest.framingOk === false) fix.summary.push('framing: full body, head to toe');
+              if (latest.poseOk === false) fix.summary.push('pose: as described');
+              const cov = addCoverage(graph, prompts, { positive: fix.positive, negative: fix.negative });
+              graph = cov.graph;
+              prompts = { positive: cov.positive, negative: cov.negative };
+              newSeed = fix.newSeed || latest.framingOk === false || latest.poseOk === false || !(fix.positive || fix.negative);
+              latest.corrected = fix.summary;
             }
+            latest.redoneFor = kind;
+            const seed = newSeed ? Math.floor(Math.random() * 2 ** 48) : rec.seed;
+            if (newSeed) graph = reseed(graph, rec.seed, seed);
             try {
               const { promptId } = await backend.queuePrompt(graph, rec.clientId ?? newId('sienna-'));
               return patchRecord(id, {
@@ -865,6 +886,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               });
             } catch {
               // couldn't queue the retry: keep what we have
+              delete latest.redoneFor;
             }
           }
           const kept = pickAttempt(attempts);
@@ -908,11 +930,11 @@ function identityFields(face: FaceReport, rec: GenerationRecord) {
   const policy: FacePolicy = experimentsEnabled() ? 'pose-aware' : 'strict';
   const rearPack = (rec.stylePacks ?? []).some((p) => STYLE_PACKS.find((sp) => sp.id === p.id)?.rearPose);
   const rear = rearRequest(`${rec.fields.pose} ${rec.fields.framing} ${rec.fields.extra}`, rec.params.posePreset, rearPack);
-  const v = faceVerdict(face, rear, policy);
+  const v = faceVerdict(face, rear, policy, { referencePhoto: !!(rec.initImage || (rec.poseImage && !rec.poseImage.label?.startsWith('Pose preset'))) });
   return {
     similarity: face.similarity,
     identity: v.status,
-    ...(v.status === 'verified' ? { faceOk: true } : v.status === 'mismatch' ? { faceOk: false } : {}),
+    ...(v.status === 'verified' || v.status === 'likely' ? { faceOk: true } : v.status === 'mismatch' ? { faceOk: false } : {}),
     ...(v.reason ? { identityReason: v.reason } : {}),
     framingOk: framingOk(fullBodyFraming(rec.fields).add, face.size, rec.params.height),
   };
@@ -924,6 +946,7 @@ function identityFields(face: FaceReport, rec: GenerationRecord) {
 function identitySummary(kept: { identity?: string; similarity?: number | null; identityReason?: string; faceOk?: boolean }): NonNullable<GenerationRecord['identityCheck']> {
   const similarity = kept.similarity ?? null;
   if (kept.identity === 'verified' || (kept.identity === undefined && kept.faceOk === true)) return { status: 'verified', similarity };
+  if (kept.identity === 'likely') return { status: 'likely', similarity };
   if (kept.identity === 'unchecked') return { status: 'unchecked', similarity, reason: kept.identityReason };
   if (kept.identity === 'inconclusive') return { status: 'inconclusive', similarity, reason: kept.identityReason };
   return { status: 'unconfirmed', similarity, reason: kept.identityReason ?? "didn't look enough like Sienna" };

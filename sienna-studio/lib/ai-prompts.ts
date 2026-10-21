@@ -35,11 +35,24 @@ export const ReadSchema = z.object({
 });
 export type ReadResult = z.infer<typeof ReadSchema>;
 
+export const CHECK_ASPECTS = ['outfit', 'pose', 'anatomy', 'scene', 'framing', 'lighting', 'camera', 'artifacts', 'look', 'other'] as const;
 export const CheckSchema = z.object({
-  verdict: z.enum(['pass', 'fail']),
+  /** pass / fail, or cannot_judge when the photo can't be assessed (then say why in cannot_judge_reason). */
+  verdict: z.enum(['pass', 'fail', 'cannot_judge']),
+  cannot_judge_reason: z.string(),
   /** 0–10: how well the photo matches the request and looks like a real, flawless photo. */
   score: z.number(),
-  issues: z.array(z.object({ aspect: z.string(), problem: z.string(), major: z.boolean() })),
+  issues: z.array(
+    z.object({
+      aspect: z.enum(CHECK_ASPECTS),
+      problem: z.string(),
+      major: z.boolean(),
+      /** A short image-prompt phrase for what the photo must show instead ("both hands holding the white mug"). */
+      emphasize: z.string(),
+      /** A short phrase naming what wrongly appeared, for the negative prompt ("denim shorts", "shoes"). */
+      avoid: z.string(),
+    }),
+  ),
 });
 export type CheckResult = z.infer<typeof CheckSchema>;
 
@@ -92,18 +105,21 @@ export function readerUser(description: string, reference: 'none' | 'pose' | 'ed
   return `Description:\n${description}${ref}`;
 }
 
-export const CHECK_SYSTEM = `You inspect photos made by an image studio before the user sees them. The photo shows Sienna, a fictional adult woman; her face and identity are checked separately, so ignore who she is.
+export const CHECK_SYSTEM = `You inspect photos made by an image studio before the user sees them. The photo shows Sienna, a fictional 24-year-old adult woman. Her established look: long dark-brown wavy hair with lighter caramel ends, light freckles across her nose and cheeks, natural hazel-green eyes, a curvy figure. (Fine details of her face are checked by a separate system.)
 
-Compare the photo with the request and with what a real, unedited photo looks like. Report:
-- outfit: wrong or missing garments, wrong colours, garments merged or changed
-- pose: body position, hands, arms or legs clearly not as described
-- anatomy: malformed hands (merged, missing or extra fingers, claw or paw shapes), extra or missing limbs, twisted joints, broken feet
-- scene: wrong place, missing key objects
-- framing: much closer or wider than asked
+The user's request is the source of truth. Compare the photo with it, and with what a real, unedited photo looks like. Report every problem as an issue:
+- outfit: wrong, missing or extra garments, wrong colours or materials, garments merged or changed (lace shorts that became denim, a white top that came out gray), shoes when bare feet were asked for
+- pose: body position, hands, arms, legs or head clearly not as described (one hand instead of both, a leg on the floor instead of on the counter)
+- anatomy: malformed hands (merged, missing or extra fingers, claw or paw shapes), extra or missing arms or legs, twisted joints, broken feet
+- scene: wrong place (a bedroom instead of a living room), missing key objects
+- framing / camera / lighting: clearly not what was asked (much closer or wider, a different angle, flash instead of golden hour)
 - artifacts: text, logos, watermarks, app interface overlays, extra people, duplicated objects, obvious AI smearing
+- look: hair colour clearly not hers (blonde, black, red), or plainly a different woman
 
-major = a viewer would notice it at once or it contradicts the request; minor = a small deviation. Do not report things the request didn't ask for, and don't be picky about small creative choices.
-verdict = "fail" when there is at least one major issue, else "pass". score = 0–10 for how well it matches and how real it looks.`;
+major = a viewer would notice it at once or it contradicts the request; minor = a small deviation. Don't report things the request didn't ask for, and don't be picky about small creative choices.
+For each issue give "emphasize": a short image-prompt phrase describing what the photo must show instead (e.g. "both hands holding the white mug", "white lace shorts", "living room with a gray sofa", "barefoot"), and "avoid": a short phrase naming what wrongly appeared (e.g. "denim shorts", "shoes", "bedroom", "extra fingers"); use "" when there is nothing to say.
+
+verdict: "fail" when there is at least one major issue, "pass" when there is none, "cannot_judge" only when you cannot assess the photo at all (then explain in cannot_judge_reason; otherwise leave it ""). score = 0–10 for how well it matches and how real it looks.`;
 
 export function checkUser(request: string): string {
   return `Request:\n${request}\n\nDoes this photo match the request?`;

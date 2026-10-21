@@ -44,7 +44,7 @@ describe('exposure guard helpers', () => {
     const c = { seed: 3, exposed: false, score: 0, images: ['c'] };
     expect(pickAttempt([a, c]).seed).toBe(3);
     expect(pickAttempt([a, b]).seed).toBe(2);
-    expect(exposureWarning([a, c], c)).toContain('redid 1 photo (1 showed a nipple)');
+    expect(exposureWarning([a, c], c)).toContain('made 2 photos (1 showed a nipple)');
     expect(exposureWarning([a, b], b)).toContain('all 2 attempts');
     expect(exposureWarning([c], c)).toBeNull();
   });
@@ -124,7 +124,7 @@ describe('pose-aware face check in the retry loop', () => {
     const miss2 = att(4, 'mismatch', 0.45);
     expect(pickAttempt([sure, unsure, miss, miss2]).seed).toBe(3);
     expect(pickAttempt([unsure, miss, miss2]).seed).toBe(2);
-    expect(exposureWarning([miss, unsure], unsure)).toMatch(/redid 1 photo \(1 didn't look enough like Sienna\); kept seed 2\. Face check inconclusive/);
+    expect(exposureWarning([miss, unsure], unsure)).toMatch(/made 2 photos \(1 didn't look enough like Sienna\); kept the best \(seed 2\)\. Face check inconclusive/);
   });
 
   it('a verified first photo needs no note', () => {
@@ -157,6 +157,6 @@ describe('no face to compare (production)', () => {
     const seq = [att(1, 'mismatch', 0.6), att(2, 'unchecked', null)];
     expect(failed(seq[0])).toBe(true);
     expect(pickAttempt(seq).seed).toBe(2);
-    expect(exposureWarning(seq, seq[1])).toContain('kept seed 2. Face not verified — manual review required');
+    expect(exposureWarning(seq, seq[1])).toContain('kept the best (seed 2). Face not verified — manual review required');
   });
 });

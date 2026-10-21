@@ -191,3 +191,12 @@ describe('generate request schema', () => {
     expect(parsed.data).toMatchObject({ handRefine: false, faceCheck: false, posePreset: 'arms_crossed' });
   });
 });
+
+describe('the description wins over a pack\'s own outfit wording', () => {
+  it('a named garment shape keeps the pack from adding its tiny-triangle wording', async () => {
+    const { withPackOutfit, activeStylePacks } = await import('./style-packs');
+    const micro = activeStylePacks({ micro_bikini: 0.85 }, 'sfw');
+    expect(withPackOutfit('black micro bikini', micro)).toContain('tiny micro triangle bikini');
+    expect(withPackOutfit('black micro bikini with high-waisted bottoms', micro)).toBe('black micro bikini with high-waisted bottoms');
+  });
+});

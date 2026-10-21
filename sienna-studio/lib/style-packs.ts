@@ -254,7 +254,11 @@ export function packCoverage(ids: string[]): { positive: string; negative: strin
 }
 
 /** Outfit text with the active packs' outfit wording added (once). */
+/** Garment shapes the user named that a pack's own outfit wording would contradict (the user's words win). */
+const OWN_SHAPE_RE = /\b(high[- ]waist(ed)?|boy ?shorts?|full[- ]coverage|bandeau|underwire|sports|halter|one[- ]piece|balconette|scoop|bralette|briefs)\b/i;
+
 export function withPackOutfit(outfit: string, active: ActiveStylePack[]): string {
+  if (OWN_SHAPE_RE.test(outfit)) return outfit;
   const extra = active.map((a) => a.pack.outfit ?? '').filter((o) => o && !outfit.includes(o));
   return extra.length ? [outfit.trim().replace(/[,.\s]+$/, ''), ...extra].filter(Boolean).join(', ') : outfit;
 }

@@ -364,13 +364,18 @@ export interface GenerationRecord {
       score: number;
       similarity?: number | null;
       faceOk?: boolean;
-      identity?: 'verified' | 'mismatch' | 'inconclusive' | 'unchecked';
+      identity?: 'verified' | 'likely' | 'mismatch' | 'inconclusive' | 'unchecked';
       identityReason?: string;
       framingOk?: boolean;
       poseOk?: boolean;
       aiOk?: boolean;
       aiScore?: number;
       aiIssues?: string[];
+      aiStatus?: 'pass' | 'fail' | 'unavailable';
+      aiReason?: string;
+      redoneFor?: 'safety' | 'face' | 'correction';
+      corrected?: string[];
+      aiFixes?: { aspect: string; problem: string; major: boolean; emphasize: string; avoid: string }[];
       images: { filename: string; subfolder: string; type: string; nodeId: string }[];
     }[];
   };
@@ -385,7 +390,7 @@ export interface GenerationRecord {
     /** verified: matched Sienna. unconfirmed: no attempt matched. unchecked: face not detected / too small.
      * unavailable: the face check could not run. inconclusive: experimental pose-aware rule only.
      * not_applicable: Sienna Lock off (not meant to be Sienna). */
-    status: 'verified' | 'inconclusive' | 'unconfirmed' | 'unchecked' | 'unavailable' | 'not_applicable';
+    status: 'verified' | 'likely' | 'inconclusive' | 'unconfirmed' | 'unchecked' | 'unavailable' | 'not_applicable';
     similarity: number | null;
     reason?: string;
   };

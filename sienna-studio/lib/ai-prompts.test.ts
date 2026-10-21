@@ -41,11 +41,70 @@ describe('AI check in the photo checks', () => {
     expect(pickAttempt([miss, better]).seed).toBe(2);
     const w = exposureWarning([miss, better], better)!;
     expect(w).toContain("didn't match your description");
-    expect(w).toContain('still off: outfit: top is gray, not red');
+    expect(w).toContain('Still not right in the kept photo: outfit: top is gray, not red');
   });
   it('the face still outranks the AI score', () => {
     const wrongFace = a({ seed: 1, faceOk: false, identity: 'mismatch', aiOk: true, aiScore: 9 });
     const offDesc = a({ seed: 2, aiOk: false, aiScore: 4 });
     expect(pickAttempt([wrongFace, offDesc]).seed).toBe(2);
+  });
+});
+
+import { buildCorrection } from './corrections';
+import { nextRetry, RETRY_BUDGET } from './exposure';
+
+describe('retry budget (first live AI test: face redos used every try)', () => {
+  const a = (o: Partial<ExposureAttempt>): ExposureAttempt => ({ seed: 1, exposed: false, score: 0, images: [], faceOk: true, ...o });
+  it('face misses get at most two redos, then a correction can still happen', () => {
+    const seq = [a({ faceOk: false, redoneFor: 'face' }), a({ faceOk: false, redoneFor: 'face' }), a({ faceOk: false })];
+    expect(nextRetry(seq, 5)).toBeNull();
+    const seq2 = [a({ faceOk: false, redoneFor: 'face' }), a({ faceOk: false, redoneFor: 'face' }), a({ aiOk: false })];
+    expect(nextRetry(seq2, 5)).toBe('correction');
+  });
+  it('corrections get at most two redos; an exposed photo is always redone while attempts remain', () => {
+    expect(RETRY_BUDGET).toEqual({ face: 2, correction: 2 });
+    const seq = [a({ aiOk: false, redoneFor: 'correction' }), a({ aiOk: false, redoneFor: 'correction' }), a({ aiOk: false })];
+    expect(nextRetry(seq, 5)).toBeNull();
+    expect(nextRetry([a({}), a({ exposed: true })], 5)).toBe('safety');
+    expect(nextRetry([a({}), a({}), a({}), a({}), a({ exposed: true })], 5)).toBeNull();
+  });
+  it('a photo the AI could not judge is not redone and is not a pass', () => {
+    const unj = a({ aiStatus: 'unavailable', aiReason: 'the AI declined to assess it' });
+    expect(nextRetry([unj], 5)).toBeNull();
+    expect(exposureWarning([unj], unj)).toContain('Not checked against your description: the AI declined to assess it');
+  });
+  it('keeps the best photo, not the last', () => {
+    const good = a({ seed: 1, aiOk: false, aiScore: 7, identity: 'verified', similarity: 0.8 });
+    const worse = a({ seed: 2, aiOk: false, aiScore: 3, identity: 'likely', similarity: 0.71 });
+    expect(pickAttempt([good, worse]).seed).toBe(1);
+  });
+});
+
+describe('targeted corrections', () => {
+  const prompts = { positive: 'standing in her kitchen, white crop top', negative: 'blurry' };
+  it('turns the checker feedback into weighted fixes and negatives, keeping the original prompt', () => {
+    const c = buildCorrection(
+      [
+        { aspect: 'outfit', problem: 'lace shorts became denim', major: true, emphasize: 'white lace shorts', avoid: 'denim shorts' },
+        { aspect: 'scene', problem: 'pool a bit small', major: false, emphasize: 'big pool', avoid: '' },
+      ],
+      prompts,
+    );
+    expect(c.positive).toBe('(white lace shorts:1.3)');
+    expect(c.negative).toBe('denim shorts');
+    expect(c.newSeed).toBe(false); // outfit fix: keep the composition that was fine
+    expect(c.summary).toEqual(['outfit: white lace shorts (not denim shorts)']);
+  });
+  it('a pose or anatomy problem needs a new composition and the anatomy negatives', () => {
+    const c = buildCorrection(
+      [
+        { aspect: 'pose', problem: 'one hand on the mug', major: true, emphasize: 'both hands holding the white mug', avoid: 'one hand on the bed' },
+        { aspect: 'anatomy', problem: 'extra finger', major: true, emphasize: 'hands with five fingers', avoid: 'extra fingers' },
+      ],
+      prompts,
+    );
+    expect(c.newSeed).toBe(true);
+    expect(c.positive).toContain('(both hands holding the white mug:1.3)');
+    expect(c.negative).toContain('fused fingers');
   });
 });

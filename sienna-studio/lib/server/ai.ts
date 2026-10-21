@@ -41,14 +41,16 @@ export async function aiSpend() {
   return { ...s, budgetUsd: budget(), enabled: aiEnabled(), model: MODEL };
 }
 
+type Answer<T> = { ok: true; value: T } | { ok: false; reason: string };
+
 async function ask<T>(
   system: string,
   content: Anthropic.Beta.BetaContentBlockParam[],
   schema: Parameters<typeof betaZodOutputFormat>[0],
   effort: 'low' | 'medium',
-): Promise<T | null> {
-  if (!aiEnabled()) return null;
-  if ((await spent()).usd >= budget()) return null;
+): Promise<Answer<T>> {
+  if (!aiEnabled()) return { ok: false, reason: 'the AI is not set up (no ANTHROPIC_API_KEY)' };
+  if ((await spent()).usd >= budget()) return { ok: false, reason: `this month's AI budget ($${budget()}) is used up` };
   try {
     const res = await api().beta.messages.parse({
       model: MODEL,
@@ -60,30 +62,47 @@ async function ask<T>(
       messages: [{ role: 'user', content }],
     });
     await record(aiCost(res.model || MODEL, res.usage));
-    if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens') {
-      console.warn(`AI: no answer (${res.stop_reason}${res.stop_details?.category ? `, ${res.stop_details.category}` : ''})`);
-      return null;
+    if (res.stop_reason === 'refusal') {
+      const why = res.stop_details?.category ? ` (${res.stop_details.category})` : '';
+      console.warn(`AI: declined${why}`);
+      return { ok: false, reason: `the AI declined to assess it${why}` };
     }
-    if (!res.parsed_output) console.warn('AI: answer did not match the expected shape');
-    return (res.parsed_output as T) ?? null;
+    if (res.stop_reason === 'max_tokens') {
+      console.warn('AI: answer cut off');
+      return { ok: false, reason: 'the AI answer was cut off' };
+    }
+    // an empty or malformed answer is never a pass
+    if (!res.parsed_output) {
+      console.warn('AI: answer did not match the expected shape');
+      return { ok: false, reason: 'the AI gave no usable answer' };
+    }
+    return { ok: true, value: res.parsed_output as T };
   } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) console.error('AI: ANTHROPIC_API_KEY was rejected');
-    else if (e instanceof Anthropic.RateLimitError) console.error('AI: rate limited');
-    else if (e instanceof Anthropic.APIError) console.error(`AI: API error ${e.status}: ${e.message}`);
-    else console.error('AI:', (e as Error).message);
-    return null;
+    const reason =
+      e instanceof Anthropic.AuthenticationError ? 'the ANTHROPIC_API_KEY was rejected'
+      : e instanceof Anthropic.RateLimitError ? 'the AI is rate limited'
+      : e instanceof Anthropic.APIError ? `AI API error ${e.status}`
+      : `AI request failed (${(e as Error).message})`;
+    console.error(`AI: ${reason}`);
+    return { ok: false, reason };
   }
 }
 
 /** The description read into prompt fields, packs and a pose preset (null = use the rule-based reader). */
-export function aiRead(description: string, reference: 'none' | 'pose' | 'edit' | 'edit+pose', adultAllowed: boolean): Promise<ReadResult | null> {
-  return ask<ReadResult>(readerSystem(adultAllowed), [{ type: 'text', text: readerUser(description, reference) }], ReadSchema, 'low');
+export async function aiRead(description: string, reference: 'none' | 'pose' | 'edit' | 'edit+pose', adultAllowed: boolean): Promise<ReadResult | null> {
+  const a = await ask<ReadResult>(readerSystem(adultAllowed), [{ type: 'text', text: readerUser(description, reference) }], ReadSchema, 'low');
+  return a.ok ? a.value : null;
 }
 
-/** The finished photo compared with the request (null = no verdict). */
-export function aiCheck(request: string, image: Buffer, mime: string): Promise<CheckResult | null> {
+export type CheckOutcome = { status: 'pass' | 'fail'; result: CheckResult } | { status: 'unavailable'; reason: string };
+
+/**
+ * The finished photo compared with the request. Three outcomes: pass, fail (with what's wrong and how to fix it), or
+ * unavailable with the reason — never a silent pass.
+ */
+export async function aiCheck(request: string, image: Buffer, mime: string): Promise<CheckOutcome> {
   const media = (['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
-  return ask<CheckResult>(
+  const a = await ask<CheckResult>(
     CHECK_SYSTEM,
     [
       { type: 'image', source: { type: 'base64', media_type: media, data: image.toString('base64') } },
@@ -92,4 +111,9 @@ export function aiCheck(request: string, image: Buffer, mime: string): Promise<C
     CheckSchema,
     'medium',
   );
+  if (!a.ok) return { status: 'unavailable', reason: a.reason };
+  const r = a.value;
+  if (r.verdict === 'cannot_judge') return { status: 'unavailable', reason: `the AI could not judge it${r.cannot_judge_reason ? ` (${r.cannot_judge_reason})` : ''}` };
+  // a "pass" that lists a major issue is a fail
+  return { status: r.verdict === 'pass' && !r.issues.some((i) => i.major) ? 'pass' : 'fail', result: r };
 }

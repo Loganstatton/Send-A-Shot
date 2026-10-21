@@ -11,6 +11,28 @@ export const EXPOSURE_NODE_ID = 'sienna_exposure';
 export const EXPOSURE_NODE_CLASS = 'SiennaExposureCheck';
 /** Photos tried in all (the first + up to 3 retries); each costs one more generation. */
 export const EXPOSURE_MAX_ATTEMPTS = 4;
+/** With the AI check on: one more photo in all, so a correction is still possible after face redos. */
+export const AI_MAX_ATTEMPTS = 5;
+
+/**
+ * Retry budget inside the total: the face check may redo at most RETRY_BUDGET.face photos and corrections (the AI
+ * check, framing, pose) at most RETRY_BUDGET.correction, so neither can use up every attempt; an exposed photo (the
+ * top check) is always redone while attempts remain. First live AI test (21 Oct): face redos used all 4 tries and the
+ * AI check's findings were never acted on.
+ */
+export type RetryKind = 'safety' | 'face' | 'correction';
+export const RETRY_BUDGET = { face: 2, correction: 2 };
+
+export function nextRetry(attempts: ExposureAttempt[], maxAttempts: number): RetryKind | null {
+  const latest = attempts[attempts.length - 1];
+  if (!latest || attempts.length >= maxAttempts || !failed(latest)) return null;
+  if (latest.exposed) return 'safety';
+  const used = (k: RetryKind) => attempts.slice(0, -1).filter((a) => a.redoneFor === k).length;
+  const needsCorrection = latest.aiOk === false || latest.framingOk === false || latest.poseOk === false;
+  if (needsCorrection && used('correction') < RETRY_BUDGET.correction) return 'correction';
+  if (latest.faceOk === false && used('face') < RETRY_BUDGET.face) return 'face';
+  return null;
+}
 export const EXPOSURE_THRESHOLD = 0.45;
 
 export interface ExposureReport {
@@ -29,7 +51,7 @@ export interface ExposureAttempt<Ref = unknown> {
   /** True only when the face was verified as Sienna's; false when it clearly wasn't; unset when it couldn't be judged. */
   faceOk?: boolean;
   /** Pose-aware verdict (lib/identity.ts) and, when not verified, why. */
-  identity?: 'verified' | 'mismatch' | 'inconclusive' | 'unchecked';
+  identity?: 'verified' | 'likely' | 'mismatch' | 'inconclusive' | 'unchecked';
   identityReason?: string;
   /** False when a full-body request came back as a closer shot. */
   framingOk?: boolean;
@@ -40,6 +62,15 @@ export interface ExposureAttempt<Ref = unknown> {
   /** AI check score 0–10 and its major issues. */
   aiScore?: number;
   aiIssues?: string[];
+  /** The AI check's outcome: pass / fail / unavailable (couldn't judge — never a pass), and why when unavailable. */
+  aiStatus?: 'pass' | 'fail' | 'unavailable';
+  aiReason?: string;
+  /** Why the next attempt was made (set when this one was redone). */
+  redoneFor?: RetryKind;
+  /** What the next attempt corrected, in plain words (correction redos). */
+  corrected?: string[];
+  /** The AI check's major issues with their fixes (used to build the correction). */
+  aiFixes?: import('./corrections').CheckIssue[];
   images: Ref[];
 }
 
@@ -129,16 +160,16 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
   const covered = attempts.filter((a) => !a.exposed);
   if (covered.length) {
     // right framing first, then a verified face over one that couldn't be judged over a mismatch, then the closest
-    const idRank = (a: ExposureAttempt<Ref>) => (a.identity === 'verified' ? 4 : a.identity === 'inconclusive' ? 2 : 0);
+    const idRank = (a: ExposureAttempt<Ref>) => (a.identity === 'verified' ? 4 : a.identity === 'likely' ? 3 : a.identity === 'inconclusive' ? 2 : 0);
     // then the AI check (a match beats a miss; the face still outranks it), then its score
     const rank = (a: ExposureAttempt<Ref>) =>
-      (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.aiOk === false ? 0 : 3) + (a.aiScore ?? 0) / 20 + (a.similarity ?? -1);
+      (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.aiOk === true ? 3 : a.aiOk === false ? 0 : 1.5) + (a.aiScore ?? 0) / 20 + (a.similarity ?? -1);
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));
 }
 
-/** What to tell the user once the checks have finished (null if the first photo passed). */
+/** What to tell the user once the checks have finished (null if the first photo passed and nothing is left open). */
 export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttempt): string | null {
   if (kept.exposed) {
     return `Top check: all ${attempts.length} attempts showed a nipple — this is the least exposed one. Try a lower style-pack strength or describe more coverage.`;
@@ -151,28 +182,29 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
       : kept.identity === 'inconclusive'
       ? `Face check inconclusive: ${kept.identityReason ?? 'her face could not be judged'}${typeof kept.similarity === 'number' ? ` (similarity ${kept.similarity})` : ''}, so this photo is not confirmed as Sienna and is in Needs Review.`
       : '';
-  if (!redone.length) return unverified || null;
-  const nip = redone.filter((a) => a.exposed).length;
-  const face = redone.filter((a) => !a.exposed && a.faceOk === false).length;
-  const frame = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk === false).length;
-  const pose = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk !== false && a.poseOk === false).length;
-  const ai = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk !== false && a.poseOk !== false && a.aiOk === false);
-  const why = [
-    nip ? `${nip} showed a nipple` : '',
-    face ? `${face} didn't look enough like Sienna` : '',
-    frame ? `${frame} came out closer than full body` : '',
-    pose ? `${pose} came out in the wrong pose` : '',
-    ai.length ? `${ai.length} didn't match your description (${[...new Set(ai.flatMap((a) => a.aiIssues ?? []))].slice(0, 3).join('; ')})` : '',
-  ]
-    .filter(Boolean)
-    .join(', ');
-  const aiTail = kept.aiOk === false && kept.aiIssues?.length ? ` Closest match kept; still off: ${kept.aiIssues.slice(0, 3).join('; ')}.` : '';
-  const tail =
-    (aiTail ? aiTail : '') +
-    (kept.faceOk === false
-      ? ` None matched her face closely; the closest (similarity ${kept.similarity}) is in Needs Review, not the gallery.`
-      : unverified
-        ? ` ${unverified}`
-        : '');
-  return `Photo checks: redid ${redone.length} photo${redone.length > 1 ? 's' : ''} (${why}); kept seed ${kept.seed}.${tail}`;
+  const parts: string[] = [];
+  if (redone.length) {
+    const nip = redone.filter((a) => a.exposed).length;
+    const face = redone.filter((a) => !a.exposed && a.faceOk === false).length;
+    const frame = redone.filter((a) => !a.exposed && a.framingOk === false).length;
+    const pose = redone.filter((a) => !a.exposed && a.poseOk === false).length;
+    const ai = redone.filter((a) => !a.exposed && a.aiOk === false);
+    const why = [
+      nip ? `${nip} showed a nipple` : '',
+      face ? `${face} didn't look enough like Sienna` : '',
+      frame ? `${frame} came out closer than full body` : '',
+      pose ? `${pose} came out in the wrong pose` : '',
+      ai.length ? `${ai.length} didn't match your description` : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+    parts.push(`Photo checks: made ${attempts.length} photos (${why}); kept the best (seed ${kept.seed}).`);
+    const fixes = [...new Set(attempts.flatMap((a) => a.corrected ?? []))];
+    if (fixes.length) parts.push(`Corrected on the redo: ${fixes.slice(0, 4).join('; ')}.`);
+  }
+  if (kept.aiOk === false && kept.aiIssues?.length) parts.push(`Still not right in the kept photo: ${kept.aiIssues.slice(0, 3).join('; ')}.`);
+  if (kept.aiStatus === 'unavailable') parts.push(`Not checked against your description: ${kept.aiReason ?? 'the AI check could not run'}.`);
+  if (kept.faceOk === false) parts.push(`None matched her face closely; the closest (similarity ${kept.similarity}) is in Needs Review, not the gallery.`);
+  else if (unverified) parts.push(unverified);
+  return parts.length ? parts.join(' ') : null;
 }

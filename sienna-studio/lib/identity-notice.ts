@@ -30,6 +30,7 @@ export function identityLabel(c: GenerationRecord['identityCheck'] | undefined):
   if (!c) return 'No face-check result';
   switch (c.status) {
     case 'verified': return 'Verified as Sienna';
+    case 'likely': return 'Likely Sienna';
     case 'unconfirmed': return "Didn't match Sienna";
     case 'unchecked': return 'Face not detected';
     case 'unavailable': return 'Face check unavailable';
@@ -45,7 +46,7 @@ export function identityNotice(rec: NoticeRec): IdentityNotice | null {
   if (isLegacyPhoto(rec)) return null;
   // Fail closed: a finished photo from this release with no face-check outcome is treated as "check unavailable".
   const c = rec.identityCheck ?? (rec.status === 'done' && rec.images?.length ? { status: 'unavailable' as const, similarity: null, reason: 'no face-check result was recorded' } : undefined);
-  if (!c || c.status === 'verified' || c.status === 'not_applicable') return null;
+  if (!c || c.status === 'verified' || c.status === 'likely' || c.status === 'not_applicable') return null;
   const sim = typeof c.similarity === 'number' ? ` (similarity ${c.similarity.toFixed(2)}; 0.74 or more confirms her face)` : '';
   if (rec.video) {
     // Videos: frames are checked, nothing is retried, and the whole clip needs every checked frame to pass.

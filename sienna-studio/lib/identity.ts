@@ -10,6 +10,16 @@ import type { ComfyGraph, GenerationRecord } from './types';
 export const FACE_NODE_ID = 'sienna_face';
 export const FACE_NODE_CLASS = 'SiennaFaceCheck';
 export const FACE_THRESHOLD = 0.74;
+/**
+ * 0.70–0.74 = 'likely': blind review of the studio's own photos (21 Oct, 63 faces scoring 0.60–0.78, labelled without
+ * scores) found 9 of the 11 rejected ones were clearly her, while the clear misses were blonde faces copied from
+ * uploaded photos that scored 0.748 and passed. In that band the score barely separates her from lookalikes, so a
+ * likely face is accepted without a redo unless a stronger tell says otherwise (hair much lighter than hers, or a
+ * reference photo shaped the picture — where the drift happened).
+ */
+export const FACE_LIKELY = 0.7;
+/** Hair/skin brightness above this = hair much lighter than hers (Sienna 0.14–0.65 in 99 % of photos). */
+export const HAIR_LIGHTER = 1.0;
 export const FACE_MIN_SIZE = 64;
 export const SIENNA_FACE_EMBEDDING: number[] = reference;
 
@@ -49,10 +59,10 @@ export interface FaceReport {
  * and FACE_THRESHOLD is 'inconclusive' — not retried, filed in Needs Review. Faster on from-behind shots but it
  * verified fewer photos in the A/B, so it is not used in production.
  *
- * Hair and skin colour are measured by the GPU node but play no part in any decision: in the A/B they misflagged
- * 15 of 171 blind-confirmed Sienna photos under backlight.
+ * Hair colour only ever blocks a 'likely' (0.70–0.74) face: in the A/B it misflagged 15 of 171 blind-confirmed Sienna
+ * photos under backlight, which costs a redo there, never a rejected verified face.
  */
-export type IdentityStatus = 'verified' | 'mismatch' | 'inconclusive' | 'unchecked';
+export type IdentityStatus = 'verified' | 'likely' | 'mismatch' | 'inconclusive' | 'unchecked';
 export type FacePolicy = 'strict' | 'pose-aware';
 export const FACE_TURNED_FLOOR = 0.68;
 /** Landmark head turn beyond which the face counts as turned (Sienna facing the camera stays under ~0.3). */
@@ -76,7 +86,12 @@ export function rearRequest(poseText: string, posePresetId: string | null | unde
   return rearPack || posePresetId === 'looking_back' || posePresetId === 'bent_over_rear' || REAR_POSE_RE.test(poseText);
 }
 
-export function faceVerdict(face: FaceReport, rear: boolean, policy: FacePolicy = 'strict'): { status: IdentityStatus; reason: string } {
+export function faceVerdict(
+  face: FaceReport,
+  rear: boolean,
+  policy: FacePolicy = 'strict',
+  opts: { referencePhoto?: boolean } = {},
+): { status: IdentityStatus; reason: string } {
   const sim = face.similarity;
   if (face.found === false || sim === null) {
     return policy === 'strict' ? { status: 'unchecked', reason: 'no face was found' } : { status: 'inconclusive', reason: 'no face was found' };
@@ -87,6 +102,11 @@ export function faceVerdict(face: FaceReport, rear: boolean, policy: FacePolicy 
   }
   if (sim >= FACE_THRESHOLD) return { status: 'verified', reason: '' };
   if (policy === 'strict' && rear) return { status: 'inconclusive', reason: 'her face is turned away (a rear view was asked for)' };
+  if (policy === 'strict' && !rear && sim >= FACE_LIKELY) {
+    if (typeof face.hairRel === 'number' && face.hairRel > HAIR_LIGHTER) return { status: 'mismatch', reason: 'her hair came out much lighter than hers' };
+    if (opts.referencePhoto) return { status: 'mismatch', reason: "didn't look enough like Sienna (a reference photo shaped this one, so only a confirmed match counts)" };
+    return { status: 'likely', reason: '' };
+  }
   if (policy === 'pose-aware') {
     const turned = rear || (face.yaw ?? 0) > TURNED_YAW || (face.eyeRatio ?? 1) < TURNED_EYE_RATIO;
     if (turned && sim >= FACE_TURNED_FLOOR) return { status: 'inconclusive', reason: 'her face is turned away' };
@@ -168,6 +188,7 @@ export function singlePhotoIdentity(
   if (!face.available) return missingIdentity(rec, `the face check could not run (${face.error ?? 'models not installed'})`);
   const v = faceVerdict(face, false, 'strict');
   if (v.status === 'verified') return { status: 'verified', similarity: face.similarity };
+  if (v.status === 'likely') return { status: 'likely', similarity: face.similarity };
   if (v.status === 'unchecked') return { status: 'unchecked', similarity: face.similarity, reason: v.reason };
   return { status: 'unconfirmed', similarity: face.similarity, reason: v.reason };
 }
