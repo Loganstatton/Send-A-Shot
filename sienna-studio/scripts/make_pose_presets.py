@@ -66,6 +66,34 @@ P = {
       0: (200, 800), 16: (232, 760), 17: (178, 712), 1: (262, 680), 2: (322, 712), 5: (232, 626),
       3: (318, 858), 4: (322, 1000), 6: (214, 772), 7: (210, 916),
       8: (548, 556), 11: (470, 528), 9: (522, 812), 12: (440, 800), 10: (540, 1092), 13: (458, 1084)}.items()}),
+  # ── Pose guides (21 Oct): picked by the AI reader from the description, hands and legs included. Text alone never
+  # held "sitting on the edge of the bed, feet on the floor", "foot pressed against the cabinet" or a low camera in the
+  # controlled test. Sitting is drawn three-quarter: seen straight on, the foreshortened thighs read as standing.
+  'sitting_edge_hands_chest': (832, 1216, 'sitting upright on the edge of the bed, both feet flat on the floor, both hands holding a mug in front of her chest', merge(face(470, 250, 0.9, -8), {
+      1: (470, 350), 2: (390, 372), 5: (552, 368), 3: (372, 520), 6: (570, 520), 4: (448, 455), 7: (490, 455),
+      8: (440, 660), 11: (512, 650), 9: (290, 700), 12: (352, 725), 10: (300, 1050), 13: (366, 1070)})),
+  'sitting_edge_hands_lap': (832, 1216, 'sitting upright on the edge of the bed, both feet flat on the floor, hands resting in her lap', merge(face(470, 250, 0.9, -8), {
+      1: (470, 350), 2: (390, 372), 5: (552, 368), 3: (368, 530), 6: (574, 530), 4: (372, 680), 7: (440, 690),
+      8: (440, 660), 11: (512, 650), 9: (290, 700), 12: (352, 725), 10: (300, 1050), 13: (366, 1070)})),
+  'sitting_sofa': (832, 1216, 'sitting relaxed on the sofa, leaning back, one arm resting along the sofa, feet on the floor', merge(face(520, 330, 0.9, -8), {
+      1: (510, 430), 2: (432, 445), 5: (594, 440), 3: (400, 600), 4: (400, 720), 6: (680, 540), 7: (760, 600),
+      8: (462, 740), 11: (536, 735), 9: (300, 770), 12: (352, 800), 10: (260, 1080), 13: (330, 1095)})),
+  # her right hand back on the counter edge at hip height, left hand holding a glass at her chest, left knee bent
+  # with that foot raised behind her against the cabinet
+  'leaning_counter_foot_up': (832, 1216, 'leaning back against the counter, right hand resting on the counter edge, left hand holding a glass at her chest, left knee bent with the foot pressed against the cabinet behind her', merge(face(416, 240, 0.9), {
+      1: (416, 345), 2: (326, 366), 5: (506, 366), 3: (282, 520), 4: (296, 650), 6: (540, 540), 7: (470, 440),
+      8: (372, 660), 11: (462, 660), 9: (374, 895), 12: (500, 860), 10: (380, 1125), 13: (430, 975)})),
+  # her right leg raised sideways, foot resting on a counter at hip height
+  'standing_leg_up': (832, 1216, 'standing on one leg, her other leg raised with the foot resting on the counter at hip height', merge(face(470, 240, 0.9), {
+      1: (470, 345), 2: (380, 366), 5: (560, 366), 3: (330, 500), 4: (300, 610), 6: (580, 520), 7: (575, 660),
+      8: (430, 650), 11: (520, 650), 9: (270, 600), 12: (525, 890), 10: (130, 650), 13: (530, 1125)})),
+  # low camera: long legs, big feet near the bottom edge, short torso, small head and narrow shoulders
+  'standing_low_angle': (832, 1216, 'standing, full body, seen from a low camera angle looking up at her', merge(face(416, 250, 0.7), {
+      1: (416, 328), 2: (348, 342), 5: (484, 342), 3: (330, 465), 6: (502, 465), 4: (334, 585), 7: (498, 585),
+      8: (374, 600), 11: (458, 600), 9: (360, 870), 12: (472, 870), 10: (346, 1160), 13: (486, 1160)})),
+  'standing_holding_glass': (832, 1216, 'standing, full body, holding a glass at her chest in her left hand, right arm relaxed', merge(face(416, 175, 0.85), {
+      1: (416, 265), 2: (332, 285), 5: (500, 285), 3: (318, 450), 4: (322, 600), 6: (530, 440), 7: (470, 370),
+      8: (370, 640), 11: (462, 640), 9: (366, 880), 12: (466, 880), 10: (370, 1105), 13: (462, 1105)})),
 }
 
 # pose ControlNet strength for presets: 0.85 followed arms-crossed 4/4 and hand-in-hair 2/2 (0.65: 2/4, 1/2).
@@ -74,6 +102,8 @@ STRENGTH = 0.85
 # bent_over_rear: the earlier bend-over skeletons were ignored at 0.85 (she knelt, crouched or stood in 11 tests), so
 # this one runs at full strength — to be confirmed on the GPU
 STRENGTHS = {'bent_over_rear': 1.0}
+# presets drawn from a low camera (allowed with a low-angle request; every other preset is eye level)
+LOW_VIEW = {'standing_low_angle'}
 
 out = os.path.join(os.path.dirname(__file__), '..', 'public', 'pose-presets')
 os.makedirs(out, exist_ok=True)
@@ -83,6 +113,6 @@ for pid, (w, h, prompt, kp) in P.items():
     canvas = draw_body(np.zeros((h, w, 3), np.uint8), body)
     import cv2
     cv2.imwrite(os.path.join(out, f'{pid}.png'), cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
-    meta.append({'id': pid, 'width': w, 'height': h, 'pose': prompt, 'strength': STRENGTHS.get(pid, STRENGTH)})
+    meta.append({'id': pid, 'width': w, 'height': h, 'pose': prompt, 'strength': STRENGTHS.get(pid, STRENGTH), **({'view': 'low'} if pid in LOW_VIEW else {})})
 json.dump(meta, open(os.path.join(out, 'presets.json'), 'w'), indent=1)
 print('wrote', [m['id'] for m in meta])

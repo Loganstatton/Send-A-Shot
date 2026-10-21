@@ -89,8 +89,8 @@ async function ask<T>(
 }
 
 /** The description read into prompt fields, packs and a pose preset (null = use the rule-based reader). */
-export async function aiRead(description: string, reference: 'none' | 'pose' | 'edit' | 'edit+pose', adultAllowed: boolean): Promise<ReadResult | null> {
-  const a = await ask<ReadResult>(readerSystem(adultAllowed), [{ type: 'text', text: readerUser(description, reference) }], ReadSchema, 'low');
+export async function aiRead(description: string, reference: 'none' | 'pose' | 'edit' | 'edit+pose', adultAllowed: boolean, guides = false): Promise<ReadResult | null> {
+  const a = await ask<ReadResult>(readerSystem(adultAllowed, guides), [{ type: 'text', text: readerUser(description, reference) }], ReadSchema, 'low');
   return a.ok ? a.value : null;
 }
 

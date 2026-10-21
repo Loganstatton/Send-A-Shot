@@ -14,9 +14,11 @@ export interface PosePreset {
   pose: string;
   /** Pose ControlNet strength for this preset. */
   strength: number;
+  /** Camera height the skeleton is drawn from (eye level when absent). */
+  view?: 'low';
 }
 
-export const POSE_PRESETS: PosePreset[] = presets;
+export const POSE_PRESETS = presets as PosePreset[];
 
 export const POSE_PRESET_LABELS: Record<string, string> = {
   sitting_crosslegged: 'Sitting cross-legged',
@@ -30,7 +32,30 @@ export const POSE_PRESET_LABELS: Record<string, string> = {
   lying_on_side: 'Lying on side',
   kneeling_upright: 'Kneeling upright',
   bent_over_rear: 'Bent over — rear view',
+  sitting_edge_hands_chest: 'Sitting on the bed edge — hands at chest',
+  sitting_edge_hands_lap: 'Sitting on the bed edge — hands in lap',
+  sitting_sofa: 'Sitting back on a sofa',
+  leaning_counter_foot_up: 'Leaning on a counter — foot up behind',
+  standing_leg_up: 'Standing — one foot up on a counter',
+  standing_low_angle: 'Standing — low camera angle',
+  standing_holding_glass: 'Standing — glass in left hand',
 };
+
+/**
+ * Pose guides: presets only the AI reader picks, from what the description says her hands and legs do (the reader
+ * gets these lines). Text alone never held a bed-edge sit with feet on the floor, a foot against the cabinet or a low
+ * camera in the controlled test (21 Oct). Her right/left as seen by her; the skeletons are drawn facing the camera.
+ */
+export const POSE_GUIDES: Record<string, string> = {
+  sitting_edge_hands_chest: 'sitting upright on the edge of a bed/chair, both feet on the floor, both hands together in front of her chest (holding a mug or cup)',
+  sitting_edge_hands_lap: 'sitting upright on the edge of a bed/chair, both feet on the floor, hands resting in her lap or on her thighs',
+  sitting_sofa: 'sitting back relaxed on a sofa or couch, one arm along the backrest or armrest, feet on the floor',
+  leaning_counter_foot_up: 'leaning back against a counter/wall, right hand back on the edge beside her hip, left hand holding something at her chest, left knee bent with that foot pressed against the cabinet/wall behind her',
+  standing_leg_up: 'standing on one leg with the other leg raised sideways, foot resting on a counter, table or ledge at hip height',
+  standing_low_angle: 'standing, full body, photographed from a low camera angle looking up at her (arms relaxed at her sides)',
+  standing_holding_glass: 'standing, full body, eye level, holding a glass or cup at her chest in her left hand, right arm relaxed',
+};
+
 
 /**
  * Wording a preset adds to the prompt (front of the positive, end of the negative) and the body check it needs.
@@ -42,6 +67,30 @@ export const POSE_PRESET_PROMPTS: Record<string, { positive: string; negative: s
     positive: '(bending forward at the waist:1.3), (hips raised:1.2), (legs nearly straight:1.1), rear three-quarter view, camera at hip height',
     negative: '(squatting:1.4), (kneeling:1.4), (sitting:1.3), (crouching:1.3), (lying down:1.2), (standing upright:1.2)',
     check: 'hinge',
+  },
+  sitting_edge_hands_chest: {
+    positive: '(sitting on the edge of the bed:1.2), (both feet flat on the floor:1.15)',
+    negative: '(cross-legged:1.3), (legs crossed:1.2), (lying down:1.2), (standing:1.2), (kneeling:1.2)',
+  },
+  sitting_edge_hands_lap: {
+    positive: '(sitting on the edge of the bed:1.2), (both feet flat on the floor:1.15)',
+    negative: '(cross-legged:1.3), (legs crossed:1.2), (lying down:1.2), (standing:1.2), (kneeling:1.2)',
+  },
+  sitting_sofa: {
+    positive: '(sitting on the sofa:1.2), relaxed, leaning back',
+    negative: '(standing:1.2), (lying down:1.2), (kneeling:1.2)',
+  },
+  leaning_counter_foot_up: {
+    positive: '(leaning back against the kitchen counter:1.15), (one knee bent, foot pressed flat against the cabinet behind her:1.2)',
+    negative: '(sitting:1.2), (both feet on the floor:1.1)',
+  },
+  standing_leg_up: {
+    positive: '(one leg raised, foot resting on the counter:1.2)',
+    negative: '(sitting:1.2), (kneeling:1.2)',
+  },
+  standing_low_angle: {
+    positive: "(low angle shot from near the floor, camera looking up at her:1.3), (worm's-eye perspective:1.1), long legs in perspective",
+    negative: '(eye level shot:1.2), (high angle:1.3), (looking down at her:1.2)',
   },
 };
 
@@ -82,6 +131,16 @@ const RELAXED_ARMS_RE = /\b(her )?arms? (relaxed|down|hanging|at (her|its) sides
  */
 export const CAMERA_ANGLE_RE =
   /\b(low[- ]angle|high[- ]angle|from (below|above|the side|a low|a high|overhead)|looking (up|down) at her|bird'?s[- ]eye|worm'?s[- ]eye|overhead|top[- ]down|dutch angle|tilted (camera|angle)|side view|profile view|three[- ]quarter view|from behind|over[- ]the[- ]shoulder shot)\b/i;
+
+/**
+ * A preset may be used with this camera wording: eye-level presets never with a camera angle; the low-angle preset
+ * only with a low angle.
+ */
+const LOW_ANGLE_RE = /\b(low[- ]angle|from (below|a low)|looking up at her|worm'?s[- ]eye)\b/i;
+export function presetFitsCamera(p: PosePreset, camera: string): boolean {
+  if (p.view === 'low') return LOW_ANGLE_RE.test(camera);
+  return !CAMERA_ANGLE_RE.test(camera);
+}
 
 export function matchPosePreset(poseText: string, fullBody: boolean): PosePreset | undefined {
   const text = poseText.trim();

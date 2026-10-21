@@ -167,6 +167,11 @@ export function swapPrompts(graph: ComfyGraph, from: { positive: string; negativ
 }
 
 /** The attempt to keep: the last one if it passed; else, among covered ones, the closest face; else the least exposed. */
+/** The AI check found a major anatomy problem (extra or missing limbs or hands, malformed hands or feet). */
+export function brokenAnatomy(a: ExposureAttempt<unknown>): boolean {
+  return !!a.aiFixes?.some((i) => i.aspect === 'anatomy' && i.major);
+}
+
 export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAttempt<Ref> {
   const last = attempts[attempts.length - 1];
   if (!failed(last)) return last;
@@ -174,10 +179,11 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
   if (covered.length) {
     // right framing first, then a verified face over one that couldn't be judged over a mismatch, then the closest
     const idRank = (a: ExposureAttempt<Ref>) => (a.identity === 'verified' ? 4 : a.identity === 'likely' ? 3 : a.identity === 'inconclusive' ? 2 : 0);
-    // then the AI check (a match beats a miss; the face still outranks it), then its score; broken anatomy (a third
-    // hand) counts against a photo — the controlled test kept one on a tied score (21 Oct)
+    // then the AI check (a match beats a miss; the face still outranks it), then its score. Broken anatomy (an extra
+    // hand, arm or leg, a malformed limb) comes before all of it: a better face never makes up for a third hand — the
+    // controlled test kept one (21 Oct)
     const rank = (a: ExposureAttempt<Ref>) =>
-      (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.aiOk === true ? 3 : a.aiOk === false ? 0 : 1.5) + (a.aiScore ?? 0) / 20 - (a.aiFixes?.some((i) => i.aspect === 'anatomy') ? 1 : 0) + (a.similarity ?? -1);
+      (brokenAnatomy(a) ? 0 : 40) + (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.aiOk === true ? 3 : a.aiOk === false ? 0 : 1.5) + (a.aiScore ?? 0) / 20 + (a.similarity ?? -1);
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));
@@ -216,7 +222,13 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
     const fixes = [...new Set(attempts.flatMap((a) => a.corrected ?? []))];
     if (fixes.length) parts.push(`Corrected on the redo: ${fixes.slice(0, 4).join('; ')}.`);
   }
-  if (kept.aiOk === false && kept.aiIssues?.length) parts.push(`Still not right in the kept photo: ${kept.aiIssues.slice(0, 3).join('; ')}.`);
+  if (kept.aiOk === false && kept.aiIssues?.length) {
+    // say plainly when no attempt came out right, and put a broken body first
+    const checked = attempts.filter((a) => a.aiStatus === 'pass' || a.aiStatus === 'fail');
+    if (checked.length > 1 && checked.every((a) => a.aiOk === false)) parts.push(`None of the ${checked.length} photos fully matched your description — each had a significant problem; this is the closest.`);
+    const issues = [...kept.aiIssues].sort((a, b) => Number(b.startsWith('anatomy')) - Number(a.startsWith('anatomy')));
+    parts.push(`${brokenAnatomy(kept) ? 'The kept photo has an anatomy error — check it before using it. ' : ''}Still not right in the kept photo: ${issues.slice(0, 3).join('; ')}.`);
+  }
   if (kept.aiStatus === 'unavailable') parts.push(`Not checked against your description: ${kept.aiReason ?? 'the AI check could not run'}.`);
   if (kept.faceOk === false) parts.push(`None matched her face closely; the closest (similarity ${kept.similarity}) is in Needs Review, not the gallery.`);
   else if (unverified) parts.push(unverified);

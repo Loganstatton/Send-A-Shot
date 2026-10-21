@@ -75,5 +75,55 @@
   "height": 1216,
   "pose": "seen from behind, bending forward deeply at the waist, hips raised, legs nearly straight with a slight bend at the knees, feet flat on the ground",
   "strength": 1.0
+ },
+ {
+  "id": "sitting_edge_hands_chest",
+  "width": 832,
+  "height": 1216,
+  "pose": "sitting upright on the edge of the bed, both feet flat on the floor, both hands holding a mug in front of her chest",
+  "strength": 0.85
+ },
+ {
+  "id": "sitting_edge_hands_lap",
+  "width": 832,
+  "height": 1216,
+  "pose": "sitting upright on the edge of the bed, both feet flat on the floor, hands resting in her lap",
+  "strength": 0.85
+ },
+ {
+  "id": "sitting_sofa",
+  "width": 832,
+  "height": 1216,
+  "pose": "sitting relaxed on the sofa, leaning back, one arm resting along the sofa, feet on the floor",
+  "strength": 0.85
+ },
+ {
+  "id": "leaning_counter_foot_up",
+  "width": 832,
+  "height": 1216,
+  "pose": "leaning back against the counter, right hand resting on the counter edge, left hand holding a glass at her chest, left knee bent with the foot pressed against the cabinet behind her",
+  "strength": 0.85
+ },
+ {
+  "id": "standing_leg_up",
+  "width": 832,
+  "height": 1216,
+  "pose": "standing on one leg, her other leg raised with the foot resting on the counter at hip height",
+  "strength": 0.85
+ },
+ {
+  "id": "standing_low_angle",
+  "width": 832,
+  "height": 1216,
+  "pose": "standing, full body, seen from a low camera angle looking up at her",
+  "strength": 0.85,
+  "view": "low"
+ },
+ {
+  "id": "standing_holding_glass",
+  "width": 832,
+  "height": 1216,
+  "pose": "standing, full body, holding a glass at her chest in her left hand, right arm relaxed",
+  "strength": 0.85
  }
 ]

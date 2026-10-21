@@ -96,6 +96,8 @@ export const simpleCreateSchema = z.object({
   reference: storedImageSchema.nullable().default(null),
   /** optional overrides from Advanced (seed only for now; everything else uses the studio defaults) */
   seed: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).optional(),
+  /** try the pose guides for this request (testing; otherwise SIENNA_POSE_GUIDE decides) */
+  poseGuide: z.boolean().optional(),
 });
 
 export const characterPatchSchema = z

@@ -1,6 +1,6 @@
 import { applyClothingChanges, interpretPrompt, packNote } from '@/lib/interpret';
 import { cleanRead, NUDE_RE } from '@/lib/ai-prompts';
-import { CAMERA_ANGLE_RE } from '@/lib/pose-presets';
+import { posePreset, presetFitsCamera } from '@/lib/pose-presets';
 import { packsForDescription, packStrength, STYLE_PACKS, stylePacksFor, TINY_STRING_OUTFIT } from '@/lib/style-packs';
 import { aiEnabled, aiRead } from '@/lib/server/ai';
 import { simpleCreateSchema } from '@/lib/schemas';
@@ -88,16 +88,19 @@ export const POST = handle(async (req: Request) => {
   let aiRan = false;
   if (aiAllowed && !source) {
     const adultOk = adultContentAllowed();
-    const r = await aiRead(body.prompt, it.reference.mode, adultOk);
+    // pose guides (skeletons for the described hands, legs and camera height): on request or SIENNA_POSE_GUIDE=true
+    const guides = body.poseGuide ?? process.env.SIENNA_POSE_GUIDE === 'true';
+    const r = await aiRead(body.prompt, it.reference.mode, adultOk, guides);
     if (r) {
-      const c = cleanRead(r, stylePacksFor(adultOk ? 'adult' : 'sfw').map((p) => p.id));
+      const c = cleanRead(r, stylePacksFor(adultOk ? 'adult' : 'sfw').map((p) => p.id), guides);
       it.fields = Object.fromEntries(PROMPT_FIELD_KEYS.map((k) => [k, (c[k as keyof typeof c] as string) ?? ''])) as unknown as PromptFields;
       it.packs = Object.fromEntries(c.packs.map((id) => [id, packStrength(id, body.prompt)]));
       if (it.packs.string_swimsuit === STYLE_PACKS.find((p) => p.id === 'string_swimsuit')?.max && !it.fields.outfit.includes(TINY_STRING_OUTFIT))
         it.fields.outfit = [it.fields.outfit, TINY_STRING_OUTFIT].filter(Boolean).join(', ');
       if (c.packs.some((id) => STYLE_PACKS.find((p) => p.id === id)?.section === 'adult')) it.contentMode = 'adult';
-      // no preset with a reference pose photo, or with a camera angle the preset's fixed viewpoint would override
-      aiPose = (ref && (it.reference.mode === 'pose' || it.reference.mode === 'edit+pose')) || CAMERA_ANGLE_RE.test(`${c.camera} ${c.framing} ${c.pose}`) ? null : c.posePreset || null;
+      // no preset with a reference pose photo, or with a camera angle the preset's viewpoint would override
+      const pre = posePreset(c.posePreset);
+      aiPose = (ref && (it.reference.mode === 'pose' || it.reference.mode === 'edit+pose')) || !pre || !presetFitsCamera(pre, `${c.camera} ${c.framing} ${c.pose}`) ? null : pre.id;
       aiRan = true;
       it.notes = [
         `Read by AI: ${c.understood}`,

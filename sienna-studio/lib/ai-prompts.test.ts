@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aiCost, cleanRead, NUDE_RE, readerSystem, type ReadResult } from './ai-prompts';
+import { posePreset, presetFitsCamera } from './pose-presets';
 import { exposureWarning, failed, pickAttempt, type ExposureAttempt } from './exposure';
 
 const base: ReadResult = {
@@ -132,5 +133,40 @@ describe('broken anatomy loses a tie', () => {
     const thirdHand = { ...base, seed: 1, similarity: 0.78, aiFixes: [{ aspect: 'anatomy', problem: 'third hand', major: true, emphasize: '', avoid: '' }] };
     const wrongShirt = { ...base, seed: 2, similarity: 0.74, aiFixes: [{ aspect: 'outfit', problem: 'tee not shirt', major: true, emphasize: '', avoid: '' }] };
     expect(pickAttempt([thirdHand, wrongShirt]).seed).toBe(2);
+  });
+});
+
+describe('anatomy is a critical failure', () => {
+  const base = { exposed: false, score: 0, images: [], faceOk: true, aiOk: false };
+  const anatomy = [{ aspect: 'anatomy', problem: 'extra arm', major: true, emphasize: 'two arms', avoid: 'extra arm' }];
+  it('a better face and score never outweigh an extra arm', () => {
+    const extraArm = { ...base, seed: 1, identity: 'verified' as const, similarity: 0.82, aiScore: 8, aiIssues: ['anatomy: extra arm'], aiFixes: anatomy };
+    const wrongPose = { ...base, seed: 2, identity: 'likely' as const, similarity: 0.71, aiScore: 4, aiIssues: ['pose: standing, not sitting'], aiFixes: [{ ...anatomy[0], aspect: 'pose' }] };
+    expect(pickAttempt([extraArm, wrongPose]).seed).toBe(2);
+  });
+  it('says so when every photo had a problem, anatomy first', () => {
+    const one = { ...base, seed: 1, identity: 'verified' as const, similarity: 0.8, aiStatus: 'fail' as const, aiIssues: ['pose: standing', 'anatomy: extra arm'], aiFixes: anatomy };
+    const two = { ...one, seed: 2 };
+    const w = exposureWarning([one, two], two)!;
+    expect(w).toContain('None of the 2 photos fully matched');
+    expect(w).toContain('anatomy error');
+    expect(w.indexOf('anatomy: extra arm')).toBeLessThan(w.indexOf('pose: standing'));
+  });
+});
+
+describe('pose guides', () => {
+  it('are offered to the reader only when on', () => {
+    expect(readerSystem(false)).not.toContain('sitting_edge_hands_chest');
+    expect(readerSystem(false, true)).toContain('sitting_edge_hands_chest');
+    expect(cleanRead({ ...base, posePreset: 'standing_low_angle' }, []).posePreset).toBe('');
+    expect(cleanRead({ ...base, posePreset: 'standing_low_angle' }, [], true).posePreset).toBe('standing_low_angle');
+  });
+  it('the low-angle skeleton only with a low angle; eye-level ones never with a camera angle', () => {
+    const low = posePreset('standing_low_angle')!;
+    const edge = posePreset('sitting_edge_hands_chest')!;
+    expect(presetFitsCamera(low, 'photo taken from a low angle, looking up at her')).toBe(true);
+    expect(presetFitsCamera(low, 'casual phone photo')).toBe(false);
+    expect(presetFitsCamera(edge, 'casual phone photo')).toBe(true);
+    expect(presetFitsCamera(edge, 'shot from above')).toBe(false);
   });
 });
