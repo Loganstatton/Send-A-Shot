@@ -568,7 +568,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       exposureGuard = {
         status: 'on',
         checks: { top: added.includes(EXPOSURE_NODE_ID), face: added.includes(FACE_NODE_ID), body },
-        maxAttempts: EXPOSURE_MAX_ATTEMPTS,
+        // with the AI check two more tries: face-check redos alone used up all 4 in the first live test (21 Oct)
+        maxAttempts: EXPOSURE_MAX_ATTEMPTS + (req.simple?.ai?.check ? 2 : 0),
         attempts: [],
       };
     } else if (missingAll.length) {

@@ -60,7 +60,11 @@ async function ask<T>(
       messages: [{ role: 'user', content }],
     });
     await record(aiCost(res.model || MODEL, res.usage));
-    if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens') return null;
+    if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens') {
+      console.warn(`AI: no answer (${res.stop_reason}${res.stop_details?.category ? `, ${res.stop_details.category}` : ''})`);
+      return null;
+    }
+    if (!res.parsed_output) console.warn('AI: answer did not match the expected shape');
     return (res.parsed_output as T) ?? null;
   } catch (e) {
     if (e instanceof Anthropic.AuthenticationError) console.error('AI: ANTHROPIC_API_KEY was rejected');
