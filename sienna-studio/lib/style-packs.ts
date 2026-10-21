@@ -323,6 +323,10 @@ const AUTO_PACKS: [string, RegExp][] = [
   ['natural_skin', /\b(natural|matte|textured|real) skin( texture)?\b|\bvisible pores\b|\bno makeup\b/i],
 ];
 
+const TINY_RE = /\b(tiny|micro|minimal|barely[- ]there|itsy|teeny)\b/i;
+/** Shape wording added to the outfit for a tiny string bikini (the pack's own look: small triangles on thin strings). */
+export const TINY_STRING_OUTFIT = 'very small triangle cups on thin strings, string thong bottoms';
+
 export function packsForDescription(
   fields: { outfit?: string; pose?: string; bodyPresentation?: string; extra?: string },
   contentMode: 'sfw' | 'adult',
@@ -343,7 +347,9 @@ export function packsForDescription(
     // a string bikini already has the string swimsuit pack; the micro pack on top lowers coverage (see its hint)
     if (id === 'micro_bikini' && out.string_swimsuit) continue;
     if (id === 'french_lace' && out.lace_bodysuit) continue;
-    out[id] = pack.default;
+    // "tiny / micro string bikini": the 0.6 default came out with regular-size cups (live, 18 Oct); the pack's max
+    // is the barely-there look it was tested at
+    out[id] = id === 'string_swimsuit' && TINY_RE.test(text) ? pack.max : pack.default;
   }
   return out;
 }

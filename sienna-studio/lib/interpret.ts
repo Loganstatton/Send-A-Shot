@@ -11,7 +11,7 @@
  *  - "Sienna" becomes "she", because the character token is added by the prompt builder.
  * Everything else — outfit, pose, scene, camera — is the user's own words, so presets and defaults can't override it.
  */
-import { packsForDescription, STYLE_PACKS } from './style-packs';
+import { packsForDescription, STYLE_PACKS, TINY_STRING_OUTFIT } from './style-packs';
 import { PROMPT_FIELD_KEYS, type ContentMode, type PromptFields } from './types';
 
 export type ReferenceMode = 'none' | 'edit' | 'pose' | 'edit+pose';
@@ -241,6 +241,9 @@ export function interpretPrompt(
       notes.push('Adult mode, because the outfit you describe uses an adult style pack.');
     }
   }
+  // the tiny string look at full strength also needs its shape in words, or the cups stay regular-sized
+  const string = STYLE_PACKS.find((p) => p.id === 'string_swimsuit');
+  if (string && packs.string_swimsuit === string.max && !fields.outfit.includes(TINY_STRING_OUTFIT)) fields.outfit = `${fields.outfit}, ${TINY_STRING_OUTFIT}`;
   if (Object.keys(packs).length) notes.push(packNote(packs));
 
   const reference = referenceIntent(text, !!opts.hasReference);

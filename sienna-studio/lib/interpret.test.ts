@@ -122,7 +122,7 @@ describe('style packs from the description', () => {
     expect(packs('Sienna in a red string bikini')).toEqual({ string_swimsuit: 0.6 });
   });
   it('a micro string bikini gets one bikini pack, not two', () => {
-    expect(packs('Sienna in a micro string bikini')).toEqual({ string_swimsuit: 0.6 });
+    expect(packs('Sienna in a micro string bikini')).toEqual({ string_swimsuit: 0.7 });
   });
   it('nothing for "no lingerie", nothing for ordinary outfits', () => {
     expect(packs('Sienna in a red dress, no lingerie showing')).toEqual({});
@@ -184,5 +184,18 @@ No sunglasses, no jewelry, no cover-up.`;
     expect(b.positive).toContain('including her bare feet');
     expect(b.positive).not.toContain('feet and shoes');
     expect(b.negative).toContain('sandals');
+  });
+});
+
+describe('tiny string bikini (live: regular-size cups at the 0.6 default)', () => {
+  it('"tiny" or "micro" with a string bikini uses the pack at its max and spells out the shape', () => {
+    const r = interpretPrompt('Sienna by the pool in a tiny pastel pink string bikini with thong bottoms.', { adultAllowed: true });
+    expect(r.packs).toEqual({ string_swimsuit: 0.7 });
+    expect(r.fields.outfit).toContain('very small triangle cups on thin strings');
+  });
+  it('a plain string bikini keeps the default and the wording as written', () => {
+    const r = interpretPrompt('Sienna by the pool in a red string bikini.', { adultAllowed: true });
+    expect(r.packs).toEqual({ string_swimsuit: 0.6 });
+    expect(r.fields.outfit).not.toContain('very small triangle cups');
   });
 });
