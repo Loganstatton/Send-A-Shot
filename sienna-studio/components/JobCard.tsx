@@ -46,6 +46,13 @@ export function JobCard({ job, onDismiss }: { job: GenerationRecord; onDismiss: 
           </span>
           {job.images.length > 1 && <span>· {job.images.length} images</span>}
         </div>
+        {job.simple?.notes
+          .filter((n) => n.startsWith('Read by AI:') || n.startsWith('May be hard'))
+          .map((n, i) => (
+            <p key={i} className="text-xs text-ink-400">
+              {n}
+            </p>
+          ))}
         {job.error && <Notice kind="error">{job.error}</Notice>}
         {job.status === 'done' && galleryState(job) === 'needs_review' && (
           <Notice kind="warn">Face not verified — manual review required. This {job.video ? 'video' : 'photo'} went to Needs Review, not the gallery. Open it to approve or reject it.</Notice>

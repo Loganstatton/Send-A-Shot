@@ -368,6 +368,9 @@ export interface GenerationRecord {
       identityReason?: string;
       framingOk?: boolean;
       poseOk?: boolean;
+      aiOk?: boolean;
+      aiScore?: number;
+      aiIssues?: string[];
       images: { filename: string; subfolder: string; type: string; nodeId: string }[];
     }[];
   };
@@ -541,6 +544,8 @@ export interface SimpleRequestInfo {
   prompt: string;
   notes: string[];
   reference: 'none' | 'edit' | 'pose' | 'edit+pose';
+  /** The AI reader filled the fields (read) / the AI checker reviews the finished photo (check). */
+  ai?: { read: boolean; check: boolean };
 }
 
 /** Full settings export. */

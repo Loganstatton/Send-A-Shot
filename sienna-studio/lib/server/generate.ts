@@ -37,6 +37,7 @@ import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALIN
 import { buildPrompt, fullBodyFraming } from '../prompt';
 import { matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
+import { aiCheck, aiEnabled } from './ai';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from '../body-frame';
@@ -829,6 +830,21 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
             },
           ];
           const latest = attempts[attempts.length - 1];
+          // AI check (Simple Mode): only a photo that passed the GPU checks is worth a look; no verdict = no change
+          if (!failed(latest) && rec.simple?.ai?.check && aiEnabled() && state.images[0]) {
+            try {
+              const { bytes, mime } = await backend.fetchImage(state.images[0]);
+              const v = await aiCheck(rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime);
+              if (v) {
+                const major = v.issues.filter((i) => i.major);
+                latest.aiOk = v.verdict === 'pass' && !major.length;
+                latest.aiScore = Math.max(0, Math.min(10, v.score));
+                latest.aiIssues = major.map((i) => `${i.aspect}: ${i.problem}`);
+              }
+            } catch {
+              // no verdict
+            }
+          }
           if (failed(latest) && attempts.length < guard.maxAttempts && rec.submittedGraph) {
             // New seed. If a nipple showed although the outfit has a top, also turn the style packs a notch lower and
             // add their coverage wording (the first attempt keeps each pack's full look); a face miss only needs the seed.

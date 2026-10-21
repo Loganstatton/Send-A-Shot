@@ -35,12 +35,17 @@ export interface ExposureAttempt<Ref = unknown> {
   framingOk?: boolean;
   /** False when a pose preset with a body check (bent over) came back in another pose: squatting, kneeling, upright. */
   poseOk?: boolean;
+  /** AI check (Simple Mode): false when the photo clearly doesn't match the description; unset when it didn't run. */
+  aiOk?: boolean;
+  /** AI check score 0–10 and its major issues. */
+  aiScore?: number;
+  aiIssues?: string[];
   images: Ref[];
 }
 
 /** This attempt needs redoing: a nipple showed, her face drifted, or a full-body shot came out too close. */
 export function failed(a: ExposureAttempt): boolean {
-  return a.exposed || a.faceOk === false || a.framingOk === false || a.poseOk === false;
+  return a.exposed || a.faceOk === false || a.framingOk === false || a.poseOk === false || a.aiOk === false;
 }
 
 /** The outfit describes something on top (and doesn't ask for none). */
@@ -125,7 +130,9 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
   if (covered.length) {
     // right framing first, then a verified face over one that couldn't be judged over a mismatch, then the closest
     const idRank = (a: ExposureAttempt<Ref>) => (a.identity === 'verified' ? 4 : a.identity === 'inconclusive' ? 2 : 0);
-    const rank = (a: ExposureAttempt<Ref>) => (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.similarity ?? -1);
+    // then the AI check (a match beats a miss; the face still outranks it), then its score
+    const rank = (a: ExposureAttempt<Ref>) =>
+      (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.aiOk === false ? 0 : 3) + (a.aiScore ?? 0) / 20 + (a.similarity ?? -1);
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));
@@ -149,14 +156,23 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
   const face = redone.filter((a) => !a.exposed && a.faceOk === false).length;
   const frame = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk === false).length;
   const pose = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk !== false && a.poseOk === false).length;
-  const why = [nip ? `${nip} showed a nipple` : '', face ? `${face} didn't look enough like Sienna` : '', frame ? `${frame} came out closer than full body` : '', pose ? `${pose} came out in the wrong pose` : '']
+  const ai = redone.filter((a) => !a.exposed && a.faceOk !== false && a.framingOk !== false && a.poseOk !== false && a.aiOk === false);
+  const why = [
+    nip ? `${nip} showed a nipple` : '',
+    face ? `${face} didn't look enough like Sienna` : '',
+    frame ? `${frame} came out closer than full body` : '',
+    pose ? `${pose} came out in the wrong pose` : '',
+    ai.length ? `${ai.length} didn't match your description (${[...new Set(ai.flatMap((a) => a.aiIssues ?? []))].slice(0, 3).join('; ')})` : '',
+  ]
     .filter(Boolean)
     .join(', ');
+  const aiTail = kept.aiOk === false && kept.aiIssues?.length ? ` Closest match kept; still off: ${kept.aiIssues.slice(0, 3).join('; ')}.` : '';
   const tail =
-    kept.faceOk === false
+    (aiTail ? aiTail : '') +
+    (kept.faceOk === false
       ? ` None matched her face closely; the closest (similarity ${kept.similarity}) is in Needs Review, not the gallery.`
       : unverified
         ? ` ${unverified}`
-        : '';
+        : '');
   return `Photo checks: redid ${redone.length} photo${redone.length > 1 ? 's' : ''} (${why}); kept seed ${kept.seed}.${tail}`;
 }

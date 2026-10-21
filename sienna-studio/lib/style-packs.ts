@@ -327,6 +327,13 @@ const TINY_RE = /\b(tiny|micro|minimal|barely[- ]there|itsy|teeny)\b/i;
 /** Shape wording added to the outfit for a tiny string bikini (the pack's own look: small triangles on thin strings). */
 export const TINY_STRING_OUTFIT = 'very small triangle cups on thin strings, string thong bottoms';
 
+/** A pack's strength for a description: its tested default, or its max for a tiny / micro string bikini. */
+export function packStrength(id: string, text: string): number {
+  const pack = STYLE_PACKS.find((p) => p.id === id);
+  if (!pack) return 0;
+  return id === 'string_swimsuit' && TINY_RE.test(text) ? pack.max : pack.default;
+}
+
 export function packsForDescription(
   fields: { outfit?: string; pose?: string; bodyPresentation?: string; extra?: string },
   contentMode: 'sfw' | 'adult',
@@ -349,7 +356,7 @@ export function packsForDescription(
     if (id === 'french_lace' && out.lace_bodysuit) continue;
     // "tiny / micro string bikini": the 0.6 default came out with regular-size cups (live, 18 Oct); the pack's max
     // is the barely-there look it was tested at
-    out[id] = id === 'string_swimsuit' && TINY_RE.test(text) ? pack.max : pack.default;
+    out[id] = packStrength(id, text);
   }
   return out;
 }
