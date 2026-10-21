@@ -123,6 +123,8 @@ export interface GenerationParams {
   faceRefineDenoise: number;
   /** Faces smaller than this (px, shorter bbox side) are enlarged to it and redrawn. */
   faceRefineThreshold: number;
+  /** Strength of the hand touch-up redraw (unset = HAND_REFINE_DENOISE). */
+  handRefineDenoise?: number;
   /** With style packs: the face redraw uses Sienna's LoRA alone, so outfit packs don't pull her face away (on unless false). */
   faceKeepsSiennaLora?: boolean;
   /** The face reference shapes only the face redraw (with Sienna's LoRA alone); body, outfit and scene come from the main pass (on unless false). */
@@ -347,7 +349,7 @@ export interface GenerationRecord {
   prunedModules?: string[];
   /** Small-face refinement pass: whether it was in the graph and with which settings. */
   faceRefine?: { status: 'on' | 'off' | 'skipped'; denoise?: number; threshold?: number; reason?: string; siennaLoraOnly?: boolean; faceReferenceOnly?: boolean };
-  handRefine?: { status: 'on' | 'off' | 'skipped'; reason?: string };
+  handRefine?: { status: 'on' | 'off' | 'skipped'; reason?: string; denoise?: number };
   /** Photo checks: each photo is checked (top check when the outfit has a top, face check with Sienna Lock) and
    * redone with a new seed when one fails. Named for the first check it had. */
   exposureGuard?: {

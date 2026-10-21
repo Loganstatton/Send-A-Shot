@@ -70,6 +70,13 @@ export const POST = handle(async (req: Request) => {
     it.notes = it.notes.filter((n) => n !== before);
     if (Object.keys(it.packs).length) it.notes.push(packNote(it.packs));
   }
+  // A photo from outside the studio only lends its pose: editing it in place kept the other woman's blonde hair and
+  // even the app's on-screen icons and username (live, 18 Oct), and it must never turn someone else into the result.
+  if (ref && !source && (it.reference.mode === 'edit' || it.reference.mode === 'edit+pose')) {
+    it.notes = it.notes.filter((n) => n !== it.reference.why);
+    it.reference = { mode: 'pose', denoise: null, why: 'Reference photo from outside the studio: only her pose is copied — face, hair, body and the picture itself are all Sienna’s.' };
+    it.notes.push(it.reference.why);
+  }
   const edit = it.reference.mode === 'edit' || it.reference.mode === 'edit+pose';
   const pose = it.reference.mode === 'pose' || it.reference.mode === 'edit+pose';
   const request: GenerateRequest = {

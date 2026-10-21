@@ -53,6 +53,7 @@ export const paramsSchema = z.object({
   autoPosePreset: z.boolean().optional(),
   faceRefineDenoise: z.number().min(0.05).max(1).default(0.3),
   faceRefineThreshold: z.number().int().min(64).max(2048).default(384),
+  handRefineDenoise: z.number().min(0.1).max(0.8).optional(),
   faceKeepsSiennaLora: z.boolean().optional(),
   faceRefFacePassOnly: z.boolean().optional(),
   outfitStrength: z.number().min(0).max(1.5).default(0.7),

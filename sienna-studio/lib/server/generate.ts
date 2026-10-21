@@ -37,7 +37,7 @@ import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALIN
 import { buildPrompt, fullBodyFraming } from '../prompt';
 import { matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
-import { addHandRefine, HAND_DETECTOR_MODEL } from '../comfy/hand-refine';
+import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { addCoverage, EXPOSURE_MAX_ATTEMPTS, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
@@ -519,10 +519,10 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     } catch {
       // can't ask: let /prompt report it
     }
-    const withHands = reason ? null : addHandRefine(graph, refineId);
+    const withHands = reason ? null : addHandRefine(graph, refineId, { denoise: p.handRefineDenoise });
     if (withHands) {
       graph = withHands;
-      handRefine = { status: 'on' };
+      handRefine = { status: 'on', denoise: p.handRefineDenoise ?? HAND_REFINE_DENOISE };
     } else {
       handRefine = { status: 'skipped', reason: reason ?? 'no face pass to copy settings from' };
       if (reason) warnings.push(`Hand touch-up skipped — ${reason}.`);
