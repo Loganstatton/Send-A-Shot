@@ -10,7 +10,7 @@ export const HAND_DETECTOR_MODEL = 'bbox/hand_yolov8s.pt';
 export const HAND_DETECTOR_ID = 'hand_detector';
 export const HAND_REFINE_ID = 'hand_refine';
 export const HAND_PROMPT = 'a realistic hand with five fingers, natural relaxed fingers, detailed fingernails, natural skin';
-export const HAND_REFINE_DENOISE = 0.35;
+export const HAND_REFINE_DENOISE = 0.5; // 0.35 left stubby, merged fingers; 0.6 broke a good hand (A/B, 21 Oct)
 
 /** The graph with the hand pass added, or null if there is no face-refinement node or SaveImage to hook into. */
 export function addHandRefine(graph: ComfyGraph, faceRefineId: string, opts: { denoise?: number } = {}): ComfyGraph | null {
