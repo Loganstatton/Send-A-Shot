@@ -174,9 +174,10 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
   if (covered.length) {
     // right framing first, then a verified face over one that couldn't be judged over a mismatch, then the closest
     const idRank = (a: ExposureAttempt<Ref>) => (a.identity === 'verified' ? 4 : a.identity === 'likely' ? 3 : a.identity === 'inconclusive' ? 2 : 0);
-    // then the AI check (a match beats a miss; the face still outranks it), then its score
+    // then the AI check (a match beats a miss; the face still outranks it), then its score; broken anatomy (a third
+    // hand) counts against a photo — the controlled test kept one on a tied score (21 Oct)
     const rank = (a: ExposureAttempt<Ref>) =>
-      (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.aiOk === true ? 3 : a.aiOk === false ? 0 : 1.5) + (a.aiScore ?? 0) / 20 + (a.similarity ?? -1);
+      (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.aiOk === true ? 3 : a.aiOk === false ? 0 : 1.5) + (a.aiScore ?? 0) / 20 - (a.aiFixes?.some((i) => i.aspect === 'anatomy') ? 1 : 0) + (a.similarity ?? -1);
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));

@@ -125,3 +125,12 @@ describe('live controlled test fixes (21 Oct)', () => {
     expect(CAMERA_ANGLE_RE.test('casual iPhone photo taken by a friend')).toBe(false);
   });
 });
+
+describe('broken anatomy loses a tie', () => {
+  it('two photos with the same AI score: the one with a third hand is not kept', () => {
+    const base = { exposed: false, score: 0, images: [], faceOk: true, identity: 'verified' as const, aiOk: false, aiScore: 3 };
+    const thirdHand = { ...base, seed: 1, similarity: 0.78, aiFixes: [{ aspect: 'anatomy', problem: 'third hand', major: true, emphasize: '', avoid: '' }] };
+    const wrongShirt = { ...base, seed: 2, similarity: 0.74, aiFixes: [{ aspect: 'outfit', problem: 'tee not shirt', major: true, emphasize: '', avoid: '' }] };
+    expect(pickAttempt([thirdHand, wrongShirt]).seed).toBe(2);
+  });
+});
