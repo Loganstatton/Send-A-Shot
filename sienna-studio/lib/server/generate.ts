@@ -35,12 +35,12 @@ import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt, fullBodyFraming } from '../prompt';
-import { matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
+import { CAMERA_ANGLE_RE, matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
-import { buildCorrection } from '../corrections';
-import { addCoverage, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { buildCorrection, pickFixes } from '../corrections';
+import { addCoverage, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
@@ -130,7 +130,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // ── Pose preset: its skeleton stands in for a pose photo (wired straight to the ControlNet below) ──
   let posePre = !req.images.poseImage ? posePreset(req.params.posePreset) : undefined;
   let autoPose = false;
-  if (!posePre && !req.images.poseImage && !req.params.posePreset && req.params.autoPosePreset !== false) {
+  if (!posePre && !req.images.poseImage && !req.params.posePreset && req.params.autoPosePreset !== false && !CAMERA_ANGLE_RE.test(`${req.fields.camera} ${req.fields.framing} ${req.fields.pose}`)) {
     // no preset or pose photo chosen: use the preset the Pose text describes (text alone often loses the position)
     posePre = matchPosePreset(req.fields.pose, fullBodyFraming(req.fields).add);
     if (posePre) {
@@ -866,7 +866,12 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               graph = cov.graph;
               prompts = { positive: cov.positive, negative: cov.negative };
             } else if (kind === 'correction') {
-              const fix = buildCorrection(latest.aiFixes ?? [], prompts);
+              // from the original prompt, not the last redo's (fixes don't pile up)
+              const base = guard.base ?? prompts;
+              const earlierFixes = attempts.slice(0, -1).map((a) => a.aiFixes ?? []);
+              const fix = buildCorrection(pickFixes(latest.aiFixes ?? [], earlierFixes), base);
+              prompts = base;
+              graph = swapPrompts(graph, { positive: rec.positivePrompt, negative: rec.negativePrompt }, base);
               if (latest.framingOk === false) fix.summary.push('framing: full body, head to toe');
               if (latest.poseOk === false) fix.summary.push('pose: as described');
               const cov = addCoverage(graph, prompts, { positive: fix.positive, negative: fix.negative });
@@ -881,7 +886,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
             try {
               const { promptId } = await backend.queuePrompt(graph, rec.clientId ?? newId('sienna-'));
               return patchRecord(id, {
-                status: 'queued', promptId, seed, submittedGraph: graph, exposureGuard: { ...guard, attempts }, queuePosition: 0,
+                status: 'queued', promptId, seed, submittedGraph: graph, queuePosition: 0,
+                exposureGuard: { ...guard, attempts, base: guard.base ?? { positive: rec.positivePrompt, negative: rec.negativePrompt } },
                 positivePrompt: prompts.positive, negativePrompt: prompts.negative,
               });
             } catch {

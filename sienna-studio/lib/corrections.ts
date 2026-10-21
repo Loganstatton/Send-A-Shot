@@ -27,9 +27,9 @@ export interface Correction {
 
 const ANATOMY_NEGATIVE = 'extra limbs, extra legs, extra arms, extra fingers, missing fingers, fused fingers, deformed hands, malformed feet';
 const NEW_COMPOSITION = new Set(['pose', 'anatomy', 'framing', 'camera']);
-const MAX_FIXES = 4;
+const MAX_FIXES = 3;
 /** Prompt weight for a corrected detail: strong enough to change the next photo, not so strong it distorts it. */
-export const CORRECTION_WEIGHT = 1.3;
+export const CORRECTION_WEIGHT = 1.25;
 
 const clean = (s: string) =>
   s
@@ -37,6 +37,27 @@ const clean = (s: string) =>
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 120);
+
+/**
+ * The fixes for the next attempt: the latest photo's major issues first, then earlier photos' fixes for other aspects
+ * (so a fix that worked isn't dropped), at most MAX_FIXES. Always applied to the ORIGINAL prompt: stacking each redo's
+ * fixes on the last one put five weighted phrases ahead of the request and the living-room test lost its sofa and
+ * golden light (21 Oct).
+ */
+export function pickFixes(latest: CheckIssue[], earlier: CheckIssue[][]): CheckIssue[] {
+  const out: CheckIssue[] = [];
+  const seen = new Set<string>();
+  const add = (i: CheckIssue) => {
+    const k = i.emphasize.trim().toLowerCase() || i.problem;
+    if (!i.major || seen.has(k) || out.length >= MAX_FIXES) return;
+    seen.add(k);
+    out.push(i);
+  };
+  latest.forEach(add);
+  const covered = new Set(out.map((i) => i.aspect));
+  for (const list of [...earlier].reverse()) list.filter((i) => !covered.has(i.aspect)).forEach(add);
+  return out;
+}
 
 export function buildCorrection(issues: CheckIssue[], prompts: { positive: string; negative: string }): Correction {
   const major = issues.filter((i) => i.major).slice(0, MAX_FIXES);

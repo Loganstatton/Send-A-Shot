@@ -358,6 +358,8 @@ export interface GenerationRecord {
     /** Which checks are running. Missing = top check only (records from before the face check). */
     checks?: { top: boolean; face: boolean; body?: boolean };
     maxAttempts: number;
+    /** The original prompts, kept once a redo changes them (corrections always start from these). */
+    base?: { positive: string; negative: string };
     attempts: {
       seed: number;
       exposed: boolean;

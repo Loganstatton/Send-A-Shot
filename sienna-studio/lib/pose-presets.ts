@@ -75,6 +75,14 @@ const POSED_LIMBS_RE =
 // what the preset already shows: arms hanging down
 const RELAXED_ARMS_RE = /\b(her )?arms? (relaxed|down|hanging|at (her|its) sides?|by her sides?)\b|\b(relaxed|hanging) arms\b/gi;
 
+/**
+ * A camera angle the user asked for. A pose preset's skeleton fixes the viewpoint (eye level, straight on), so it is
+ * never used with one: the living-room test asked for "a low angle, looking up at her", got the Standing preset,
+ * and all three photos came out at eye level (21 Oct).
+ */
+export const CAMERA_ANGLE_RE =
+  /\b(low[- ]angle|high[- ]angle|from (below|above|the side|a low|a high|overhead)|looking (up|down) at her|bird'?s[- ]eye|worm'?s[- ]eye|overhead|top[- ]down|dutch angle|tilted (camera|angle)|side view|profile view|three[- ]quarter view|from behind|over[- ]the[- ]shoulder shot)\b/i;
+
 export function matchPosePreset(poseText: string, fullBody: boolean): PosePreset | undefined {
   const text = poseText.trim();
   if (!text) return undefined;

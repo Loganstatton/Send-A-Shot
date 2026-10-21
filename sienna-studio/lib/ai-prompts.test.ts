@@ -90,7 +90,7 @@ describe('targeted corrections', () => {
       ],
       prompts,
     );
-    expect(c.positive).toBe('(white lace shorts:1.3)');
+    expect(c.positive).toBe('(white lace shorts:1.25)');
     expect(c.negative).toBe('denim shorts');
     expect(c.newSeed).toBe(false); // outfit fix: keep the composition that was fine
     expect(c.summary).toEqual(['outfit: white lace shorts (not denim shorts)']);
@@ -104,7 +104,24 @@ describe('targeted corrections', () => {
       prompts,
     );
     expect(c.newSeed).toBe(true);
-    expect(c.positive).toContain('(both hands holding the white mug:1.3)');
+    expect(c.positive).toContain('(both hands holding the white mug:1.25)');
     expect(c.negative).toContain('fused fingers');
+  });
+});
+
+import { pickFixes } from './corrections';
+import { CAMERA_ANGLE_RE } from './pose-presets';
+
+describe('live controlled test fixes (21 Oct)', () => {
+  const i = (aspect: string, emphasize: string, major = true) => ({ aspect, problem: aspect, major, emphasize, avoid: '' });
+  it('fixes don\'t pile up: latest first, earlier ones only for other aspects, at most 3', () => {
+    const earlier = [[i('outfit', 'black bike shorts'), i('camera', 'low angle looking up')]];
+    const latest = [i('camera', 'low camera angle near the floor'), i('pose', 'left hand holding the glass')];
+    expect(pickFixes(latest, earlier).map((x) => x.emphasize)).toEqual(['low camera angle near the floor', 'left hand holding the glass', 'black bike shorts']);
+    expect(pickFixes([i('a', '1'), i('b', '2'), i('c', '3'), i('d', '4')], []).length).toBe(3);
+  });
+  it('a camera angle keeps the pose presets away', () => {
+    expect(CAMERA_ANGLE_RE.test('taken from a low angle, looking up at her, full body')).toBe(true);
+    expect(CAMERA_ANGLE_RE.test('casual iPhone photo taken by a friend')).toBe(false);
   });
 });

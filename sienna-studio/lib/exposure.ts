@@ -153,6 +153,19 @@ export function addCoverage(
   return { graph: out, positive, negative };
 }
 
+/** The same graph with its prompt texts set back to `to` (nodes whose text is exactly `from`). */
+export function swapPrompts(graph: ComfyGraph, from: { positive: string; negative: string }, to: { positive: string; negative: string }): ComfyGraph {
+  const out: ComfyGraph = {};
+  for (const [id, node] of Object.entries(graph)) {
+    const text = node.inputs.text;
+    out[id] =
+      text === from.positive && to.positive !== text ? { ...node, inputs: { ...node.inputs, text: to.positive } }
+      : text === from.negative && to.negative !== text ? { ...node, inputs: { ...node.inputs, text: to.negative } }
+      : node;
+  }
+  return out;
+}
+
 /** The attempt to keep: the last one if it passed; else, among covered ones, the closest face; else the least exposed. */
 export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAttempt<Ref> {
   const last = attempts[attempts.length - 1];
