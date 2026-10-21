@@ -35,7 +35,7 @@ import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt, fullBodyFraming } from '../prompt';
-import { CAMERA_ANGLE_RE, matchPosePreset, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
+import { CAMERA_ANGLE_RE, matchPosePreset, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
@@ -170,7 +170,16 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   const packOutfit = withPackOutfit(req.fields.outfit, requested.filter((a) => !a.pack.nudeOnly));
   const nudeOk = nudeOnlyAllowed(contentMode, { ...req.fields, outfit: packOutfit });
   const usable = (active: typeof requested) => active.filter((a) => !a.pack.nudeOnly || nudeOk);
-  const built = buildPrompt({ fields: { ...req.fields, outfit: packOutfit }, character, siennaLock: req.siennaLock, contentMode, cleanup: !!req.params.promptCleanup });
+  // a pose guide's wording goes after the outfit (inside the prompt), not in front of everything like other presets
+  const guidePrompt = posePre && POSE_GUIDES[posePre.id] ? POSE_PRESET_PROMPTS[posePre.id] : undefined;
+  const built = buildPrompt({
+    fields: { ...req.fields, outfit: packOutfit },
+    character,
+    siennaLock: req.siennaLock,
+    contentMode,
+    cleanup: !!req.params.promptCleanup,
+    poseGuide: posePre && POSE_GUIDES[posePre.id] ? guidePrompt?.positive ?? '' : undefined,
+  });
   if (built.blocked.length) {
     throw new GenerationError(
       `Prompt blocked: ${built.blocked.map((b) => `“${b.term}” — ${b.reason}`).join(' ')}`,
@@ -400,7 +409,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // ── Seed & values ──────────────────────────────────────────────────────
   const seed = p.seed >= 0 ? Math.floor(p.seed) : Math.floor(Math.random() * 2 ** 48);
   // a preset's own wording (bent over: the hinge spelled out, and the squat/kneel misreads pushed away)
-  const presetPrompt = posePre ? POSE_PRESET_PROMPTS[posePre.id] : undefined;
+  const presetPrompt = posePre ? (guidePrompt ? { positive: '', negative: guidePrompt.negative } : POSE_PRESET_PROMPTS[posePre.id]) : undefined;
   // presets that lose the outfit (bent over) also repeat the garment, weighted, right after their pose wording
   const presetOutfit = posePre ? presetOutfitPrompt(posePre.id, packOutfit, req.fields.setting) : null;
   const presetPos = [presetPrompt?.positive, presetOutfit?.positive].filter(Boolean).join(', ');

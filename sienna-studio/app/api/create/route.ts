@@ -1,6 +1,6 @@
 import { applyClothingChanges, interpretPrompt, packNote } from '@/lib/interpret';
 import { cleanRead, NUDE_RE } from '@/lib/ai-prompts';
-import { posePreset, presetFitsCamera } from '@/lib/pose-presets';
+import { offeredGuides, posePreset, presetFitsCamera } from '@/lib/pose-presets';
 import { packsForDescription, packStrength, STYLE_PACKS, stylePacksFor, TINY_STRING_OUTFIT } from '@/lib/style-packs';
 import { aiEnabled, aiRead } from '@/lib/server/ai';
 import { simpleCreateSchema } from '@/lib/schemas';
@@ -88,8 +88,9 @@ export const POST = handle(async (req: Request) => {
   let aiRan = false;
   if (aiAllowed && !source) {
     const adultOk = adultContentAllowed();
-    // pose guides (skeletons for the described hands, legs and camera height): on request or SIENNA_POSE_GUIDE=true
-    const guides = body.poseGuide ?? process.env.SIENNA_POSE_GUIDE === 'true';
+    // pose guides (skeletons for the described position, hands, legs and camera height): the tested ones always, all
+    // of them on request (testing) or with SIENNA_POSE_GUIDE=true
+    const guides = offeredGuides(body.poseGuide ?? process.env.SIENNA_POSE_GUIDE === 'true');
     const r = await aiRead(body.prompt, it.reference.mode, adultOk, guides);
     if (r) {
       const c = cleanRead(r, stylePacksFor(adultOk ? 'adult' : 'sfw').map((p) => p.id), guides);

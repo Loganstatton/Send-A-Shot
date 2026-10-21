@@ -36,6 +36,12 @@ export interface BuildPromptInput {
    * texture-penalising age terms. Off = the current production prompt.
    */
   cleanup?: boolean;
+  /**
+   * A pose guide holds her body with a skeleton, so the request's outfit goes ahead of the pose and the guide's own
+   * pose wording follows the outfit. In the first guide test the wording in front cost the outfit (sweatpants, the
+   * button-up shirt) in 5 of 7 photos and the golden-hour light (21 Oct).
+   */
+  poseGuide?: string;
 }
 
 export interface BuiltPrompt {
@@ -157,7 +163,7 @@ const OUTDOOR_SCENE_RE = /\b(beach|ocean|sea|lake|river|forest|woods|park|street
 const LIGHT_WORDS_RE = /\b(lighting|light|lit|sunlight|sunlit|daylight|lamp|lamplight|candlelight|neon|golden hour|sunset|sunrise|backlit|flash)\b/i;
 const NON_PHONE_CAMERA_RE = /\b(dslr|mirrorless|film camera|35mm film|medium format|professional (camera|photographer|photo ?shoot)|studio (photo|shoot|portrait)|canon|nikon|sony a\d|leica|hasselblad)\b/i;
 
-export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false }: BuildPromptInput): BuiltPrompt {
+export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
 
@@ -247,10 +253,12 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     faceAway ? FACE_AWAY : '',
     addedFraming,
     framing,
-    f.pose,
+    poseGuide === undefined ? f.pose : '',
     // outfit colours get a little extra weight: in the audit "red bikini" came out beige/green. 1.1 keeps her face
     // (1.2 cost likeness, and so did weighting the pose)
     emphasizeColours(f.outfit),
+    poseGuide ?? '',
+    poseGuide === undefined ? '' : f.pose,
     f.bodyPresentation,
     f.expression,
     f.setting,

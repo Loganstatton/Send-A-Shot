@@ -84,6 +84,16 @@ describe('buildPrompt', () => {
     expect(locked.negative).not.toMatch(/young-looking/);
   });
 
+  it('with a pose guide, the outfit comes before the pose and the guide wording follows the outfit', () => {
+    const fields = { ...EMPTY_FIELDS, pose: 'sitting on the edge of the bed', outfit: 'cream cable-knit sweater, light gray sweatpants', lighting: 'warm morning light' };
+    const p = buildPrompt({ fields, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw', poseGuide: '(both feet flat on the floor:1.15)' }).positive;
+    expect(p.indexOf('sweatpants')).toBeLessThan(p.indexOf('both feet flat'));
+    expect(p.indexOf('both feet flat')).toBeLessThan(p.indexOf('sitting on the edge'));
+    expect(p.indexOf('sitting on the edge')).toBeLessThan(p.indexOf('warm morning light'));
+    const plain = buildPrompt({ fields, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw' }).positive;
+    expect(plain.indexOf('sitting on the edge')).toBeLessThan(plain.indexOf('sweatpants'));
+  });
+
   it('builds the prompt-order-tested layout with the default profile', () => {
     const r = buildPrompt({
       fields: { ...EMPTY_FIELDS, framing: 'close-up iPhone portrait', lighting: 'soft natural daylight' },

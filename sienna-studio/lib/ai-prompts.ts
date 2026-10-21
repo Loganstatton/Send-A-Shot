@@ -64,15 +64,15 @@ function packList(adultAllowed: boolean) {
     .join('\n');
 }
 
-/** The presets the reader may choose: the keyword presets, plus the pose guides when they are on. */
-export function readerPresets(guides: boolean): string[] {
-  return Object.keys(POSE_PRESET_LABELS).filter((id) => guides || !POSE_GUIDES[id]);
+/** The presets the reader may choose: the keyword presets, plus the offered pose guides. */
+export function readerPresets(guides: readonly string[] = []): string[] {
+  return Object.keys(POSE_PRESET_LABELS).filter((id) => !POSE_GUIDES[id] || guides.includes(id));
 }
 
 const POSE_RULE = `posePreset: a ready-made pose skeleton the studio can hold her in; it also fixes the camera at eye level, straight on. Choose one only when the requested pose is that pose; choose "" when the user describes her hands, arms or legs in a way the preset doesn't show, or asks for a camera angle (low angle, from above, side view …). Ids:`;
 const GUIDE_RULE = `posePreset: a pose skeleton the studio holds her body in — image models get positions, hands, legs and camera height wrong from text alone, so pick one whenever one fits. It fixes her body position, where her hands and feet are, and the camera height (eye level, unless the line says low angle). Choose the one whose line matches the requested position, hands and legs; small differences in what she holds are fine, a different position or a hand/leg doing something else is not. Choose "" when none fits, or when the user asks for a camera angle no line offers (from above, side view, from behind …). Ids:`;
 
-export function readerSystem(adultAllowed: boolean, guides = false): string {
+export function readerSystem(adultAllowed: boolean, guides: readonly string[] = []): string {
   const poses = readerPresets(guides)
     .map((id) => `- ${id}: ${POSE_GUIDES[id] ?? POSE_PRESET_LABELS[id]}`)
     .join('\n');
@@ -95,7 +95,7 @@ Rules:
 - avoid: things to keep out of the picture, as a short comma list without "no" (e.g. "sunglasses, jewelry"). Put every "no X / without X / don't show X" here, never in the other fields.
 - Never write "Sienna", "she", instructions to the app, or parentheses/weights. Leave a field empty ("") when the description says nothing about it.
 
-${guides ? GUIDE_RULE : POSE_RULE}
+${guides.length ? GUIDE_RULE : POSE_RULE}
 ${poses}
 
 packs: style add-ons, at most two, chosen only when the description asks for exactly what the pack draws (most requests need none):
@@ -147,7 +147,7 @@ export function aiCost(model: string, usage: { input_tokens: number; output_toke
 }
 
 /** Keep only offered pose presets and known packs, at most two packs. */
-export function cleanRead(r: ReadResult, allowedPacks: string[], guides = false): ReadResult {
+export function cleanRead(r: ReadResult, allowedPacks: string[], guides: readonly string[] = []): ReadResult {
   const packs = [...new Set(r.packs)].filter((p) => allowedPacks.includes(p)).slice(0, 2);
   const posePreset = readerPresets(guides).includes(r.posePreset) ? r.posePreset : '';
   return { ...r, packs, posePreset };

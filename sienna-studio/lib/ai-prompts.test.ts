@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { aiCost, cleanRead, NUDE_RE, readerSystem, type ReadResult } from './ai-prompts';
-import { posePreset, presetFitsCamera } from './pose-presets';
+import { offeredGuides, posePreset, presetFitsCamera } from './pose-presets';
 import { exposureWarning, failed, pickAttempt, type ExposureAttempt } from './exposure';
 
 const base: ReadResult = {
@@ -157,9 +157,11 @@ describe('anatomy is a critical failure', () => {
 describe('pose guides', () => {
   it('are offered to the reader only when on', () => {
     expect(readerSystem(false)).not.toContain('sitting_edge_hands_chest');
-    expect(readerSystem(false, true)).toContain('sitting_edge_hands_chest');
+    expect(readerSystem(false, offeredGuides(true))).toContain('sitting_edge_hands_chest');
     expect(cleanRead({ ...base, posePreset: 'standing_low_angle' }, []).posePreset).toBe('');
-    expect(cleanRead({ ...base, posePreset: 'standing_low_angle' }, [], true).posePreset).toBe('standing_low_angle');
+    expect(cleanRead({ ...base, posePreset: 'standing_low_angle' }, [], offeredGuides(true)).posePreset).toBe('standing_low_angle');
+    // an experimental guide is not offered when only the everyday ones are
+    expect(cleanRead({ ...base, posePreset: 'leaning_counter_foot_up' }, [], ['standing_low_angle']).posePreset).toBe('');
   });
   it('the low-angle skeleton only with a low angle; eye-level ones never with a camera angle', () => {
     const low = posePreset('standing_low_angle')!;

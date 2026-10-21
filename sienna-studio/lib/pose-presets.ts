@@ -133,6 +133,17 @@ export const CAMERA_ANGLE_RE =
   /\b(low[- ]angle|high[- ]angle|from (below|above|the side|a low|a high|overhead)|looking (up|down) at her|bird'?s[- ]eye|worm'?s[- ]eye|overhead|top[- ]down|dutch angle|tilted (camera|angle)|side view|profile view|three[- ]quarter view|from behind|over[- ]the[- ]shoulder shot)\b/i;
 
 /**
+ * Pose guides in everyday use: the reader offers these on every request. The rest stay experimental and are only
+ * offered to a request that asks for all guides (testing) or with SIENNA_POSE_GUIDE=true.
+ */
+export const POSE_GUIDES_LIVE: string[] = [];
+
+/** The guides offered to the reader: every guide when testing, otherwise the ones in everyday use. */
+export function offeredGuides(all: boolean): string[] {
+  return all ? Object.keys(POSE_GUIDES) : POSE_GUIDES_LIVE;
+}
+
+/**
  * A preset may be used with this camera wording: eye-level presets never with a camera angle; the low-angle preset
  * only with a low angle.
  */
