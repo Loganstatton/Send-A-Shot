@@ -48,8 +48,9 @@ export interface BuildPromptInput {
    * natural-proportion wording for full-body shots. 1 = the original prompt (default until the benchmark decides).
    */
   version?: 1 | 2;
-  /** Testing: keep a covering top full-length (coversStomach): crop-top wording goes into the negative. */
-  coverStomach?: boolean;
+  /** Keep an ordinary T-shirt, tank top or button-up full-length (coverGarments): fit wording after the outfit and
+   * crop-top/knot wording in the negative. true = all three garments, or a list of the enabled ones. */
+  coverStomach?: boolean | readonly CoverGarment[];
 }
 
 export interface BuiltPrompt {
@@ -264,6 +265,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   if (version === 2) {
     return buildV2({ f, fields, character, siennaLock, contentMode, cleanup, poseGuide, warnings, blocked, effectiveFields, tokenPhrase, age, traits, fullBodyMode, barefoot, rear, faceAway, outfitText, framing: f.framing, coverStomach });
   }
+  const cover = coverParts(f.outfit, coverStomach);
   const positive = joinParts([
     rear ? REAR_VIEW : '',
     faceAway ? FACE_AWAY : '',
@@ -273,6 +275,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     // outfit colours get a little extra weight: in the audit "red bikini" came out beige/green. 1.1 keeps her face
     // (1.2 cost likeness, and so did weighting the pose)
     outfitText,
+    cover.fit,
     poseGuide ?? '',
     poseGuide === undefined ? '' : f.pose,
     f.bodyPresentation,
@@ -314,7 +317,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
     barefoot ? BAREFOOT_NEGATIVE : '',
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
-    coverStomach && coversStomach(f.outfit) ? COVER_STOMACH_NEGATIVE : '',
+    cover.negative,
     colourDriftNegative(f.outfit),
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
     avoidItems.join(', '),
@@ -339,14 +342,40 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
 const BODY_TRAIT_RE = /\b(breasts?|bust|chest|waist|abs|hips?|curv\w*|figure|thighs?|glutes?|butt|legs?)\b/i;
 /** "(large round natural breasts:1.2)" → "large round natural breasts". */
 export const unweighted = (t: string) => t.replace(/^\((.+?)(?::\s*[\d.]+)?\)$/, '$1').trim();
-/** Tops that cover her stomach unless the request says otherwise. Requested tank tops came out cropped in 8 of 8
- * bedroom photos with her figure described (22 Oct), whatever the prompt version. */
-const COVERING_TOP_RE = /\b(tank top|tank|t-shirt|tee|shirt|blouse|sweater|jumper|turtleneck|hoodie|sweatshirt|cardigan|dress|bodysuit|leotard|one-piece|swimsuit)\b/i;
-/** The request itself shows her stomach (a crop top, a bikini, a knotted shirt…): no crop-top negative. */
-const SHOWS_STOMACH_RE = /\b(crop|cropped|midriff|belly|stomach|navel|abs|bralette|bra|bikini|bandeau|tube top|tied|knotted|tie-front|half[\s-]?shirt|cut-?out|open|unbuttoned)\b/i;
+/** Garments that came out cropped or knotted when an ordinary one was asked for (22 Oct: tank tops 8 of 8, a T-shirt,
+ * a button-up shirt), and the fit wording that keeps each one full-length. Sweaters, dresses and the rest came out
+ * right on their own, so they get nothing extra. */
+export type CoverGarment = 'tee' | 'tank' | 'buttonup';
+export const COVER_GARMENTS: CoverGarment[] = ['tee', 'tank', 'buttonup'];
+const GARMENT_RE: Record<CoverGarment, RegExp> = {
+  tee: /\b(t-?shirt|tee)\b/i,
+  tank: /\btank(\s+top)?\b/i,
+  buttonup: /\b(button[\s-]?(up|down)|oxford shirt|dress shirt)\b/i,
+};
+export const COVER_FIT: Record<CoverGarment, string> = {
+  tee: 'untucked T-shirt with its hem below her waistband, stomach completely covered',
+  tank: 'tank top fitted naturally, hem reaching her waistband or below, stomach covered',
+  buttonup: 'full-length button-up shirt hanging naturally, buttoned down to the hem, untucked, hem below her waistband, not tied or knotted',
+};
+/** The request itself shows her stomach or asks for its own style (a crop top, a bikini, a tied, knotted, tucked or
+ * open shirt…): the request wins and nothing is added. */
+const SHOWS_STOMACH_RE = /\b(crop|cropped|midriff|belly|stomach|navel|abs|bralette|bra|bikini|bandeau|tube top|tied|knotted|tie-front|tucked|half[\s-]?shirt|cut-?out|open|unbuttoned)\b/i;
 export const COVER_STOMACH_NEGATIVE = '(crop top, cropped shirt, exposed midriff, bare stomach, shortened shirt:1.2)';
-/** True when the outfit asks for a top that covers her stomach and nothing in it asks for her stomach to show. */
-export const coversStomach = (outfit: string) => COVERING_TOP_RE.test(outfit) && !SHOWS_STOMACH_RE.test(outfit);
+export const KNOT_NEGATIVE = '(tied shirt, knotted shirt, front knot:1.2)';
+/** Which of the enabled garments the outfit asks for in their ordinary, full-length form. */
+export function coverGarments(outfit: string, enabled: readonly CoverGarment[] = COVER_GARMENTS): CoverGarment[] {
+  if (!outfit || SHOWS_STOMACH_RE.test(outfit)) return [];
+  return enabled.filter((g) => GARMENT_RE[g].test(outfit));
+}
+export const coversStomach = (outfit: string) => coverGarments(outfit).length > 0;
+const coverEnabled = (c: boolean | readonly CoverGarment[] | undefined): readonly CoverGarment[] => (c === true ? COVER_GARMENTS : Array.isArray(c) ? c : []);
+function coverParts(outfit: string, c: boolean | readonly CoverGarment[] | undefined) {
+  const g = coverGarments(outfit, coverEnabled(c));
+  return {
+    fit: g.map((x) => COVER_FIT[x]).join(', '),
+    negative: g.length ? [COVER_STOMACH_NEGATIVE, g.includes('buttonup') ? KNOT_NEGATIVE : ''].filter(Boolean).join(', ') : '',
+  };
+}
 /** Her traits without the "with defined abs" wording, everything else as written (test switch figureNoAbs). */
 export const withoutAbs = (traits: string) => traits.replace(/\s*(?:with\s+)?(?:defined|visible|toned)\s+abs\b/gi, '').replace(/,\s*,/g, ',');
 /** Said after her figure, without weights: a reminder, not a body change. */
@@ -365,7 +394,7 @@ function buildV2(a: {
   f: PromptFields; fields: PromptFields; character: CharacterProfile; siennaLock: boolean; contentMode: ContentMode; cleanup: boolean;
   poseGuide?: string; warnings: string[]; blocked: GuardHit[]; effectiveFields: PromptFields; tokenPhrase: string; age: number;
   traits: { rest: string; eyes: string }; fullBodyMode: 'mirror' | 'normal' | null; barefoot: boolean; rear: boolean; faceAway: boolean;
-  outfitText: string; framing: string; coverStomach?: boolean;
+  outfitText: string; framing: string; coverStomach?: boolean | readonly CoverGarment[];
 }): BuiltPrompt {
   const { f, fields, character, siennaLock, contentMode, cleanup, warnings, blocked, effectiveFields } = a;
   // camera first, the way a person describes a photo ("casual iPhone photo of …"); the user's own camera wording wins
@@ -377,6 +406,7 @@ function buildV2(a: {
   const framing = fullBody ? a.framing.split(',').filter((t) => !/\b(full[\s-]?body|head[\s-]?to[\s-]?toe|full[\s-]?length|entire body)\b/i.test(t)).join(',') : a.framing;
   const outfitPart = a.outfitText ? `wearing ${a.outfitText.replace(/^wearing\s+/i, '')}` : '';
   const pose = a.poseGuide === undefined ? f.pose : [f.pose, a.poseGuide].filter(Boolean).join(', ');
+  const cover = coverParts(f.outfit, a.coverStomach);
   const positive = joinParts([
     a.rear ? REAR_VIEW : '',
     a.faceAway ? FACE_AWAY : '',
@@ -386,6 +416,7 @@ function buildV2(a: {
     framing,
     pose,
     outfitPart,
+    cover.fit,
     f.bodyPresentation,
     f.expression,
     f.setting,
@@ -414,7 +445,7 @@ function buildV2(a: {
     a.fullBodyMode === 'normal' ? `${FULL_BODY_NEGATIVE}, ${V2_FULL_BODY_NEGATIVE}` : '',
     a.barefoot ? BAREFOOT_NEGATIVE : '',
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
-    a.coverStomach && coversStomach(f.outfit) ? COVER_STOMACH_NEGATIVE : '',
+    cover.negative,
     colourDriftNegative(f.outfit),
     a.faceAway ? REAR_NEGATIVE_FACE_AWAY : a.rear ? REAR_NEGATIVE : '',
     STANDING_RE.test(f.pose) && !NOT_STANDING_RE.test(f.pose) ? V2_STANDING_NEGATIVE : '',

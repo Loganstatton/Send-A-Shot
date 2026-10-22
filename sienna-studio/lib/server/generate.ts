@@ -34,7 +34,7 @@ import { MIN_CHARACTER_AGE } from '../defaults';
 import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
-import { buildPrompt, fullBodyFraming, withoutAbs } from '../prompt';
+import { buildPrompt, COVER_GARMENTS, fullBodyFraming, withoutAbs, type CoverGarment } from '../prompt';
 import { CAMERA_ANGLE_RE, matchPosePreset, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
@@ -110,6 +110,12 @@ export interface PreparedGeneration {
   backend: ComfyBackend;
   graph: ComfyGraph;
   record: Omit<GenerationRecord, 'id' | 'createdAt' | 'status' | 'promptId' | 'clientId'>;
+}
+
+/** SIENNA_COVER_STOMACH: "true" = every garment the fit wording covers, or a comma list ("tee,tank"). */
+export function coverFromEnv(v: string | undefined): CoverGarment[] {
+  if (v === 'true') return [...COVER_GARMENTS];
+  return (v ?? '').split(',').map((x) => x.trim()).filter((x): x is CoverGarment => (COVER_GARMENTS as string[]).includes(x));
 }
 
 export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: boolean } = {}): Promise<PreparedGeneration> {
@@ -201,9 +207,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     cleanup: !!req.params.promptCleanup,
     poseGuide: posePre && POSE_GUIDES[posePre.id] ? guidePrompt?.positive ?? '' : undefined,
     version: promptVersion,
-    // a requested covering top stays full-length; SIENNA_COVER_STOMACH=true turns it on for everyone (rollback: unset or
-    // false). A benchmark request can force it either way.
-    coverStomach: req.params.coverStomach ?? process.env.SIENNA_COVER_STOMACH === 'true',
+    // an ordinary T-shirt / tank top / button-up stays full-length: SIENNA_COVER_STOMACH lists the garments it's on for
+    // ("tee,tank,buttonup", or true = all); unset or false = off, the rollback. A benchmark request can force it.
+    coverStomach: req.params.coverStomach ?? coverFromEnv(process.env.SIENNA_COVER_STOMACH),
   });
   if (built.blocked.length) {
     throw new GenerationError(
