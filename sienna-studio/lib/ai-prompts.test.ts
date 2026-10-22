@@ -160,7 +160,7 @@ describe('pose guides', () => {
     expect(readerSystem(false, offeredGuides(true))).toContain('sitting_edge_hands_chest');
     expect(cleanRead({ ...base, posePreset: 'standing_low_angle' }, []).posePreset).toBe('');
     expect(cleanRead({ ...base, posePreset: 'standing_low_angle' }, [], offeredGuides(true)).posePreset).toBe('standing_low_angle');
-    expect(offeredGuides(false)).toEqual(['sitting_edge_hands_chest']);
+    expect(offeredGuides(false)).toEqual([]);
     // an experimental guide is not offered when only the everyday ones are
     expect(cleanRead({ ...base, posePreset: 'leaning_counter_foot_up' }, [], ['standing_low_angle']).posePreset).toBe('');
   });
