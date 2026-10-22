@@ -34,6 +34,9 @@ export interface FaceReport {
   size?: number | null;
   /** Whether a face was found at all (missing from older reports). */
   found?: boolean;
+  /** False when the face compared isn't clearly a face toward the camera (turned away, or possibly not a face): a
+   * low score then isn't evidence of another person. Missing from older nodes. See sienna_face.is_clear. */
+  clear?: boolean;
   /** Head turn from the face landmarks (missing from older nodes): see sienna_face.head_turn. */
   yaw?: number | null;
   eyeRatio?: number | null;
@@ -111,6 +114,8 @@ export function faceVerdict(
     const turned = rear || (face.yaw ?? 0) > TURNED_YAW || (face.eyeRatio ?? 1) < TURNED_EYE_RATIO;
     if (turned && sim >= FACE_TURNED_FLOOR) return { status: 'inconclusive', reason: 'her face is turned away' };
   }
+  // still redone (a new seed usually shows her face), but the gallery shouldn't claim it was someone else
+  if (face.clear === false) return { status: 'mismatch', reason: "her face wasn't clearly visible (turned away or partly hidden), so it couldn't be confirmed as Sienna" };
   return { status: 'mismatch', reason: "didn't look enough like Sienna" };
 }
 
@@ -142,6 +147,7 @@ export function parseFace(texts: string[] | undefined): FaceReport | null {
       similarity: num(r.similarity),
       size: num(first?.size),
       found: typeof first?.found === 'boolean' ? first.found : undefined,
+      clear: typeof first?.clear === 'boolean' ? first.clear : undefined,
       yaw: num(first?.yaw),
       eyeRatio: num(first?.eye_ratio),
       hairRel: num(first?.hair_rel),

@@ -88,8 +88,67 @@ def appearance(bgr: np.ndarray, f: Sequence[float]) -> Dict[str, float]:
     return out
 
 
+def landmark_shape(f: Sequence[float]) -> Dict[str, float]:
+    """How face-like a YuNet detection's five landmarks are, independent of head roll. mouth_ratio: eye-midpoint to
+    mouth-midpoint distance over eye distance (Sienna's real faces 0.86-1.49, 1st-99th percentile of 574 photos; a
+    stomach detected as a face, 22 Oct: 1.87)."""
+    re, le = np.asarray(f[4:6], np.float32), np.asarray(f[6:8], np.float32)
+    ml, mr = np.asarray(f[10:12], np.float32), np.asarray(f[12:14], np.float32)
+    eye_d = float(np.linalg.norm(le - re)) + 1e-6
+    return {"mouth_ratio": float(np.linalg.norm((ml + mr) / 2 - (re + le) / 2)) / eye_d}
+
+
+# A "clear" face: detector confidence and landmark layout inside what Sienna's real faces show (574 photos: score
+# 0.90+, eye_ratio 0.36+, mouth_ratio 1.49- at the 1st/99th percentile), with margin. The false faces seen so far
+# (a stomach, a navel and a crop-top hem, 22 Oct) scored 0.75-0.80 with eye_ratio 0.19-0.28 and mouth_ratio 1.6-1.9.
+CLEAR_SCORE = 0.85
+CLEAR_EYE_RATIO = 0.30
+CLEAR_MOUTH_RATIO = 1.6
+
+
+def is_clear(d: Dict) -> bool:
+    return (d.get("score", 1.0) >= CLEAR_SCORE and d.get("eye_ratio", 1.0) >= CLEAR_EYE_RATIO
+            and d.get("mouth_ratio", 1.0) <= CLEAR_MOUTH_RATIO)
+
+
+def _below_another(d: Dict, others: List[Dict]) -> bool:
+    """True when another detection sits above this one on the same body (overlapping columns, its box ending above
+    this box's middle): a head is above the torso, so the lower one is a body part the detector mistook for a face."""
+    if "box" not in d:
+        return False
+    x, y, w, h = d["box"]
+    for o in others:
+        if o is d or "box" not in o:
+            continue
+        ox, oy, ow, oh = o["box"]
+        overlap = min(x + w, ox + ow) - max(x, ox)
+        if overlap > 0.3 * min(w, ow) and oy + oh <= y + 0.5 * h and oy < y:
+            return True
+    return False
+
+
+def rank_faces(found: List[Dict], min_size: float = 0) -> List[Dict]:
+    """The detections, her face first. Never simply the largest region: big-enough faces before tiny ones, clear faces
+    (is_clear) before unclear ones (the 22 Oct selfie: her stomach, larger than her face, was scored instead of her
+    face), an unclear detection lying directly under another one on the same body after the rest, then the larger, then the more
+    confident. Big enough comes first: a tiny clear face in the background (a poster, someone far away) must not
+    replace her own turned head. Reports without geometry (older callers, tests) keep their order."""
+    if not found or not any("box" in d for d in found):
+        return list(found)
+
+    def key(item):
+        i, d = item
+        clear = is_clear(d)
+        # stacked under another detection only counts against an unclear one: two clear faces one above the other are
+        # two real faces (a mirror, a second person), and the larger one is the subject
+        return (d.get("size", min_size) < min_size, not clear, not clear and _below_another(d, found), -d.get("area", 0), -d.get("score", 0), i)
+
+    return [d for _, d in sorted(enumerate(found), key=key)]
+
+
 def faces(bgr: np.ndarray, det, rec) -> List[Dict]:
-    """Every face found: box area, detector score, head turn and normalised embedding, largest first."""
+    """Every face found: box, area, detector score, head turn, landmark shape and normalised embedding, her face first
+    (rank_faces)."""
     h, w = bgr.shape[:2]
     det.setInputSize((w, h))
     _, found = det.detect(bgr)
@@ -97,9 +156,9 @@ def faces(bgr: np.ndarray, det, rec) -> List[Dict]:
     for f in found if found is not None else []:
         aligned = rec.alignCrop(bgr, f)
         e = np.asarray(rec.feature(aligned), dtype=np.float32).ravel()
-        out.append({"area": float(f[2] * f[3]), "size": float(min(f[2], f[3])), "score": float(f[14]), **head_turn(f), **appearance(bgr, f),
-                    "embedding": e / (np.linalg.norm(e) + 1e-9)})
-    return sorted(out, key=lambda d: -d["area"])
+        out.append({"box": [float(v) for v in f[:4]], "area": float(f[2] * f[3]), "size": float(min(f[2], f[3])), "score": float(f[14]),
+                    **head_turn(f), **landmark_shape(f), **appearance(bgr, f), "embedding": e / (np.linalg.norm(e) + 1e-9)})
+    return rank_faces(out)
 
 
 def reference_embedding(embeddings: Sequence[Sequence[float]]) -> np.ndarray:
@@ -113,17 +172,23 @@ def similarity(embedding: np.ndarray, reference: np.ndarray) -> float:
 
 
 def check(found: List[Dict], reference: np.ndarray, threshold: float, min_size: float = 0) -> Dict:
-    """Score the main (largest) face against the reference. Faces smaller than min_size px are reported but always
-    pass: the embedding of a tiny face is too noisy to judge."""
+    """Score her face (rank_faces) against the reference. Faces smaller than min_size px are reported but always
+    pass: the embedding of a tiny face is too noisy to judge. clear=False says the face compared is not clearly a
+    face facing the camera (turned away, or possibly not a face at all), so a low score there is not evidence of a
+    different person."""
     if not found:
         return {"found": False, "similarity": None, "ok": True, "faces": 0}
-    s = similarity(found[0]["embedding"], reference)
-    size = found[0].get("size", min_size)
+    main = rank_faces(found, min_size)[0]
+    s = similarity(main["embedding"], reference)
+    size = main.get("size", min_size)
     out = {"found": True, "similarity": round(s, 3), "size": round(size), "ok": s >= threshold or size < min_size, "faces": len(found)}
+    if "box" in main:
+        out["clear"] = is_clear(main)
+        out["box"] = [round(v) for v in main["box"]]
     # head turn and detector confidence, for the app's pose-aware verdict (older apps ignore them)
-    for k in ("yaw", "eye_ratio", "score", "hair_rel", "skin_hue", "skin_l"):
-        if k in found[0]:
-            out["detector_score" if k == "score" else k] = round(float(found[0][k]), 3)
-    if "mono" in found[0]:
-        out["mono"] = bool(found[0]["mono"])
+    for k in ("yaw", "eye_ratio", "mouth_ratio", "score", "hair_rel", "skin_hue", "skin_l"):
+        if k in main:
+            out["detector_score" if k == "score" else k] = round(float(main[k]), 3)
+    if "mono" in main:
+        out["mono"] = bool(main["mono"])
     return out

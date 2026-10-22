@@ -561,7 +561,7 @@ export function CreateScreen() {
           <div>
             <p className="mb-1 text-sm text-ink-200">Pose preset</p>
             <div className="flex flex-wrap gap-2">
-              {POSE_PRESETS.map((p) => (
+              {POSE_PRESETS.filter((p) => !p.testOnly).map((p) => (
                 <Chip
                   key={p.id}
                   active={draft.params.posePreset === p.id}

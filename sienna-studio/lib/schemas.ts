@@ -114,6 +114,7 @@ export const simpleCreateSchema = z.object({
       scheduler: z.string().max(40).optional(),
       single: z.boolean().optional(),
       noCheck: z.boolean().optional(),
+      standingGuide: z.literal('natural').optional(),
     })
     .optional(),
 });

@@ -120,6 +120,14 @@
   "view": "low"
  },
  {
+  "id": "standing_full_body_natural",
+  "width": 832,
+  "height": 1216,
+  "pose": "standing, full body from head to feet, arms relaxed at her sides",
+  "strength": 0.85,
+  "testOnly": true
+ },
+ {
   "id": "standing_holding_glass",
   "width": 832,
   "height": 1216,

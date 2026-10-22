@@ -545,6 +545,104 @@ def test_safe_frame_pad_image_and_sizes():
     assert fw * fh <= 1_100_000 and fw % 8 == 0
 
 
+# --- which face is hers (rank_faces). Landmark vectors are the real YuNet detections from the studio's photos. ---
+# box x, y, w, h, then right eye, left eye, nose, mouth corners, score
+SELFIE_FACE = [313.3, 113.7, 179.6, 258.4, 363.6, 207.0, 446.2, 221.6, 394.1, 263.3, 352.8, 295.7, 424.7, 308.6, 0.93]
+SELFIE_STOMACH = [299.2, 735.0, 274.9, 270.6, 399.8, 856.9, 450.1, 847.0, 434.0, 914.1, 417.5, 951.8, 453.2, 943.1, 0.75]
+HEM_FACE = [323.0, 122.0, 186.0, 220.0, 368.0, 200.0, 456.0, 199.0, 412.0, 248.0, 377.0, 283.0, 447.0, 282.0, 0.94]
+HEM_FALSE = [340.0, 847.0, 152.0, 152.0, 390.0, 900.0, 433.0, 900.0, 413.0, 930.0, 398.0, 970.0, 431.0, 970.0, 0.80]
+SIENNA, OTHER = np.array([1, 0, 0], np.float32), np.array([0, 0, 1], np.float32)
+
+
+def _det(f, emb=SIENNA):
+    """What sienna_face.faces() reports for one detection, without the models."""
+    return {"box": [float(v) for v in f[:4]], "area": f[2] * f[3], "size": min(f[2], f[3]), "score": f[14],
+            **sf.head_turn(f), **sf.landmark_shape(f), "embedding": emb}
+
+
+def _shift(f, dx=0.0, dy=0.0, scale=1.0, score=None):
+    """The same face moved/scaled (box and landmarks), optionally with another detector score."""
+    out = [f[0] * scale + dx, f[1] * scale + dy, f[2] * scale, f[3] * scale]
+    for i in range(5):
+        out += [f[4 + 2 * i] * scale + dx, f[5 + 2 * i] * scale + dy]
+    return out + [f[14] if score is None else score]
+
+
+def _rot90(f):
+    """The face turned 90 degrees in the picture (lying on her side): landmarks rotated about the box centre."""
+    cx, cy = f[0] + f[2] / 2, f[1] + f[3] / 2
+    pts = [(cx - (f[5 + 2 * i] - cy), cy + (f[4 + 2 * i] - cx)) for i in range(5)]
+    return [cx - f[3] / 2, cy - f[2] / 2, f[3], f[2]] + [v for p in pts for v in p] + [f[14]]
+
+
+def test_face_selfie_stomach_is_not_her_face():
+    face, stomach = _det(SELFIE_FACE), _det(SELFIE_STOMACH, OTHER)
+    assert stomach["area"] > face["area"]           # the old rule (largest) picked the stomach
+    assert sf.is_clear(face) and not sf.is_clear(stomach)
+    for order in ([stomach, face], [face, stomach]):
+        r = sf.check(order, SIENNA, 0.74, 64)
+        assert r["similarity"] > 0.99 and r["ok"] and r["clear"] is True and r["box"] == [313, 114, 180, 258]
+
+
+def test_face_crop_top_hem_below_face_is_ignored():
+    r = sf.check([_det(HEM_FALSE, OTHER), _det(HEM_FACE)], SIENNA, 0.74, 64)
+    assert r["similarity"] > 0.99 and r["faces"] == 2
+
+
+def test_face_unclear_body_part_under_a_turned_head_is_ignored():
+    # her head turned away (unclear, smaller) above the stomach detection (unclear, larger): the head is above the body
+    turned = _shift(SELFIE_FACE, score=0.78)
+    turned[6], turned[7] = turned[4] + 30, turned[5]      # eyes close together: strong head turn
+    head = _det(turned)
+    assert not sf.is_clear(head)
+    r = sf.check([_det(SELFIE_STOMACH, OTHER), head], SIENNA, 0.74, 64)
+    assert r["similarity"] > 0.99 and r["clear"] is False
+
+
+def test_face_single_unclear_face_is_still_compared_and_flagged():
+    # cropped or turned: the only detection is compared, and the report says it wasn't a clear face
+    r = sf.check([_det(SELFIE_STOMACH, OTHER)], SIENNA, 0.74, 64)
+    assert r["found"] and r["clear"] is False and r["ok"] is False
+
+
+def test_face_cropped_at_top_edge_is_found():
+    edge = _shift(SELFIE_FACE, dy=-150)                  # box starts above the picture, as in a top-cropped photo
+    r = sf.check([_det(edge)], SIENNA, 0.74, 64)
+    assert r["found"] and r["clear"] is True and r["ok"]
+
+
+def test_face_full_body_small_face_beats_tiny_background_face():
+    hers = _det(_shift(SELFIE_FACE, scale=0.4))          # about 72 px: a full-body photo
+    poster = _det(_shift(SELFIE_FACE, dx=500, scale=0.15), OTHER)   # 27 px face on a poster
+    r = sf.check([poster, hers], SIENNA, 0.74, 64)
+    assert r["similarity"] > 0.99 and r["size"] >= 64
+    # her head turned away still wins over a tiny clear face in the background
+    turned = _shift(SELFIE_FACE, scale=0.4, score=0.78)
+    turned[6] = turned[4] + 12
+    r = sf.check([poster, _det(turned)], SIENNA, 0.74, 64)
+    assert r["similarity"] > 0.99 and r["clear"] is False
+
+
+def test_face_lying_on_her_side_is_clear():
+    side = _det(_rot90(SELFIE_FACE))
+    assert sf.is_clear(side)
+    # her stomach is beside her face when she lies down; clarity still picks the face
+    beside = _det(_rot90(_shift(SELFIE_STOMACH, dx=500, dy=-620)), OTHER)
+    r = sf.check([beside, side], SIENNA, 0.74, 64)
+    assert r["similarity"] > 0.99
+
+
+def test_face_two_clear_faces_stacked_keeps_the_larger():
+    # a mirror or a second person: two clear faces one above the other are both real faces; the larger is the subject
+    big = _det(_shift(SELFIE_FACE, dy=500, scale=1.2))
+    small_above = _det(_shift(SELFIE_FACE, scale=0.7), OTHER)
+    assert sf.check([small_above, big], SIENNA, 0.74, 64)["similarity"] > 0.99
+
+
+def test_face_none_found_is_reported_not_guessed():
+    assert sf.check([], SIENNA, 0.74, 64) == {"found": False, "similarity": None, "ok": True, "faces": 0}
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in list(globals().items()):

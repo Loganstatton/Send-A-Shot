@@ -331,9 +331,17 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
 // 8.4 head-lengths tall instead of ~7.5). Version 2 writes the request like a caption for a photographer, keeps the
 // identity (trigger, hair, freckles, eyes) and describes her figure without weights.
 
-/** Body descriptors in the profile traits; version 2 replaces them with NATURAL_FIGURE (the LoRA carries her figure). */
+/** Body descriptors in the profile traits. Version 2 keeps them word for word but without emphasis weights: dropping
+ * them (benchmark, 22 Oct) shrank her bust visibly against her approved photos — the LoRA alone doesn't carry her figure. */
 const BODY_TRAIT_RE = /\b(breasts?|bust|chest|waist|abs|hips?|curv\w*|figure|thighs?|glutes?|butt|legs?)\b/i;
-export const NATURAL_FIGURE = 'natural curvy figure with realistic proportions';
+/** "(large round natural breasts:1.2)" → "large round natural breasts". */
+export const unweighted = (t: string) => t.replace(/^\((.+?)(?::\s*[\d.]+)?\)$/, '$1').trim();
+/** Said after her figure, without weights: a reminder, not a body change. */
+export const NATURAL_PROPORTIONS = 'realistic proportions';
+/** A standing request: furniture in the room ("gray sofa") pulled her into sitting in 4 of 4 photos (22 Oct). */
+const STANDING_RE = /\bstand(ing|s)?\b/i;
+const NOT_STANDING_RE = /\b(sit|sits|sitting|seated|lying|lies|lie|kneel\w*|crouch\w*|squat\w*|reclin\w*)\b/i;
+export const V2_STANDING_NEGATIVE = 'sitting, seated, sitting on the sofa';
 /** Full-length framing without "wide shot / several meters away": that wording stretched her to fill the frame. */
 export const V2_FULL_BODY = 'full-length photo with her whole body in frame from head to feet and some space around her, natural proportions';
 export const V2_FULL_BODY_NEGATIVE = 'cropped feet, cut off legs, elongated legs, stretched body, tall fashion model proportions, small head';
@@ -349,10 +357,9 @@ function buildV2(a: {
   const { f, fields, character, siennaLock, contentMode, cleanup, warnings, blocked, effectiveFields } = a;
   // camera first, the way a person describes a photo ("casual iPhone photo of …"); the user's own camera wording wins
   const camera = f.camera.trim() || (a.fullBodyMode === 'normal' ? 'casual iPhone photo taken by a friend' : 'casual iPhone photo');
-  const identityTraits = a.traits.rest
-    .split(',')
-    .map((t) => t.trim())
-    .filter((t) => t && !BODY_TRAIT_RE.test(t));
+  const traitList = a.traits.rest.split(',').map((t) => t.trim()).filter(Boolean);
+  const identityTraits = traitList.filter((t) => !BODY_TRAIT_RE.test(t));
+  const figure = traitList.filter((t) => BODY_TRAIT_RE.test(t)).map(unweighted);
   const fullBody = a.fullBodyMode === 'mirror' ? MIRROR_FULL_BODY_FRAMING : a.fullBodyMode ? V2_FULL_BODY : '';
   const framing = fullBody ? a.framing.split(',').filter((t) => !/\b(full[\s-]?body|head[\s-]?to[\s-]?toe|full[\s-]?length|entire body)\b/i.test(t)).join(',') : a.framing;
   const outfitPart = a.outfitText ? `wearing ${a.outfitText.replace(/^wearing\s+/i, '')}` : '';
@@ -371,7 +378,7 @@ function buildV2(a: {
     f.setting,
     f.lighting,
     f.extra,
-    ...(siennaLock ? [`${a.age}-year-old`, ...identityTraits, NATURAL_FIGURE] : []),
+    ...(siennaLock ? [`${a.age}-year-old`, ...identityTraits, ...figure, figure.length ? NATURAL_PROPORTIONS : ''] : []),
     V2_REALISM,
     f.realism,
     siennaLock && !a.faceAway ? a.traits.eyes : '',
@@ -396,6 +403,7 @@ function buildV2(a: {
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
     colourDriftNegative(f.outfit),
     a.faceAway ? REAR_NEGATIVE_FACE_AWAY : a.rear ? REAR_NEGATIVE : '',
+    STANDING_RE.test(f.pose) && !NOT_STANDING_RE.test(f.pose) ? V2_STANDING_NEGATIVE : '',
     avoidItems.join(', '),
   ]);
   return { positive, negative, warnings, blocked, effectiveFields, outfitText: a.outfitText, outfitPart: tidy(outfitPart) };

@@ -39,6 +39,13 @@ describe('faceVerdict — production (strict 0.74)', () => {
     expect(faceVerdict(face(0.2, { size: 40 }), false).status).toBe('unchecked');
   });
 
+  it("a low score on a face that isn't clear is still redone, but never described as another person", () => {
+    const v = faceVerdict(face(0.2, { clear: false }), false);
+    expect(v.status).toBe('mismatch');
+    expect(v.reason).toMatch(/wasn't clearly visible/);
+    expect(faceVerdict(face(0.2, { clear: true }), false).reason).toBe("didn't look enough like Sienna");
+    expect(faceVerdict(face(0.8, { clear: false }), false).status).toBe('verified');
+  });
   it('hair and skin colour never change a decision', () => {
     expect(faceVerdict(face(0.8, { hairRel: 2.5, skinHue: 10 }), true).status).toBe('verified');
     expect(faceVerdict(face(0.6, { hairRel: 0.3, skinHue: 47 }), false).status).toBe('mismatch');
@@ -85,7 +92,9 @@ describe('parseFace', () => {
     const r = parseFace([JSON.stringify({ available: true, ok: false, similarity: 0.6, images: [{ found: true, similarity: 0.6, size: 150, yaw: 0.42, eye_ratio: 0.36, hair_rel: 0.31, skin_hue: 47.2, mono: false }] })])!;
     expect([r.yaw, r.eyeRatio, r.found, r.size, r.hairRel, r.skinHue, r.mono]).toEqual([0.42, 0.36, true, 150, 0.31, 47.2, false]);
     const old = parseFace([JSON.stringify({ available: true, ok: true, similarity: 0.8, images: [{ found: true, similarity: 0.8, size: 150 }] })])!;
-    expect([old.yaw, old.eyeRatio]).toEqual([null, null]);
+    expect([old.yaw, old.eyeRatio, old.clear]).toEqual([null, null, undefined]);
+    const unclear = parseFace([JSON.stringify({ available: true, ok: false, similarity: 0.3, images: [{ found: true, similarity: 0.3, size: 150, clear: false }] })])!;
+    expect(unclear.clear).toBe(false);
   });
 });
 

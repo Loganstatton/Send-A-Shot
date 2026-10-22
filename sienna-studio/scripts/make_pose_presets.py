@@ -18,6 +18,15 @@ def merge(*ds):
         out.update(d)
     return out
 
+def standing_natural(stature, sole, cx=416):
+    """A frontal standing skeleton from standard adult proportions: `stature` px tall (7.5 heads), soles at `sole`."""
+    y = lambda f: round(sole - f * stature)
+    x = lambda f: round(cx + f * stature)
+    return {0: (cx, y(.912)), 14: (x(-.0185), y(.936)), 15: (x(.0185), y(.936)), 16: (x(-.04), y(.924)), 17: (x(.04), y(.924)),
+            1: (cx, y(.818)), 2: (x(-.095), y(.818)), 5: (x(.095), y(.818)), 3: (x(-.11), y(.63)), 6: (x(.11), y(.63)),
+            4: (x(-.105), y(.485)), 7: (x(.105), y(.485)), 8: (x(-.053), y(.53)), 11: (x(.053), y(.53)),
+            9: (x(-.05), y(.285)), 12: (x(.05), y(.285)), 10: (x(-.045), y(.039)), 13: (x(.045), y(.039))}
+
 P = {
   'sitting_crosslegged': (832, 1216, 'sitting cross-legged, hands resting on her knees', merge(face(416, 300), {1: (416, 400), 2: (325, 420), 5: (507, 420), 3: (290, 570), 6: (542, 570), 4: (270, 735), 7: (562, 735),
       8: (372, 700), 11: (460, 700), 9: (200, 820), 12: (632, 820), 10: (480, 880), 13: (352, 880)})),
@@ -91,6 +100,13 @@ P = {
   'standing_low_angle': (832, 1216, 'standing, full body, seen from a low camera angle looking up at her', merge(face(416, 250, 0.7), {
       1: (416, 328), 2: (348, 342), 5: (484, 342), 3: (330, 465), 6: (502, 465), 4: (334, 585), 7: (498, 585),
       8: (374, 600), 11: (458, 600), 9: (360, 870), 12: (472, 870), 10: (346, 1160), 13: (486, 1160)})),
+  # Natural-proportion standing skeleton (22 Oct, test-only until a benchmark passes). The original standing_full_body
+  # spreads the body over 87% of the frame (nose to ankles 930 px) under a face drawn at 0.85 scale and a 90 px neck:
+  # SDXL followed it exactly (nose and shoulders within 2 px) and drew her about 8.5 head-lengths tall instead of
+  # ~7.5 — the "stretched legs, small head" look. This one is drawn from standard adult proportions (stature
+  # fractions: eyes .936, nose .912, shoulders .818, elbows .63, hips .53, wrists .485, knees .285, ankles .039) at
+  # 7.5 heads, 900 px tall (74% of the frame) with room above her head and below her feet.
+  'standing_full_body_natural': (832, 1216, 'standing, full body from head to feet, arms relaxed at her sides', standing_natural(900, 1100)),
   'standing_holding_glass': (832, 1216, 'standing, full body, holding a glass at her chest in her left hand, right arm relaxed', merge(face(416, 175, 0.85), {
       1: (416, 265), 2: (332, 285), 5: (500, 285), 3: (318, 450), 4: (322, 600), 6: (530, 440), 7: (470, 370),
       8: (370, 640), 11: (462, 640), 9: (366, 880), 12: (466, 880), 10: (370, 1105), 13: (462, 1105)})),
@@ -104,6 +120,8 @@ STRENGTH = 0.85
 STRENGTHS = {'bent_over_rear': 1.0}
 # presets drawn from a low camera (allowed with a low-angle request; every other preset is eye level)
 LOW_VIEW = {'standing_low_angle'}
+# drawn for benchmarks only: not offered in Create, not picked by the AI reader
+TEST_ONLY = {'standing_full_body_natural'}
 
 out = os.path.join(os.path.dirname(__file__), '..', 'public', 'pose-presets')
 os.makedirs(out, exist_ok=True)
@@ -113,6 +131,6 @@ for pid, (w, h, prompt, kp) in P.items():
     canvas = draw_body(np.zeros((h, w, 3), np.uint8), body)
     import cv2
     cv2.imwrite(os.path.join(out, f'{pid}.png'), cv2.cvtColor(canvas, cv2.COLOR_RGB2BGR))
-    meta.append({'id': pid, 'width': w, 'height': h, 'pose': prompt, 'strength': STRENGTHS.get(pid, STRENGTH), **({'view': 'low'} if pid in LOW_VIEW else {})})
+    meta.append({'id': pid, 'width': w, 'height': h, 'pose': prompt, 'strength': STRENGTHS.get(pid, STRENGTH), **({'view': 'low'} if pid in LOW_VIEW else {}), **({'testOnly': True} if pid in TEST_ONLY else {})})
 json.dump(meta, open(os.path.join(out, 'presets.json'), 'w'), indent=1)
 print('wrote', [m['id'] for m in meta])

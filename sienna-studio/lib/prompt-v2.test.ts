@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, NATURAL_FIGURE, V2_FULL_BODY } from './prompt';
+import { buildPrompt, unweighted, V2_FULL_BODY, V2_STANDING_NEGATIVE } from './prompt';
 import { DEFAULT_CHARACTER, EMPTY_FIELDS } from './defaults';
 import { packFitsOutfit, packsForDescription } from './style-packs';
 
@@ -23,12 +23,22 @@ describe('prompt version 2', () => {
     expect(at('wearing')).toBeLessThan(at('cozy bedroom'));
     expect(at('cozy bedroom')).toBeLessThan(at('dark-brown wavy hair'));
   });
-  it('keeps her identity, drops the weighted body descriptors, keeps her curves unweighted', () => {
+  it('keeps her identity and her figure word for word, only without the emphasis weights', () => {
     expect(v2.positive).toContain('long dark-brown wavy hair with lighter caramel ends');
     expect(v2.positive).toContain('freckles');
-    expect(v2.positive).toContain(NATURAL_FIGURE);
-    expect(v2.positive).not.toMatch(/breasts|defined abs|slim toned waist/);
+    expect(v2.positive).toContain('large round natural breasts, slim toned waist with defined abs, curvy hips');
+    expect(v2.positive).not.toMatch(/(breasts|waist|hips)[^,]*:1\.\d/);
+    expect(v2.negative).toMatch(/small breasts, flat chest/);
     expect(v1.positive).toMatch(/large round natural breasts:1\.2/);
+    expect(unweighted('(large round natural breasts:1.2)')).toBe('large round natural breasts');
+    expect(unweighted('curvy hips')).toBe('curvy hips');
+  });
+  it('a standing request pushes sitting away (furniture pulled her onto the sofa); other poses do not', () => {
+    const st = buildPrompt({ fields: { ...fields, pose: 'standing, arms relaxed at sides' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw', version: 2 });
+    expect(st.negative).toContain(V2_STANDING_NEGATIVE);
+    expect(v2.negative).not.toContain(V2_STANDING_NEGATIVE);
+    const both = buildPrompt({ fields: { ...fields, pose: 'standing up from sitting on the bed' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw', version: 2 });
+    expect(both.negative).not.toContain(V2_STANDING_NEGATIVE);
   });
   it('is much shorter than version 1, with three realism phrases instead of fifteen', () => {
     expect(v2.positive.length).toBeLessThan(v1.positive.length * 0.75);

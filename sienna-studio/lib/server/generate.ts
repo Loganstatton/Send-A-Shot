@@ -131,12 +131,15 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   const promptVersion: 1 | 2 = req.params.promptVersion ?? (process.env.SIENNA_PROMPT_VERSION === '2' ? 2 : 1);
   if (promptVersion === 2) {
     // the realism packs were switched on automatically in 65 of 146 photos with no visible benefit (skin still
-    // airbrushed), and the standing skeleton made every full-body photo the same stiff, frame-filling stance
+    // airbrushed). The standing skeleton stays: without it she sat on the sofa in 4 of 4 "standing" photos (22 Oct
+    // benchmark). Its original drawing makes her about 8.5 head-lengths tall; standingGuide 'natural' (testing) swaps
+    // in the 7.5-head skeleton.
     const auto = new Set(['natural_skin', 'real_photo']);
     const packs = Object.fromEntries(Object.entries(req.params.stylePacks ?? {}).filter(([id]) => !auto.has(id)));
+    const natural = req.params.standingGuide === 'natural' && req.params.posePreset === 'standing_full_body';
     req = {
       ...req,
-      params: { ...req.params, stylePacks: packs, ...(req.params.posePreset === 'standing_full_body' ? { posePreset: null } : {}), autoPosePreset: req.simple ? false : req.params.autoPosePreset },
+      params: { ...req.params, stylePacks: packs, ...(natural ? { posePreset: 'standing_full_body_natural' } : {}), autoPosePreset: req.simple ? false : req.params.autoPosePreset },
     };
   }
 

@@ -16,6 +16,8 @@ export interface PosePreset {
   strength: number;
   /** Camera height the skeleton is drawn from (eye level when absent). */
   view?: 'low';
+  /** Benchmark-only skeleton: not offered in Create and never picked by the AI reader or the keyword matcher. */
+  testOnly?: boolean;
 }
 
 export const POSE_PRESETS = presets as PosePreset[];

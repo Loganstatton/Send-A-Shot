@@ -138,6 +138,7 @@ export const POST = handle(async (req: Request) => {
       ...(body.test?.cfg ? { cfg: body.test.cfg } : {}),
       ...(body.test?.sampler ? { sampler: body.test.sampler, scheduler: body.test.scheduler ?? settings.defaultParams.scheduler } : {}),
       ...(body.test?.single ? { singleAttempt: true } : {}),
+      ...(body.test?.standingGuide ? { standingGuide: body.test.standingGuide } : {}),
     },
     images: {
       initImage: ref && edit ? ref : null,
