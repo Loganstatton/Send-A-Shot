@@ -208,6 +208,20 @@ export function aiCost(model: string, usage: { input_tokens: number; output_toke
   return (usage.input_tokens * i + read * i * 0.1 + write * i * 1.25 + usage.output_tokens * o) / 1e6;
 }
 
+/**
+ * The most a call can cost, reserved before it is sent: every input token billed as a cache write (1.25x), the full
+ * max_tokens of output, at the dearest listed model's prices (a server-side fallback can answer with another model).
+ * Images count ~1,600 tokens (anything larger is scaled down to ~1.15 MP); text is counted at 3 characters a token,
+ * which overestimates English.
+ */
+export function maxCallCost(system: string, content: ({ type: 'text'; text: string } | { type: string })[], maxTokens: number): number {
+  const chars = system.length + content.reduce((n, b) => n + (b.type === 'text' && 'text' in b ? b.text.length : 0), 0);
+  const images = content.filter((b) => b.type === 'image').length;
+  const inTokens = chars / 3 + images * 1600 + 50;
+  const [inPrice, outPrice] = Object.values(AI_PRICES).reduce(([a, b], [i, o]) => [Math.max(a, i), Math.max(b, o)], [0, 0]);
+  return (inTokens * 1.25 * inPrice + maxTokens * outPrice) / 1e6;
+}
+
 /** Keep only offered pose presets and known packs, at most two packs. */
 export function cleanRead(r: ReadResult, allowedPacks: string[], guides: readonly string[] = []): ReadResult {
   const packs = [...new Set(r.packs)].filter((p) => allowedPacks.includes(p)).slice(0, 2);

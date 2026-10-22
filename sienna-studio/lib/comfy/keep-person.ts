@@ -13,6 +13,7 @@
  *     │                                                                       └─► KSampler (corrected prompt)
  *     └─────────────────────────────── ImageCompositeMasked (her, unchanged) ◄─ VAEDecode
  *
+ * Her face and hand touch-up passes are skipped (she was refined in the earlier photo; they would only change her).
  * Limitation: light that should fall on her (golden light on her skin) can't be added this way — only the light in
  * the room and the shadows on the floor.
  */
@@ -37,7 +38,12 @@ export function outputImageName(img: { filename: string; subfolder?: string }): 
  * The graph with the keep-person redraw wired in, or null when the graph has no plain KSampler → VAEDecode first pass
  * to attach to (then the caller falls back to a normal correction).
  */
-export function addKeepPerson(graph: ComfyGraph, image: { filename: string; subfolder?: string }, denoise = KEEP_PERSON_DENOISE): ComfyGraph | null {
+export function addKeepPerson(
+  graph: ComfyGraph,
+  image: { filename: string; subfolder?: string } | { inputName: string },
+  denoise = KEEP_PERSON_DENOISE,
+): ComfyGraph | null {
+  const original = structuredClone(graph);
   const g: ComfyGraph = structuredClone(graph);
   // the first pass: a KSampler fed by an empty (or encoded) latent, decoded by a VAEDecode
   const samplerId = Object.keys(g).find((id) => g[id].class_type === 'KSampler' && isRef(g[id].inputs.latent_image) && ['EmptyLatentImage', 'VAEEncode'].includes(g[(g[id].inputs.latent_image as Ref)[0]]?.class_type));
@@ -46,8 +52,14 @@ export function addKeepPerson(graph: ComfyGraph, image: { filename: string; subf
   if (!decodeId || !isRef(g[decodeId].inputs.vae)) return null;
   const vae = g[decodeId].inputs.vae as Ref;
   const p = KEEP_PERSON_PREFIX;
+  const rewire = (from: Ref, to: Ref, skip: string) => {
+    for (const [id, node] of Object.entries(g)) {
+      if (id === skip) continue;
+      for (const [k, v] of Object.entries(node.inputs)) if (isRef(v) && v[0] === from[0] && v[1] === from[1]) node.inputs[k] = to;
+    }
+  };
 
-  g[`${p}load`] = { class_type: 'LoadImage', inputs: { image: outputImageName(image) }, _meta: { title: 'Keep person: earlier photo' } };
+  g[`${p}load`] = { class_type: 'LoadImage', inputs: { image: 'inputName' in image ? image.inputName : outputImageName(image) }, _meta: { title: 'Keep person: earlier photo' } };
   g[`${p}segm`] = { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: PERSON_SEGM_FILE } };
   g[`${p}person`] = { class_type: 'SegmDetectorCombined_v2', inputs: { segm_detector: [`${p}segm`, 1], image: [`${p}load`, 0], threshold: 0.4, dilation: 0 } };
   g[`${p}grow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}person`, 0], expand: EDGE_PX, tapered_corners: true } };
@@ -58,29 +70,21 @@ export function addKeepPerson(graph: ComfyGraph, image: { filename: string; subf
   g[`${p}paste`] = {
     class_type: 'ImageCompositeMasked',
     inputs: { destination: [decodeId, 0], source: [`${p}load`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}grow`, 0] },
-    // what to put back when a later attempt needs a fresh composition again (stripKeepPerson)
-    _meta: { title: 'Keep person: paste her back', restore: { sampler: samplerId, latent: g[samplerId].inputs.latent_image, denoise: g[samplerId].inputs.denoise, decode: decodeId } },
+    // the graph as it was, for when a later attempt needs a fresh composition again (stripKeepPerson)
+    _meta: { title: 'Keep person: paste her back', original },
   };
   g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: [`${p}noise`, 0], denoise } };
-  for (const [id, node] of Object.entries(g)) {
-    if (id === `${p}paste`) continue;
-    for (const [k, v] of Object.entries(node.inputs)) if (isRef(v) && v[0] === decodeId && v[1] === 0) node.inputs[k] = [`${p}paste`, 0];
+  rewire([decodeId, 0], [`${p}paste`, 0], `${p}paste`);
+  // her face and hands were already refined in the earlier photo: the touch-up passes would only change them
+  for (const id of Object.keys(g).filter((id) => g[id].class_type === 'FaceDetailer' && isRef(g[id].inputs.image))) {
+    rewire([id, 0], g[id].inputs.image as Ref, id);
+    delete g[id];
   }
   return g;
 }
 
 /** The graph without a keep-person redraw (the next correction may need a fresh composition). */
 export function stripKeepPerson(graph: ComfyGraph): ComfyGraph {
-  const paste = graph[`${KEEP_PERSON_PREFIX}paste`];
-  const r = (paste?._meta as { restore?: { sampler: string; latent: Ref; denoise: number; decode: string } } | undefined)?.restore;
-  if (!r) return graph;
-  const g: ComfyGraph = {};
-  for (const [id, node] of Object.entries(graph)) {
-    if (id.startsWith(KEEP_PERSON_PREFIX)) continue;
-    const inputs = { ...node.inputs };
-    for (const [k, v] of Object.entries(inputs)) if (isRef(v) && v[0] === `${KEEP_PERSON_PREFIX}paste`) inputs[k] = [r.decode, 0];
-    if (id === r.sampler) Object.assign(inputs, { latent_image: r.latent, denoise: r.denoise });
-    g[id] = { ...node, inputs };
-  }
-  return g;
+  const original = graph[`${KEEP_PERSON_PREFIX}paste`]?._meta?.original as ComfyGraph | undefined;
+  return original ? structuredClone(original) : graph;
 }

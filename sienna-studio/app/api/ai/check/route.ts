@@ -11,6 +11,9 @@ const schema = z.object({
   image: z.string().min(100).max(20_000_000),
   effort: z.enum(['low', 'medium']).optional(),
   lean: z.boolean().optional(),
+  /** test limits: output tokens, and the most this one call may cost (refused before sending if it could cost more) */
+  maxTokens: z.number().int().min(500).max(8000).optional(),
+  capUsd: z.number().positive().max(1).optional(),
 });
 
 /**
@@ -22,5 +25,5 @@ export const POST = handle(async (req: Request) => {
   if (NUDE_RE.test(body.prompt)) return json({ error: 'Nude requests are never sent to the AI.' }, 400);
   const bytes = Buffer.from(body.image, 'base64');
   const mime = bytes[0] === 0xff ? 'image/jpeg' : 'image/png';
-  return json(await aiCheck(body.prompt, bytes, mime, body.effort, body.lean));
+  return json(await aiCheck(body.prompt, bytes, mime, body.effort, body.lean, { maxTokens: body.maxTokens, capUsd: body.capUsd }));
 });

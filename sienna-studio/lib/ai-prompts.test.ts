@@ -275,9 +275,17 @@ describe('keep-person graph', () => {
     expect(k['40'].inputs.latent_image).toEqual(['kp_noise', 0]);
     expect(k['40'].inputs.denoise).toBeCloseTo(0.9);
     expect(k.kp_noise.inputs.mask).toEqual(['kp_background', 0]);
-    expect(k['51'].inputs.image).toEqual(['kp_paste', 0]);
+    // the face touch-up is skipped: the save takes the pasted image directly
+    expect(k['51']).toBeUndefined();
+    expect(k['42'].inputs.images).toEqual(['kp_paste', 0]);
     expect(k.kp_paste.inputs).toMatchObject({ destination: ['41', 0], source: ['kp_load', 0], mask: ['kp_grow', 0] });
     expect(stripKeepPerson(k)).toEqual(g);
+  });
+  it('a correction never costs more than its reserved maximum', async () => {
+    const { maxCallCost } = await import('./ai-prompts');
+    const max = maxCallCost('x'.repeat(3000), [{ type: 'text', text: 'y'.repeat(600) }, { type: 'image' }], 1500);
+    // 3,600 chars / 3 + 1,600 image + 50 = 2,850 tokens x 1.25 x $4/M + 1,500 x $20/M
+    expect(max).toBeCloseTo((2850 * 1.25 * 4 + 1500 * 20) / 1e6, 5);
   });
   it('no plain first pass: no keep-person', () => {
     expect(addKeepPerson({ '9': { class_type: 'SaveImage', inputs: {} } }, { filename: 'a.png' })).toBeNull();

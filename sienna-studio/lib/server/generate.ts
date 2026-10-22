@@ -40,7 +40,7 @@ import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
-import { buildCorrection, pickFixes } from '../corrections';
+import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
@@ -893,7 +893,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               const fromIndex = attempts.indexOf(from);
               const base = guard.base ?? prompts;
               const earlierFixes = attempts.filter((a) => a !== from).map((a) => a.aiFixes ?? []);
-              const fix = buildCorrection(pickFixes(from.aiFixes ?? [], earlierFixes), base);
+              const keepOk = !!rec.simple?.ai?.keepPerson && keepPersonFor(from);
+              const fix = keepOk ? buildCorrection(backgroundFixes(from.aiFixes ?? []), base, 6) : buildCorrection(pickFixes(from.aiFixes ?? [], earlierFixes), base);
               prompts = base;
               graph = stripKeepPerson(swapPrompts(graph, { positive: rec.positivePrompt, negative: rec.negativePrompt }, base));
               if (from.framingOk === false) fix.summary.push('framing: full body, head to toe');
@@ -905,7 +906,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               prompts = { positive: cov.positive, negative: cov.negative };
               // Only the room or the light is wrong: keep her exactly as she is and redraw around her (her outfit,
               // pose and face can't change). Anything else wrong needs her redrawn too.
-              const keep = rec.simple?.ai?.keepPerson && keepPersonFor(from) ? addKeepPerson(graph, from.images[0]) : null;
+              const keep = keepOk ? addKeepPerson(graph, from.images[0]) : null;
               if (keep) {
                 graph = keep;
                 newSeed = false;

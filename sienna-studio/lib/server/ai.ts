@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { aiCost, CHECK_SYSTEM, CHECK_SYSTEM_LEAN, CheckSchema, checkUser, gradeCheck, readerSystem, readerUser, ReadSchema, type CheckResult, type Graded, type ReadResult } from '../ai-prompts';
+import { aiCost, maxCallCost, CHECK_SYSTEM, CHECK_SYSTEM_LEAN, CheckSchema, checkUser, gradeCheck, readerSystem, readerUser, ReadSchema, type CheckResult, type Graded, type ReadResult } from '../ai-prompts';
 import { DATA_DIR } from './store';
 
 /**
@@ -49,9 +49,14 @@ async function ask<T>(
   schema: Parameters<typeof betaZodOutputFormat>[0],
   effort: 'low' | 'medium',
   maxTokens = 4000,
+  capUsd?: number,
 ): Promise<Answer<T>> {
   if (!aiEnabled()) return { ok: false, reason: 'the AI is not set up (no ANTHROPIC_API_KEY)' };
-  if ((await spent()).usd >= budget()) return { ok: false, reason: `this month's AI budget ($${budget()}) is used up` };
+  // reserve the call's maximum cost first: never start a call that could take spending past a limit
+  const reserve = maxCallCost(system, content, maxTokens);
+  const used = (await spent()).usd;
+  if (used + reserve > budget()) return { ok: false, reason: `this call could cost up to $${reserve.toFixed(3)}, which could take this month's AI spending past its $${budget()} budget ($${used.toFixed(2)} used)` };
+  if (capUsd !== undefined && reserve > capUsd) return { ok: false, reason: `this call could cost up to $${reserve.toFixed(3)}, more than the $${capUsd.toFixed(3)} allowed for it` };
   try {
     const res = await api().beta.messages.parse({
       model: MODEL,
@@ -105,7 +110,14 @@ const checkEffort = (): 'low' | 'medium' => (process.env.SIENNA_AI_CHECK_EFFORT 
  * The finished photo graded against each requirement of the request. Three outcomes: pass (nothing wrong or missing),
  * fail (with the misses and how to fix them), or unavailable with the reason — never a silent pass.
  */
-export async function aiCheck(request: string, image: Buffer, mime: string, effort: 'low' | 'medium' = checkEffort(), lean = false): Promise<CheckOutcome> {
+export async function aiCheck(
+  request: string,
+  image: Buffer,
+  mime: string,
+  effort: 'low' | 'medium' = checkEffort(),
+  lean = false,
+  limits: { maxTokens?: number; capUsd?: number } = {},
+): Promise<CheckOutcome> {
   const media = (['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
   const a = await ask<CheckResult>(
     lean ? CHECK_SYSTEM_LEAN : CHECK_SYSTEM,
@@ -116,7 +128,8 @@ export async function aiCheck(request: string, image: Buffer, mime: string, effo
     CheckSchema,
     effort,
     // one entry per requirement: a long request needs room
-    8000,
+    limits.maxTokens ?? 8000,
+    limits.capUsd,
   );
   if (!a.ok) return { status: 'unavailable', reason: a.reason };
   const r = a.value;

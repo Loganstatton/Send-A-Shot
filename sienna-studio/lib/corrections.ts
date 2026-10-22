@@ -59,8 +59,8 @@ export function pickFixes(latest: CheckIssue[], earlier: CheckIssue[][]): CheckI
   return out;
 }
 
-export function buildCorrection(issues: CheckIssue[], prompts: { positive: string; negative: string }): Correction {
-  const major = issues.filter((i) => i.major).slice(0, MAX_FIXES);
+export function buildCorrection(issues: CheckIssue[], prompts: { positive: string; negative: string }, maxFixes = MAX_FIXES): Correction {
+  const major = issues.filter((i) => i.major).slice(0, maxFixes);
   const pos: string[] = [];
   const neg: string[] = [];
   const summary: string[] = [];
@@ -78,4 +78,12 @@ export function buildCorrection(issues: CheckIssue[], prompts: { positive: strin
     newSeed: major.some((i) => NEW_COMPOSITION.has(i.aspect)),
     summary,
   };
+}
+
+/**
+ * Fixes for a keep-person redraw: every serious room and light miss (up to six). She is pasted back unchanged, so
+ * extra wording can't push her outfit out of the prompt — the reason ordinary corrections stop at three.
+ */
+export function backgroundFixes(issues: CheckIssue[]): CheckIssue[] {
+  return issues.filter((i) => i.major && (i.aspect === 'scene' || i.aspect === 'lighting')).slice(0, 6);
 }
