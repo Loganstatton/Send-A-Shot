@@ -83,3 +83,25 @@ below 0.70 redone. The EU report adds the hair rule: a "likely" face with `hair_
 **Recommendation:** standardise both drives on the newer node code (it records head turn and hair/skin colour for
 diagnostics and any future pose-aware rule), and drop the hair rule from the "likely" decision in the app so that
 decisions are identical on both drives and don't depend on lighting. Not applied — waiting for approval.
+
+## Known failure: dark-haired lookalikes in the 0.70–0.76 band (documented 22 Oct, not changed)
+
+Labelled photos scoring 0.70–0.76 against her reference: **350 Sienna, 14 a different woman** (12 generated photos
+hand-labelled in the 11 Oct archive, 2 of the 3 blind-labelled "not her" live photos of 21 Oct). Their scores:
+0.715, 0.715, 0.717, 0.717, 0.724, 0.725, 0.726, 0.726, 0.727, 0.728, 0.731, 0.739, 0.748, 0.748. All have dark
+hair, so no colour signal can catch them; 12 of them land in the "likely" band and are accepted, the two at 0.748 are
+verified. In this band the current single averaged reference separates her from them only weakly (AUC 0.71).
+
+**Recommended separate improvement (offline first, using these labelled photos):** a second opinion only for faces in
+the 0.70–0.76 band, never for clear matches or clear misses, so retries elsewhere don't change. Candidates:
+
+1. **Compare with her nearest approved photos** (mean of the 3 closest of the 134 training/approved photos) instead of
+   one averaged reference. Measured now: AUC in the band 0.71 → 0.81. Trade-off at a few cut-offs: 1 of 14 lookalikes
+   caught for 5 % of her band photos redone; 3 of 14 for 10 %; 8 of 14 for 20 %. Cheap (same model, no download).
+2. **A stronger face-recognition model as the second opinion** (e.g. the ArcFace model already on disk in
+   `insight_models/buffalo_l`; check its licence for commercial use first). Not measured yet; expected to separate
+   lookalikes much better than SFace, which is a small model.
+
+Pass bar for either: catch at least half the 14 lookalikes while redoing no more than 5 % of her band photos (about
+1 % of all photos), checked on the 63 blind-labelled live photos as well. If neither reaches it, keep the current rule
+and keep sending "likely" photos with any doubt to Needs Review instead of retrying.
