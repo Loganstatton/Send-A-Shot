@@ -40,7 +40,7 @@ import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { buildCorrection, pickFixes } from '../corrections';
-import { addCoverage, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { addCoverage, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
@@ -580,6 +580,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         checks: { top: added.includes(EXPOSURE_NODE_ID), face: added.includes(FACE_NODE_ID), body },
         // with the AI check two more tries: face-check redos alone used up all 4 in the first live test (21 Oct)
         maxAttempts: req.simple?.ai?.check ? AI_MAX_ATTEMPTS : EXPOSURE_MAX_ATTEMPTS,
+        ...(built.outfitText ? { anchor: built.outfitText } : {}),
         attempts: [],
       };
     } else if (missingAll.length) {
@@ -850,10 +851,16 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               latest.aiStatus = v.status;
               if (v.status === 'unavailable') latest.aiReason = v.reason;
               else {
-                const major = v.result.issues.filter((i) => i.major);
+                const g = v.graded;
+                const major = g.issues.filter((i) => i.major);
                 latest.aiOk = v.status === 'pass';
-                latest.aiScore = Math.max(0, Math.min(10, v.result.score));
+                latest.aiScore = Math.round(g.compliance * 100) / 10;
+                latest.aiCompliance = g.compliance;
+                latest.aiMajors = g.majors;
                 latest.aiIssues = major.map((i) => `${i.aspect}: ${i.problem}`);
+                latest.aiMinor = g.issues.filter((i) => !i.major).map((i) => `${i.aspect}: ${i.problem}`);
+                latest.aiUnsure = g.unsure;
+                latest.aiChecklist = g.checklist;
                 latest.aiFixes = major;
               }
             } catch (e) {
@@ -883,7 +890,9 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               graph = swapPrompts(graph, { positive: rec.positivePrompt, negative: rec.negativePrompt }, base);
               if (latest.framingOk === false) fix.summary.push('framing: full body, head to toe');
               if (latest.poseOk === false) fix.summary.push('pose: as described');
-              const cov = addCoverage(graph, prompts, { positive: fix.positive, negative: fix.negative });
+              // the fix goes after the outfit, so the request's own outfit and everything after it keep their place
+              const placed = placeCorrection(prompts.positive, fix.positive, guard.anchor);
+              const cov = addCoverage(swapPrompts(graph, prompts, { positive: placed, negative: prompts.negative }), { positive: placed, negative: prompts.negative }, { positive: '', negative: fix.negative });
               graph = cov.graph;
               prompts = { positive: cov.positive, negative: cov.negative };
               newSeed = fix.newSeed || latest.framingOk === false || latest.poseOk === false || !(fix.positive || fix.negative);

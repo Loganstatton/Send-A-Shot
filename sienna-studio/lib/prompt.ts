@@ -53,6 +53,8 @@ export interface BuiltPrompt {
   blocked: GuardHit[];
   /** Fields after Sienna Lock filtering. */
   effectiveFields: PromptFields;
+  /** The outfit as written in the positive prompt ('' when none): corrections are placed right after it. */
+  outfitText: string;
 }
 
 /**
@@ -248,6 +250,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   const rear = rearRequest(poseText, null, false);
   const faceAway = rear && !LOOKING_BACK_RE.test(`${poseText} ${f.expression}`);
 
+  const outfitText = tidy(emphasizeColours(f.outfit));
   const positive = joinParts([
     rear ? REAR_VIEW : '',
     faceAway ? FACE_AWAY : '',
@@ -256,7 +259,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     poseGuide === undefined ? f.pose : '',
     // outfit colours get a little extra weight: in the audit "red bikini" came out beige/green. 1.1 keeps her face
     // (1.2 cost likeness, and so did weighting the pose)
-    emphasizeColours(f.outfit),
+    outfitText,
     poseGuide ?? '',
     poseGuide === undefined ? '' : f.pose,
     f.bodyPresentation,
@@ -307,5 +310,5 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     warnings.push('No trigger token set in the Sienna profile — identity will rely on the LoRA and face reference only.');
   }
 
-  return { positive, negative, warnings, blocked, effectiveFields };
+  return { positive, negative, warnings, blocked, effectiveFields, outfitText };
 }

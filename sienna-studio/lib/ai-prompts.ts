@@ -35,26 +35,78 @@ export const ReadSchema = z.object({
 });
 export type ReadResult = z.infer<typeof ReadSchema>;
 
-export const CHECK_ASPECTS = ['outfit', 'pose', 'anatomy', 'scene', 'framing', 'lighting', 'camera', 'artifacts', 'look', 'other'] as const;
+/**
+ * The checker grades the photo requirement by requirement, not with one overall impression: one general score let a
+ * cropped turtleneck, straight ankle trousers and missing golden-hour light pass as "7/10, matches" (21 Oct).
+ */
+export const CHECK_CATEGORIES = ['identity', 'clothing', 'position', 'camera', 'background', 'lighting', 'anatomy', 'unwanted'] as const;
+export type CheckCategory = (typeof CHECK_CATEGORIES)[number];
 export const CheckSchema = z.object({
-  /** pass / fail, or cannot_judge when the photo can't be assessed (then say why in cannot_judge_reason). */
-  verdict: z.enum(['pass', 'fail', 'cannot_judge']),
+  /** true only when the photo can't be assessed at all (then say why). */
+  cannot_judge: z.boolean(),
   cannot_judge_reason: z.string(),
-  /** 0–10: how well the photo matches the request and looks like a real, flawless photo. */
-  score: z.number(),
-  issues: z.array(
+  requirements: z.array(
     z.object({
-      aspect: z.enum(CHECK_ASPECTS),
-      problem: z.string(),
-      major: z.boolean(),
-      /** A short image-prompt phrase for what the photo must show instead ("both hands holding the white mug"). */
+      category: z.enum(CHECK_CATEGORIES),
+      /** One concrete requirement, in the request's words ("fitted black turtleneck", "camera low, looking up at her"). */
+      requirement: z.string(),
+      /** met; minor = a small difference; major = wrong or missing; unsure = can't be told confidently from the photo. */
+      status: z.enum(['met', 'minor', 'major', 'unsure']),
+      /** What the photo actually shows for it. */
+      observed: z.string(),
+      /** For minor/major: a short image-prompt phrase for what the photo must show instead. */
       emphasize: z.string(),
-      /** A short phrase naming what wrongly appeared, for the negative prompt ("denim shorts", "shoes"). */
+      /** For minor/major: a short phrase naming what wrongly appeared, for the negative prompt. */
       avoid: z.string(),
     }),
   ),
+  /** 0–10: how much it looks like a real, unedited photo (not how well it matches; that is the requirements). */
+  realism: z.number(),
 });
 export type CheckResult = z.infer<typeof CheckSchema>;
+
+/** The categories as the correction code names them (pose, outfit, scene … ). */
+const ASPECT: Record<CheckCategory, string> = {
+  identity: 'look', clothing: 'outfit', position: 'pose', camera: 'camera', background: 'scene', lighting: 'lighting', anatomy: 'anatomy', unwanted: 'artifacts',
+};
+
+export interface CheckIssueOut { aspect: string; problem: string; major: boolean; emphasize: string; avoid: string }
+export interface Graded {
+  /** pass = no requirement is wrong or missing; unconfirmed ones are listed, never counted as met. */
+  status: 'pass' | 'fail';
+  /** major and minor misses, for corrections and the warning. */
+  issues: CheckIssueOut[];
+  /** Share of the judged requirements the photo meets (a minor difference counts half), 0–1. */
+  compliance: number;
+  majors: number;
+  /** Requirements the checker couldn't confirm. */
+  unsure: string[];
+  checklist: { category: CheckCategory; requirement: string; status: 'met' | 'minor' | 'major' | 'unsure'; observed: string }[];
+  realism: number;
+}
+
+/** Turns the checker's requirement list into a verdict. The verdict is computed here, never taken on the AI's word. */
+export function gradeCheck(r: CheckResult): Graded {
+  const reqs = r.requirements;
+  const judged = reqs.filter((q) => q.status !== 'unsure');
+  const met = judged.filter((q) => q.status === 'met').length + judged.filter((q) => q.status === 'minor').length / 2;
+  const misses = reqs.filter((q) => q.status === 'major' || q.status === 'minor');
+  return {
+    status: misses.some((q) => q.status === 'major') ? 'fail' : 'pass',
+    issues: misses.map((q) => ({
+      aspect: ASPECT[q.category],
+      problem: `${q.requirement} — ${q.observed}`,
+      major: q.status === 'major',
+      emphasize: q.emphasize,
+      avoid: q.avoid,
+    })),
+    compliance: judged.length ? met / judged.length : 0,
+    majors: misses.filter((q) => q.status === 'major').length,
+    unsure: reqs.filter((q) => q.status === 'unsure').map((q) => q.requirement),
+    checklist: reqs.map(({ category, requirement, status, observed }) => ({ category, requirement, status, observed })),
+    realism: Math.max(0, Math.min(10, r.realism)),
+  };
+}
 
 /** Packs and pose presets the reader may pick from (adult packs only when adult mode is allowed). */
 function packList(adultAllowed: boolean) {
@@ -113,24 +165,24 @@ export function readerUser(description: string, reference: 'none' | 'pose' | 'ed
   return `Description:\n${description}${ref}`;
 }
 
-export const CHECK_SYSTEM = `You inspect photos made by an image studio before the user sees them. The photo shows Sienna, a fictional 24-year-old adult woman. Her established look: long dark-brown wavy hair with lighter caramel ends, light freckles across her nose and cheeks, natural hazel-green eyes, a curvy figure. (Fine details of her face are checked by a separate system.)
+export const CHECK_SYSTEM = `You inspect photos made by an image studio before the user sees them. The photo shows Sienna, a fictional 24-year-old adult woman. Her normal look: long dark-brown wavy hair with lighter caramel ends, light freckles across her nose and cheeks, natural hazel-green eyes, light-tan skin, a curvy figure. (Fine details of her face are checked by a separate system.)
 
-The user's request is the source of truth. Compare the photo with it, and with what a real, unedited photo looks like. Report every problem as an issue:
-- outfit: wrong, missing or extra garments, wrong colours or materials, garments merged or changed (lace shorts that became denim, a white top that came out gray), shoes when bare feet were asked for
-- pose: body position, hands, arms, legs or head clearly not as described (one hand instead of both, a leg on the floor instead of on the counter)
-- anatomy: malformed hands (merged, missing or extra fingers, claw or paw shapes), extra or missing arms or legs, twisted joints, broken feet
-- scene: wrong place (a bedroom instead of a living room), missing key objects
-- framing / camera / lighting: clearly not what was asked (much closer or wider, a different angle, flash instead of golden hour)
-- artifacts: text, logos, watermarks, app interface overlays, extra people, duplicated objects, obvious AI smearing
-- look: hair colour clearly not hers (blonde, black, red), or plainly a different woman
+The user's request is the source of truth. Go through it requirement by requirement and grade each one against the photo. List every concrete thing the request asks for as its own requirement — each garment separately with its colour, cut, length and fit; each body detail (what each hand, arm, leg and foot does, posture, where she looks); camera height, angle, distance and framing; the place and every named piece of furniture or object (with its colour); the light (direction, colour, shadows, time of day). Use the request's own words for the requirement. Always add these three as well:
+- identity: "looks like Sienna (her normal hair and appearance)" — major if the hair colour or texture is clearly different (blonde, black, red, tight curls) or she is plainly another woman
+- anatomy: "correct anatomy" — major for any extra or missing arm, leg, hand or finger, a hand or limb growing out of something, merged or claw-like hands, twisted joints, broken feet
+- unwanted: "nothing unrequested" — major for logos or text on clothes, app overlays, extra people, duplicated objects, or a garment/accessory swapped for something not asked for; minor for small unrequested accessories
 
-major = a viewer would notice it at once or it contradicts the request; minor = a small deviation. Don't report things the request didn't ask for, and don't be picky about small creative choices.
-For each issue give "emphasize": a short image-prompt phrase describing what the photo must show instead (e.g. "both hands holding the white mug", "white lace shorts", "living room with a gray sofa", "barefoot"), and "avoid": a short phrase naming what wrongly appeared (e.g. "denim shorts", "shoes", "bedroom", "extra fingers"); use "" when there is nothing to say.
+For each requirement give a status:
+- met: the photo clearly shows it as asked
+- minor: close, with a small difference a casual viewer wouldn't mind (cream instead of white, mug held a little higher than the chest)
+- major: wrong or missing (a cropped top instead of a fitted turtleneck, ankle-length straight trousers instead of wide-leg, no golden-hour light, eye level instead of a low angle, the coffee table missing, sitting on top of the bed instead of on its edge with feet on the floor)
+- unsure: you cannot tell confidently from the photo (hidden, too small, ambiguous) — never guess "met"
+Be strict and literal about what was asked, and don't invent requirements the request didn't make. In "observed" say what the photo actually shows. For minor and major give "emphasize" (a short image-prompt phrase for what the photo must show, e.g. "fitted black turtleneck covering her waist") and "avoid" (a short phrase for what wrongly appeared, e.g. "cropped top, bare midriff"); otherwise "".
 
-verdict: "fail" when there is at least one major issue, "pass" when there is none, "cannot_judge" only when you cannot assess the photo at all (then explain in cannot_judge_reason; otherwise leave it ""). score = 0–10 for how well it matches and how real it looks.`;
+realism: 0–10 for how much it looks like a real, unedited photo. cannot_judge: true only if the photo can't be assessed at all (then explain in cannot_judge_reason, otherwise "").`;
 
 export function checkUser(request: string): string {
-  return `Request:\n${request}\n\nDoes this photo match the request?`;
+  return `Request:\n${request}\n\nGrade this photo against every requirement of the request.`;
 }
 
 /** Prices per million tokens (input, output) for the cost ledger. */

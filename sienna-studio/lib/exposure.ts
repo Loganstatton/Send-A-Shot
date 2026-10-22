@@ -59,9 +59,14 @@ export interface ExposureAttempt<Ref = unknown> {
   poseOk?: boolean;
   /** AI check (Simple Mode): false when the photo clearly doesn't match the description; unset when it didn't run. */
   aiOk?: boolean;
-  /** AI check score 0–10 and its major issues. */
+  /** AI check: requirements met 0–10, the share met (0–1), how many are wrong or missing, and those issues. */
   aiScore?: number;
+  aiCompliance?: number;
+  aiMajors?: number;
   aiIssues?: string[];
+  /** Small differences and requirements the checker couldn't confirm (shown, never counted as met). */
+  aiMinor?: string[];
+  aiUnsure?: string[];
   /** The AI check's outcome: pass / fail / unavailable (couldn't judge — never a pass), and why when unavailable. */
   aiStatus?: 'pass' | 'fail' | 'unavailable';
   aiReason?: string;
@@ -153,6 +158,19 @@ export function addCoverage(
   return { graph: out, positive, negative };
 }
 
+/**
+ * A correction's phrases go right after the outfit in the prompt, not in front of the whole request: in front, a
+ * scene-and-light fix turned a black turtleneck and beige trousers into a gray sweatshirt and sweatpants on the same
+ * seed (22 Oct). Without the outfit in the prompt they go in front as before.
+ */
+export function placeCorrection(positive: string, fix: string, anchor: string | undefined): string {
+  if (!fix || positive.includes(fix)) return positive;
+  const at = anchor ? positive.indexOf(anchor) : -1;
+  if (!anchor || at < 0) return `${fix}, ${positive}`;
+  const end = at + anchor.length;
+  return `${positive.slice(0, end)}, ${fix}${positive.slice(end)}`;
+}
+
 /** The same graph with its prompt texts set back to `to` (nodes whose text is exactly `from`). */
 export function swapPrompts(graph: ComfyGraph, from: { positive: string; negative: string }, to: { positive: string; negative: string }): ComfyGraph {
   const out: ComfyGraph = {};
@@ -179,11 +197,16 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
   if (covered.length) {
     // right framing first, then a verified face over one that couldn't be judged over a mismatch, then the closest
     const idRank = (a: ExposureAttempt<Ref>) => (a.identity === 'verified' ? 4 : a.identity === 'likely' ? 3 : a.identity === 'inconclusive' ? 2 : 0);
-    // then the AI check (a match beats a miss; the face still outranks it), then its score. Broken anatomy (an extra
-    // hand, arm or leg, a malformed limb) comes before all of it: a better face never makes up for a third hand — the
-    // controlled test kept one (21 Oct)
+    // Broken anatomy (an extra hand, arm or leg, a malformed limb) comes before everything: a better face never makes
+    // up for a third hand (controlled test, 21 Oct). Then how much of the whole description the photo follows: fewer
+    // wrong or missing requirements, then the share met — a face that isn't hers counts as one and a half misses (it
+    // also sends the photo to Needs Review), more than one wrong detail, less than two.
+    // The face's closeness only breaks ties; it used to outrank the description, which kept photos with the right
+    // face and the wrong clothes.
+    const misses = (a: ExposureAttempt<Ref>) => (a.aiMajors ?? (a.aiOk === false ? 1 : a.aiOk === true ? 0 : 0.5)) + (a.identity === 'mismatch' ? 1.5 : 0);
+    const compliance = (a: ExposureAttempt<Ref>) => a.aiCompliance ?? (a.aiOk === true ? 1 : a.aiOk === false ? 0.5 : 0.6);
     const rank = (a: ExposureAttempt<Ref>) =>
-      (brokenAnatomy(a) ? 0 : 40) + (a.poseOk === false ? 0 : 20) + (a.framingOk === false ? 0 : 10) + idRank(a) + (a.aiOk === true ? 3 : a.aiOk === false ? 0 : 1.5) + (a.aiScore ?? 0) / 20 + (a.similarity ?? -1);
+      (brokenAnatomy(a) ? 0 : 1000) + (a.poseOk === false ? 0 : 200) + (a.framingOk === false ? 0 : 100) - misses(a) * 30 + compliance(a) * 20 + idRank(a) + (a.similarity ?? -1);
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));
@@ -227,8 +250,10 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
     const checked = attempts.filter((a) => a.aiStatus === 'pass' || a.aiStatus === 'fail');
     if (checked.length > 1 && checked.every((a) => a.aiOk === false)) parts.push(`None of the ${checked.length} photos fully matched your description — each had a significant problem; this is the closest.`);
     const issues = [...kept.aiIssues].sort((a, b) => Number(b.startsWith('anatomy')) - Number(a.startsWith('anatomy')));
-    parts.push(`${brokenAnatomy(kept) ? 'The kept photo has an anatomy error — check it before using it. ' : ''}Still not right in the kept photo: ${issues.slice(0, 3).join('; ')}.`);
+    parts.push(`${brokenAnatomy(kept) ? 'The kept photo has an anatomy error — check it before using it. ' : ''}Still not right in the kept photo: ${issues.slice(0, 4).join('; ')}.`);
   }
+  if (kept.aiOk !== undefined && kept.aiMinor?.length) parts.push(`Small differences: ${kept.aiMinor.slice(0, 3).join('; ')}.`);
+  if (kept.aiOk !== undefined && kept.aiUnsure?.length) parts.push(`Couldn't confirm from the photo: ${kept.aiUnsure.slice(0, 3).join('; ')}.`);
   if (kept.aiStatus === 'unavailable') parts.push(`Not checked against your description: ${kept.aiReason ?? 'the AI check could not run'}.`);
   if (kept.faceOk === false) parts.push(`None matched her face closely; the closest (similarity ${kept.similarity}) is in Needs Review, not the gallery.`);
   else if (unverified) parts.push(unverified);

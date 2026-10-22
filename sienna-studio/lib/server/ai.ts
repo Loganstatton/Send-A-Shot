@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { aiCost, CHECK_SYSTEM, CheckSchema, checkUser, readerSystem, readerUser, ReadSchema, type CheckResult, type ReadResult } from '../ai-prompts';
+import { aiCost, CHECK_SYSTEM, CheckSchema, checkUser, gradeCheck, readerSystem, readerUser, ReadSchema, type CheckResult, type Graded, type ReadResult } from '../ai-prompts';
 import { DATA_DIR } from './store';
 
 /**
@@ -48,13 +48,14 @@ async function ask<T>(
   content: Anthropic.Beta.BetaContentBlockParam[],
   schema: Parameters<typeof betaZodOutputFormat>[0],
   effort: 'low' | 'medium',
+  maxTokens = 4000,
 ): Promise<Answer<T>> {
   if (!aiEnabled()) return { ok: false, reason: 'the AI is not set up (no ANTHROPIC_API_KEY)' };
   if ((await spent()).usd >= budget()) return { ok: false, reason: `this month's AI budget ($${budget()}) is used up` };
   try {
     const res = await api().beta.messages.parse({
       model: MODEL,
-      max_tokens: 4000,
+      max_tokens: maxTokens,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       output_config: { effort, format: betaZodOutputFormat(schema) },
@@ -94,11 +95,11 @@ export async function aiRead(description: string, reference: 'none' | 'pose' | '
   return a.ok ? a.value : null;
 }
 
-export type CheckOutcome = { status: 'pass' | 'fail'; result: CheckResult } | { status: 'unavailable'; reason: string };
+export type CheckOutcome = { status: 'pass' | 'fail'; graded: Graded } | { status: 'unavailable'; reason: string };
 
 /**
- * The finished photo compared with the request. Three outcomes: pass, fail (with what's wrong and how to fix it), or
- * unavailable with the reason — never a silent pass.
+ * The finished photo graded against each requirement of the request. Three outcomes: pass (nothing wrong or missing),
+ * fail (with the misses and how to fix them), or unavailable with the reason — never a silent pass.
  */
 export async function aiCheck(request: string, image: Buffer, mime: string): Promise<CheckOutcome> {
   const media = (['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
@@ -110,10 +111,13 @@ export async function aiCheck(request: string, image: Buffer, mime: string): Pro
     ],
     CheckSchema,
     'medium',
+    // one entry per requirement: a long request needs room
+    8000,
   );
   if (!a.ok) return { status: 'unavailable', reason: a.reason };
   const r = a.value;
-  if (r.verdict === 'cannot_judge') return { status: 'unavailable', reason: `the AI could not judge it${r.cannot_judge_reason ? ` (${r.cannot_judge_reason})` : ''}` };
-  // a "pass" that lists a major issue is a fail
-  return { status: r.verdict === 'pass' && !r.issues.some((i) => i.major) ? 'pass' : 'fail', result: r };
+  if (r.cannot_judge) return { status: 'unavailable', reason: `the AI could not judge it${r.cannot_judge_reason ? ` (${r.cannot_judge_reason})` : ''}` };
+  if (!r.requirements.length) return { status: 'unavailable', reason: 'the AI listed no requirements to check' };
+  const graded = gradeCheck(r);
+  return { status: graded.status, graded };
 }

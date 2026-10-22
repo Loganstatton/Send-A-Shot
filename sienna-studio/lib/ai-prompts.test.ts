@@ -37,17 +37,24 @@ describe('AI check in the photo checks', () => {
     expect(failed(a({}))).toBe(false);
   });
   it('keeps the photo the checker liked when all were redone', () => {
-    const miss = a({ seed: 1, aiOk: false, aiScore: 3, aiIssues: ['anatomy: merged fingers'] });
-    const better = a({ seed: 2, aiOk: false, aiScore: 6, aiIssues: ['outfit: top is gray, not red'] });
+    const miss = a({ seed: 1, aiOk: false, aiScore: 3, aiMajors: 2, aiCompliance: 0.3, aiIssues: ['scene: no sofa', 'outfit: top is gray, not red'] });
+    const better = a({ seed: 2, aiOk: false, aiScore: 6, aiMajors: 1, aiCompliance: 0.6, aiIssues: ['outfit: top is gray, not red'] });
     expect(pickAttempt([miss, better]).seed).toBe(2);
     const w = exposureWarning([miss, better], better)!;
     expect(w).toContain("didn't match your description");
     expect(w).toContain('Still not right in the kept photo: outfit: top is gray, not red');
   });
-  it('the face still outranks the AI score', () => {
-    const wrongFace = a({ seed: 1, faceOk: false, identity: 'mismatch', aiOk: true, aiScore: 9 });
-    const offDesc = a({ seed: 2, aiOk: false, aiScore: 4 });
-    expect(pickAttempt([wrongFace, offDesc]).seed).toBe(2);
+  it('a wrong face outweighs one wrong detail, but not two', () => {
+    const wrongFace = a({ seed: 1, faceOk: false, identity: 'mismatch', similarity: 0.69, aiOk: true, aiMajors: 0, aiCompliance: 1 });
+    const oneMiss = a({ seed: 2, aiOk: false, aiMajors: 1, aiCompliance: 0.8 });
+    const twoMisses = a({ seed: 3, aiOk: false, aiMajors: 2, aiCompliance: 0.7 });
+    expect(pickAttempt([wrongFace, oneMiss]).seed).toBe(2);
+    expect(pickAttempt([wrongFace, twoMisses]).seed).toBe(1);
+  });
+  it('the whole description beats a closer face', () => {
+    const closeFace = a({ seed: 1, similarity: 0.8, aiOk: false, aiMajors: 3, aiCompliance: 0.5 });
+    const followsIt = a({ seed: 2, identity: 'likely', similarity: 0.72, aiOk: false, aiMajors: 1, aiCompliance: 0.85 });
+    expect(pickAttempt([closeFace, followsIt]).seed).toBe(2);
   });
 });
 
@@ -171,5 +178,44 @@ describe('pose guides', () => {
     expect(presetFitsCamera(low, 'casual phone photo')).toBe(false);
     expect(presetFitsCamera(edge, 'casual phone photo')).toBe(true);
     expect(presetFitsCamera(edge, 'shot from above')).toBe(false);
+  });
+});
+
+import { gradeCheck, type CheckResult } from './ai-prompts';
+import { placeCorrection } from './exposure';
+
+describe('requirement-by-requirement check', () => {
+  const req = (category: CheckResult['requirements'][number]['category'], requirement: string, status: 'met' | 'minor' | 'major' | 'unsure') => ({ category, requirement, status, observed: 'x', emphasize: status === 'met' ? '' : requirement, avoid: '' });
+  it('fails on any wrong or missing requirement, whatever the rest', () => {
+    const g = gradeCheck({ cannot_judge: false, cannot_judge_reason: '', realism: 9, requirements: [req('clothing', 'fitted black turtleneck', 'major'), req('lighting', 'golden-hour light', 'met'), req('camera', 'low angle', 'met'), req('identity', 'looks like Sienna', 'met')] });
+    expect(g.status).toBe('fail');
+    expect(g.majors).toBe(1);
+    expect(g.issues[0]).toMatchObject({ aspect: 'outfit', major: true });
+    expect(g.compliance).toBeCloseTo(0.75);
+  });
+  it('passes with only small differences; unconfirmed requirements are listed, never counted as met', () => {
+    const g = gradeCheck({ cannot_judge: false, cannot_judge_reason: '', realism: 8, requirements: [req('position', 'mug at her chest', 'minor'), req('background', 'white sheets', 'met'), req('lighting', 'morning light from the window', 'unsure')] });
+    expect(g.status).toBe('pass');
+    expect(g.compliance).toBeCloseTo(0.75);
+    expect(g.unsure).toEqual(['morning light from the window']);
+    expect(g.issues).toHaveLength(1);
+    expect(g.issues[0].major).toBe(false);
+  });
+  it('maps anatomy so a broken body stays a critical failure', () => {
+    const g = gradeCheck({ cannot_judge: false, cannot_judge_reason: '', realism: 8, requirements: [req('anatomy', 'correct anatomy', 'major')] });
+    expect(g.issues[0].aspect).toBe('anatomy');
+  });
+});
+
+describe('corrections go after the outfit', () => {
+  const base = 'full body head to toe, standing, ( black fitted turtleneck:1.1), ( beige wide-leg trousers:1.1), living room, warm golden-hour light';
+  const anchor = '( black fitted turtleneck:1.1), ( beige wide-leg trousers:1.1)';
+  it('right after the outfit, the rest of the request in place', () => {
+    const p = placeCorrection(base, '(gray sofa:1.25)', anchor);
+    expect(p).toBe('full body head to toe, standing, ( black fitted turtleneck:1.1), ( beige wide-leg trousers:1.1), (gray sofa:1.25), living room, warm golden-hour light');
+  });
+  it('in front when the prompt has no outfit; never twice', () => {
+    expect(placeCorrection('standing, beach', '(red towel:1.25)', '')).toBe('(red towel:1.25), standing, beach');
+    expect(placeCorrection(base, '', anchor)).toBe(base);
   });
 });

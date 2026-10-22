@@ -360,6 +360,8 @@ export interface GenerationRecord {
     maxAttempts: number;
     /** The original prompts, kept once a redo changes them (corrections always start from these). */
     base?: { positive: string; negative: string };
+    /** The outfit as written in the base prompt: corrections go right after it, not in front of the request. */
+    anchor?: string;
     attempts: {
       seed: number;
       exposed: boolean;
@@ -372,7 +374,15 @@ export interface GenerationRecord {
       poseOk?: boolean;
       aiOk?: boolean;
       aiScore?: number;
+      /** Share of the request's requirements the photo meets (minor differences count half), 0–1. */
+      aiCompliance?: number;
+      /** Requirements wrong or missing. */
+      aiMajors?: number;
       aiIssues?: string[];
+      aiMinor?: string[];
+      /** Requirements the checker couldn't confirm. */
+      aiUnsure?: string[];
+      aiChecklist?: { category: string; requirement: string; status: 'met' | 'minor' | 'major' | 'unsure'; observed: string }[];
       aiStatus?: 'pass' | 'fail' | 'unavailable';
       aiReason?: string;
       redoneFor?: 'safety' | 'face' | 'correction';
