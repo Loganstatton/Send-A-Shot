@@ -67,6 +67,11 @@ export interface ExposureAttempt<Ref = unknown> {
   /** Small differences and requirements the checker couldn't confirm (shown, never counted as met). */
   aiMinor?: string[];
   aiUnsure?: string[];
+  /** The checker's grade for each requirement of the request. */
+  aiChecklist?: { category: string; requirement: string; status: 'met' | 'minor' | 'major' | 'unsure'; observed: string }[];
+  /** For a correction: the attempt (index) it was made from, and whether she was kept pixel for pixel. */
+  basedOn?: number;
+  keptPerson?: boolean;
   /** The AI check's outcome: pass / fail / unavailable (couldn't judge — never a pass), and why when unavailable. */
   aiStatus?: 'pass' | 'fail' | 'unavailable';
   aiReason?: string;
@@ -184,29 +189,90 @@ export function swapPrompts(graph: ComfyGraph, from: { positive: string; negativ
   return out;
 }
 
-/** The attempt to keep: the last one if it passed; else, among covered ones, the closest face; else the least exposed. */
 /** The AI check found a major anatomy problem (extra or missing limbs or hands, malformed hands or feet). */
 export function brokenAnatomy(a: ExposureAttempt<unknown>): boolean {
-  return !!a.aiFixes?.some((i) => i.aspect === 'anatomy' && i.major);
+  return !!a.aiFixes?.some((i) => i.aspect === 'anatomy' && i.major) || !!a.aiChecklist?.some((c) => c.category === 'anatomy' && c.status === 'major');
 }
 
+/**
+ * A correction may keep her pixel for pixel and redraw only the background when everything about her is right:
+ * the only serious misses are the room and/or the light, nothing about her face, clothes, body, camera or extras,
+ * and the GPU body checks didn't object.
+ */
+export function keepPersonFor(a: ExposureAttempt<unknown>): boolean {
+  const serious = seriousCategories(a);
+  return !!a.images.length && serious.length > 0 && serious.every((c) => c === 'background' || c === 'lighting') && a.identity !== 'mismatch' && a.poseOk !== false && a.framingOk !== false;
+}
+
+/** Not her: the face check says another woman, or the checker sees a different hair colour or texture. */
+export function wrongIdentity(a: ExposureAttempt<unknown>): boolean {
+  return a.identity === 'mismatch' || !!a.aiChecklist?.some((c) => c.category === 'identity' && c.status === 'major');
+}
+
+/**
+ * How much each part of a description matters when photos are compared. Clothing and body position are what people
+ * describe most carefully; a requested room still counts (an empty room for "a living room with a gray sofa" is a
+ * serious miss), but one category, not one miss per piece of furniture: counting each missing object separately kept
+ * a photo with the outfit's colours swapped over one with the right outfit in an empty room (22 Oct).
+ */
+export const CATEGORY_WEIGHT: Record<string, number> = { clothing: 3, position: 2.5, camera: 2, background: 2, lighting: 1.5, unwanted: 1 };
+const ITEM_SCORE = { met: 1, minor: 0.6, unsure: 0.5, major: 0 } as const;
+
+/** 0–1: how closely the photo follows the whole description, each category weighted by how much it matters. */
+export function fidelity(a: ExposureAttempt<unknown>): number | undefined {
+  const list = a.aiChecklist?.filter((c) => CATEGORY_WEIGHT[c.category]);
+  if (!list?.length) return undefined;
+  let sum = 0;
+  let weight = 0;
+  for (const cat of new Set(list.map((c) => c.category))) {
+    const items = list.filter((c) => c.category === cat);
+    sum += (CATEGORY_WEIGHT[cat] * items.reduce((t, c) => t + ITEM_SCORE[c.status], 0)) / items.length;
+    weight += CATEGORY_WEIGHT[cat];
+  }
+  return sum / weight;
+}
+
+/** Categories with a serious miss (identity and anatomy included). */
+export function seriousCategories(a: ExposureAttempt<unknown>): string[] {
+  return [...new Set((a.aiChecklist ?? []).filter((c) => c.status === 'major').map((c) => c.category))];
+}
+
+/**
+ * What a correction broke: categories that were right (no serious miss) in an earlier checked photo of this request
+ * and are seriously wrong now — a lighting fix that turned the right black turtleneck gray.
+ */
+export function regressions<Ref>(a: ExposureAttempt<Ref>, attempts: ExposureAttempt<Ref>[]): string[] {
+  const i = attempts.indexOf(a);
+  const earlier = attempts.slice(0, i < 0 ? 0 : i).filter((e) => e.aiChecklist?.length);
+  if (!earlier.length || !a.aiChecklist?.length) return [];
+  return seriousCategories(a).filter((cat) => earlier.some((e) => e.aiChecklist!.some((c) => c.category === cat) && !seriousCategories(e).includes(cat)));
+}
+
+/**
+ * The attempt to keep: the last one if it passed; else among covered ones the one closest to the whole request;
+ * else the least exposed.
+ *  1. broken anatomy (an extra hand, arm or leg) is critical: never kept over a photo without it (21 Oct: a kept
+ *     photo had a third hand);
+ *  2. a different woman is critical too, just below anatomy (the face check, or hair the checker says isn't hers);
+ *  3. the GPU body checks (pose held, full body);
+ *  4. what a correction broke that an earlier photo had right counts against it;
+ *  5. how closely it follows the whole description (category-weighted), and how many categories are fully right;
+ *  6. the face's closeness only breaks ties — it used to outrank the description.
+ */
 export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAttempt<Ref> {
   const last = attempts[attempts.length - 1];
   if (!failed(last)) return last;
   const covered = attempts.filter((a) => !a.exposed);
   if (covered.length) {
-    // right framing first, then a verified face over one that couldn't be judged over a mismatch, then the closest
     const idRank = (a: ExposureAttempt<Ref>) => (a.identity === 'verified' ? 4 : a.identity === 'likely' ? 3 : a.identity === 'inconclusive' ? 2 : 0);
-    // Broken anatomy (an extra hand, arm or leg, a malformed limb) comes before everything: a better face never makes
-    // up for a third hand (controlled test, 21 Oct). Then how much of the whole description the photo follows: fewer
-    // wrong or missing requirements, then the share met — a face that isn't hers counts as one and a half misses (it
-    // also sends the photo to Needs Review), more than one wrong detail, less than two.
-    // The face's closeness only breaks ties; it used to outrank the description, which kept photos with the right
-    // face and the wrong clothes.
-    const misses = (a: ExposureAttempt<Ref>) => (a.aiMajors ?? (a.aiOk === false ? 1 : a.aiOk === true ? 0 : 0.5)) + (a.identity === 'mismatch' ? 1.5 : 0);
-    const compliance = (a: ExposureAttempt<Ref>) => a.aiCompliance ?? (a.aiOk === true ? 1 : a.aiOk === false ? 0.5 : 0.6);
+    const fit = (a: ExposureAttempt<Ref>) => fidelity(a) ?? a.aiCompliance ?? (a.aiOk === true ? 1 : a.aiOk === false ? 0.5 : 0.6);
+    const clean = (a: ExposureAttempt<Ref>) => {
+      const cats = new Set((a.aiChecklist ?? []).map((c) => c.category));
+      return cats.size ? (cats.size - seriousCategories(a).length) / cats.size : a.aiOk === true ? 1 : a.aiOk === false ? 0.5 : 0.6;
+    };
     const rank = (a: ExposureAttempt<Ref>) =>
-      (brokenAnatomy(a) ? 0 : 1000) + (a.poseOk === false ? 0 : 200) + (a.framingOk === false ? 0 : 100) - misses(a) * 30 + compliance(a) * 20 + idRank(a) + (a.similarity ?? -1);
+      (brokenAnatomy(a) ? 0 : 10000) + (wrongIdentity(a) ? 0 : 5000) + (a.poseOk === false ? 0 : 2000) + (a.framingOk === false ? 0 : 1000)
+      - regressions(a, attempts).length * 15 + fit(a) * 60 + clean(a) * 20 + idRank(a) / 4 + (a.similarity ?? -1);
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));

@@ -38,9 +38,10 @@ import { buildPrompt, fullBodyFraming } from '../prompt';
 import { CAMERA_ANGLE_RE, matchPosePreset, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
+import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { buildCorrection, pickFixes } from '../corrections';
-import { addCoverage, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
@@ -838,6 +839,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               // her joints beat the face-size guess whenever the body could be judged
               ...(bodyFraming !== undefined ? { framingOk: bodyFraming } : {}),
               ...(poseCheck ? { poseOk: poseCheck.ok } : {}),
+              // a correction records the photo it was made from (and whether she was kept pixel for pixel)
+              ...(guard.next ? { basedOn: guard.next.basedOn, ...(guard.next.keptPerson ? { keptPerson: true } : {}) } : {}),
               images: state.images,
             },
           ];
@@ -847,7 +850,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           if (!latest.exposed && rec.simple?.ai?.check && aiEnabled() && state.images[0]) {
             try {
               const { bytes, mime } = await backend.fetchImage(state.images[0]);
-              const v = await aiCheck(rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime);
+              const v = await aiCheck(rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime, undefined, rec.simple.ai?.lean);
               latest.aiStatus = v.status;
               if (v.status === 'unavailable') latest.aiReason = v.reason;
               else {
@@ -877,35 +880,53 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
             let prompts = { positive: rec.positivePrompt, negative: rec.negativePrompt };
             let graph = rec.submittedGraph!;
             let newSeed = true;
+            let correctionSeed: number | null = null;
+            let next: { basedOn: number; keptPerson: boolean } | undefined;
             if (kind === 'safety') {
               const cov = addCoverage(softenPacks(graph), prompts, packCoverage((rec.stylePacks ?? []).map((p) => p.id)));
               graph = cov.graph;
               prompts = { positive: cov.positive, negative: cov.negative };
             } else if (kind === 'correction') {
-              // from the original prompt, not the last redo's (fixes don't pile up)
+              // Correct the best photo so far, not just the latest: a correction that broke the outfit must not
+              // become the starting point for the next one. From the original prompt (fixes don't pile up).
+              const from = pickAttempt(attempts.filter((a) => a.aiStatus === 'fail' || a.aiStatus === 'pass'));
+              const fromIndex = attempts.indexOf(from);
               const base = guard.base ?? prompts;
-              const earlierFixes = attempts.slice(0, -1).map((a) => a.aiFixes ?? []);
-              const fix = buildCorrection(pickFixes(latest.aiFixes ?? [], earlierFixes), base);
+              const earlierFixes = attempts.filter((a) => a !== from).map((a) => a.aiFixes ?? []);
+              const fix = buildCorrection(pickFixes(from.aiFixes ?? [], earlierFixes), base);
               prompts = base;
-              graph = swapPrompts(graph, { positive: rec.positivePrompt, negative: rec.negativePrompt }, base);
-              if (latest.framingOk === false) fix.summary.push('framing: full body, head to toe');
-              if (latest.poseOk === false) fix.summary.push('pose: as described');
+              graph = stripKeepPerson(swapPrompts(graph, { positive: rec.positivePrompt, negative: rec.negativePrompt }, base));
+              if (from.framingOk === false) fix.summary.push('framing: full body, head to toe');
+              if (from.poseOk === false) fix.summary.push('pose: as described');
               // the fix goes after the outfit, so the request's own outfit and everything after it keep their place
               const placed = placeCorrection(prompts.positive, fix.positive, guard.anchor);
               const cov = addCoverage(swapPrompts(graph, prompts, { positive: placed, negative: prompts.negative }), { positive: placed, negative: prompts.negative }, { positive: '', negative: fix.negative });
               graph = cov.graph;
               prompts = { positive: cov.positive, negative: cov.negative };
-              newSeed = fix.newSeed || latest.framingOk === false || latest.poseOk === false || !(fix.positive || fix.negative);
+              // Only the room or the light is wrong: keep her exactly as she is and redraw around her (her outfit,
+              // pose and face can't change). Anything else wrong needs her redrawn too.
+              const keep = rec.simple?.ai?.keepPerson && keepPersonFor(from) ? addKeepPerson(graph, from.images[0]) : null;
+              if (keep) {
+                graph = keep;
+                newSeed = false;
+                graph = reseed(graph, rec.seed, from.seed);
+                fix.summary.push('kept her exactly as she was; redrew only the background');
+              } else {
+                newSeed = fix.newSeed || from.framingOk === false || from.poseOk === false || !(fix.positive || fix.negative);
+                if (!newSeed && from.seed !== rec.seed) graph = reseed(graph, rec.seed, from.seed);
+              }
+              correctionSeed = newSeed ? null : from.seed;
+              next = { basedOn: fromIndex, keptPerson: !!keep };
               latest.corrected = fix.summary;
             }
             latest.redoneFor = kind;
-            const seed = newSeed ? Math.floor(Math.random() * 2 ** 48) : rec.seed;
+            const seed = newSeed ? Math.floor(Math.random() * 2 ** 48) : correctionSeed ?? rec.seed;
             if (newSeed) graph = reseed(graph, rec.seed, seed);
             try {
               const { promptId } = await backend.queuePrompt(graph, rec.clientId ?? newId('sienna-'));
               return patchRecord(id, {
                 status: 'queued', promptId, seed, submittedGraph: graph, queuePosition: 0,
-                exposureGuard: { ...guard, attempts, base: guard.base ?? { positive: rec.positivePrompt, negative: rec.negativePrompt } },
+                exposureGuard: { ...guard, attempts, next, base: guard.base ?? { positive: rec.positivePrompt, negative: rec.negativePrompt } },
                 positivePrompt: prompts.positive, negativePrompt: prompts.negative,
               });
             } catch {

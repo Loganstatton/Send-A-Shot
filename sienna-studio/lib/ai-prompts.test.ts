@@ -44,12 +44,10 @@ describe('AI check in the photo checks', () => {
     expect(w).toContain("didn't match your description");
     expect(w).toContain('Still not right in the kept photo: outfit: top is gray, not red');
   });
-  it('a wrong face outweighs one wrong detail, but not two', () => {
+  it('a different woman is critical: kept only below photos of her', () => {
     const wrongFace = a({ seed: 1, faceOk: false, identity: 'mismatch', similarity: 0.69, aiOk: true, aiMajors: 0, aiCompliance: 1 });
-    const oneMiss = a({ seed: 2, aiOk: false, aiMajors: 1, aiCompliance: 0.8 });
     const twoMisses = a({ seed: 3, aiOk: false, aiMajors: 2, aiCompliance: 0.7 });
-    expect(pickAttempt([wrongFace, oneMiss]).seed).toBe(2);
-    expect(pickAttempt([wrongFace, twoMisses]).seed).toBe(1);
+    expect(pickAttempt([wrongFace, twoMisses]).seed).toBe(3);
   });
   it('the whole description beats a closer face', () => {
     const closeFace = a({ seed: 1, similarity: 0.8, aiOk: false, aiMajors: 3, aiCompliance: 0.5 });
@@ -217,5 +215,71 @@ describe('corrections go after the outfit', () => {
   it('in front when the prompt has no outfit; never twice', () => {
     expect(placeCorrection('standing, beach', '(red towel:1.25)', '')).toBe('(red towel:1.25), standing, beach');
     expect(placeCorrection(base, '', anchor)).toBe(base);
+  });
+});
+
+import { fidelity, keepPersonFor, regressions } from './exposure';
+import { addKeepPerson, stripKeepPerson } from './comfy/keep-person';
+
+describe('best photo: categories, importance, what a correction broke', () => {
+  type C = { category: string; requirement: string; status: 'met' | 'minor' | 'major' | 'unsure'; observed: string };
+  const c = (category: string, requirement: string, status: C['status']): C => ({ category, requirement, status, observed: '' });
+  const base = { exposed: false, score: 0, images: [{ filename: 'x.png', subfolder: 'sienna', type: 'output', nodeId: '42' }], faceOk: true, identity: 'likely' as const, aiOk: false };
+  // the living-room test (22 Oct), as the checker graded it
+  const emptyRoom = { ...base, seed: 1, similarity: 0.718, aiChecklist: [
+    c('identity', 'looks like Sienna', 'met'), c('clothing', 'fitted black turtleneck', 'met'), c('clothing', 'beige wide-leg trousers', 'met'), c('clothing', 'white sneakers', 'met'),
+    c('background', 'living room', 'major'), c('background', 'gray sofa', 'major'), c('background', 'wooden coffee table', 'major'), c('background', 'large windows', 'minor'),
+    c('camera', 'low angle', 'met'), c('camera', 'full body', 'met'), c('lighting', 'golden-hour sunlight', 'major'), c('lighting', 'long shadows', 'major'),
+    c('anatomy', 'correct anatomy', 'met'), c('unwanted', 'nothing unrequested', 'met')] };
+  const grayClothes = { ...base, seed: 1, similarity: 0.735, basedOn: 0, aiChecklist: [
+    c('identity', 'looks like Sienna', 'met'), c('clothing', 'fitted black turtleneck', 'major'), c('clothing', 'beige trousers', 'major'), c('clothing', 'wide-leg', 'minor'), c('clothing', 'white sneakers', 'met'),
+    c('background', 'living room', 'met'), c('background', 'gray sofa', 'met'), c('background', 'wooden coffee table', 'met'), c('background', 'large windows', 'met'),
+    c('camera', 'low angle', 'minor'), c('camera', 'full body', 'met'), c('lighting', 'golden-hour sunlight', 'minor'), c('lighting', 'long shadows', 'major'),
+    c('anatomy', 'correct anatomy', 'met'), c('unwanted', 'nothing unrequested', 'minor')] };
+  const swapped = { ...base, seed: 1, similarity: 0.716, basedOn: 1, aiChecklist: [
+    c('identity', 'looks like Sienna', 'met'), c('clothing', 'fitted black turtleneck', 'major'), c('clothing', 'beige wide-leg trousers', 'major'), c('clothing', 'white sneakers', 'met'),
+    c('background', 'living room', 'met'), c('background', 'gray sofa', 'met'), c('background', 'wooden coffee table', 'major'), c('background', 'large windows', 'met'),
+    c('camera', 'low angle', 'minor'), c('camera', 'full body', 'met'), c('lighting', 'golden-hour sunlight', 'met'), c('lighting', 'long shadows', 'met'),
+    c('anatomy', 'correct anatomy', 'met'), c('unwanted', 'nothing unrequested', 'minor')] };
+  it('keeps the right outfit in the empty room over the corrections that broke the outfit', () => {
+    const all = [emptyRoom, grayClothes, swapped];
+    expect(regressions(swapped, all)).toEqual(['clothing', 'background']); // the outfit from the first photo, the table from the second
+    expect(regressions(emptyRoom, all)).toEqual([]);
+    expect(pickAttempt(all)).toBe(emptyRoom);
+  });
+  it('an empty room is still a serious miss: a photo with the room right and nothing broken wins', () => {
+    const roomFixed = { ...emptyRoom, basedOn: 0, aiChecklist: emptyRoom.aiChecklist.map((x) => (x.category === 'background' ? { ...x, status: 'met' as const } : x)) };
+    expect(fidelity(roomFixed)!).toBeGreaterThan(fidelity(emptyRoom)!);
+    expect(pickAttempt([emptyRoom, roomFixed])).toBe(roomFixed);
+  });
+  it('keeps her pixel for pixel only when nothing about her is wrong', () => {
+    expect(keepPersonFor(emptyRoom)).toBe(true);
+    expect(keepPersonFor(grayClothes)).toBe(false);
+    expect(keepPersonFor({ ...emptyRoom, identity: 'mismatch' })).toBe(false);
+    expect(keepPersonFor({ ...emptyRoom, aiChecklist: emptyRoom.aiChecklist.map((x) => (x.category === 'camera' ? { ...x, status: 'major' as const } : x)) })).toBe(false);
+  });
+});
+
+describe('keep-person graph', () => {
+  const g = {
+    '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'x' } },
+    '33': { class_type: 'EmptyLatentImage', inputs: { width: 832, height: 1216, batch_size: 1 } },
+    '40': { class_type: 'KSampler', inputs: { model: ['1', 0], latent_image: ['33', 0], denoise: 1, seed: 5 } },
+    '41': { class_type: 'VAEDecode', inputs: { samples: ['40', 0], vae: ['1', 2] } },
+    '51': { class_type: 'FaceDetailer', inputs: { image: ['41', 0] } },
+    '42': { class_type: 'SaveImage', inputs: { images: ['51', 0] } },
+  };
+  it('redraws only the background from the earlier photo and pastes her back; reversible', () => {
+    const k = addKeepPerson(g, { filename: 'a_00001_.png', subfolder: 'sienna' })!;
+    expect(k.kp_load.inputs.image).toBe('sienna/a_00001_.png [output]');
+    expect(k['40'].inputs.latent_image).toEqual(['kp_noise', 0]);
+    expect(k['40'].inputs.denoise).toBeCloseTo(0.9);
+    expect(k.kp_noise.inputs.mask).toEqual(['kp_background', 0]);
+    expect(k['51'].inputs.image).toEqual(['kp_paste', 0]);
+    expect(k.kp_paste.inputs).toMatchObject({ destination: ['41', 0], source: ['kp_load', 0], mask: ['kp_grow', 0] });
+    expect(stripKeepPerson(k)).toEqual(g);
+  });
+  it('no plain first pass: no keep-person', () => {
+    expect(addKeepPerson({ '9': { class_type: 'SaveImage', inputs: {} } }, { filename: 'a.png' })).toBeNull();
   });
 });

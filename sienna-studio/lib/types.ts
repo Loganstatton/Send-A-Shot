@@ -264,7 +264,7 @@ export type ComfyGraph = Record<string, ComfyNode>;
 export interface ComfyNode {
   class_type: string;
   inputs: Record<string, unknown>;
-  _meta?: { title?: string };
+  _meta?: { title?: string; [key: string]: unknown };
 }
 
 export interface WorkflowTemplate {
@@ -362,6 +362,8 @@ export interface GenerationRecord {
     base?: { positive: string; negative: string };
     /** The outfit as written in the base prompt: corrections go right after it, not in front of the request. */
     anchor?: string;
+    /** The correction being made: which attempt it starts from, and whether she is kept pixel for pixel. */
+    next?: { basedOn: number; keptPerson: boolean };
     attempts: {
       seed: number;
       exposed: boolean;
@@ -383,6 +385,8 @@ export interface GenerationRecord {
       /** Requirements the checker couldn't confirm. */
       aiUnsure?: string[];
       aiChecklist?: { category: string; requirement: string; status: 'met' | 'minor' | 'major' | 'unsure'; observed: string }[];
+      basedOn?: number;
+      keptPerson?: boolean;
       aiStatus?: 'pass' | 'fail' | 'unavailable';
       aiReason?: string;
       redoneFor?: 'safety' | 'face' | 'correction';
@@ -562,7 +566,7 @@ export interface SimpleRequestInfo {
   notes: string[];
   reference: 'none' | 'edit' | 'pose' | 'edit+pose';
   /** The AI reader filled the fields (read) / the AI checker reviews the finished photo (check). */
-  ai?: { read: boolean; check: boolean };
+  ai?: { read: boolean; check: boolean; keepPerson?: boolean; lean?: boolean };
 }
 
 /** Full settings export. */

@@ -165,7 +165,7 @@ export function readerUser(description: string, reference: 'none' | 'pose' | 'ed
   return `Description:\n${description}${ref}`;
 }
 
-export const CHECK_SYSTEM = `You inspect photos made by an image studio before the user sees them. The photo shows Sienna, a fictional 24-year-old adult woman. Her normal look: long dark-brown wavy hair with lighter caramel ends, light freckles across her nose and cheeks, natural hazel-green eyes, light-tan skin, a curvy figure. (Fine details of her face are checked by a separate system.)
+const checkSystem = (fieldRules: string) => `You inspect photos made by an image studio before the user sees them. The photo shows Sienna, a fictional 24-year-old adult woman. Her normal look: long dark-brown wavy hair with lighter caramel ends, light freckles across her nose and cheeks, natural hazel-green eyes, light-tan skin, a curvy figure. (Fine details of her face are checked by a separate system.)
 
 The user's request is the source of truth. Go through it requirement by requirement and grade each one against the photo. List every concrete thing the request asks for as its own requirement — each garment separately with its colour, cut, length and fit; each body detail (what each hand, arm, leg and foot does, posture, where she looks); camera height, angle, distance and framing; the place and every named piece of furniture or object (with its colour); the light (direction, colour, shadows, time of day). Use the request's own words for the requirement. Always add these three as well:
 - identity: "looks like Sienna (her normal hair and appearance)" — major if the hair colour or texture is clearly different (blonde, black, red, tight curls) or she is plainly another woman
@@ -177,9 +177,19 @@ For each requirement give a status:
 - minor: close, with a small difference a casual viewer wouldn't mind (cream instead of white, mug held a little higher than the chest)
 - major: wrong or missing (a cropped top instead of a fitted turtleneck, ankle-length straight trousers instead of wide-leg, no golden-hour light, eye level instead of a low angle, the coffee table missing, sitting on top of the bed instead of on its edge with feet on the floor)
 - unsure: you cannot tell confidently from the photo (hidden, too small, ambiguous) — never guess "met"
-Be strict and literal about what was asked, and don't invent requirements the request didn't make. In "observed" say what the photo actually shows. For minor and major give "emphasize" (a short image-prompt phrase for what the photo must show, e.g. "fitted black turtleneck covering her waist") and "avoid" (a short phrase for what wrongly appeared, e.g. "cropped top, bare midriff"); otherwise "".
-
+Be strict and literal about what was asked, and don't invent requirements the request didn't make.
+${fieldRules}
 realism: 0–10 for how much it looks like a real, unedited photo. cannot_judge: true only if the photo can't be assessed at all (then explain in cannot_judge_reason, otherwise "").`;
+
+/** The checker as first used live (22 Oct): a sentence on what it saw for every requirement (about 4.4¢ a check). */
+export const CHECK_SYSTEM = checkSystem(`In "observed" say what the photo actually shows. For minor and major give "emphasize" (a short image-prompt phrase for what the photo must show, e.g. "fitted black turtleneck covering her waist") and "avoid" (a short phrase for what wrongly appeared, e.g. "cropped top, bare midriff"); otherwise "".
+`);
+/** The same grading with short fields: what it saw only for misses, a few words each (cost test, 22 Oct). */
+export const CHECK_SYSTEM_LEAN = checkSystem(`Keep every field short — the grading is what matters, not prose:
+- requirement: the request's own words, at most 8 words
+- observed: "" when met; otherwise what the photo shows instead, at most 10 words ("cream turtleneck, not black")
+- emphasize / avoid: "" when met; for minor and major, "emphasize" is a short image-prompt phrase for what the photo must show (e.g. "fitted black turtleneck covering her waist") and "avoid" a short phrase for what wrongly appeared (e.g. "cropped top, bare midriff")
+`);
 
 export function checkUser(request: string): string {
   return `Request:\n${request}\n\nGrade this photo against every requirement of the request.`;

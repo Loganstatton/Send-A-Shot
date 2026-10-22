@@ -98,6 +98,9 @@ export const simpleCreateSchema = z.object({
   seed: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).optional(),
   /** try the pose guides for this request (testing; otherwise SIENNA_POSE_GUIDE decides) */
   poseGuide: z.boolean().optional(),
+  /** testing: keep-person corrections and the shorter checker for this request (otherwise the env switches decide) */
+  keepPerson: z.boolean().optional(),
+  leanCheck: z.boolean().optional(),
 });
 
 export const characterPatchSchema = z

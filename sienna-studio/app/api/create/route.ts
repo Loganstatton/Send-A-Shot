@@ -137,7 +137,13 @@ export const POST = handle(async (req: Request) => {
       outfitImage: null,
       outfitGarmentImage: null,
     },
-    simple: { prompt: body.prompt, notes: it.notes, reference: ref ? it.reference.mode : 'none', ai: { read: aiRan, check: aiAllowed } },
+    simple: { prompt: body.prompt, notes: it.notes, reference: ref ? it.reference.mode : 'none', ai: {
+        read: aiRan,
+        check: aiAllowed,
+        // testing switches, until each has passed a GPU test
+        keepPerson: body.keepPerson ?? process.env.SIENNA_KEEP_PERSON === 'true',
+        lean: body.leanCheck ?? process.env.SIENNA_AI_CHECK === 'lean',
+      } },
   };
   return json(await startGeneration(request), 202);
 });

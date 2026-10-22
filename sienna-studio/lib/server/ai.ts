@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { aiCost, CHECK_SYSTEM, CheckSchema, checkUser, gradeCheck, readerSystem, readerUser, ReadSchema, type CheckResult, type Graded, type ReadResult } from '../ai-prompts';
+import { aiCost, CHECK_SYSTEM, CHECK_SYSTEM_LEAN, CheckSchema, checkUser, gradeCheck, readerSystem, readerUser, ReadSchema, type CheckResult, type Graded, type ReadResult } from '../ai-prompts';
 import { DATA_DIR } from './store';
 
 /**
@@ -41,7 +41,7 @@ export async function aiSpend() {
   return { ...s, budgetUsd: budget(), enabled: aiEnabled(), model: MODEL };
 }
 
-type Answer<T> = { ok: true; value: T } | { ok: false; reason: string };
+type Answer<T> = { ok: true; value: T; usd: number } | { ok: false; reason: string };
 
 async function ask<T>(
   system: string,
@@ -62,7 +62,8 @@ async function ask<T>(
       system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content }],
     });
-    await record(aiCost(res.model || MODEL, res.usage));
+    const usd = aiCost(res.model || MODEL, res.usage);
+    await record(usd);
     if (res.stop_reason === 'refusal') {
       const why = res.stop_details?.category ? ` (${res.stop_details.category})` : '';
       console.warn(`AI: declined${why}`);
@@ -77,7 +78,7 @@ async function ask<T>(
       console.warn('AI: answer did not match the expected shape');
       return { ok: false, reason: 'the AI gave no usable answer' };
     }
-    return { ok: true, value: res.parsed_output as T };
+    return { ok: true, value: res.parsed_output as T, usd };
   } catch (e) {
     const reason =
       e instanceof Anthropic.AuthenticationError ? 'the ANTHROPIC_API_KEY was rejected'
@@ -95,22 +96,25 @@ export async function aiRead(description: string, reference: 'none' | 'pose' | '
   return a.ok ? a.value : null;
 }
 
-export type CheckOutcome = { status: 'pass' | 'fail'; graded: Graded } | { status: 'unavailable'; reason: string };
+export type CheckOutcome = { status: 'pass' | 'fail'; graded: Graded; usd: number } | { status: 'unavailable'; reason: string };
+
+/** Checker effort: medium unless SIENNA_AI_CHECK_EFFORT says low (cheaper; see the 22 Oct comparison). */
+const checkEffort = (): 'low' | 'medium' => (process.env.SIENNA_AI_CHECK_EFFORT === 'low' ? 'low' : 'medium');
 
 /**
  * The finished photo graded against each requirement of the request. Three outcomes: pass (nothing wrong or missing),
  * fail (with the misses and how to fix them), or unavailable with the reason — never a silent pass.
  */
-export async function aiCheck(request: string, image: Buffer, mime: string): Promise<CheckOutcome> {
+export async function aiCheck(request: string, image: Buffer, mime: string, effort: 'low' | 'medium' = checkEffort(), lean = false): Promise<CheckOutcome> {
   const media = (['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
   const a = await ask<CheckResult>(
-    CHECK_SYSTEM,
+    lean ? CHECK_SYSTEM_LEAN : CHECK_SYSTEM,
     [
       { type: 'image', source: { type: 'base64', media_type: media, data: image.toString('base64') } },
       { type: 'text', text: checkUser(request) },
     ],
     CheckSchema,
-    'medium',
+    effort,
     // one entry per requirement: a long request needs room
     8000,
   );
@@ -119,5 +123,5 @@ export async function aiCheck(request: string, image: Buffer, mime: string): Pro
   if (r.cannot_judge) return { status: 'unavailable', reason: `the AI could not judge it${r.cannot_judge_reason ? ` (${r.cannot_judge_reason})` : ''}` };
   if (!r.requirements.length) return { status: 'unavailable', reason: 'the AI listed no requirements to check' };
   const graded = gradeCheck(r);
-  return { status: graded.status, graded };
+  return { status: graded.status, graded, usd: a.usd };
 }
