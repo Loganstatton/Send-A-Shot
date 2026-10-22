@@ -215,7 +215,8 @@ export function wrongIdentity(a: ExposureAttempt<unknown>): boolean {
  * serious miss), but one category, not one miss per piece of furniture: counting each missing object separately kept
  * a photo with the outfit's colours swapped over one with the right outfit in an empty room (22 Oct).
  */
-export const CATEGORY_WEIGHT: Record<string, number> = { clothing: 3, position: 2.5, camera: 2, background: 2, lighting: 1.5, unwanted: 1 };
+// a composited look (cut-out edges, light or perspective that doesn't match) is a serious realism failure
+export const CATEGORY_WEIGHT: Record<string, number> = { clothing: 3, position: 2.5, realism: 2.5, camera: 2, background: 2, lighting: 1.5, unwanted: 1 };
 const ITEM_SCORE = { met: 1, minor: 0.6, unsure: 0.5, major: 0 } as const;
 
 /** 0–1: how closely the photo follows the whole description, each category weighted by how much it matters. */

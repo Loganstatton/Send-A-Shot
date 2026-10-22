@@ -39,7 +39,7 @@ export type ReadResult = z.infer<typeof ReadSchema>;
  * The checker grades the photo requirement by requirement, not with one overall impression: one general score let a
  * cropped turtleneck, straight ankle trousers and missing golden-hour light pass as "7/10, matches" (21 Oct).
  */
-export const CHECK_CATEGORIES = ['identity', 'clothing', 'position', 'camera', 'background', 'lighting', 'anatomy', 'unwanted'] as const;
+export const CHECK_CATEGORIES = ['identity', 'clothing', 'position', 'camera', 'background', 'lighting', 'anatomy', 'unwanted', 'realism'] as const;
 export type CheckCategory = (typeof CHECK_CATEGORIES)[number];
 export const CheckSchema = z.object({
   /** true only when the photo can't be assessed at all (then say why). */
@@ -67,7 +67,7 @@ export type CheckResult = z.infer<typeof CheckSchema>;
 
 /** The categories as the correction code names them (pose, outfit, scene … ). */
 const ASPECT: Record<CheckCategory, string> = {
-  identity: 'look', clothing: 'outfit', position: 'pose', camera: 'camera', background: 'scene', lighting: 'lighting', anatomy: 'anatomy', unwanted: 'artifacts',
+  identity: 'look', clothing: 'outfit', position: 'pose', camera: 'camera', background: 'scene', lighting: 'lighting', anatomy: 'anatomy', unwanted: 'artifacts', realism: 'realism',
 };
 
 export interface CheckIssueOut { aspect: string; problem: string; major: boolean; emphasize: string; avoid: string }
@@ -167,10 +167,11 @@ export function readerUser(description: string, reference: 'none' | 'pose' | 'ed
 
 const checkSystem = (fieldRules: string) => `You inspect photos made by an image studio before the user sees them. The photo shows Sienna, a fictional 24-year-old adult woman. Her normal look: long dark-brown wavy hair with lighter caramel ends, light freckles across her nose and cheeks, natural hazel-green eyes, light-tan skin, a curvy figure. (Fine details of her face are checked by a separate system.)
 
-The user's request is the source of truth. Go through it requirement by requirement and grade each one against the photo. List every concrete thing the request asks for as its own requirement — each garment separately with its colour, cut, length and fit; each body detail (what each hand, arm, leg and foot does, posture, where she looks); camera height, angle, distance and framing; the place and every named piece of furniture or object (with its colour); the light (direction, colour, shadows, time of day). Use the request's own words for the requirement. Always add these three as well:
+The user's request is the source of truth. Go through it requirement by requirement and grade each one against the photo. List every concrete thing the request asks for as its own requirement — each garment separately with its colour, cut, length and fit; each body detail (what each hand, arm, leg and foot does, posture, where she looks); camera height, angle, distance and framing; the place and every named piece of furniture or object (with its colour); the light (direction, colour, shadows, time of day). Use the request's own words for the requirement. Always add these four as well:
 - identity: "looks like Sienna (her normal hair and appearance)" — major if the hair colour or texture is clearly different (blonde, black, red, tight curls) or she is plainly another woman
 - anatomy: "correct anatomy" — major for any extra or missing arm, leg, hand or finger, a hand or limb growing out of something, merged or claw-like hands, twisted joints, broken feet
 - unwanted: "nothing unrequested" — major for logos or text on clothes, app overlays, extra people, duplicated objects, or a garment/accessory swapped for something not asked for; minor for small unrequested accessories
+- realism: "looks like one real photograph" — look closely at the outline of her hair, arms, clothes and shoes. Major for any sign she was cut out and placed into the scene: a halo or outline, a strip of a different background around her, leftover pieces of another room; light on her that doesn't match the room (cool light on her in a warm room, light from another direction); a room drawn from a different camera height or perspective than her body; no contact shadow under her feet, or floating; a sharpness, grain or colour difference between her and the room. Minor only for a faint, hard-to-see trace
 
 For each requirement give a status:
 - met: the photo clearly shows it as asked

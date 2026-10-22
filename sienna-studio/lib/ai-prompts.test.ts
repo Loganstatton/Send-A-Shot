@@ -291,3 +291,23 @@ describe('keep-person graph', () => {
     expect(addKeepPerson({ '9': { class_type: 'SaveImage', inputs: {} } }, { filename: 'a.png' })).toBeNull();
   });
 });
+
+describe('image redraw graph', () => {
+  it('starts from the uploaded image, masked, without touch-ups', async () => {
+    const { addImageRedraw } = await import('./comfy/keep-person');
+    const g = {
+      '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'x' } },
+      '33': { class_type: 'EmptyLatentImage', inputs: { width: 832, height: 1216, batch_size: 1 } },
+      '40': { class_type: 'KSampler', inputs: { model: ['1', 0], latent_image: ['33', 0], denoise: 1, seed: 5 } },
+      '41': { class_type: 'VAEDecode', inputs: { samples: ['40', 0], vae: ['1', 2] } },
+      '51': { class_type: 'FaceDetailer', inputs: { image: ['41', 0] } },
+      '42': { class_type: 'SaveImage', inputs: { images: ['51', 0] } },
+    };
+    const r = addImageRedraw(g, 'sienna/init.png', 0.7, 'sienna/mask.png')!;
+    expect(r['40'].inputs).toMatchObject({ latent_image: ['rd_noise', 0], denoise: 0.7 });
+    expect(r.rd_mask.inputs).toMatchObject({ image: 'sienna/mask.png', channel: 'red' });
+    expect(r['42'].inputs.images).toEqual(['41', 0]);
+    expect(r['51']).toBeUndefined();
+    expect(addImageRedraw(g, 'sienna/init.png', 0.15)!['40'].inputs.latent_image).toEqual(['rd_encode', 0]);
+  });
+});

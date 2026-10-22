@@ -88,3 +88,33 @@ export function stripKeepPerson(graph: ComfyGraph): ComfyGraph {
   const original = graph[`${KEEP_PERSON_PREFIX}paste`]?._meta?.original as ComfyGraph | undefined;
   return original ? structuredClone(original) : graph;
 }
+
+/**
+ * Redraw from a given image instead of from noise: the first pass starts from `init` (an uploaded input image) at
+ * `denoise`; with `mask` (white = redraw) only those parts change. The face and hand touch-ups are skipped. Used to
+ * rebuild a room from the photo's own empty room — its walls, floor and ceiling lines keep the photo's camera — and
+ * for a light unifying pass over a finished composite.
+ */
+export function addImageRedraw(graph: ComfyGraph, init: string, denoise: number, mask?: string): ComfyGraph | null {
+  const g: ComfyGraph = structuredClone(graph);
+  const samplerId = Object.keys(g).find((id) => g[id].class_type === 'KSampler' && isRef(g[id].inputs.latent_image) && ['EmptyLatentImage', 'VAEEncode'].includes(g[(g[id].inputs.latent_image as Ref)[0]]?.class_type));
+  if (!samplerId) return null;
+  const decodeId = Object.keys(g).find((id) => g[id].class_type === 'VAEDecode' && isRef(g[id].inputs.samples) && (g[id].inputs.samples as Ref)[0] === samplerId);
+  if (!decodeId || !isRef(g[decodeId].inputs.vae)) return null;
+  const p = 'rd_';
+  g[`${p}load`] = { class_type: 'LoadImage', inputs: { image: init }, _meta: { title: 'Redraw: start image' } };
+  g[`${p}encode`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}load`, 0], vae: g[decodeId].inputs.vae as Ref } };
+  let latent: Ref = [`${p}encode`, 0];
+  if (mask) {
+    g[`${p}mask`] = { class_type: 'LoadImageMask', inputs: { image: mask, channel: 'red' }, _meta: { title: 'Redraw: mask (white = redraw)' } };
+    g[`${p}noise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: latent, mask: [`${p}mask`, 0] } };
+    latent = [`${p}noise`, 0];
+  }
+  g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: latent, denoise } };
+  for (const id of Object.keys(g).filter((id) => g[id].class_type === 'FaceDetailer' && isRef(g[id].inputs.image))) {
+    const src = g[id].inputs.image as Ref;
+    for (const node of Object.values(g)) for (const [k, v] of Object.entries(node.inputs)) if (isRef(v) && v[0] === id && v[1] === 0) node.inputs[k] = src;
+    delete g[id];
+  }
+  return g;
+}
