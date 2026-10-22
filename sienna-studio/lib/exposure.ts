@@ -55,6 +55,8 @@ export interface ExposureAttempt<Ref = unknown> {
   identityReason?: string;
   /** False when a full-body request came back as a closer shot. */
   framingOk?: boolean;
+  /** What the body check saw cut off by the frame ("her knees") when it wasn't redone for it (report only). */
+  framingMiss?: string;
   /** False when a pose preset with a body check (bent over) came back in another pose: squatting, kneeling, upright. */
   poseOk?: boolean;
   /** AI check (Simple Mode): false when the photo clearly doesn't match the description; unset when it didn't run. */
@@ -302,7 +304,7 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
     const why = [
       nip ? `${nip} showed a nipple` : '',
       face ? `${face} didn't look enough like Sienna` : '',
-      frame ? `${frame} came out closer than full body` : '',
+      frame ? `${frame} came out closer than the framing asked for` : '',
       pose ? `${pose} came out in the wrong pose` : '',
       ai.length ? `${ai.length} didn't match your description` : '',
     ]
@@ -319,6 +321,7 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
     const issues = [...kept.aiIssues].sort((a, b) => Number(b.startsWith('anatomy')) - Number(a.startsWith('anatomy')));
     parts.push(`${brokenAnatomy(kept) ? 'The kept photo has an anatomy error — check it before using it. ' : ''}Still not right in the kept photo: ${issues.slice(0, 4).join('; ')}.`);
   }
+  if (kept.framingMiss) parts.push(`Framing check: ${kept.framingMiss} ${kept.framingMiss.endsWith('s') ? 'are' : 'is'} cut off by the edge of the photo, though the framing asks for ${kept.framingMiss === 'her knees' ? 'them' : 'it'}.`);
   if (kept.aiOk !== undefined && kept.aiMinor?.length) parts.push(`Small differences: ${kept.aiMinor.slice(0, 3).join('; ')}.`);
   if (kept.aiOk !== undefined && kept.aiUnsure?.length) parts.push(`Couldn't confirm from the photo: ${kept.aiUnsure.slice(0, 3).join('; ')}.`);
   if (kept.aiStatus === 'unavailable') parts.push(`Not checked against your description: ${kept.aiReason ?? 'the AI check could not run'}.`);

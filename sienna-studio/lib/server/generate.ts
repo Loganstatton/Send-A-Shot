@@ -34,7 +34,8 @@ import { MIN_CHARACTER_AGE } from '../defaults';
 import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
-import { buildPrompt, COVER_GARMENTS, fullBodyFraming, withoutAbs, type CoverGarment } from '../prompt';
+import { buildPrompt, COVER_GARMENTS, fullBodyFraming, splitGarments, withoutAbs, type CoverGarment } from '../prompt';
+import { checkRules } from '../ai-prompts';
 import { CAMERA_ANGLE_RE, matchPosePreset, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
@@ -42,11 +43,13 @@ import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
-import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, parseBodyFrame } from '../body-frame';
+import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, kneeFramingOk, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
 import { ensurePhotoGpu, photoGpuEnabled, photoGpuReady, tickPhotoGpu, touchPhotoGpu } from './photo-gpu';
-import { activeStylePacks, nudeOnlyAllowed, packCoverage, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
+import { activeStylePacks, nudeOnlyAllowed, packCoverage, resolvePackConflicts, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, UNDERBOOB_TANK_NEGATIVE, UNDERBOOB_TANK_RE, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
+import { fixesFromEnv, hasFix } from '../fixes';
+import { kneeUpRequest } from '../framing';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
@@ -67,6 +70,11 @@ import {
 } from './store';
 
 const NO_FACE_REF = 'no face reference uploaded on the Sienna tab';
+/** Minimal bottoms whose coverage only the AI check can confirm (the GPU detector graded D3's as covered). */
+const REVEALING_BOTTOMS_RE = /\b(bikini|thong|g-string|string|micro|panties|briefs|knickers|lingerie|underwear)\b/i;
+/** A plain standing pose for the rear skeleton (fix rearguide): standing, and nothing it can't show. */
+const REAR_STANDING_RE = /\bstand(ing|s)?\b/i;
+const REAR_NOT_STANDING_RE = /\b(sit|sitting|seated|lying|lies|kneel\w*|crouch\w*|squat\w*|bend\w*|bent|lean\w*|walking|hands? on (her )?hips?|holding)\b/i;
 
 export class GenerationError extends Error {
   constructor(
@@ -153,6 +161,16 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     req = { ...req, params: { ...req.params, posePreset: 'standing_full_body_natural' } };
   }
 
+  // ── Revealing-benchmark fixes (lib/fixes.ts): off unless SIENNA_FIXES lists them or a benchmark request sets them ──
+  const fixes = req.params.fixes ?? fixesFromEnv(process.env.SIENNA_FIXES);
+  // Conflicting style packs never stack, however they were chosen (micro bikini + string swimsuit: D3)
+  {
+    const { packs, dropped } = resolvePackConflicts(req.params.stylePacks ?? {});
+    for (const id of dropped) warnings.push(`Style pack “${STYLE_PACKS.find((p) => p.id === id)?.label ?? id}” skipped — it conflicts with another pack that is on (stacked, they changed her figure and the outfit's coverage).`);
+    if (dropped.length) req = { ...req, params: { ...req.params, stylePacks: packs } };
+  }
+  const rear = rearRequest(`${req.fields.pose} ${req.fields.framing} ${req.fields.extra}`, null, false);
+
   // ── Prompt ─────────────────────────────────────────────────────────────
   // ── Pose preset: its skeleton stands in for a pose photo (wired straight to the ControlNet below) ──
   let posePre = !req.images.poseImage ? posePreset(req.params.posePreset) : undefined;
@@ -162,6 +180,14 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     posePre = matchPosePreset(req.fields.pose, fullBodyFraming(req.fields).add);
     if (posePre) {
       warnings.push(`Used the “${POSE_PRESET_LABELS[posePre.id] ?? posePre.id}” pose preset to hold the position your Pose text describes.`);
+      req = { ...req, params: { ...req.params, posePreset: posePre.id } };
+      autoPose = true;
+    }
+  }
+  // fix rearguide: a standing from-behind request, head to knees, is held by the rear standing skeleton
+  if (hasFix(fixes, 'rearguide') && !posePre && !req.images.poseImage && rear && kneeUpRequest(req.fields.framing) && REAR_STANDING_RE.test(req.fields.pose) && !REAR_NOT_STANDING_RE.test(req.fields.pose)) {
+    posePre = posePreset(/\b(looking back|over (her|the) shoulder|looks? at the camera|head turned)\b/i.test(`${req.fields.pose} ${req.fields.expression}`) ? 'standing_rear_knee_up' : 'standing_rear_knee_up_away');
+    if (posePre) {
       req = { ...req, params: { ...req.params, posePreset: posePre.id } };
       autoPose = true;
     }
@@ -210,6 +236,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     // an ordinary T-shirt / tank top / button-up stays full-length: SIENNA_COVER_STOMACH lists the garments it's on for
     // ("tee,tank,buttonup", or true = all); unset or false = off, the rollback. A benchmark request can force it.
     coverStomach: req.params.coverStomach ?? coverFromEnv(process.env.SIENNA_COVER_STOMACH),
+    fixes,
   });
   if (built.blocked.length) {
     throw new GenerationError(
@@ -448,7 +475,11 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // the standard full-body wording asks for "feet and shoes" — it added sandals to bent-over photos; barefoot here
   const builtPositive = presetOutfit?.positive.includes('barefoot') ? built.positive.replace('including feet and shoes', 'including bare feet') : built.positive;
   const positive = withTriggers(presetPos ? `${presetPos}, ${builtPositive}` : builtPositive, stylePacks);
-  const negative = withPackNegatives(presetNeg ? `${built.negative}, ${presetNeg}` : built.negative, stylePacks);
+  let negative = withPackNegatives(presetNeg ? `${built.negative}, ${presetNeg}` : built.negative, stylePacks);
+  // fix underboobtank: the underboob pack draws a short-sleeved tee; on a tank top the sleeves are kept out
+  if (hasFix(fixes, 'underboobtank') && stylePacks.some((a) => a.pack.id === 'underboob_shirt') && UNDERBOOB_TANK_RE.test(req.fields.outfit) && !negative.includes(UNDERBOOB_TANK_NEGATIVE)) {
+    negative = `${negative}, ${UNDERBOOB_TANK_NEGATIVE}`;
+  }
   const values: Partial<Record<ControlKey, ControlValue | undefined>> = {
     positive_prompt: positive,
     negative_prompt: negative,
@@ -519,6 +550,33 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
   }
 
+  // Fix garmentsplit (version 1): each garment encoded on its own and joined to the rest, so one garment's colour can't
+  // attach to another inside the text encoder ("red top, blue jeans" gave a navy top). The outfit leaves the main text.
+  if (promptVersion === 1 && hasFix(fixes, 'garmentsplit') && built.outfitText && positive.includes(built.outfitText)) {
+    const garments = splitGarments(built.outfitText);
+    const posIds = garments.length > 1 ? Object.keys(graph).filter((id) => graph[id].class_type === 'CLIPTextEncode' && graph[id].inputs.text === positive) : [];
+    if (posIds.length) {
+      const scene = positive.replace(`${built.outfitText}, `, '').replace(built.outfitText, '');
+      for (const id of posIds) {
+        graph[id] = { ...graph[id], inputs: { ...graph[id].inputs, text: scene } };
+        let last: [string, number] = [id, 0];
+        garments.forEach((g, i) => {
+          const enc = `${id}_garment${i}`;
+          const cat = `${id}_garment${i}_concat`;
+          graph[enc] = { class_type: 'CLIPTextEncode', inputs: { text: g, clip: graph[id].inputs.clip }, _meta: { title: `Garment ${i + 1} (encoded on its own)` } };
+          graph[cat] = { class_type: 'ConditioningConcat', inputs: { conditioning_to: last, conditioning_from: [enc, 0] }, _meta: { title: `Scene + garment ${i + 1}` } };
+          last = [cat, 0];
+        });
+        const own = new Set(garments.map((_, i) => `${id}_garment${i}_concat`));
+        for (const [nid, node] of Object.entries(graph)) {
+          if (own.has(nid)) continue;
+          for (const [k, v] of Object.entries(node.inputs)) if (isLink(v) && v[0] === id && v[1] === 0) node.inputs[k] = last;
+        }
+      }
+      promptSplit = { scene, outfit: garments.join(' | ') };
+    }
+  }
+
   // A preset is already a skeleton: feed it to the pose ControlNet directly instead of through DWPose.
   const poseLoadId = bindings.pose_image?.[0]?.nodeId;
   if (posePre && poseImage && poseLoadId && graph[poseLoadId]) {
@@ -539,6 +597,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       const spliced = after ? chainLora(graph, after, a.pack.file, a.strength, title) : injectLora(graph, a.pack.file, a.strength, a.strength);
       graph = spliced.graph;
       graph[spliced.nodeId]._meta = { title };
+      // fix rearpack: on a from-behind request the pack shapes the image (model) but not the text encoding (CLIP),
+      // where its front-view captions outweighed "view from behind" (D4)
+      if (hasFix(fixes, 'rearpack') && rear && graph[spliced.nodeId].class_type === 'LoraLoader') graph[spliced.nodeId].inputs.strength_clip = 0;
       if (graph[spliced.nodeId].class_type === 'LoraLoader') after = spliced.nodeId;
     }
     // The face redraw goes back to Sienna's LoRA alone: packs shape the body and outfit, not her face.
@@ -617,7 +678,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     // full-body framing from her joints (a full-body request only; skipped when a node is missing)
     let body = false;
     const hinge = POSE_PRESET_PROMPTS[req.params.posePreset ?? '']?.check === 'hinge';
-    const bodyNodes = saveId && (fullBodyFraming(req.fields).add || hinge) ? bodyFrameNodes(graph, saveId) : null;
+    // knee-up requests too: "head to knees" came back cut at the thigh in 14 of 14 photos (22 Oct) and nothing noticed
+    const bodyNodes = saveId && (fullBodyFraming(req.fields).add || hinge || kneeUpRequest(req.fields.framing)) ? bodyFrameNodes(graph, saveId) : null;
     if (bodyNodes) {
       const missing = await missingClasses(backend, bodyNodes, Object.keys(bodyNodes));
       // the person segmenter must be installed too (a missing model would fail the whole photo, not just the check)
@@ -635,6 +697,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         // with the AI check two more tries: face-check redos alone used up all 4 in the first live test (21 Oct)
         maxAttempts: p.singleAttempt ? 1 : req.simple?.ai?.check ? AI_MAX_ATTEMPTS : EXPOSURE_MAX_ATTEMPTS,
         ...(built.outfitText ? { anchor: built.outfitText } : {}),
+        // fix framing: a knee-up photo with her knees cut off is redone; without it, it is only reported
+        ...(hasFix(fixes, 'framing') ? { kneeRedo: true } : {}),
         attempts: [],
       };
     } else if (missingAll.length) {
@@ -876,6 +940,8 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         const bodyFrame = checks.body ? parseBodyFrame(state.texts?.[BODY_FRAME_NODE_ID]) : null;
         const bodyFraming = checks.body ? bodyFramingOk(fullBodyFraming(rec.fields).add, bodyFrame) : undefined;
         const poseCheck = checks.body && POSE_PRESET_PROMPTS[rec.params.posePreset ?? '']?.check === 'hinge' ? hingeCheck(bodyFrame) : undefined;
+        // "head to knees": her head and knees in the picture (redone with fix framing, otherwise reported)
+        const knees = checks.body && bodyFraming === undefined && kneeUpRequest(rec.fields.framing) ? kneeFramingOk(bodyFrame, rec.params.height) : undefined;
         const notes: string[] = [];
         if (top && !top.available) notes.push(`Top check didn't run on the GPU (${top.error ?? 'detector not installed'}).`);
         if (face && !face.available) notes.push(`Face check didn't run on the GPU (${face.error ?? 'models not installed'}).`);
@@ -883,7 +949,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         const faceOn = !!face?.available;
         if (checks.face && !face) faceProblem = 'the face check returned no result';
         else if (face && !face.available) faceProblem = `the face check could not run (${face.error ?? 'models not installed'})`;
-        if (topOn || faceOn || bodyFraming !== undefined || poseCheck) {
+        if (topOn || faceOn || bodyFraming !== undefined || poseCheck || knees) {
           const attempts = [
             ...guard.attempts,
             {
@@ -893,6 +959,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               ...(faceOn ? identityFields(face!, rec) : {}),
               // her joints beat the face-size guess whenever the body could be judged
               ...(bodyFraming !== undefined ? { framingOk: bodyFraming } : {}),
+              ...(knees ? (guard.kneeRedo ? { framingOk: knees.ok } : knees.miss ? { framingMiss: knees.miss } : {}) : {}),
               ...(poseCheck ? { poseOk: poseCheck.ok } : {}),
               // a correction records the photo it was made from (and whether she was kept pixel for pixel)
               ...(guard.next ? { basedOn: guard.next.basedOn, ...(guard.next.keptPerson ? { keptPerson: true } : {}) } : {}),
@@ -905,7 +972,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           if (!latest.exposed && rec.simple?.ai?.check && aiEnabled() && state.images[0]) {
             try {
               const { bytes, mime } = await backend.fetchImage(state.images[0]);
-              const v = await aiCheck(rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime, undefined, rec.simple.ai?.lean);
+              const v = await aiCheck(rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime, undefined, rec.simple.ai?.lean, {}, checkRules(rec.fields, rec.params.fixes ?? fixesFromEnv(process.env.SIENNA_FIXES)));
               latest.aiStatus = v.status;
               if (v.status === 'unavailable') latest.aiReason = v.reason;
               else {
@@ -952,7 +1019,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               const fix = keepOk ? buildCorrection(backgroundFixes(from.aiFixes ?? []), base, 6) : buildCorrection(pickFixes(from.aiFixes ?? [], earlierFixes), base);
               prompts = base;
               graph = stripKeepPerson(swapPrompts(graph, { positive: rec.positivePrompt, negative: rec.negativePrompt }, base));
-              if (from.framingOk === false) fix.summary.push('framing: full body, head to toe');
+              if (from.framingOk === false) fix.summary.push(kneeUpRequest(rec.fields.framing) ? 'framing: head to knees, knees in frame' : 'framing: full body, head to toe');
               if (from.poseOk === false) fix.summary.push('pose: as described');
               // the fix goes after the outfit, so the request's own outfit and everything after it keep their place
               const placed = placeCorrection(prompts.positive, fix.positive, guard.anchor);
@@ -1008,6 +1075,10 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           extra.exposureGuard = { ...guard, attempts };
           const note = exposureWarning(attempts, kept);
           if (note) notes.push(note);
+          // the GPU top check only looks at her chest: with minimal bottoms and no AI verdict, coverage is unconfirmed
+          if (kept.aiStatus !== 'pass' && kept.aiStatus !== 'fail' && REVEALING_BOTTOMS_RE.test(rec.fields.outfit)) {
+            notes.push('Lower-body coverage not verified: the AI check gave no verdict on this photo and the GPU check only looks at her chest — check that the bottoms cover her before using it.');
+          }
         } else if (notes.length) {
           extra.exposureGuard = { ...guard, status: 'unavailable', reason: notes.join(' ') };
         }

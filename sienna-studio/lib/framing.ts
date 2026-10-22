@@ -10,6 +10,22 @@
 
 import type { PromptFields } from './types';
 
+/** Knee-up framing ("head to knees", "from the knees up"). */
+export const KNEE_UP_RE = /\b(knee[- ]up|from the knees? up|knee[- ]length shot|head[- ]to[- ]knees?|(down )?to (just )?(below |above )?(her|the) knees)\b/i;
+/** Thigh-up wording: "three-quarter shot" is a mid-thigh crop, so next to "head to knees" it asks for less. */
+const THIGH_UP_RE = /\b(three[- ]quarter(?: length| shot)?|3\/4 (?:shot|length)|cowboy shot|mid[- ]thigh( up)?|thigh[- ]up)\b/i;
+
+/** The framing asks for her knees in the picture (and not head to toe). */
+export function kneeUpRequest(framing: string): boolean {
+  return KNEE_UP_RE.test(framing) && !/\b(full[- ]body|full[- ]length|head to toe|feet visible|whole body)\b/i.test(framing);
+}
+
+/** Knee-up framing without the thigh-up phrases that contradict it ("head to knees, three-quarter shot" → "head to knees"). */
+export function withoutThighUp(framing: string): string {
+  if (!kneeUpRequest(framing)) return framing;
+  return framing.split(',').map((t) => t.trim()).filter((t) => t && !THIGH_UP_RE.test(t)).join(', ');
+}
+
 /** Ordered from tightest to widest shot. */
 export const FRAMING_LEVELS = ['close-up', 'chest-up', 'waist-up', 'thigh-up', 'knee-up', 'full body'] as const;
 export type FramingLevel = (typeof FRAMING_LEVELS)[number];
@@ -20,7 +36,7 @@ const LEVEL_RE: [FramingLevel, RegExp][] = [
   ['chest-up', /\b(chest[- ]up|bust shot|head and shoulders|shoulders[- ]up|portrait crop)\b/i],
   ['waist-up', /\b(waist[- ]up|half[- ]body|upper body|medium shot|from the waist up)\b/i],
   ['thigh-up', /\b(thigh[- ]up|mid[- ]thigh up|three[- ]quarter(?: length| shot)?|3\/4 (?:shot|length)|cowboy shot)\b/i],
-  ['knee-up', /\b(knee[- ]up|from the knees? up|knee[- ]length shot)\b/i],
+  ['knee-up', KNEE_UP_RE],
   ['full body', /\b(full[- ]body|full[- ]length|head to toe|whole body|entire body|feet visible)\b/i],
 ];
 

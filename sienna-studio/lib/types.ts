@@ -145,6 +145,8 @@ export interface GenerationParams {
   figureNoAbs?: boolean;
   /** Testing: force the full-length fit wording on (all garments) or off; unset = SIENNA_COVER_STOMACH. */
   coverStomach?: boolean;
+  /** Testing: the revealing-benchmark fixes on for this request (lib/fixes.ts); unset = SIENNA_FIXES. */
+  fixes?: import('./fixes').Fix[];
   /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */
   posePreset?: string | null;
   /** Use the pose preset the Pose text describes when none is chosen (default on). */
@@ -376,6 +378,8 @@ export interface GenerationRecord {
     anchor?: string;
     /** The correction being made: which attempt it starts from, and whether she is kept pixel for pixel. */
     next?: { basedOn: number; keptPerson: boolean };
+    /** Fix framing: a knee-up photo with her knees cut off is redone (otherwise the miss is only reported). */
+    kneeRedo?: boolean;
     attempts: {
       seed: number;
       exposed: boolean;
@@ -385,6 +389,8 @@ export interface GenerationRecord {
       identity?: 'verified' | 'likely' | 'mismatch' | 'inconclusive' | 'unchecked';
       identityReason?: string;
       framingOk?: boolean;
+      /** What the body check saw cut off by the frame ("her knees") when it wasn't redone for it. */
+      framingMiss?: string;
       poseOk?: boolean;
       aiOk?: boolean;
       aiScore?: number;

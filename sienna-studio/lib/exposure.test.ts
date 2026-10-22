@@ -86,7 +86,7 @@ describe('framing in the photo checks', () => {
     expect(failed(close)).toBe(true);
     expect(pickAttempt([close, right]).seed).toBe(2);
     expect(pickAttempt([right, close]).seed).toBe(2);
-    expect(exposureWarning([close, right], right)).toContain('1 came out closer than full body');
+    expect(exposureWarning([close, right], right)).toContain('1 came out closer than the framing asked for');
   });
 });
 

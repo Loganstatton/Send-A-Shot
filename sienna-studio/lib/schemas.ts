@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { CONTROL_KEYS, REVIEW_ITEMS } from './types';
 import { MIN_CHARACTER_AGE } from './defaults';
+import { FIXES } from './fixes';
 
 const str = (max = 4000) => z.string().max(max);
 
@@ -117,6 +118,7 @@ export const simpleCreateSchema = z.object({
       standingGuide: z.literal('natural').optional(),
       figureNoAbs: z.boolean().optional(),
       coverStomach: z.boolean().optional(),
+      fixes: z.array(z.enum(FIXES)).optional(),
     })
     .optional(),
 });

@@ -19,6 +19,8 @@ import {
   SFW_NEGATIVE,
 } from './defaults';
 import { outfitHasTop } from './exposure';
+import { hasFix, type Fix } from './fixes';
+import { kneeUpRequest, withoutThighUp } from './framing';
 import { rearRequest } from './identity';
 import { applyIdentityLock, findHardBlocks, GuardHit, tidy } from './guard';
 import { splitAvoid } from './outfit-edit';
@@ -51,6 +53,8 @@ export interface BuildPromptInput {
   /** Keep an ordinary T-shirt, tank top or button-up full-length (coverGarments): fit wording after the outfit and
    * crop-top/knot wording in the negative. true = all three garments, or a list of the enabled ones. */
   coverStomach?: boolean | readonly CoverGarment[];
+  /** Revealing-benchmark fixes switched on (lib/fixes.ts); version 1 only. */
+  fixes?: readonly Fix[];
 }
 
 export interface BuiltPrompt {
@@ -176,7 +180,7 @@ const OUTDOOR_SCENE_RE = /\b(beach|ocean|sea|lake|river|forest|woods|park|street
 const LIGHT_WORDS_RE = /\b(lighting|light|lit|sunlight|sunlit|daylight|lamp|lamplight|candlelight|neon|golden hour|sunset|sunrise|backlit|flash)\b/i;
 const NON_PHONE_CAMERA_RE = /\b(dslr|mirrorless|film camera|35mm film|medium format|professional (camera|photographer|photo ?shoot)|studio (photo|shoot|portrait)|canon|nikon|sony a\d|leica|hasselblad)\b/i;
 
-export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1, coverStomach = false }: BuildPromptInput): BuiltPrompt {
+export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1, coverStomach = false, fixes = [] }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
 
@@ -222,8 +226,11 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   const barefoot =
     /\b(barefoot(ed)?|bare[- ]feet|bare[- ]foot)\b/i.test([f.outfit, f.pose, f.bodyPresentation, f.setting, f.framing, f.extra].join(' ')) ||
     /\b(shoes|sandals|footwear|flip[- ]flops)\b/i.test(f.avoid ?? '');
-  const addedFraming =
-    fullBodyMode === 'mirror'
+  // fix framing: "head to knees" gets knee-up wording, and "three-quarter shot" (a mid-thigh crop) next to it goes
+  const kneeUp = hasFix(fixes, 'framing') && !fullBodyMode && kneeUpRequest(f.framing);
+  const addedFraming = kneeUp
+    ? KNEE_UP_FRAMING
+    : fullBodyMode === 'mirror'
       ? MIRROR_FULL_BODY_FRAMING
       : fullBodyMode
         ? barefoot
@@ -252,9 +259,11 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   const realism = joinParts([baseRealism, f.realism]);
 
   // Drop Framing fragments the added wording already covers (e.g. "head to toe").
-  const framing = addedFraming
-    ? f.framing.split(',').filter((s) => !addedFraming.includes(s.trim().toLowerCase())).join(',')
-    : f.framing;
+  const framing = kneeUp
+    ? withoutThighUp(f.framing)
+    : addedFraming
+      ? f.framing.split(',').filter((s) => !addedFraming.includes(s.trim().toLowerCase())).join(',')
+      : f.framing;
 
   // From-behind request: weighted rear wording first; unless she looks back, her face turned away and no eye wording.
   const poseText = `${f.pose} ${f.framing} ${f.extra}`;
@@ -265,7 +274,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   if (version === 2) {
     return buildV2({ f, fields, character, siennaLock, contentMode, cleanup, poseGuide, warnings, blocked, effectiveFields, tokenPhrase, age, traits, fullBodyMode, barefoot, rear, faceAway, outfitText, framing: f.framing, coverStomach });
   }
-  const cover = coverParts(f.outfit, coverStomach);
+  const cover = coverParts(f.outfit, coverStomach, hasFix(fixes, 'tankfit'));
+  const shorts = hasFix(fixes, 'shorts') ? shortsParts(f.outfit) : { fit: '', negative: '' };
   const positive = joinParts([
     rear ? REAR_VIEW : '',
     faceAway ? FACE_AWAY : '',
@@ -276,6 +286,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     // (1.2 cost likeness, and so did weighting the pose)
     outfitText,
     cover.fit,
+    shorts.fit,
     poseGuide ?? '',
     poseGuide === undefined ? '' : f.pose,
     f.bodyPresentation,
@@ -317,8 +328,12 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
     barefoot ? BAREFOOT_NEGATIVE : '',
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
+    hasFix(fixes, 'keepbottom') && outfitHasBottom(f.outfit) ? KEEP_BOTTOM_NEGATIVE : '',
     cover.negative,
+    shorts.negative,
     colourDriftNegative(f.outfit),
+    hasFix(fixes, 'colour') ? colourGuardNegative(f.outfit) : '',
+    kneeUp ? KNEE_UP_NEGATIVE : '',
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
     avoidItems.join(', '),
   ]);
@@ -372,12 +387,89 @@ export function coverGarments(outfit: string, enabled: readonly CoverGarment[] =
 }
 export const coversStomach = (outfit: string) => coverGarments(outfit).length > 0;
 const coverEnabled = (c: boolean | readonly CoverGarment[] | undefined): readonly CoverGarment[] => (c === true ? COVER_GARMENTS : Array.isArray(c) ? c : []);
-function coverParts(outfit: string, c: boolean | readonly CoverGarment[] | undefined) {
+function coverParts(outfit: string, c: boolean | readonly CoverGarment[] | undefined, tankFit = false) {
   const g = coverGarments(outfit, coverEnabled(c));
+  // fix tankfit: the negative alone still gave a cropped (B1) or knotted (E1) tank top in the revealing benchmark
+  const fit = (x: CoverGarment) => (x === 'tank' && tankFit ? TANK_FIT : COVER_FIT[x]);
   return {
-    fit: g.map((x) => COVER_FIT[x]).filter(Boolean).join(', '),
-    negative: g.length ? [COVER_STOMACH_NEGATIVE, g.includes('buttonup') ? KNOT_NEGATIVE : ''].filter(Boolean).join(', ') : '',
+    fit: g.map(fit).filter(Boolean).join(', '),
+    negative: g.length ? [COVER_STOMACH_NEGATIVE, g.includes('buttonup') || (tankFit && g.includes('tank')) ? KNOT_NEGATIVE : ''].filter(Boolean).join(', ') : '',
   };
+}
+/** Fix tankfit: the garment's own name for a full-length one, without the stomach words that brought the crop back. */
+export const TANK_FIT = 'long tank top';
+
+// ── Revealing-benchmark fixes (lib/fixes.ts), version 1 ──────────────────────────────────────────────────────────
+
+/** Fix keepbottom: an outfit that covers her lower body keeps it covered in either content mode. */
+export const KEEP_BOTTOM_NEGATIVE = '(exposed genitals, bottomless, pubic hair:1.3)';
+const BOTTOM_GARMENT_RE = /\b(bikinis?|bottoms?|thong|g-string|panties|briefs|knickers|underwear|shorts|jeans|pants|trousers|skirt|leggings|swimsuit|monokini|one-piece|bodysuit|leotard|dress|romper|jumpsuit)\b/i;
+const NO_BOTTOM_RE = /\b(bottomless|nude|naked|no (bottoms|panties|underwear)|nothing on|wearing nothing)\b/i;
+export function outfitHasBottom(outfit: string): boolean {
+  return BOTTOM_GARMENT_RE.test(outfit) && !NO_BOTTOM_RE.test(outfit);
+}
+
+/** Fix framing: knee-up wording in place of the full-body wording, and the crop it came back with in the negative. */
+export const KNEE_UP_FRAMING = 'knee-up shot, from the top of her head to just below her knees, both knees in frame';
+export const KNEE_UP_NEGATIVE = '(cropped at the thighs, cut off at mid-thigh:1.2)';
+
+/**
+ * Fix colour: the other garment's colour on this garment goes in the negative. "red scoop top, blue jeans" came out
+ * a navy top and "black underboob tank top, blue jeans" a denim-blue one (22 Oct): inside the text encoder the jeans'
+ * blue attaches to the top. Jeans and denim count as blue.
+ */
+const TOP_NOUN_RE = /\b(t-?shirt|tee|tank top|crop top|tube top|sports bra|bikini top|bralette|blouse|shirt|camisole|cami|sweater|hoodie|top|tank|bra)\b/i;
+const BOTTOM_NOUN_RE = /\b(jeans|shorts|skirt|pants|trousers|leggings|bikini bottoms|bottoms)\b/i;
+const BLUE_RE = /\b(blue|navy|denim|light-wash|dark-wash)\b/i;
+const colourOf = (item: string) => item.match(COLOUR_RE)?.[1]?.toLowerCase() ?? (/\b(jeans|denim)\b/i.test(item) ? 'blue' : '');
+const family = (c: string) => (BLUE_RE.test(c) ? 'blue' : c === 'gray' ? 'grey' : c);
+export function colourGuardNegative(outfit: string): string {
+  const items = outfit.replace(/[()]|:\d(\.\d+)?/g, '').split(',').map((t) => t.trim());
+  const top = items.find((t) => TOP_NOUN_RE.test(t) && !BOTTOM_NOUN_RE.test(t) && colourOf(t));
+  const bottom = items.find((t) => BOTTOM_NOUN_RE.test(t) && colourOf(t));
+  if (!top || !bottom) return '';
+  const [tc, bc] = [colourOf(top), colourOf(bottom)];
+  if (family(tc) === family(bc)) return '';
+  const topNoun = top.match(TOP_NOUN_RE)![1].toLowerCase();
+  const bottomNoun = bottom.match(BOTTOM_NOUN_RE)![1].toLowerCase();
+  const onTop = family(bc) === 'blue' ? [`blue ${topNoun}`, `navy ${topNoun}`, `denim ${topNoun}`] : [`${bc} ${topNoun}`];
+  return `(${[...onTop, `${tc} ${bottomNoun}`].join(', ')}:1.2)`;
+}
+
+/**
+ * Fix shorts. Ordinary shorts keep ordinary coverage. Short, tiny or athletic shorts keep a short inseam ("tiny
+ * low-coverage running shorts" came out as bike shorts, E3). Explicitly cheeky shorts (cheeky, booty shorts, the lower
+ * buttocks showing) get a cheeky cut: in E2 and E4 the hems covered both cheeks completely. Her figure is untouched —
+ * only the garment's cut is described.
+ */
+const SHORTS_RE = /\bshorts\b|\bhot ?pants\b|\bcut-?offs\b/i;
+const LONG_SHORTS_RE = /\b(bike|biker|cycling|bermuda|board|cargo|knee[- ]length|long)\s+shorts\b/i;
+export const CHEEKY_RE = /\b(cheeky|booty shorts|bum shorts|butt[- ]?cheeks?|lower (butt|buttocks|bum|cheeks)|under-?butt)\b/i;
+const SHORT_SHORTS_RE = /\b(tiny|very short|super short|short|mini|micro|low[- ]coverage|running|athletic|gym|track|sleep|pajama|pyjama|lounge)\b[^,]*\bshorts\b|\bhot ?pants\b|\bcut-?offs\b/i;
+const TINY_SHORTS_RE = /\b(tiny|very short|super short|micro|low[- ]coverage)\b/i;
+export const SHORT_SHORTS_NEGATIVE = '(bike shorts, cycling shorts, knee-length shorts, bermuda shorts:1.2)';
+export const TINY_SHORTS_FIT = 'very short inseam, upper thighs bare';
+export const CHEEKY_FIT = '(cheeky cut with a high back hem:1.1), (lower curve of her buttocks showing below the hem:1.1), fitted stretch fabric';
+export const CHEEKY_NEGATIVE = '(boy shorts, full-coverage shorts, long shorts:1.2)';
+export function shortsParts(outfit: string): { fit: string; negative: string } {
+  if (!SHORTS_RE.test(outfit) || LONG_SHORTS_RE.test(outfit)) return { fit: '', negative: '' };
+  if (CHEEKY_RE.test(outfit)) return { fit: CHEEKY_FIT, negative: `${SHORT_SHORTS_NEGATIVE}, ${CHEEKY_NEGATIVE}` };
+  if (!SHORT_SHORTS_RE.test(outfit)) return { fit: '', negative: '' };
+  return { fit: TINY_SHORTS_RE.test(outfit) ? TINY_SHORTS_FIT : '', negative: SHORT_SHORTS_NEGATIVE };
+}
+
+/**
+ * Fix garmentsplit: the outfit as separate garments (each with its own descriptors), to be encoded one by one.
+ * "(red fitted scoop neck top:1.1), low neckline, cleavage, (blue jeans:1.1)" → the top with its neckline, the jeans.
+ */
+const GARMENT_NOUN_RE = new RegExp(`${TOP_NOUN_RE.source}|${BOTTOM_NOUN_RE.source}|\\b(dress|bikini|swimsuit|monokini|bodysuit|leotard|jacket|coat|cardigan|sneakers|heels|sandals|boots|shoes|barefoot)\\b`, 'i');
+export function splitGarments(outfitText: string): string[] {
+  const groups: string[][] = [];
+  for (const item of outfitText.split(',').map((t) => t.trim()).filter(Boolean)) {
+    if (!groups.length || GARMENT_NOUN_RE.test(item)) groups.push([item]);
+    else groups[groups.length - 1].push(item);
+  }
+  return groups.map((g) => g.join(', '));
 }
 /** Her traits without the "with defined abs" wording, everything else as written (test switch figureNoAbs). */
 export const withoutAbs = (traits: string) => traits.replace(/\s*(?:with\s+)?(?:defined|visible|toned)\s+abs\b/gi, '').replace(/,\s*,/g, ',');

@@ -27,6 +27,17 @@ def standing_natural(stature, sole, cx=416):
             4: (x(-.105), y(.485)), 7: (x(.105), y(.485)), 8: (x(-.053), y(.53)), 11: (x(.053), y(.53)),
             9: (x(-.05), y(.285)), 12: (x(.05), y(.285)), 10: (x(-.045), y(.039)), 13: (x(.045), y(.039))}
 
+def rear_knee_up(look_back):
+    """Standing seen from behind, head to knees (fix rearguide, 23 Oct). The natural-proportion skeleton at 1496 px
+    stature with her soles below the frame: head top at y 50, knees at y 1120 (92% of the frame), ankles cut off — the
+    framing "head to knees" asks for. Mirrored for a rear view (her right side on the image's right). Looking back
+    over her right shoulder: nose, eyes and her left ear turned toward the image's right (as in looking_back); facing
+    away: only the ears and a nose hidden behind her head."""
+    body = standing_natural(1496, 1546)
+    rear = {i: (832 - x, y) for i, (x, y) in body.items() if i <= 13 and y < 1216}
+    head = {0: (456, 188), 14: (470, 160), 15: (440, 158), 17: (398, 170)} if look_back else {0: (416, 200), 16: (446, 172), 17: (386, 172)}
+    return merge(rear, head)
+
 P = {
   'sitting_crosslegged': (832, 1216, 'sitting cross-legged, hands resting on her knees', merge(face(416, 300), {1: (416, 400), 2: (325, 420), 5: (507, 420), 3: (290, 570), 6: (542, 570), 4: (270, 735), 7: (562, 735),
       8: (372, 700), 11: (460, 700), 9: (200, 820), 12: (632, 820), 10: (480, 880), 13: (352, 880)})),
@@ -107,6 +118,8 @@ P = {
   # fractions: eyes .936, nose .912, shoulders .818, elbows .63, hips .53, wrists .485, knees .285, ankles .039) at
   # 7.5 heads, 900 px tall (74% of the frame) with room above her head and below her feet.
   'standing_full_body_natural': (832, 1216, 'standing, full body from head to feet, arms relaxed at her sides', standing_natural(900, 1100)),
+  'standing_rear_knee_up': (832, 1216, 'standing, seen from behind, back to the camera, looking back over her shoulder', rear_knee_up(True)),
+  'standing_rear_knee_up_away': (832, 1216, 'standing, seen from behind, back to the camera, head facing away', rear_knee_up(False)),
   'standing_holding_glass': (832, 1216, 'standing, full body, holding a glass at her chest in her left hand, right arm relaxed', merge(face(416, 175, 0.85), {
       1: (416, 265), 2: (332, 285), 5: (500, 285), 3: (318, 450), 4: (322, 600), 6: (530, 440), 7: (470, 370),
       8: (370, 640), 11: (462, 640), 9: (366, 880), 12: (466, 880), 10: (370, 1105), 13: (462, 1105)})),
@@ -121,7 +134,7 @@ STRENGTHS = {'bent_over_rear': 1.0}
 # presets drawn from a low camera (allowed with a low-angle request; every other preset is eye level)
 LOW_VIEW = {'standing_low_angle'}
 # drawn for benchmarks only: not offered in Create, not picked by the AI reader
-TEST_ONLY = {'standing_full_body_natural'}
+TEST_ONLY = {'standing_full_body_natural', 'standing_rear_knee_up', 'standing_rear_knee_up_away'}
 
 out = os.path.join(os.path.dirname(__file__), '..', 'public', 'pose-presets')
 os.makedirs(out, exist_ok=True)

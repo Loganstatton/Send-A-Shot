@@ -8,6 +8,11 @@
 import { z } from 'zod/v4'; // the SDK's output-format helper takes zod 4 schemas
 import { POSE_GUIDES, POSE_PRESET_LABELS } from './pose-presets';
 import { STYLE_PACKS } from './style-packs';
+import { outfitHasTop } from './exposure';
+import { hasFix, type Fix } from './fixes';
+import { kneeUpRequest } from './framing';
+import { CHEEKY_RE, fullBodyFraming, outfitHasBottom } from './prompt';
+import type { PromptFields } from './types';
 
 /** Requests the AI reader and checker are not used for. */
 export const NUDE_RE = /\b(nude|naked|nudity|topless|bottomless|nipples?|areolas?|genitals?|vagina|pussy|penis|bare (breasts|chest|butt|bottom)|implied nud\w*|undressed|nothing on|wearing nothing)\b/i;
@@ -192,8 +197,33 @@ export const CHECK_SYSTEM_LEAN = checkSystem(`Keep every field short — the gra
 - emphasize / avoid: "" when met; for minor and major, "emphasize" is a short image-prompt phrase for what the photo must show (e.g. "fitted black turtleneck covering her waist") and "avoid" a short phrase for what wrongly appeared (e.g. "cropped top, bare midriff")
 `);
 
-export function checkUser(request: string): string {
-  return `Request:\n${request}\n\nGrade this photo against every requirement of the request.`;
+export function checkUser(request: string, rules: readonly string[] = []): string {
+  const extra = rules.length ? `\n\nAlso apply these rules for this request:\n${rules.map((r) => `- ${r}`).join('\n')}` : '';
+  return `Request:\n${request}\n\nGrade this photo against every requirement of the request.${extra}`;
+}
+
+/** A garment meant to cover her lower body or chest that doesn't (the micro + string bikini in D3, 22 Oct) is a
+ * clothing failure, never a pass. */
+export const COVERAGE_RULE = 'clothing: add the requirement "garments cover her as the outfit intends" — major if her genitals or nipples are visible where the requested garments should cover them (bottoms too small or pulled aside, a top slipping off); met otherwise.';
+/** Cheeky shorts: the cut has to show (22 Oct: both cheeks fully covered in E2 and E4). */
+export const CHEEKY_RULE = 'clothing: add the requirement "cheeky cut: the lower curve of her buttocks shows below the back hem" — major if the back hem covers both butt cheeks completely, even when the shorts are otherwise very short; unsure if the photo doesn\'t show her from behind or the side; minor if only a sliver shows.';
+/** Requested framing: the named body part inside the photo. */
+export const KNEE_FRAMING_RULE = 'camera: add the requirement "framing from her head down to her knees" — major if her knees are cut off by the bottom edge (framed at the thighs or hips); met only if both knees are in the photo.';
+export const FULL_BODY_FRAMING_RULE = 'camera: add the requirement "full body, head to feet" — major if her feet or lower legs are cut off by the frame.';
+
+/**
+ * Rules the AI check applies to a request on top of its requirement list: garments that should cover her must
+ * (always); with fix checkrules, a cheeky cut must show and the requested framing must hold.
+ */
+export function checkRules(fields: PromptFields, fixes: readonly Fix[]): string[] {
+  const rules: string[] = [];
+  if (outfitHasTop(fields.outfit) || outfitHasBottom(fields.outfit)) rules.push(COVERAGE_RULE);
+  if (hasFix(fixes, 'checkrules')) {
+    if (CHEEKY_RE.test(fields.outfit)) rules.push(CHEEKY_RULE);
+    if (fullBodyFraming(fields).add) rules.push(FULL_BODY_FRAMING_RULE);
+    else if (kneeUpRequest(fields.framing)) rules.push(KNEE_FRAMING_RULE);
+  }
+  return rules;
 }
 
 /** Prices per million tokens (input, output) for the cost ledger. */

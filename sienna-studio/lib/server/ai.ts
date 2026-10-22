@@ -123,13 +123,14 @@ export async function aiCheck(
   effort: 'low' | 'medium' = checkEffort(),
   lean = false,
   limits: { maxTokens?: number; capUsd?: number } = {},
+  rules: readonly string[] = [],
 ): Promise<CheckOutcome> {
   const media = (['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
   const a = await ask<CheckResult>(
     lean ? CHECK_SYSTEM_LEAN : CHECK_SYSTEM,
     [
       { type: 'image', source: { type: 'base64', media_type: media, data: image.toString('base64') } },
-      { type: 'text', text: checkUser(request) },
+      { type: 'text', text: checkUser(request, rules) },
     ],
     CheckSchema,
     effort,

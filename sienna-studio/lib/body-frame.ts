@@ -66,6 +66,18 @@ export function bodyFramingOk(fullBody: boolean, body: BodyFrame | null): boolea
 }
 
 /**
+ * For a knee-up request ("head to knees"): her head and at least one knee in the picture, the knee clear of the
+ * bottom edge (a joint on the edge is a knee cut in half). Undefined when the body couldn't be judged.
+ */
+export const KNEE_EDGE = 0.97;
+export function kneeFramingOk(body: BodyFrame | null, imageHeight: number): { ok: boolean; miss?: string } | undefined {
+  if (!body?.found || !body.joints) return undefined;
+  const knees = [body.joints[9], body.joints[12]].filter((k): k is [number, number] => !!k && k[1] <= KNEE_EDGE * imageHeight);
+  if (!body.head) return { ok: false, miss: 'her head' };
+  return knees.length ? { ok: true } : { ok: false, miss: 'her knees' };
+}
+
+/**
  * Bent over at the waist (the bent_over_rear preset): hips the highest part of her body, torso pointing down from
  * them, thighs near vertical (a squat folds them toward horizontal), shins standing below the knees (a kneel lays
  * them flat). Per side, using whichever leg was detected. Undefined when too few joints were found to judge.

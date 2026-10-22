@@ -128,6 +128,22 @@
   "testOnly": true
  },
  {
+  "id": "standing_rear_knee_up",
+  "width": 832,
+  "height": 1216,
+  "pose": "standing, seen from behind, back to the camera, looking back over her shoulder",
+  "strength": 0.85,
+  "testOnly": true
+ },
+ {
+  "id": "standing_rear_knee_up_away",
+  "width": 832,
+  "height": 1216,
+  "pose": "standing, seen from behind, back to the camera, head facing away",
+  "strength": 0.85,
+  "testOnly": true
+ },
+ {
   "id": "standing_holding_glass",
   "width": 832,
   "height": 1216,

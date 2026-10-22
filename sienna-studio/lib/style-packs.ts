@@ -346,13 +346,45 @@ const PACK_REPLACES: Record<string, RegExp[]> = {
   lace_bandeau: [/\b(t-?shirt|tee|tank top|sweater|hoodie|blouse|bikini top|bra)\b/i],
 };
 
-/** The pack fits the requested outfit: it doesn't replace a garment the request names. Packs that draw no outfit always fit. */
-export function packFitsOutfit(id: string, outfit: string): boolean {
+/** An underboob tank top: the tank top is the underboob garment itself, not a second top the pack would replace. */
+export const UNDERBOOB_TANK_RE = /\bunderboob\b[^,]*\btank\b|\btank(\s+top)?\b[^,]*\bunderboob\b/i;
+/** With the underboob pack on a tank top: its look is a short-sleeved tee, so sleeves go in the negative. */
+export const UNDERBOOB_TANK_NEGATIVE = '(short sleeves, sleeved t-shirt:1.2)';
+
+/**
+ * The pack fits the requested outfit: it doesn't replace a garment the request names. Packs that draw no outfit always
+ * fit. underboobTank (fix): "black underboob tank top" may use the underboob pack — the tank is the underboob garment.
+ */
+export function packFitsOutfit(id: string, outfit: string, opts: { underboobTank?: boolean } = {}): boolean {
   const rules = PACK_REPLACES[id];
   if (!rules || !outfit.trim()) return true;
   // garments that belong to the pack's own look don't count ("bikini top" for a bikini pack)
-  const named = outfit.replace(/\b(bikini|swimsuit|swim|string|thong|micro)\s+(top|bottoms?|briefs)\b/gi, '');
+  let named = outfit.replace(/\b(bikini|swimsuit|swim|string|thong|micro)\s+(top|bottoms?|briefs)\b/gi, '');
+  if (opts.underboobTank && id === 'underboob_shirt') named = named.split(',').filter((item) => !UNDERBOOB_TANK_RE.test(item)).join(',');
   return !rules.some((re) => re.test(named));
+}
+
+/**
+ * Packs that must not be stacked: the first of each pair wins. Micro bikini on top of String swimsuit made her bust
+ * larger, her skin glossy and dropped the bottoms' coverage (D3, 22 Oct: micro 0.85 + string 0.7 — the AI reader
+ * picked both; the rule-based reader already skipped the second). French lace over a lace bodysuit drew lingerie.
+ */
+export const PACK_CONFLICTS: [string, string][] = [
+  ['string_swimsuit', 'micro_bikini'],
+  ['lace_bodysuit', 'french_lace'],
+];
+
+/** The packs with every conflicting second pack removed, and the ids removed. */
+export function resolvePackConflicts(packs: Record<string, number>): { packs: Record<string, number>; dropped: string[] } {
+  const out = { ...packs };
+  const dropped: string[] = [];
+  for (const [keep, drop] of PACK_CONFLICTS) {
+    if ((out[keep] ?? 0) > 0 && (out[drop] ?? 0) > 0) {
+      delete out[drop];
+      dropped.push(drop);
+    }
+  }
+  return { packs: out, dropped };
 }
 
 const TINY_RE = /\b(tiny|micro|minimal|barely[- ]there|itsy|teeny)\b/i;
@@ -369,6 +401,7 @@ export function packStrength(id: string, text: string): number {
 export function packsForDescription(
   fields: { outfit?: string; pose?: string; bodyPresentation?: string; extra?: string },
   contentMode: 'sfw' | 'adult',
+  opts: { underboobTank?: boolean } = {},
 ): Record<string, number> {
   const text = Object.entries(fields as Record<string, string | undefined>)
     .filter(([k, v]) => k !== 'avoid' && v)
@@ -383,10 +416,9 @@ export function packsForDescription(
     // "completely nude on her bed" → "completely nude": the place and pose aren't outfit items (the check stays strict)
     const outfit = (fields.outfit ?? '').replace(/^\s*(she'?s|she is|she|her)\s+/i, '').replace(/\s+\b(on|in|at|by|near|lying|sitting|standing|kneeling|posing)\b.*$/i, '');
     if (pack.nudeOnly && !nudeOnlyAllowed(contentMode, { ...fields, outfit })) continue;
-    if (!packFitsOutfit(id, fields.outfit ?? '')) continue;
-    // a string bikini already has the string swimsuit pack; the micro pack on top lowers coverage (see its hint)
-    if (id === 'micro_bikini' && out.string_swimsuit) continue;
-    if (id === 'french_lace' && out.lace_bodysuit) continue;
+    if (!packFitsOutfit(id, fields.outfit ?? '', opts)) continue;
+    // a string bikini already has the string swimsuit pack; the micro pack on top lowers coverage (PACK_CONFLICTS)
+    if (PACK_CONFLICTS.some(([keep, drop]) => id === drop && out[keep])) continue;
     // "tiny / micro string bikini": the 0.6 default came out with regular-size cups (live, 18 Oct); the pack's max
     // is the barely-there look it was tested at
     out[id] = packStrength(id, text);
