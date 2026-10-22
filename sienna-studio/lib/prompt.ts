@@ -336,6 +336,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
 const BODY_TRAIT_RE = /\b(breasts?|bust|chest|waist|abs|hips?|curv\w*|figure|thighs?|glutes?|butt|legs?)\b/i;
 /** "(large round natural breasts:1.2)" → "large round natural breasts". */
 export const unweighted = (t: string) => t.replace(/^\((.+?)(?::\s*[\d.]+)?\)$/, '$1').trim();
+/** Her traits without the "with defined abs" wording, everything else as written (test switch figureNoAbs). */
+export const withoutAbs = (traits: string) => traits.replace(/\s*(?:with\s+)?(?:defined|visible|toned)\s+abs\b/gi, '').replace(/,\s*,/g, ',');
 /** Said after her figure, without weights: a reminder, not a body change. */
 export const NATURAL_PROPORTIONS = 'realistic proportions';
 /** A standing request: furniture in the room ("gray sofa") pulled her into sitting in 4 of 4 photos (22 Oct). */

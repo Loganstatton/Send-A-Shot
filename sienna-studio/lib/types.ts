@@ -139,8 +139,10 @@ export interface GenerationParams {
   splitOutfit?: boolean;
   /** One photo only: no redos (benchmarks). */
   singleAttempt?: boolean;
-  /** Version 2, testing: 'natural' swaps the standing skeleton for the 7.5-head one (standing_full_body_natural). */
+  /** Testing: 'natural' swaps the standing skeleton for the 7.5-head one (standing_full_body_natural). */
   standingGuide?: 'natural';
+  /** Testing: her figure description without "with defined abs" (lib/prompt.ts withoutAbs). */
+  figureNoAbs?: boolean;
   /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */
   posePreset?: string | null;
   /** Use the pose preset the Pose text describes when none is chosen (default on). */

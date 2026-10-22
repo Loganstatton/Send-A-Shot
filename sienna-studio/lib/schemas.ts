@@ -115,6 +115,7 @@ export const simpleCreateSchema = z.object({
       single: z.boolean().optional(),
       noCheck: z.boolean().optional(),
       standingGuide: z.literal('natural').optional(),
+      figureNoAbs: z.boolean().optional(),
     })
     .optional(),
 });

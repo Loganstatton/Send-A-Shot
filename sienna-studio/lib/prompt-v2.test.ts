@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, unweighted, V2_FULL_BODY, V2_STANDING_NEGATIVE } from './prompt';
+import { buildPrompt, unweighted, V2_FULL_BODY, V2_STANDING_NEGATIVE, withoutAbs } from './prompt';
 import { DEFAULT_CHARACTER, EMPTY_FIELDS } from './defaults';
 import { packFitsOutfit, packsForDescription } from './style-packs';
 
@@ -70,5 +70,16 @@ describe('outfit packs never replace a named garment', () => {
   });
   it('packs that draw no outfit always fit', () => {
     expect(packFitsOutfit('natural_skin', 'white tank top, grey sweatpants')).toBe(true);
+  });
+});
+
+describe('figure without the defined-abs wording (test switch)', () => {
+  it('removes only "with defined abs"; bust, waist and hips stay as written, weights included', () => {
+    const t = withoutAbs(DEFAULT_CHARACTER.appearanceTraits);
+    expect(t).toContain('(large round natural breasts:1.2), slim toned waist, curvy hips');
+    expect(t).not.toMatch(/abs\b/);
+    expect(t.replace('slim toned waist,', 'slim toned waist with defined abs,')).toBe(DEFAULT_CHARACTER.appearanceTraits);
+    const v1 = buildPrompt({ fields, character: { ...DEFAULT_CHARACTER, appearanceTraits: t }, siennaLock: true, contentMode: 'sfw' });
+    expect(v1.positive).toContain('(large round natural breasts:1.2), slim toned waist, curvy hips');
   });
 });

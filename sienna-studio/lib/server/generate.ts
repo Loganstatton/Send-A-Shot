@@ -34,7 +34,7 @@ import { MIN_CHARACTER_AGE } from '../defaults';
 import { applyQualityOptions, posePadding } from '../comfy/quality';
 import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
-import { buildPrompt, fullBodyFraming } from '../prompt';
+import { buildPrompt, fullBodyFraming, withoutAbs } from '../prompt';
 import { CAMERA_ANGLE_RE, matchPosePreset, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
@@ -113,8 +113,10 @@ export interface PreparedGeneration {
 }
 
 export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: boolean } = {}): Promise<PreparedGeneration> {
-  const [settings, character, presets, comfyUrl] = await Promise.all([getSettings(), getCharacter(), listPresets(), getComfyUrl()]);
+  const [settings, profile, presets, comfyUrl] = await Promise.all([getSettings(), getCharacter(), listPresets(), getComfyUrl()]);
   const backend = createBackend(comfyUrl);
+  // testing: her figure without the "defined abs" wording (suspected of pulling requested tank tops into crop tops)
+  const character = req.params.figureNoAbs ? { ...profile, appearanceTraits: withoutAbs(profile.appearanceTraits) } : profile;
 
   // ── Content mode & age policy ──────────────────────────────────────────
   let contentMode: ContentMode = req.contentMode === 'adult' ? 'adult' : 'sfw';
@@ -132,15 +134,17 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   if (promptVersion === 2) {
     // the realism packs were switched on automatically in 65 of 146 photos with no visible benefit (skin still
     // airbrushed). The standing skeleton stays: without it she sat on the sofa in 4 of 4 "standing" photos (22 Oct
-    // benchmark). Its original drawing makes her about 8.5 head-lengths tall; standingGuide 'natural' (testing) swaps
-    // in the 7.5-head skeleton.
+    // benchmark).
     const auto = new Set(['natural_skin', 'real_photo']);
     const packs = Object.fromEntries(Object.entries(req.params.stylePacks ?? {}).filter(([id]) => !auto.has(id)));
-    const natural = req.params.standingGuide === 'natural' && req.params.posePreset === 'standing_full_body';
     req = {
       ...req,
-      params: { ...req.params, stylePacks: packs, ...(natural ? { posePreset: 'standing_full_body_natural' } : {}), autoPosePreset: req.simple ? false : req.params.autoPosePreset },
+      params: { ...req.params, stylePacks: packs, autoPosePreset: req.simple ? false : req.params.autoPosePreset },
     };
+  }
+  // testing, either prompt version: the 7.5-head standing skeleton in place of the original one
+  if (req.params.standingGuide === 'natural' && req.params.posePreset === 'standing_full_body') {
+    req = { ...req, params: { ...req.params, posePreset: 'standing_full_body_natural' } };
   }
 
   // ── Prompt ─────────────────────────────────────────────────────────────
