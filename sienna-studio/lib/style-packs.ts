@@ -327,6 +327,34 @@ const AUTO_PACKS: [string, RegExp][] = [
   ['natural_skin', /\b(natural|matte|textured|real) skin( texture)?\b|\bvisible pores\b|\bno makeup\b/i],
 ];
 
+/**
+ * Garments a request can name that an outfit pack would replace. The micro-bikini pack draws a whole bikini: "a white
+ * micro bikini top and light gray pajama shorts" came out in white bikini bottoms 4 times of 4 (Oct 18). A pack is
+ * used only when it fits the whole requested outfit.
+ */
+const BOTTOMS_RE = /\b(shorts|pants|trousers|jeans|sweatpants|joggers|leggings|skirt|sarong)\b/i;
+const TOPS_RE = /\b(t-?shirt|tee|tank top|tank|camisole|cami|sweater|jumper|hoodie|sweatshirt|shirt|blouse|crop top|cardigan|jacket|blazer|turtleneck)\b/i;
+const PACK_REPLACES: Record<string, RegExp[]> = {
+  micro_bikini: [BOTTOMS_RE, TOPS_RE, /\bdress\b/i],
+  string_swimsuit: [BOTTOMS_RE, TOPS_RE, /\bdress\b/i],
+  monokini: [BOTTOMS_RE, TOPS_RE, /\bdress\b/i, /\bbikini\b/i],
+  lace_bodysuit: [TOPS_RE, /\bdress\b/i, /\bbikini\b/i],
+  belly_cutout_dress: [BOTTOMS_RE, TOPS_RE, /\bbikini\b/i],
+  wet_tshirt: [/\b(tank top|tank|camisole|sweater|hoodie|blouse|bikini top|bra|bralette)\b/i],
+  mesh_top: [/\b(t-?shirt|tee|tank top|sweater|hoodie|blouse|bikini top)\b/i],
+  underboob_shirt: [/\b(tank top|sweater|hoodie|blouse|bikini top|bra)\b/i],
+  lace_bandeau: [/\b(t-?shirt|tee|tank top|sweater|hoodie|blouse|bikini top|bra)\b/i],
+};
+
+/** The pack fits the requested outfit: it doesn't replace a garment the request names. Packs that draw no outfit always fit. */
+export function packFitsOutfit(id: string, outfit: string): boolean {
+  const rules = PACK_REPLACES[id];
+  if (!rules || !outfit.trim()) return true;
+  // garments that belong to the pack's own look don't count ("bikini top" for a bikini pack)
+  const named = outfit.replace(/\b(bikini|swimsuit|swim|string|thong|micro)\s+(top|bottoms?|briefs)\b/gi, '');
+  return !rules.some((re) => re.test(named));
+}
+
 const TINY_RE = /\b(tiny|micro|minimal|barely[- ]there|itsy|teeny)\b/i;
 /** Shape wording added to the outfit for a tiny string bikini (the pack's own look: small triangles on thin strings). */
 export const TINY_STRING_OUTFIT = 'very small triangle cups on thin strings, string thong bottoms';
@@ -355,6 +383,7 @@ export function packsForDescription(
     // "completely nude on her bed" → "completely nude": the place and pose aren't outfit items (the check stays strict)
     const outfit = (fields.outfit ?? '').replace(/^\s*(she'?s|she is|she|her)\s+/i, '').replace(/\s+\b(on|in|at|by|near|lying|sitting|standing|kneeling|posing)\b.*$/i, '');
     if (pack.nudeOnly && !nudeOnlyAllowed(contentMode, { ...fields, outfit })) continue;
+    if (!packFitsOutfit(id, fields.outfit ?? '')) continue;
     // a string bikini already has the string swimsuit pack; the micro pack on top lowers coverage (see its hint)
     if (id === 'micro_bikini' && out.string_swimsuit) continue;
     if (id === 'french_lace' && out.lace_bodysuit) continue;

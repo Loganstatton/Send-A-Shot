@@ -127,6 +127,19 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     throw new GenerationError(`The character profile age must be at least ${MIN_CHARACTER_AGE}.`);
   }
 
+  // ── Prompt version ───────────────────────────────────────────────────────
+  const promptVersion: 1 | 2 = req.params.promptVersion ?? (process.env.SIENNA_PROMPT_VERSION === '2' ? 2 : 1);
+  if (promptVersion === 2) {
+    // the realism packs were switched on automatically in 65 of 146 photos with no visible benefit (skin still
+    // airbrushed), and the standing skeleton made every full-body photo the same stiff, frame-filling stance
+    const auto = new Set(['natural_skin', 'real_photo']);
+    const packs = Object.fromEntries(Object.entries(req.params.stylePacks ?? {}).filter(([id]) => !auto.has(id)));
+    req = {
+      ...req,
+      params: { ...req.params, stylePacks: packs, ...(req.params.posePreset === 'standing_full_body' ? { posePreset: null } : {}), autoPosePreset: req.simple ? false : req.params.autoPosePreset },
+    };
+  }
+
   // ── Prompt ─────────────────────────────────────────────────────────────
   // ── Pose preset: its skeleton stands in for a pose photo (wired straight to the ControlNet below) ──
   let posePre = !req.images.poseImage ? posePreset(req.params.posePreset) : undefined;
@@ -180,6 +193,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     contentMode,
     cleanup: !!req.params.promptCleanup,
     poseGuide: posePre && POSE_GUIDES[posePre.id] ? guidePrompt?.positive ?? '' : undefined,
+    version: promptVersion,
   });
   if (built.blocked.length) {
     throw new GenerationError(
@@ -466,6 +480,29 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
   graph = applyBindings(graph, bindings, values).graph;
 
+  // Version 2 option: the outfit encoded on its own and joined to the rest (ConditioningConcat — what "BREAK" does in
+  // other tools). In one encoding a "gray sofa" turned a black turtleneck gray; separately encoded, the outfit's
+  // colour words can't attach to the room's objects inside the text encoder.
+  let promptSplit: { scene: string; outfit: string } | undefined;
+  if (promptVersion === 2 && p.splitOutfit && built.outfitPart && positive.includes(built.outfitPart)) {
+    const posIds = Object.keys(graph).filter((id) => graph[id].class_type === 'CLIPTextEncode' && graph[id].inputs.text === positive);
+    if (posIds.length) {
+      const scene = positive.replace(`, ${built.outfitPart}`, '').replace(built.outfitPart, '');
+      for (const id of posIds) {
+        graph[id] = { ...graph[id], inputs: { ...graph[id].inputs, text: scene } };
+        const enc = `${id}_outfit`;
+        const cat = `${id}_concat`;
+        graph[enc] = { class_type: 'CLIPTextEncode', inputs: { text: built.outfitPart, clip: graph[id].inputs.clip }, _meta: { title: 'Outfit (encoded on its own)' } };
+        graph[cat] = { class_type: 'ConditioningConcat', inputs: { conditioning_to: [id, 0], conditioning_from: [enc, 0] }, _meta: { title: 'Scene + outfit' } };
+        for (const [nid, node] of Object.entries(graph)) {
+          if (nid === cat) continue;
+          for (const [k, v] of Object.entries(node.inputs)) if (isLink(v) && v[0] === id && v[1] === 0) node.inputs[k] = [cat, 0];
+        }
+      }
+      promptSplit = { scene, outfit: built.outfitPart };
+    }
+  }
+
   // A preset is already a skeleton: feed it to the pose ControlNet directly instead of through DWPose.
   const poseLoadId = bindings.pose_image?.[0]?.nodeId;
   if (posePre && poseImage && poseLoadId && graph[poseLoadId]) {
@@ -580,7 +617,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         status: 'on',
         checks: { top: added.includes(EXPOSURE_NODE_ID), face: added.includes(FACE_NODE_ID), body },
         // with the AI check two more tries: face-check redos alone used up all 4 in the first live test (21 Oct)
-        maxAttempts: req.simple?.ai?.check ? AI_MAX_ATTEMPTS : EXPOSURE_MAX_ATTEMPTS,
+        maxAttempts: p.singleAttempt ? 1 : req.simple?.ai?.check ? AI_MAX_ATTEMPTS : EXPOSURE_MAX_ATTEMPTS,
         ...(built.outfitText ? { anchor: built.outfitText } : {}),
         attempts: [],
       };
@@ -605,6 +642,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       params: { ...p, loraName: lora?.name ?? '' },
       seed,
       positivePrompt: positive,
+      ...(promptVersion === 2 ? { promptVersion } : {}),
+      ...(promptSplit ? { promptSplit } : {}),
       stylePacks: stylePacks.map((a) => ({ id: a.pack.id, label: a.pack.label, file: a.pack.file, strength: a.strength })),
       negativePrompt: negative,
       lora,

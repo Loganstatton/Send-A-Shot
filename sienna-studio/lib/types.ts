@@ -133,6 +133,12 @@ export interface GenerationParams {
   handRefine?: boolean;
   /** Face check: redo photos whose face doesn't look enough like Sienna (Sienna Lock only). */
   faceCheck?: boolean;
+  /** Prompt version (lib/prompt.ts): 2 = the rebuilt prompt; unset = SIENNA_PROMPT_VERSION or 1. */
+  promptVersion?: 1 | 2;
+  /** Version 2: encode the outfit separately from the scene and join the two (ConditioningConcat). */
+  splitOutfit?: boolean;
+  /** One photo only: no redos (benchmarks). */
+  singleAttempt?: boolean;
   /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */
   posePreset?: string | null;
   /** Use the pose preset the Pose text describes when none is chosen (default on). */
@@ -410,6 +416,9 @@ export interface GenerationRecord {
     similarity: number | null;
     reason?: string;
   };
+  /** Set when the rebuilt prompt (version 2) was used, and how the outfit was encoded separately if it was. */
+  promptVersion?: 2;
+  promptSplit?: { scene: string; outfit: string };
   /** The exact API-format graph sent to ComfyUI (for debugging). */
   submittedGraph?: ComfyGraph;
   /** Structured ComfyUI error details (node_errors / execution_error). */

@@ -42,6 +42,12 @@ export interface BuildPromptInput {
    * button-up shirt) in 5 of 7 photos and the golden-hour light (21 Oct).
    */
   poseGuide?: string;
+  /**
+   * 2 = the rebuilt prompt (Oct 22 review of 146 generations): the request written as a photographer's caption first,
+   * a short identity line without the weighted body descriptors, three realism phrases instead of fifteen, and
+   * natural-proportion wording for full-body shots. 1 = the original prompt (default until the benchmark decides).
+   */
+  version?: 1 | 2;
 }
 
 export interface BuiltPrompt {
@@ -55,6 +61,8 @@ export interface BuiltPrompt {
   effectiveFields: PromptFields;
   /** The outfit as written in the positive prompt ('' when none): corrections are placed right after it. */
   outfitText: string;
+  /** Version 2: the outfit phrase on its own (for encoding it separately from the scene), '' when none. */
+  outfitPart?: string;
 }
 
 /**
@@ -165,7 +173,7 @@ const OUTDOOR_SCENE_RE = /\b(beach|ocean|sea|lake|river|forest|woods|park|street
 const LIGHT_WORDS_RE = /\b(lighting|light|lit|sunlight|sunlit|daylight|lamp|lamplight|candlelight|neon|golden hour|sunset|sunrise|backlit|flash)\b/i;
 const NON_PHONE_CAMERA_RE = /\b(dslr|mirrorless|film camera|35mm film|medium format|professional (camera|photographer|photo ?shoot)|studio (photo|shoot|portrait)|canon|nikon|sony a\d|leica|hasselblad)\b/i;
 
-export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide }: BuildPromptInput): BuiltPrompt {
+export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1 }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
 
@@ -251,6 +259,9 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   const faceAway = rear && !LOOKING_BACK_RE.test(`${poseText} ${f.expression}`);
 
   const outfitText = tidy(emphasizeColours(f.outfit));
+  if (version === 2) {
+    return buildV2({ f, fields, character, siennaLock, contentMode, cleanup, poseGuide, warnings, blocked, effectiveFields, tokenPhrase, age, traits, fullBodyMode, barefoot, rear, faceAway, outfitText, framing: f.framing });
+  }
   const positive = joinParts([
     rear ? REAR_VIEW : '',
     faceAway ? FACE_AWAY : '',
@@ -311,4 +322,81 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   }
 
   return { positive, negative, warnings, blocked, effectiveFields, outfitText };
+}
+
+// ── Prompt version 2 ─────────────────────────────────────────────────────────────────────────────────────────────
+// The Oct 22 review (146 generations, 29 checked at full size): about 40% of every prompt was fixed text — fifteen
+// "realism" phrases and a weighted body description, "(large round natural breasts:1.2), slim toned waist with defined
+// abs, curvy hips" — and the photos looked like AI influencer shots (glossy tanned skin, saturated colour, about
+// 8.4 head-lengths tall instead of ~7.5). Version 2 writes the request like a caption for a photographer, keeps the
+// identity (trigger, hair, freckles, eyes) and describes her figure without weights.
+
+/** Body descriptors in the profile traits; version 2 replaces them with NATURAL_FIGURE (the LoRA carries her figure). */
+const BODY_TRAIT_RE = /\b(breasts?|bust|chest|waist|abs|hips?|curv\w*|figure|thighs?|glutes?|butt|legs?)\b/i;
+export const NATURAL_FIGURE = 'natural curvy figure with realistic proportions';
+/** Full-length framing without "wide shot / several meters away": that wording stretched her to fill the frame. */
+export const V2_FULL_BODY = 'full-length photo with her whole body in frame from head to feet and some space around her, natural proportions';
+export const V2_FULL_BODY_NEGATIVE = 'cropped feet, cut off legs, elongated legs, stretched body, tall fashion model proportions, small head';
+export const V2_REALISM = 'unretouched, natural skin texture, natural skin tone, true-to-life colors';
+export const V2_NEGATIVE = 'glossy skin, oily shine, orange tan, overly tanned skin, oversaturated, high contrast, hdr, heavy retouching, beauty filter, fashion editorial pose';
+
+function buildV2(a: {
+  f: PromptFields; fields: PromptFields; character: CharacterProfile; siennaLock: boolean; contentMode: ContentMode; cleanup: boolean;
+  poseGuide?: string; warnings: string[]; blocked: GuardHit[]; effectiveFields: PromptFields; tokenPhrase: string; age: number;
+  traits: { rest: string; eyes: string }; fullBodyMode: 'mirror' | 'normal' | null; barefoot: boolean; rear: boolean; faceAway: boolean;
+  outfitText: string; framing: string;
+}): BuiltPrompt {
+  const { f, fields, character, siennaLock, contentMode, cleanup, warnings, blocked, effectiveFields } = a;
+  // camera first, the way a person describes a photo ("casual iPhone photo of …"); the user's own camera wording wins
+  const camera = f.camera.trim() || (a.fullBodyMode === 'normal' ? 'casual iPhone photo taken by a friend' : 'casual iPhone photo');
+  const identityTraits = a.traits.rest
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t && !BODY_TRAIT_RE.test(t));
+  const fullBody = a.fullBodyMode === 'mirror' ? MIRROR_FULL_BODY_FRAMING : a.fullBodyMode ? V2_FULL_BODY : '';
+  const framing = fullBody ? a.framing.split(',').filter((t) => !/\b(full[\s-]?body|head[\s-]?to[\s-]?toe|full[\s-]?length|entire body)\b/i.test(t)).join(',') : a.framing;
+  const outfitPart = a.outfitText ? `wearing ${a.outfitText.replace(/^wearing\s+/i, '')}` : '';
+  const pose = a.poseGuide === undefined ? f.pose : [f.pose, a.poseGuide].filter(Boolean).join(', ');
+  const positive = joinParts([
+    a.rear ? REAR_VIEW : '',
+    a.faceAway ? FACE_AWAY : '',
+    camera,
+    siennaLock ? a.tokenPhrase : 'adult woman',
+    fullBody,
+    framing,
+    pose,
+    outfitPart,
+    f.bodyPresentation,
+    f.expression,
+    f.setting,
+    f.lighting,
+    f.extra,
+    ...(siennaLock ? [`${a.age}-year-old`, ...identityTraits, NATURAL_FIGURE] : []),
+    V2_REALISM,
+    f.realism,
+    siennaLock && !a.faceAway ? a.traits.eyes : '',
+  ]);
+  let avoidItems = splitAvoid(fields.avoid ?? '');
+  if (siennaLock && avoidItems.length) {
+    avoidItems = avoidItems.flatMap((item) => {
+      const res = applyIdentityLock(item, character.extraLockedTerms);
+      for (const r of res.removed) warnings.push(`Sienna Lock removed “${r.term}” from Avoid (${r.category} is locked).`);
+      return res.text.trim() ? [res.text.trim()] : [];
+    });
+  }
+  const negative = joinParts([
+    character.defaultNegativePrompt,
+    V2_NEGATIVE,
+    siennaLock && !cleanup ? LOCK_NEGATIVE : '',
+    ADULT_ONLY_NEGATIVE,
+    contentMode === 'sfw' ? SFW_NEGATIVE : '',
+    siennaLock ? (cleanup ? AGE_DRIFT_NEGATIVE_CLEAN : AGE_DRIFT_NEGATIVE) : '',
+    a.fullBodyMode === 'normal' ? `${FULL_BODY_NEGATIVE}, ${V2_FULL_BODY_NEGATIVE}` : '',
+    a.barefoot ? BAREFOOT_NEGATIVE : '',
+    outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
+    colourDriftNegative(f.outfit),
+    a.faceAway ? REAR_NEGATIVE_FACE_AWAY : a.rear ? REAR_NEGATIVE : '',
+    avoidItems.join(', '),
+  ]);
+  return { positive, negative, warnings, blocked, effectiveFields, outfitText: a.outfitText, outfitPart: tidy(outfitPart) };
 }

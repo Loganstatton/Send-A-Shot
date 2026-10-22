@@ -101,6 +101,21 @@ export const simpleCreateSchema = z.object({
   /** testing: keep-person corrections and the shorter checker for this request (otherwise the env switches decide) */
   keepPerson: z.boolean().optional(),
   leanCheck: z.boolean().optional(),
+  /** benchmark-only switches; normal Create never sends them */
+  test: z
+    .object({
+      reading: z.record(z.string(), z.unknown()).optional(),
+      promptVersion: z.union([z.literal(1), z.literal(2)]).optional(),
+      splitOutfit: z.boolean().optional(),
+      width: z.number().int().min(512).max(1536).optional(),
+      height: z.number().int().min(512).max(1536).optional(),
+      cfg: z.number().min(1).max(12).optional(),
+      sampler: z.string().max(40).optional(),
+      scheduler: z.string().max(40).optional(),
+      single: z.boolean().optional(),
+      noCheck: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const characterPatchSchema = z

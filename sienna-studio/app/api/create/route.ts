@@ -1,7 +1,7 @@
 import { applyClothingChanges, interpretPrompt, packNote } from '@/lib/interpret';
-import { cleanRead, NUDE_RE } from '@/lib/ai-prompts';
+import { cleanRead, NUDE_RE, type ReadResult } from '@/lib/ai-prompts';
 import { offeredGuides, posePreset, presetFitsCamera } from '@/lib/pose-presets';
-import { packsForDescription, packStrength, STYLE_PACKS, stylePacksFor, TINY_STRING_OUTFIT } from '@/lib/style-packs';
+import { packFitsOutfit, packsForDescription, packStrength, STYLE_PACKS, stylePacksFor, TINY_STRING_OUTFIT } from '@/lib/style-packs';
 import { aiEnabled, aiRead } from '@/lib/server/ai';
 import { simpleCreateSchema } from '@/lib/schemas';
 import { startGeneration } from '@/lib/server/generate';
@@ -91,14 +91,16 @@ export const POST = handle(async (req: Request) => {
     // pose guides (skeletons for the described position, hands, legs and camera height): the tested ones always, all
     // of them on request (testing) or with SIENNA_POSE_GUIDE=true
     const guides = offeredGuides(body.poseGuide ?? process.env.SIENNA_POSE_GUIDE === 'true');
-    const r = await aiRead(body.prompt, it.reference.mode, adultOk, guides);
+    // testing: a reading made once (/api/ai/read-test) is reused, so compared versions start from the same fields
+    const r = (body.test?.reading as ReadResult | undefined) ?? (await aiRead(body.prompt, it.reference.mode, adultOk, guides));
     if (r) {
       const c = cleanRead(r, stylePacksFor(adultOk ? 'adult' : 'sfw').map((p) => p.id), guides);
       it.fields = Object.fromEntries(PROMPT_FIELD_KEYS.map((k) => [k, (c[k as keyof typeof c] as string) ?? ''])) as unknown as PromptFields;
-      it.packs = Object.fromEntries(c.packs.map((id) => [id, packStrength(id, body.prompt)]));
+      // an outfit pack only when it fits the whole requested outfit (it must never replace a garment that was named)
+      it.packs = Object.fromEntries(c.packs.filter((id) => packFitsOutfit(id, c.outfit)).map((id) => [id, packStrength(id, body.prompt)]));
       if (it.packs.string_swimsuit === STYLE_PACKS.find((p) => p.id === 'string_swimsuit')?.max && !it.fields.outfit.includes(TINY_STRING_OUTFIT))
         it.fields.outfit = [it.fields.outfit, TINY_STRING_OUTFIT].filter(Boolean).join(', ');
-      if (c.packs.some((id) => STYLE_PACKS.find((p) => p.id === id)?.section === 'adult')) it.contentMode = 'adult';
+      if (Object.keys(it.packs).some((id) => STYLE_PACKS.find((p) => p.id === id)?.section === 'adult')) it.contentMode = 'adult';
       // no preset with a reference pose photo, or with a camera angle the preset's viewpoint would override
       const pre = posePreset(c.posePreset);
       aiPose = (ref && (it.reference.mode === 'pose' || it.reference.mode === 'edit+pose')) || !pre || !presetFitsCamera(pre, `${c.camera} ${c.framing} ${c.pose}`) ? null : pre.id;
@@ -129,6 +131,13 @@ export const POST = handle(async (req: Request) => {
       // the AI chose the pose preset (or none): don't let the keyword matcher pick another one
       ...(aiRan ? { autoPosePreset: false } : {}),
       ...(edit && it.reference.denoise !== null ? { denoise: it.reference.denoise } : { denoise: 1 }),
+      // testing switches (benchmark): prompt version, separate outfit encoding, one setting at a time, one photo only
+      ...(body.test?.promptVersion ? { promptVersion: body.test.promptVersion } : {}),
+      ...(body.test?.splitOutfit ? { splitOutfit: true } : {}),
+      ...(body.test?.width && body.test?.height ? { width: body.test.width, height: body.test.height } : {}),
+      ...(body.test?.cfg ? { cfg: body.test.cfg } : {}),
+      ...(body.test?.sampler ? { sampler: body.test.sampler, scheduler: body.test.scheduler ?? settings.defaultParams.scheduler } : {}),
+      ...(body.test?.single ? { singleAttempt: true } : {}),
     },
     images: {
       initImage: ref && edit ? ref : null,
@@ -139,7 +148,7 @@ export const POST = handle(async (req: Request) => {
     },
     simple: { prompt: body.prompt, notes: it.notes, reference: ref ? it.reference.mode : 'none', ai: {
         read: aiRan,
-        check: aiAllowed,
+        check: aiAllowed && !body.test?.noCheck,
         // testing switches, until each has passed a GPU test
         keepPerson: body.keepPerson ?? process.env.SIENNA_KEEP_PERSON === 'true',
         lean: body.leanCheck ?? process.env.SIENNA_AI_CHECK === 'lean',
