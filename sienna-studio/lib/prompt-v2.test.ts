@@ -94,6 +94,16 @@ describe('crop-top correction (test switch coverStomach)', () => {
     expect(coversStomach('white shirt tied at the waist')).toBe(false);
     expect(coversStomach('grey sweatpants')).toBe(false);
   });
+  it('the three validation outfits are covered; requested midriff-baring clothing never is', () => {
+    for (const o of ['fitted white t-shirt, blue jeans', 'cream knit sweater, black trousers', 'light blue button-up shirt, denim shorts', 'navy hoodie, leggings', 'black slip dress'])
+      expect(coversStomach(o), o).toBe(true);
+    for (const o of [
+      'white crop top, jeans', 'cropped hoodie, leggings', 'black sports bra, leggings', 'lace bralette, jeans', 'pink string bikini',
+      'white shirt tied at the waist, denim shorts', 'knotted t-shirt, jeans', 'tie-front blouse, skirt', 'bandeau top, shorts', 'tube top, skirt',
+      'half shirt, joggers', 'unbuttoned shirt over a bikini top', 'open button-up shirt, shorts', 'cut-out one-piece swimsuit', 'tank top showing her midriff',
+      't-shirt pulled up to show her abs', 'sweater lifted to show her stomach',
+    ]) expect(coversStomach(o), o).toBe(false);
+  });
   it('goes into the negative only when switched on; her figure wording is untouched', () => {
     const on = buildPrompt({ fields, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw', coverStomach: true });
     const off = buildPrompt({ fields, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw' });

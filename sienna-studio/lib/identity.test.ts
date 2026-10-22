@@ -19,9 +19,9 @@ describe('faceVerdict — production (strict 0.74)', () => {
     expect(faceVerdict(face(0.7, { yaw: 0.9, eyeRatio: 0.2 }), false, 'strict').status).toBe('likely');
     expect(faceVerdict(face(0.69), false)).toEqual({ status: 'mismatch', reason: "didn't look enough like Sienna" });
   });
-  it('a likely face with a stronger tell is still a mismatch: much lighter hair, or a reference photo shaped it', () => {
-    // the blonde faces copied from uploaded photos scored 0.748 and passed; hair is the tell the score misses
-    expect(faceVerdict(face(0.72, { hairRel: 1.2 }), false).status).toBe('mismatch');
+  it('a likely face is a mismatch only when a reference photo shaped it; hair colour is recorded, never decides', () => {
+    // 22 Oct: the hair rule never changed a decision on 2,078 labelled photos and misfired on backlit Sienna photos
+    expect(faceVerdict(face(0.72, { hairRel: 1.2 }), false).status).toBe('likely');
     expect(faceVerdict(face(0.72, { hairRel: 0.4 }), false).status).toBe('likely');
     expect(faceVerdict(face(0.72), false, 'strict', { referencePhoto: true }).status).toBe('mismatch');
     expect(faceVerdict(face(0.75), false, 'strict', { referencePhoto: true }).status).toBe('verified');

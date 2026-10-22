@@ -201,7 +201,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     cleanup: !!req.params.promptCleanup,
     poseGuide: posePre && POSE_GUIDES[posePre.id] ? guidePrompt?.positive ?? '' : undefined,
     version: promptVersion,
-    coverStomach: !!req.params.coverStomach,
+    // a requested covering top stays full-length; SIENNA_COVER_STOMACH=true turns it on for everyone (rollback: unset or
+    // false). A benchmark request can force it either way.
+    coverStomach: req.params.coverStomach ?? process.env.SIENNA_COVER_STOMACH === 'true',
   });
   if (built.blocked.length) {
     throw new GenerationError(

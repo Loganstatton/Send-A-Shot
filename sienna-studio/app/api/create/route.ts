@@ -140,7 +140,7 @@ export const POST = handle(async (req: Request) => {
       ...(body.test?.single ? { singleAttempt: true } : {}),
       ...(body.test?.standingGuide ? { standingGuide: body.test.standingGuide } : {}),
       ...(body.test?.figureNoAbs ? { figureNoAbs: true } : {}),
-      ...(body.test?.coverStomach ? { coverStomach: true } : {}),
+      ...(body.test?.coverStomach !== undefined ? { coverStomach: body.test.coverStomach } : {}),
     },
     images: {
       initImage: ref && edit ? ref : null,

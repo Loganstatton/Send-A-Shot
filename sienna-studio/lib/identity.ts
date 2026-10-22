@@ -14,11 +14,13 @@ export const FACE_THRESHOLD = 0.74;
  * 0.70–0.74 = 'likely': blind review of the studio's own photos (21 Oct, 63 faces scoring 0.60–0.78, labelled without
  * scores) found 9 of the 11 rejected ones were clearly her, while the clear misses were blonde faces copied from
  * uploaded photos that scored 0.748 and passed. In that band the score barely separates her from lookalikes, so a
- * likely face is accepted without a redo unless a stronger tell says otherwise (hair much lighter than hers, or a
- * reference photo shaped the picture — where the drift happened).
+ * likely face is accepted without a redo unless a reference photo shaped the picture (where the drift happened).
+ * Hair colour is measured and recorded but no longer decides (see HAIR_LIGHTER).
  */
 export const FACE_LIKELY = 0.7;
-/** Hair/skin brightness above this = hair much lighter than hers (Sienna 0.14–0.65 in 99 % of photos). */
+/** Hair/skin brightness above this = hair much lighter than hers (Sienna 0.14–0.65 in 99 % of photos). Diagnostic
+ * only since 22 Oct: on 2,078 labelled photos it never changed a decision, every lookalike scoring 0.70+ had dark hair,
+ * and it misfired on 15 of 171 backlit Sienna photos in the 11 Oct GPU A/B (docs/FACE_CHECK_VERSIONS.md). */
 export const HAIR_LIGHTER = 1.0;
 export const FACE_MIN_SIZE = 64;
 export const SIENNA_FACE_EMBEDDING: number[] = reference;
@@ -106,7 +108,6 @@ export function faceVerdict(
   if (sim >= FACE_THRESHOLD) return { status: 'verified', reason: '' };
   if (policy === 'strict' && rear) return { status: 'inconclusive', reason: 'her face is turned away (a rear view was asked for)' };
   if (policy === 'strict' && !rear && sim >= FACE_LIKELY) {
-    if (typeof face.hairRel === 'number' && face.hairRel > HAIR_LIGHTER) return { status: 'mismatch', reason: 'her hair came out much lighter than hers' };
     if (opts.referencePhoto) return { status: 'mismatch', reason: "didn't look enough like Sienna (a reference photo shaped this one, so only a confirmed match counts)" };
     return { status: 'likely', reason: '' };
   }

@@ -343,7 +343,7 @@ export const unweighted = (t: string) => t.replace(/^\((.+?)(?::\s*[\d.]+)?\)$/,
  * bedroom photos with her figure described (22 Oct), whatever the prompt version. */
 const COVERING_TOP_RE = /\b(tank top|tank|t-shirt|tee|shirt|blouse|sweater|jumper|turtleneck|hoodie|sweatshirt|cardigan|dress|bodysuit|leotard|one-piece|swimsuit)\b/i;
 /** The request itself shows her stomach (a crop top, a bikini, a knotted shirt…): no crop-top negative. */
-const SHOWS_STOMACH_RE = /\b(crop|cropped|midriff|belly|stomach|navel|bralette|bra|bikini|bandeau|tube top|tied|knotted|tie-front|half[\s-]?shirt)\b/i;
+const SHOWS_STOMACH_RE = /\b(crop|cropped|midriff|belly|stomach|navel|abs|bralette|bra|bikini|bandeau|tube top|tied|knotted|tie-front|half[\s-]?shirt|cut-?out|open|unbuttoned)\b/i;
 export const COVER_STOMACH_NEGATIVE = '(crop top, cropped shirt, exposed midriff, bare stomach, shortened shirt:1.2)';
 /** True when the outfit asks for a top that covers her stomach and nothing in it asks for her stomach to show. */
 export const coversStomach = (outfit: string) => COVERING_TOP_RE.test(outfit) && !SHOWS_STOMACH_RE.test(outfit);
