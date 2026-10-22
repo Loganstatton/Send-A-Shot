@@ -99,6 +99,7 @@ describe('full-length fit for ordinary T-shirts, tank tops and button-ups (cover
       'white shirt tied at the waist, denim shorts', 'knotted t-shirt, jeans', 'tie-front blouse, skirt', 'bandeau top, shorts', 'tube top, skirt',
       'half shirt, joggers', 'unbuttoned shirt over a bikini top', 'open button-up shirt, shorts', 'button-up shirt tucked into jeans', 'tucked-in tee, skirt',
       'cut-out one-piece swimsuit', 'tank top showing her midriff', 't-shirt pulled up to show her abs', 'white tank top over a bikini',
+      'black underboob tank top cut high to show some underboob, blue jeans', 'white underboob t-shirt, denim shorts', 'underboob tank, joggers',
     ]) expect(coverGarments(o), o).toEqual([]);
   });
   it('tank top: exactly the validated prompt (negative only, positive unchanged)', () => {
@@ -106,6 +107,12 @@ describe('full-length fit for ordinary T-shirts, tank tops and button-ups (cover
     const off = buildPrompt({ fields, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw' });
     expect(on.positive).toBe(off.positive);
     expect(on.negative).toBe(off.negative.replace('(topless, bare breasts, exposed nipples:1.3)', `(topless, bare breasts, exposed nipples:1.3), ${COVER_STOMACH_NEGATIVE}`));
+  });
+  it('ordinary tank tops and T-shirts are unaffected by the underboob exemption; cleavage alone is not an exemption', () => {
+    expect(coverGarments('white tank top, grey sweatpants', ['tank', 'buttonup'])).toEqual(['tank']);
+    expect(coverGarments('fitted black low-cut tank top showing cleavage, blue jeans', ['tank', 'buttonup'])).toEqual(['tank']);
+    expect(coverGarments('light blue button-up shirt, white shorts', ['tank', 'buttonup'])).toEqual(['buttonup']);
+    expect(coverGarments('fitted white t-shirt, jeans')).toEqual(['tee']);
   });
   it('only the enabled garments are used (rollback per garment)', () => {
     expect(coverGarments('white t-shirt and a tank top', ['tank'])).toEqual(['tank']);

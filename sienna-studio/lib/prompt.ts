@@ -362,7 +362,7 @@ export const COVER_FIT: Record<CoverGarment, string> = {
 };
 /** The request itself shows her stomach or asks for its own style (a crop top, a bikini, a tied, knotted, tucked or
  * open shirt…): the request wins and nothing is added. */
-const SHOWS_STOMACH_RE = /\b(crop|cropped|midriff|belly|stomach|navel|abs|bralette|bra|bikini|bandeau|tube top|tied|knotted|tie-front|tucked|half[\s-]?shirt|cut-?out|open|unbuttoned)\b/i;
+const SHOWS_STOMACH_RE = /\b(crop|cropped|midriff|belly|stomach|navel|abs|underboob|bralette|bra|bikini|bandeau|tube top|tied|knotted|tie-front|tucked|half[\s-]?shirt|cut-?out|open|unbuttoned)\b/i;
 export const COVER_STOMACH_NEGATIVE = '(crop top, cropped shirt, exposed midriff, bare stomach, shortened shirt:1.2)';
 export const KNOT_NEGATIVE = '(tied shirt, knotted shirt, front knot:1.2)';
 /** Which of the enabled garments the outfit asks for in their ordinary, full-length form. */
