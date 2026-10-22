@@ -52,3 +52,34 @@ session were used for video work.
 
 The face-selection fix itself is identical on both drives and covered by `scripts/comfy_nodes/tests` (52 tests) and
 the 1,350-photo offline validation.
+
+## Offline comparison of the two versions (22 Oct, no GPU)
+
+Both node versions were run on the same saved photos (the archive set uses its saved measurements; its images are
+gone), and the app's production rule was replayed on each report: verified ≥ 0.74, "likely" 0.70–0.74 accepted,
+below 0.70 redone. The EU report adds the hair rule: a "likely" face with `hair_rel > 1.0` is redone.
+
+| Set (label) | Photos | Accepted US / EU | Redone US / EU |
+|---|---|---|---|
+| Generated Sienna, 11 Oct archive | 1,538 | 1,421 / 1,421 | 117 / 117 |
+| Generated, hand-labelled different woman | 46 | 11 / 11 | 35 / 35 |
+| Training and approved photos (many angles) | 134 | 89 / 89 | 39 / 39 |
+| Live photos 21 Oct, blind-labelled Sienna | 55 | 51 / 51 | 4 / 4 |
+| Live photos 21 Oct, blind-labelled not her | 3 | 3 / 3 | 0 / 0 |
+| Today's benchmark photos (all Sienna) | 34 | 33 / 33 | 1 / 1 |
+| Unrelated women | 263 | 0 / 0 | 246 / 246 |
+
+- **The two versions made the same decision on all 2,078 photos.** The face picked and its score are identical
+  (same selection code); the hair rule never fired inside the 0.70–0.74 band.
+- **The hair rule catches the wrong kind of face.** Every different-looking face that reached 0.70+ (14) had dark
+  hair (`hair_rel` 0.28–0.85), so the rule can't stop them. The faces it does flag (8.7 % of other women) already
+  score far below 0.70. The 6 Sienna photos it flags (0.3 %) score 0.69–0.75 — right next to the band — and in the
+  11 Oct GPU A/B it misfired on 15 of 171 backlit Sienna photos. On this evidence it can only add unnecessary redos.
+- **Head turn** (`yaw`) doesn't separate Sienna from lookalikes (3 % "turned" in both groups at 0.60–0.74). Strongly
+  turned training photos (yaw > 0.35, 7) fail on both versions alike; only the experimental pose-aware rule uses yaw.
+- **Shared weakness:** both versions accept dark-haired lookalikes scoring 0.70–0.75 ("likely" band: 12 different of
+  230). Neither version fixes this; it needs its own change.
+
+**Recommendation:** standardise both drives on the newer node code (it records head turn and hair/skin colour for
+diagnostics and any future pose-aware rule), and drop the hair rule from the "likely" decision in the app so that
+decisions are identical on both drives and don't depend on lighting. Not applied — waiting for approval.
