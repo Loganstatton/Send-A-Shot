@@ -101,6 +101,12 @@ describe('full-length fit for ordinary T-shirts, tank tops and button-ups (cover
       'cut-out one-piece swimsuit', 'tank top showing her midriff', 't-shirt pulled up to show her abs', 'white tank top over a bikini',
     ]) expect(coverGarments(o), o).toEqual([]);
   });
+  it('tank top: exactly the validated prompt (negative only, positive unchanged)', () => {
+    const on = buildPrompt({ fields, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw', coverStomach: ['tank'] });
+    const off = buildPrompt({ fields, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw' });
+    expect(on.positive).toBe(off.positive);
+    expect(on.negative).toBe(off.negative.replace('(topless, bare breasts, exposed nipples:1.3)', `(topless, bare breasts, exposed nipples:1.3), ${COVER_STOMACH_NEGATIVE}`));
+  });
   it('only the enabled garments are used (rollback per garment)', () => {
     expect(coverGarments('white t-shirt and a tank top', ['tank'])).toEqual(['tank']);
     expect(coverGarments('light blue button-up shirt', [])).toEqual([]);

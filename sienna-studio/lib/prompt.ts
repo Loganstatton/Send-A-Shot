@@ -352,9 +352,12 @@ const GARMENT_RE: Record<CoverGarment, RegExp> = {
   tank: /\btank(\s+top)?\b/i,
   buttonup: /\b(button[\s-]?(up|down)|oxford shirt|dress shirt)\b/i,
 };
+// Final test (22 Oct, seed 101): the button-up came out full-length with this wording (was knotted above the navel);
+// the T-shirt stayed cropped with or without it; for the tank top the wording brought the crop back, while the
+// negative alone had kept it full-length in 2 of 2 — so the tank top gets the negative only.
 export const COVER_FIT: Record<CoverGarment, string> = {
   tee: 'untucked T-shirt with its hem below her waistband, stomach completely covered',
-  tank: 'tank top fitted naturally, hem reaching her waistband or below, stomach covered',
+  tank: '',
   buttonup: 'full-length button-up shirt hanging naturally, buttoned down to the hem, untucked, hem below her waistband, not tied or knotted',
 };
 /** The request itself shows her stomach or asks for its own style (a crop top, a bikini, a tied, knotted, tucked or
@@ -372,7 +375,7 @@ const coverEnabled = (c: boolean | readonly CoverGarment[] | undefined): readonl
 function coverParts(outfit: string, c: boolean | readonly CoverGarment[] | undefined) {
   const g = coverGarments(outfit, coverEnabled(c));
   return {
-    fit: g.map((x) => COVER_FIT[x]).join(', '),
+    fit: g.map((x) => COVER_FIT[x]).filter(Boolean).join(', '),
     negative: g.length ? [COVER_STOMACH_NEGATIVE, g.includes('buttonup') ? KNOT_NEGATIVE : ''].filter(Boolean).join(', ') : '',
   };
 }
