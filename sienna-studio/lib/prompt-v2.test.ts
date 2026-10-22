@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, unweighted, V2_FULL_BODY, V2_STANDING_NEGATIVE, withoutAbs } from './prompt';
+import { buildPrompt, unweighted, V2_FULL_BODY, V2_STANDING_NEGATIVE, withoutAbs, COVER_STOMACH_NEGATIVE, coversStomach } from './prompt';
 import { DEFAULT_CHARACTER, EMPTY_FIELDS } from './defaults';
 import { packFitsOutfit, packsForDescription } from './style-packs';
 
@@ -81,5 +81,27 @@ describe('figure without the defined-abs wording (test switch)', () => {
     expect(t.replace('slim toned waist,', 'slim toned waist with defined abs,')).toBe(DEFAULT_CHARACTER.appearanceTraits);
     const v1 = buildPrompt({ fields, character: { ...DEFAULT_CHARACTER, appearanceTraits: t }, siennaLock: true, contentMode: 'sfw' });
     expect(v1.positive).toContain('(large round natural breasts:1.2), slim toned waist, curvy hips');
+  });
+});
+
+describe('crop-top correction (test switch coverStomach)', () => {
+  it('only for a covering top the request does not ask to show her stomach', () => {
+    expect(coversStomach('white tank top, grey sweatpants')).toBe(true);
+    expect(coversStomach('fitted black turtleneck, beige trousers')).toBe(true);
+    expect(coversStomach('white crop top, grey sweatpants')).toBe(false);
+    expect(coversStomach('cropped tank top showing her midriff')).toBe(false);
+    expect(coversStomach('white bikini top, gray pajama shorts')).toBe(false);
+    expect(coversStomach('white shirt tied at the waist')).toBe(false);
+    expect(coversStomach('grey sweatpants')).toBe(false);
+  });
+  it('goes into the negative only when switched on; her figure wording is untouched', () => {
+    const on = buildPrompt({ fields, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw', coverStomach: true });
+    const off = buildPrompt({ fields, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw' });
+    expect(on.negative).toContain(COVER_STOMACH_NEGATIVE);
+    expect(off.negative).not.toContain(COVER_STOMACH_NEGATIVE);
+    expect(on.positive).toBe(off.positive);
+    expect(on.negative.replace(`, ${COVER_STOMACH_NEGATIVE}`, '')).toBe(off.negative);
+    const crop = buildPrompt({ fields: { ...fields, outfit: 'white crop top, grey sweatpants' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'sfw', coverStomach: true });
+    expect(crop.negative).not.toContain(COVER_STOMACH_NEGATIVE);
   });
 });

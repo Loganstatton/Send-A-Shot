@@ -48,6 +48,8 @@ export interface BuildPromptInput {
    * natural-proportion wording for full-body shots. 1 = the original prompt (default until the benchmark decides).
    */
   version?: 1 | 2;
+  /** Testing: keep a covering top full-length (coversStomach): crop-top wording goes into the negative. */
+  coverStomach?: boolean;
 }
 
 export interface BuiltPrompt {
@@ -173,7 +175,7 @@ const OUTDOOR_SCENE_RE = /\b(beach|ocean|sea|lake|river|forest|woods|park|street
 const LIGHT_WORDS_RE = /\b(lighting|light|lit|sunlight|sunlit|daylight|lamp|lamplight|candlelight|neon|golden hour|sunset|sunrise|backlit|flash)\b/i;
 const NON_PHONE_CAMERA_RE = /\b(dslr|mirrorless|film camera|35mm film|medium format|professional (camera|photographer|photo ?shoot)|studio (photo|shoot|portrait)|canon|nikon|sony a\d|leica|hasselblad)\b/i;
 
-export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1 }: BuildPromptInput): BuiltPrompt {
+export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1, coverStomach = false }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
 
@@ -260,7 +262,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
 
   const outfitText = tidy(emphasizeColours(f.outfit));
   if (version === 2) {
-    return buildV2({ f, fields, character, siennaLock, contentMode, cleanup, poseGuide, warnings, blocked, effectiveFields, tokenPhrase, age, traits, fullBodyMode, barefoot, rear, faceAway, outfitText, framing: f.framing });
+    return buildV2({ f, fields, character, siennaLock, contentMode, cleanup, poseGuide, warnings, blocked, effectiveFields, tokenPhrase, age, traits, fullBodyMode, barefoot, rear, faceAway, outfitText, framing: f.framing, coverStomach });
   }
   const positive = joinParts([
     rear ? REAR_VIEW : '',
@@ -312,6 +314,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
     barefoot ? BAREFOOT_NEGATIVE : '',
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
+    coverStomach && coversStomach(f.outfit) ? COVER_STOMACH_NEGATIVE : '',
     colourDriftNegative(f.outfit),
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
     avoidItems.join(', '),
@@ -336,6 +339,14 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
 const BODY_TRAIT_RE = /\b(breasts?|bust|chest|waist|abs|hips?|curv\w*|figure|thighs?|glutes?|butt|legs?)\b/i;
 /** "(large round natural breasts:1.2)" → "large round natural breasts". */
 export const unweighted = (t: string) => t.replace(/^\((.+?)(?::\s*[\d.]+)?\)$/, '$1').trim();
+/** Tops that cover her stomach unless the request says otherwise. Requested tank tops came out cropped in 8 of 8
+ * bedroom photos with her figure described (22 Oct), whatever the prompt version. */
+const COVERING_TOP_RE = /\b(tank top|tank|t-shirt|tee|shirt|blouse|sweater|jumper|turtleneck|hoodie|sweatshirt|cardigan|dress|bodysuit|leotard|one-piece|swimsuit)\b/i;
+/** The request itself shows her stomach (a crop top, a bikini, a knotted shirt…): no crop-top negative. */
+const SHOWS_STOMACH_RE = /\b(crop|cropped|midriff|belly|stomach|navel|bralette|bra|bikini|bandeau|tube top|tied|knotted|tie-front|half[\s-]?shirt)\b/i;
+export const COVER_STOMACH_NEGATIVE = '(crop top, cropped shirt, exposed midriff, bare stomach, shortened shirt:1.2)';
+/** True when the outfit asks for a top that covers her stomach and nothing in it asks for her stomach to show. */
+export const coversStomach = (outfit: string) => COVERING_TOP_RE.test(outfit) && !SHOWS_STOMACH_RE.test(outfit);
 /** Her traits without the "with defined abs" wording, everything else as written (test switch figureNoAbs). */
 export const withoutAbs = (traits: string) => traits.replace(/\s*(?:with\s+)?(?:defined|visible|toned)\s+abs\b/gi, '').replace(/,\s*,/g, ',');
 /** Said after her figure, without weights: a reminder, not a body change. */
@@ -354,7 +365,7 @@ function buildV2(a: {
   f: PromptFields; fields: PromptFields; character: CharacterProfile; siennaLock: boolean; contentMode: ContentMode; cleanup: boolean;
   poseGuide?: string; warnings: string[]; blocked: GuardHit[]; effectiveFields: PromptFields; tokenPhrase: string; age: number;
   traits: { rest: string; eyes: string }; fullBodyMode: 'mirror' | 'normal' | null; barefoot: boolean; rear: boolean; faceAway: boolean;
-  outfitText: string; framing: string;
+  outfitText: string; framing: string; coverStomach?: boolean;
 }): BuiltPrompt {
   const { f, fields, character, siennaLock, contentMode, cleanup, warnings, blocked, effectiveFields } = a;
   // camera first, the way a person describes a photo ("casual iPhone photo of …"); the user's own camera wording wins
@@ -403,6 +414,7 @@ function buildV2(a: {
     a.fullBodyMode === 'normal' ? `${FULL_BODY_NEGATIVE}, ${V2_FULL_BODY_NEGATIVE}` : '',
     a.barefoot ? BAREFOOT_NEGATIVE : '',
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
+    a.coverStomach && coversStomach(f.outfit) ? COVER_STOMACH_NEGATIVE : '',
     colourDriftNegative(f.outfit),
     a.faceAway ? REAR_NEGATIVE_FACE_AWAY : a.rear ? REAR_NEGATIVE : '',
     STANDING_RE.test(f.pose) && !NOT_STANDING_RE.test(f.pose) ? V2_STANDING_NEGATIVE : '',

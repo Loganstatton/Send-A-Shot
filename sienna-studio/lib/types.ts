@@ -143,6 +143,8 @@ export interface GenerationParams {
   standingGuide?: 'natural';
   /** Testing: her figure description without "with defined abs" (lib/prompt.ts withoutAbs). */
   figureNoAbs?: boolean;
+  /** Testing: a requested covering top keeps her stomach covered (lib/prompt.ts coversStomach). */
+  coverStomach?: boolean;
   /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */
   posePreset?: string | null;
   /** Use the pose preset the Pose text describes when none is chosen (default on). */

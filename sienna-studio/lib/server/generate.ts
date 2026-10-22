@@ -201,6 +201,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     cleanup: !!req.params.promptCleanup,
     poseGuide: posePre && POSE_GUIDES[posePre.id] ? guidePrompt?.positive ?? '' : undefined,
     version: promptVersion,
+    coverStomach: !!req.params.coverStomach,
   });
   if (built.blocked.length) {
     throw new GenerationError(

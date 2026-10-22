@@ -116,6 +116,7 @@ export const simpleCreateSchema = z.object({
       noCheck: z.boolean().optional(),
       standingGuide: z.literal('natural').optional(),
       figureNoAbs: z.boolean().optional(),
+      coverStomach: z.boolean().optional(),
     })
     .optional(),
 });
