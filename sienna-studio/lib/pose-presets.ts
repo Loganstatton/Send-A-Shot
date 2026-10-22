@@ -136,7 +136,11 @@ export const CAMERA_ANGLE_RE =
  * Pose guides in everyday use: the reader offers these on every request. The rest stay experimental and are only
  * offered to a request that asks for all guides (testing) or with SIENNA_POSE_GUIDE=true.
  */
-export const POSE_GUIDES_LIVE: string[] = [];
+// Bed edge passed (22 Oct): position held in 5 of 5 photos over two runs (text alone: cross-legged 3 of 3), and with
+// the outfit ahead of the pose the photo passed the full-description check (sweater, gray sweatpants, mug, light).
+// Low angle stays experimental: behind the outfit its camera wording lost the low viewpoint (1 of 3 at best);
+// the counter guide never put the foot on the cabinet (0 of 3).
+export const POSE_GUIDES_LIVE: string[] = ['sitting_edge_hands_chest'];
 
 /** The guides offered to the reader: every guide when testing, otherwise the ones in everyday use. */
 export function offeredGuides(all: boolean): string[] {
