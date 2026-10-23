@@ -31,6 +31,16 @@ export const FIGURE_WORDS = '(full round butt, round lifted glutes:1.15), (defin
 /** Added to the redraw's negative only: the figure LoRA's fitness-wear look drew gathered "scrunch" seams on shorts,
  * leggings and a bodycon dress (Stage B, 23 Oct). */
 export const FIGURE_NEGATIVE_WORDS = '(scrunch butt, ruched fabric, gathered fabric, seam down the middle of the butt:1.2)';
+/** Test style "fuller" (23 Oct, from the owner's reference photo): much more volume and projection, the lower cheeks
+ * resting over the backs of the thighs with a deep curved crease under each — firm, not sagging. */
+export const FIGURE_STYLES = {
+  fuller: {
+    words: '(very full round bubble butt, big round lifted glutes with strong projection:1.25), (lower buttocks resting over the backs of her thighs, deep curved underbutt crease under each cheek:1.2), smooth firm skin',
+    negative: '(cellulite, saggy buttocks, lumpy fat rolls, dimpled skin:1.2)',
+    grow: 0.12,
+  },
+} as const;
+export type FigureStyle = keyof typeof FIGURE_STYLES;
 
 export interface FigurePassOptions {
   file: string;
@@ -42,6 +52,8 @@ export interface FigurePassOptions {
   faceRefineId: string;
   /** how far past her outline (x torso) the region reaches sideways, so a fuller curve can change the outline */
   grow?: number;
+  /** test style: stronger wording and more room past her outline */
+  style?: FigureStyle;
 }
 
 /** The graph with the pass spliced in front of the SaveImage node, or null when there is nothing to copy from. */
@@ -69,7 +81,7 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
     [n.person]: { class_type: 'SegmDetectorCombined_v2', inputs: { segm_detector: [n.segm, 1], image, threshold: 0.4, dilation: 0 }, _meta: { title: 'Figure pass: person' } },
     [n.mask]: {
       class_type: 'SiennaFigureMask',
-      inputs: { image, pose_keypoint: [n.pose, 1], grow: o.grow ?? 0.08, person_mask: [n.person, 0] },
+      inputs: { image, pose_keypoint: [n.pose, 1], grow: o.grow ?? (o.style ? FIGURE_STYLES[o.style].grow : 0.08), person_mask: [n.person, 0] },
       _meta: { title: 'Figure pass: hip region' },
     },
     [n.lora]: {
@@ -77,9 +89,9 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
       inputs: { model: [o.baseLoraId, 0], clip: [o.baseLoraId, 1], lora_name: o.file, strength_model: o.strength, strength_clip: o.strength },
       _meta: { title: `Figure pass: ${o.file}` },
     },
-    [n.positive]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${posText}, ${FIGURE_WORDS}` }, _meta: { title: 'Figure pass: prompt' } },
+    [n.positive]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${posText}, ${o.style ? FIGURE_STYLES[o.style].words : FIGURE_WORDS}` }, _meta: { title: 'Figure pass: prompt' } },
     ...(typeof negText === 'string'
-      ? { [n.negative]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${negText}, ${FIGURE_NEGATIVE_WORDS}` }, _meta: { title: 'Figure pass: negative' } } }
+      ? { [n.negative]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${negText}, ${FIGURE_NEGATIVE_WORDS}${o.style ? `, ${FIGURE_STYLES[o.style].negative}` : ''}` }, _meta: { title: 'Figure pass: negative' } } }
       : {}),
     [n.encode]: { class_type: 'VAEEncode', inputs: { pixels: image, vae: face.inputs.vae }, _meta: { title: 'Figure pass: encode' } },
     [n.noiseMask]: { class_type: 'SetLatentNoiseMask', inputs: { samples: [n.encode, 0], mask: [n.mask, 0] }, _meta: { title: 'Figure pass: region only' } },

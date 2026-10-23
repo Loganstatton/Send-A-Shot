@@ -127,7 +127,7 @@ export const simpleCreateSchema = z.object({
        * modest); still only where the server allows adult content */
       contentMode: z.literal('adult').optional(),
       /** targeted figure pass (23 Oct): Glute Goddess on her hip/butt region only */
-      figurePass: z.object({ file: z.enum(['pack_1883628.safetensors']), strength: z.number().min(0.3).max(0.9), denoise: z.number().min(0.3).max(0.8) }).optional(),
+      figurePass: z.object({ file: z.enum(['pack_1883628.safetensors']), strength: z.number().min(0.3).max(0.9), denoise: z.number().min(0.3).max(0.8), style: z.enum(['fuller']).optional() }).optional(),
     })
     .optional(),
 });

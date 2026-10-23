@@ -661,14 +661,14 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     let reason: string | null = !inView ? 'front view: her butt is not in the photo, so nothing to redraw'
       : !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
       : !loraChainEnd || graph[loraChainEnd]?.class_type !== 'LoraLoader' ? "Sienna's LoRA node not found" : null;
-    const withFigure = reason ? null : addFigurePass(graph, { file: fp.file, strength: fp.strength, denoise: fp.denoise, baseLoraId: loraChainEnd!, faceRefineId: refineId! });
+    const withFigure = reason ? null : addFigurePass(graph, { file: fp.file, strength: fp.strength, denoise: fp.denoise, ...(fp.style ? { style: fp.style } : {}), baseLoraId: loraChainEnd!, faceRefineId: refineId! });
     if (!reason && !withFigure) reason = 'the face pass has no prompt to copy';
     if (withFigure) {
       const missing = await missingClasses(backend, withFigure, Object.values(FIGURE_NODES));
       if (missing.length) reason = `server is missing ${describeMissing(missing)}`;
       else graph = withFigure;
     }
-    figurePass = reason ? { status: 'skipped', reason } : { status: 'on', file: fp.file, strength: fp.strength, denoise: fp.denoise };
+    figurePass = reason ? { status: 'skipped', reason } : { status: 'on', file: fp.file, strength: fp.strength, denoise: fp.denoise, ...(fp.style ? { style: fp.style } : {}) };
     if (reason && inView) warnings.push(`Figure pass skipped — ${reason}.`);
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { addFigurePass, FIGURE_NEGATIVE_WORDS, FIGURE_NODES, FIGURE_WORDS, parseFigurePass } from './comfy/figure-pass';
+import { addFigurePass, FIGURE_NEGATIVE_WORDS, FIGURE_NODES, FIGURE_STYLES, FIGURE_WORDS, parseFigurePass } from './comfy/figure-pass';
 import type { ComfyGraph } from './types';
 
 const prod = (): ComfyGraph => JSON.parse(readFileSync(new URL('../workflows/examples/sienna-sdxl-production.json', import.meta.url), 'utf8'));
@@ -26,6 +26,14 @@ describe('targeted figure pass (test only)', () => {
     expect(g[FIGURE_NODES.lora].inputs).toMatchObject({ model: ['2', 0], clip: ['2', 1], lora_name: 'pack_1883628.safetensors', strength_model: 0.7 });
     expect(g[FIGURE_NODES.positive].inputs.text).toBe(`${before['3'].inputs.text}, ${FIGURE_WORDS}`);
     for (const id of ['40', '51', '3', '2']) expect(g[id]).toEqual(before[id]);
+  });
+  it('the "fuller" test style: stronger wording, no cellulite or sagging, more room past her outline', () => {
+    const g = addFigurePass(prod(), { ...opts, style: 'fuller' })!;
+    expect(g[FIGURE_NODES.positive].inputs.text).toContain(FIGURE_STYLES.fuller.words);
+    expect(g[FIGURE_NODES.positive].inputs.text).not.toContain(FIGURE_WORDS);
+    expect(g[FIGURE_NODES.negative].inputs.text).toContain(`${FIGURE_NEGATIVE_WORDS}, ${FIGURE_STYLES.fuller.negative}`);
+    expect(g[FIGURE_NODES.mask].inputs.grow).toBe(0.12);
+    expect(addFigurePass(prod(), opts)![FIGURE_NODES.mask].inputs.grow).toBe(0.08);
   });
   it('nothing to copy from: no pass', () => {
     expect(addFigurePass(prod(), { ...opts, faceRefineId: 'nope' })).toBeNull();
