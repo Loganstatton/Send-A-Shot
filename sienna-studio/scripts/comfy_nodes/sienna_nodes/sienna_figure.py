@@ -64,6 +64,51 @@ def facing_camera(kp: Sequence[Point]) -> bool:
     return rs[0] < ls[0] and hips_front
 
 
+def _run_width(person: np.ndarray, y: int, x: int, block: Optional[np.ndarray] = None) -> Tuple[float, float]:
+    """Her width across the cheeks at row y, centred on x (between the hip joints, i.e. the cleft seen from behind):
+    twice the distance to the nearer edge of her outline, arms (`block`) taken out. Bent over, her torso runs off to one
+    side at the same height and would count as width (564 of 832 px on a saved photo); the far side is just her cheek.
+    (0, x) when (x, y) is outside her outline."""
+    h, w = person.shape
+    y, x = int(np.clip(y, 0, h - 1)), int(np.clip(x, 0, w - 1))
+    row = person[y] > 0.5
+    if block is not None:
+        row = row & ~block[y]
+    if not row[x]:
+        return 0.0, float(x)
+    l = r = x
+    while l > 0 and row[l - 1]:
+        l -= 1
+    while r < w - 1 and row[r + 1]:
+        r += 1
+    half = float(min(x - l, r - x))
+    return 2 * half, float(x)
+
+
+def bent_frame(shape: Tuple[int, int], person: Optional[np.ndarray], kp: Sequence[Point]) -> Optional[Dict]:
+    """Where her butt is when she is bent over (or her shoulders are out of the frame, as in a close shot from behind):
+    the torso then points sideways or toward the camera and is foreshortened, so sizes come from her width at the hip
+    joints instead. Seen from behind the hip joints land on the cheeks themselves; the legs hang straight down from them.
+    None when she is upright (the standing geometry applies) or nothing usable is found. (Saved bent-over photos,
+    23 Oct: the standing geometry widened nothing and put the redraw across her back and hair.)"""
+    hip = _mid(_p(kp, R_HIP), _p(kp, L_HIP))
+    if not hip or person is None:
+        return None
+    shoulder = _mid(_p(kp, R_SH), _p(kp, L_SH)) or _p(kp, NECK)
+    if shoulder:
+        torso = float(np.hypot(hip[0] - shoulder[0], hip[1] - shoulder[1]))
+        if torso > 1 and (hip[1] - shoulder[1]) / torso >= 0.766:  # torso within 40 degrees of upright
+            return None
+    arms = _arm_mask(shape, kp, 0.25 * shape[0], 0.12) if shoulder else None
+    W, cx = _run_width(np.asarray(person), int(hip[1]), int(hip[0]), arms)
+    if W < 0.05 * shape[1]:
+        return None
+    cy = hip[1] + 0.05 * W
+    up, down = 0.55 * W, 0.80 * W
+    return {"hip": hip, "W": W, "cx": cx, "cy": cy, "up": up, "down": down, "torso": W / 0.85,
+            "band": [int(cy - up - 0.1 * W), int(cy + down)]}
+
+
 def figure_region(
     shape: Tuple[int, int],
     person: Optional[np.ndarray],
@@ -90,15 +135,21 @@ def figure_region(
     shoulder = _mid(_p(kp, R_SH), _p(kp, L_SH)) or _p(kp, NECK)
     person_m = (np.asarray(person) > 0.5) if person is not None else None
     empty = np.zeros((h, w), np.float32)
-    if not hip or not shoulder or person_m is None or not person_m.any():
+    bent = bent_frame(shape, person_m, kp) if hip and person_m is not None and person_m.any() else None
+    if not bent and (not hip or not shoulder or person_m is None or not person_m.any()):
         info["skipped"] = "hips or her outline not found"
         return empty, empty, info
-    torso = float(np.hypot(hip[0] - shoulder[0], hip[1] - shoulder[1]))
-    knee = _mid(_p(kp, R_KNEE), _p(kp, L_KNEE))
-    y0 = hip[1] - top * torso
-    y1 = hip[1] + bottom * torso
-    if knee:
-        y1 = min(y1, hip[1] + 0.95 * (knee[1] - hip[1]))
+    if bent:  # bent over: the band around her cheeks, sized from her width at the hips
+        torso = bent["torso"]
+        y0, y1 = bent["band"]
+        info["bent"] = True
+    else:
+        torso = float(np.hypot(hip[0] - shoulder[0], hip[1] - shoulder[1]))
+        knee = _mid(_p(kp, R_KNEE), _p(kp, L_KNEE))
+        y0 = hip[1] - top * torso
+        y1 = hip[1] + bottom * torso
+        if knee:
+            y1 = min(y1, hip[1] + 0.95 * (knee[1] - hip[1]))
     band = np.zeros((h, w), bool)
     band[max(0, int(y0)):max(0, min(h, int(y1)))] = True
     # columns: her outline in the band, widened sideways only (not up or down)
@@ -169,9 +220,12 @@ def enlarge(img: np.ndarray, kp: Sequence[Point], person: Optional[np.ndarray], 
     info: Dict = {"amount": amount}
     hip = _mid(_p(kp, R_HIP), _p(kp, L_HIP))
     shoulder = _mid(_p(kp, R_SH), _p(kp, L_SH)) or _p(kp, NECK)
-    if amount <= 0 or facing_camera(kp) or not hip or not shoulder:
+    bent = bent_frame((h, w), person, kp) if amount > 0 and not facing_camera(kp) else None
+    if amount <= 0 or facing_camera(kp) or not hip or not (shoulder or bent):
         info["skipped"] = "front view or hips not found" if amount > 0 else "off"
         return img, person, info
+    if bent:
+        return _enlarge_bent(img, kp, person, classes, amount, bent, info)
     torso = float(np.hypot(hip[0] - shoulder[0], hip[1] - shoulder[1]))
     top, crease = hip[1] - 0.17 * torso, hip[1] + 0.35 * torso  # her waist and the fold under her cheeks
     arms = _arm_mask((h, w), kp, torso, 0.15)
@@ -222,6 +276,47 @@ def enlarge(img: np.ndarray, kp: Sequence[Point], person: Optional[np.ndarray], 
     info.update(width=round(W, 1), torso=round(torso, 1), band=[int(top), int(crease)])
     if person is not None and pout is not None:
         info.update(outline_change(person, pout, (int(top), int(crease))))
+    return out.astype(np.float32), pout, info
+
+
+# Bent over, the same amount reads smaller than standing (the cheeks face the camera and fill more of the frame):
+# x1.5 matched the standing "medium" by eye on three saved bent-over photos (23 Oct).
+BENT_GAIN = 1.5
+
+
+def _enlarge_bent(img: np.ndarray, kp: Sequence[Point], person: Optional[np.ndarray], classes: Optional[List[np.ndarray]],
+                  amount: float, f: Dict, info: Dict) -> Tuple[np.ndarray, Optional[np.ndarray], Dict]:
+    """enlarge() for a bent-over photo: the same two bloat fields, centred on her cheeks at the hip joints and sized
+    from her width there (bent_frame)."""
+    h, w = img.shape[:2]
+    W, cy, up, down, torso = f["W"], f["cy"], f["up"], f["down"], f["torso"]
+    amount = amount * BENT_GAIN
+    yy, xx = np.mgrid[:h, :w].astype(np.float32)
+    dx, dy = np.zeros_like(xx), np.zeros_like(yy)
+    for side in (-1, 1):
+        cx = f["cx"] + side * 0.25 * W
+        ry = np.where(yy < cy, up, down)
+        fall = np.clip(1 - ((xx - cx) / (0.62 * W)) ** 2 - ((yy - cy) / ry) ** 2, 0, None) ** 2
+        dx += amount * fall * (xx - cx)
+        dy += amount * fall * (yy - cy) * np.where(yy > cy, 1.0, 0.6)
+    mx, my = xx - dx, yy - dy
+    out = cv2.remap(np.ascontiguousarray(img, np.float32), mx, my, cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
+    pout = None
+    if person is not None:
+        pout = cv2.remap(np.ascontiguousarray(person, np.float32), mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+    near = _arm_mask((h, w), kp, torso, 0.11)
+    if classes:
+        near &= (classes[BODY_SKIN] > 0.5) | (classes[CLOTHES] > 0.5)
+    elif person is not None:
+        near &= np.asarray(person) > 0.5
+    a = cv2.GaussianBlur(near.astype(np.float32), (0, 0), 1.5)[..., None]
+    out = np.clip(out * (1 - a) + np.asarray(img, np.float32) * a, 0, 1)
+    if pout is not None:
+        pout = np.maximum(pout, near.astype(np.float32))
+    band = (int(cy - up), int(cy + down))
+    info.update(width=round(W, 1), torso=round(torso, 1), band=list(band), bent=True)
+    if person is not None and pout is not None:
+        info.update(outline_change(person, pout, band))
     return out.astype(np.float32), pout, info
 
 

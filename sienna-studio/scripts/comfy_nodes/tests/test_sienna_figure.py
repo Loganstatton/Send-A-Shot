@@ -79,6 +79,35 @@ def test_looking_back_over_her_shoulder_is_not_a_front_view():
     assert "skipped" not in einfo
 
 
+def _bent():
+    """Bent over, seen from behind: torso running off to the left at hip height, legs straight down."""
+    kp = standing()
+    kp[2], kp[5], kp[1] = (100, 470), (110, 560), (105, 515)  # shoulders level with the hips, to the left
+    kp[3], kp[4], kp[6], kp[7] = (90, 600), (90, 700), (120, 640), (125, 740)  # arms hanging down
+    kp[8], kp[11] = (330, 500), (270, 500)  # hip joints on the cheeks
+    m = np.zeros((H, W), np.float32)
+    m[470:560, 80:300] = 1  # torso
+    m[430:990, 240:360] = 1  # butt and legs
+    return kp, m
+
+
+def test_bent_over_is_sized_from_her_width_at_the_hips():
+    kp, m = _bent()
+    f = fg.bent_frame((H, W), m, kp)
+    assert f is not None and 110 <= f["W"] <= 125  # the cheek side (~60 px each way of the cleft), not the torso
+    assert fg.bent_frame((H, W), silhouette(), standing()) is None  # upright: the standing geometry
+    hard, _, info = fg.figure_region((H, W), m, kp)
+    assert info.get("bent") and hard[520, 330] > 0 and not hard[100:400].any()  # the cheeks, not her back or head
+    img = np.zeros((H, W, 3), np.float32)
+    img[...] = (0.3, 0.6, 0.8)
+    img[m > 0.5] = (0.85, 0.65, 0.55)
+    out, person, einfo = fg.enlarge(img, kp, m, None, 0.20)
+    assert einfo["bent"] and "skipped" not in einfo
+    y = int(f["cy"])
+    assert np.where(person[y, 300:] > 0.5)[0].max() > np.where(m[y, 300:] > 0.5)[0].max() + 5  # her outline grew outward
+    assert np.abs(out[:350] - img[:350]).max() < 1e-5  # nothing well above her hips moves
+
+
 def test_the_region_reaches_below_the_glute_fold():
     hard, _, info = fg.figure_region((H, W), silhouette(), standing(long_legs=1.3))  # real proportions: knees ~1.07 torso below the hips
     ys = np.where(hard.any(1))[0]
