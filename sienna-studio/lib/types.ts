@@ -145,6 +145,9 @@ export interface GenerationParams {
   figureNoAbs?: boolean;
   /** Testing: force the full-length fit wording on (all garments) or off; unset = SIENNA_COVER_STOMACH. */
   coverStomach?: boolean;
+  /** Testing (figure preview): a figure LoRA chained right after Sienna's, and extra figure wording after her traits. */
+  figurePack?: { file: string; strength: number };
+  figureTrait?: string;
   /** Testing: the revealing-benchmark fixes on for this request (lib/fixes.ts); unset = SIENNA_FIXES. */
   fixes?: import('./fixes').Fix[];
   /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */

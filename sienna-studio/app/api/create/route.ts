@@ -144,6 +144,8 @@ export const POST = handle(async (req: Request) => {
       ...(body.test?.figureNoAbs ? { figureNoAbs: true } : {}),
       ...(body.test?.coverStomach !== undefined ? { coverStomach: body.test.coverStomach } : {}),
       ...(body.test?.fixes ? { fixes: body.test.fixes } : {}),
+      ...(body.test?.figurePack ? { figurePack: body.test.figurePack } : {}),
+      ...(body.test?.figureTrait ? { figureTrait: body.test.figureTrait } : {}),
     },
     images: {
       initImage: ref && edit ? ref : null,

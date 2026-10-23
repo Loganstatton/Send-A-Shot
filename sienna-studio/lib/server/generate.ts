@@ -130,7 +130,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   const [settings, profile, presets, comfyUrl] = await Promise.all([getSettings(), getCharacter(), listPresets(), getComfyUrl()]);
   const backend = createBackend(comfyUrl);
   // testing: her figure without the "defined abs" wording (suspected of pulling requested tank tops into crop tops)
-  const character = req.params.figureNoAbs ? { ...profile, appearanceTraits: withoutAbs(profile.appearanceTraits) } : profile;
+  const traits = req.params.figureNoAbs ? withoutAbs(profile.appearanceTraits) : profile.appearanceTraits;
+  // testing (figure preview, 23 Oct): extra figure wording after her own, unweighted — never saved to her profile
+  const character = { ...profile, appearanceTraits: req.params.figureTrait ? `${traits}, ${req.params.figureTrait}` : traits };
 
   // ── Content mode & age policy ──────────────────────────────────────────
   let contentMode: ContentMode = req.contentMode === 'adult' ? 'adult' : 'sfw';
@@ -564,10 +566,20 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
 
   // ── Style packs: stacked after Sienna's LoRA (trigger words were added to the prompt above) ──
-  if (stylePacks.length) {
+  // testing (figure preview): a figure LoRA goes right after Sienna's, before the packs; the face redraw still uses
+  // Sienna's LoRA alone. A missing file fails the photo loudly rather than quietly testing nothing.
+  const figure = req.params.figurePack;
+  if (stylePacks.length || figure) {
     let after = bindings.lora_name?.[0]?.nodeId;
     if (after && graph[after]?.class_type !== 'LoraLoader') after = undefined;
     const siennaLoraId = after;
+    if (figure && after) {
+      const title = `Figure (preview): ${figure.file}`;
+      const spliced = chainLora(graph, after, figure.file, figure.strength, title);
+      graph = spliced.graph;
+      graph[spliced.nodeId]._meta = { title };
+      if (graph[spliced.nodeId].class_type === 'LoraLoader') after = spliced.nodeId;
+    }
     for (const a of stylePacks) {
       const title = `Style pack: ${a.pack.label}`;
       const spliced = after ? chainLora(graph, after, a.pack.file, a.strength, title) : injectLora(graph, a.pack.file, a.strength, a.strength);
