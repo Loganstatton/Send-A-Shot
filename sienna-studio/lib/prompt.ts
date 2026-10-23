@@ -275,7 +275,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     return buildV2({ f, fields, character, siennaLock, contentMode, cleanup, poseGuide, warnings, blocked, effectiveFields, tokenPhrase, age, traits, fullBodyMode, barefoot, rear, faceAway, outfitText, framing: f.framing, coverStomach });
   }
   const cover = coverParts(f.outfit, coverStomach);
-  const shorts = hasFix(fixes, 'shorts') ? shortsParts(f.outfit) : { fit: '', negative: '' };
+  // cheeky shorts are left to the request's own words unless fix cheeky is on (it reshaped her in testing)
+  const shorts = hasFix(fixes, 'shorts') || hasFix(fixes, 'cheeky') ? shortsParts(f.outfit, hasFix(fixes, 'cheeky')) : { fit: '', negative: '' };
   const positive = joinParts([
     rear ? REAR_VIEW : '',
     faceAway ? FACE_AWAY : '',
@@ -421,9 +422,10 @@ export const CHEEKY_NEGATIVE = '(boy shorts, full-coverage shorts, long shorts:1
 const ATHLETIC_SHORTS_RE = /\b(running|athletic|gym|track|sport|sports|workout)\b[^,]*\bshorts\b/i;
 export const ATHLETIC_SHORTS_FIT = 'lightweight athletic shorts with split side hems';
 export const LOGO_NEGATIVE = '(brand logo, swoosh, printed text, lettering:1.2)';
-export function shortsParts(outfit: string): { fit: string; negative: string } {
+/** Fix shorts (short and athletic shorts); `cheeky` adds the cheeky cut for explicitly cheeky / booty shorts (fix cheeky). */
+export function shortsParts(outfit: string, cheeky = true): { fit: string; negative: string } {
   if (!SHORTS_RE.test(outfit) || LONG_SHORTS_RE.test(outfit)) return { fit: '', negative: '' };
-  if (CHEEKY_RE.test(outfit)) return { fit: CHEEKY_FIT, negative: `${SHORT_SHORTS_NEGATIVE}, ${CHEEKY_NEGATIVE}` };
+  if (CHEEKY_RE.test(outfit)) return cheeky ? { fit: CHEEKY_FIT, negative: `${SHORT_SHORTS_NEGATIVE}, ${CHEEKY_NEGATIVE}` } : { fit: '', negative: '' };
   if (!SHORT_SHORTS_RE.test(outfit)) return { fit: '', negative: '' };
   const athletic = ATHLETIC_SHORTS_RE.test(outfit);
   return {

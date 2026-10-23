@@ -47,7 +47,7 @@ const build = (f: PromptFields, fixes: Fix[] = [], mode: 'sfw' | 'adult' = 'sfw'
 
 describe('fix switches', () => {
   it('SIENNA_FIXES: a comma list of known fixes, true = all; removed fixes are ignored', () => {
-    expect(FIXES).toEqual(['rearguide', 'kneeguide', 'shorts', 'checkrules']);
+    expect(FIXES).toEqual(['rearguide', 'kneeguide', 'shorts', 'cheeky', 'checkrules']);
     expect(fixesFromEnv(undefined)).toEqual([]);
     expect(fixesFromEnv('shorts, kneeguide,colour,tankfit,bogus')).toEqual(['shorts', 'kneeguide']);
     expect(fixesFromEnv('true')).toEqual([...FIXES]);
@@ -125,9 +125,15 @@ describe('shorts: ordinary, short, athletic and cheeky are different requests', 
     expect(CHEEKY_FIT).not.toMatch(/butt|buttock|hips?|thigh|curve|body/i);
     expect(CHEEKY_NEGATIVE).toMatch(/briefs, panties, bikini bottoms/);
   });
-  it('the cut goes right after the outfit, only with the fix; her figure wording is untouched', () => {
+  it('the cheeky cut needs its own switch: the shorts fix alone leaves cheeky shorts to the request\'s words', () => {
     const f = bench(OUTFITS.E4, { pose: 'standing, seen from behind, looking back over shoulder' });
-    const on = build(f, ['shorts']);
+    expect(build(f, ['shorts'])).toEqual(build(f));
+    expect(shortsParts(OUTFITS.E4, false)).toEqual({ fit: '', negative: '' });
+    expect(build(bench(OUTFITS.E3), ['shorts']).positive).toContain(ATHLETIC_SHORTS_FIT);
+  });
+  it('the cut goes right after the outfit, only with the cheeky fix; her figure wording is untouched', () => {
+    const f = bench(OUTFITS.E4, { pose: 'standing, seen from behind, looking back over shoulder' });
+    const on = build(f, ['cheeky']);
     expect(on.positive.indexOf(CHEEKY_FIT)).toBeGreaterThan(on.positive.indexOf('booty shorts'));
     expect(build(f).positive).not.toContain(CHEEKY_FIT);
     expect(on.positive).toContain('(large round natural breasts:1.2), slim toned waist with defined abs, curvy hips');
