@@ -132,7 +132,7 @@
   "width": 832,
   "height": 1216,
   "pose": "standing, seen from behind, back to the camera, looking back over her shoulder",
-  "strength": 0.85,
+  "strength": 1.0,
   "testOnly": true
  },
  {
@@ -140,6 +140,14 @@
   "width": 832,
   "height": 1216,
   "pose": "standing, seen from behind, back to the camera, head facing away",
+  "strength": 1.0,
+  "testOnly": true
+ },
+ {
+  "id": "standing_knee_up",
+  "width": 832,
+  "height": 1216,
+  "pose": "standing, facing the camera, arms relaxed at her sides, framed from head to knees",
   "strength": 0.85,
   "testOnly": true
  },

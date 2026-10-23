@@ -378,8 +378,6 @@ export interface GenerationRecord {
     anchor?: string;
     /** The correction being made: which attempt it starts from, and whether she is kept pixel for pixel. */
     next?: { basedOn: number; keptPerson: boolean };
-    /** Fix framing: a knee-up photo with her knees cut off is redone (otherwise the miss is only reported). */
-    kneeRedo?: boolean;
     attempts: {
       seed: number;
       exposed: boolean;

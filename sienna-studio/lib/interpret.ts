@@ -191,7 +191,7 @@ export function splitNegatives(s: string): [string, string[]] {
 
 export function interpretPrompt(
   text: string,
-  opts: { hasReference?: boolean; adultAllowed?: boolean; defaultMode?: ContentMode; underboobTank?: boolean } = {},
+  opts: { hasReference?: boolean; adultAllowed?: boolean; defaultMode?: ContentMode } = {},
 ): Interpretation {
   const fields = Object.fromEntries(PROMPT_FIELD_KEYS.map((k) => [k, ''])) as unknown as PromptFields;
   const buckets: Record<string, string[]> = {};
@@ -232,10 +232,9 @@ export function interpretPrompt(
   }
 
   // a pack that only runs in adult mode (string bikini, lace lingerie, monokini …) asks for adult wardrobe too
-  const packOpts = { underboobTank: !!opts.underboobTank };
-  let packs = packsForDescription(fields, contentMode, packOpts);
+  let packs = packsForDescription(fields, contentMode);
   if (contentMode === 'sfw' && opts.adultAllowed) {
-    const adultPacks = packsForDescription(fields, 'adult', packOpts);
+    const adultPacks = packsForDescription(fields, 'adult');
     if (STYLE_PACKS.some((p) => p.section === 'adult' && adultPacks[p.id])) {
       contentMode = 'adult';
       packs = adultPacks;

@@ -346,21 +346,12 @@ const PACK_REPLACES: Record<string, RegExp[]> = {
   lace_bandeau: [/\b(t-?shirt|tee|tank top|sweater|hoodie|blouse|bikini top|bra)\b/i],
 };
 
-/** An underboob tank top: the tank top is the underboob garment itself, not a second top the pack would replace. */
-export const UNDERBOOB_TANK_RE = /\bunderboob\b[^,]*\btank\b|\btank(\s+top)?\b[^,]*\bunderboob\b/i;
-/** With the underboob pack on a tank top: its look is a short-sleeved tee, so sleeves go in the negative. */
-export const UNDERBOOB_TANK_NEGATIVE = '(short sleeves, sleeved t-shirt:1.2)';
-
-/**
- * The pack fits the requested outfit: it doesn't replace a garment the request names. Packs that draw no outfit always
- * fit. underboobTank (fix): "black underboob tank top" may use the underboob pack — the tank is the underboob garment.
- */
-export function packFitsOutfit(id: string, outfit: string, opts: { underboobTank?: boolean } = {}): boolean {
+/** The pack fits the requested outfit: it doesn't replace a garment the request names. Packs that draw no outfit always fit. */
+export function packFitsOutfit(id: string, outfit: string): boolean {
   const rules = PACK_REPLACES[id];
   if (!rules || !outfit.trim()) return true;
   // garments that belong to the pack's own look don't count ("bikini top" for a bikini pack)
-  let named = outfit.replace(/\b(bikini|swimsuit|swim|string|thong|micro)\s+(top|bottoms?|briefs)\b/gi, '');
-  if (opts.underboobTank && id === 'underboob_shirt') named = named.split(',').filter((item) => !UNDERBOOB_TANK_RE.test(item)).join(',');
+  const named = outfit.replace(/\b(bikini|swimsuit|swim|string|thong|micro)\s+(top|bottoms?|briefs)\b/gi, '');
   return !rules.some((re) => re.test(named));
 }
 
@@ -401,7 +392,6 @@ export function packStrength(id: string, text: string): number {
 export function packsForDescription(
   fields: { outfit?: string; pose?: string; bodyPresentation?: string; extra?: string },
   contentMode: 'sfw' | 'adult',
-  opts: { underboobTank?: boolean } = {},
 ): Record<string, number> {
   const text = Object.entries(fields as Record<string, string | undefined>)
     .filter(([k, v]) => k !== 'avoid' && v)
@@ -416,7 +406,7 @@ export function packsForDescription(
     // "completely nude on her bed" → "completely nude": the place and pose aren't outfit items (the check stays strict)
     const outfit = (fields.outfit ?? '').replace(/^\s*(she'?s|she is|she|her)\s+/i, '').replace(/\s+\b(on|in|at|by|near|lying|sitting|standing|kneeling|posing)\b.*$/i, '');
     if (pack.nudeOnly && !nudeOnlyAllowed(contentMode, { ...fields, outfit })) continue;
-    if (!packFitsOutfit(id, fields.outfit ?? '', opts)) continue;
+    if (!packFitsOutfit(id, fields.outfit ?? '')) continue;
     // a string bikini already has the string swimsuit pack; the micro pack on top lowers coverage (PACK_CONFLICTS)
     if (PACK_CONFLICTS.some(([keep, drop]) => id === drop && out[keep])) continue;
     // "tiny / micro string bikini": the 0.6 default came out with regular-size cups (live, 18 Oct); the pack's max

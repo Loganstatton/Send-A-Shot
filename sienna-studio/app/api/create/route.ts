@@ -2,7 +2,6 @@ import { applyClothingChanges, interpretPrompt, packNote } from '@/lib/interpret
 import { cleanRead, NUDE_RE, type ReadResult } from '@/lib/ai-prompts';
 import { offeredGuides, posePreset, presetFitsCamera } from '@/lib/pose-presets';
 import { packFitsOutfit, packsForDescription, packStrength, resolvePackConflicts, STYLE_PACKS, stylePacksFor, TINY_STRING_OUTFIT } from '@/lib/style-packs';
-import { fixesFromEnv, hasFix } from '@/lib/fixes';
 import { aiEnabled, aiRead } from '@/lib/server/ai';
 import { simpleCreateSchema } from '@/lib/schemas';
 import { startGeneration } from '@/lib/server/generate';
@@ -25,10 +24,7 @@ export const POST = handle(async (req: Request) => {
   const body = await parseBody(req, simpleCreateSchema);
   const settings = await getSettings();
   const ref = body.reference;
-  // the revealing-benchmark fixes (lib/fixes.ts): off unless SIENNA_FIXES lists them; a benchmark request sets its own
-  const fixes = body.test?.fixes ?? fixesFromEnv(process.env.SIENNA_FIXES);
-  const underboobTank = hasFix(fixes, 'underboobtank');
-  const it = interpretPrompt(body.prompt, { hasReference: !!ref, adultAllowed: adultContentAllowed(), defaultMode: settings.contentMode, underboobTank });
+  const it = interpretPrompt(body.prompt, { hasReference: !!ref, adultAllowed: adultContentAllowed(), defaultMode: settings.contentMode });
   // Editing one of the studio's own photos: start from that photo's description and change only what is asked
   // ("change her top to a red tank top" alone would let img2img redraw her shorts too, and say nothing of the scene)
   const source = ref && it.reference.mode !== 'none' && it.reference.mode !== 'pose' ? (await listHistory()).find((r) => r.images?.some((i) => i.file === ref.file)) : undefined;
@@ -73,7 +69,7 @@ export const POST = handle(async (req: Request) => {
     it.notes.push('Editing a studio photo: its original description is kept and only what you asked changes.');
     // packs follow the merged description (the original photo's outfit may have switched one on)
     const before = packNote(it.packs);
-    it.packs = packsForDescription(it.fields, it.contentMode, { underboobTank });
+    it.packs = packsForDescription(it.fields, it.contentMode);
     it.notes = it.notes.filter((n) => n !== before);
     if (Object.keys(it.packs).length) it.notes.push(packNote(it.packs));
   }
@@ -102,7 +98,7 @@ export const POST = handle(async (req: Request) => {
       it.fields = Object.fromEntries(PROMPT_FIELD_KEYS.map((k) => [k, (c[k as keyof typeof c] as string) ?? ''])) as unknown as PromptFields;
       // an outfit pack only when it fits the whole requested outfit (it must never replace a garment that was named)
       // conflicting packs never stack (the reader picked micro bikini + string swimsuit for a micro string bikini: D3)
-      const picked = resolvePackConflicts(Object.fromEntries(c.packs.filter((id) => packFitsOutfit(id, c.outfit, { underboobTank })).map((id) => [id, packStrength(id, body.prompt)])));
+      const picked = resolvePackConflicts(Object.fromEntries(c.packs.filter((id) => packFitsOutfit(id, c.outfit)).map((id) => [id, packStrength(id, body.prompt)])));
       it.packs = picked.packs;
       if (it.packs.string_swimsuit === STYLE_PACKS.find((p) => p.id === 'string_swimsuit')?.max && !it.fields.outfit.includes(TINY_STRING_OUTFIT))
         it.fields.outfit = [it.fields.outfit, TINY_STRING_OUTFIT].filter(Boolean).join(', ');
