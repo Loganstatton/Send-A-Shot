@@ -35,5 +35,7 @@ describe('targeted figure pass (test only)', () => {
       .toEqual({ mask: 0.081, colorShift: { skin: [2, 0, 1] }, hipWidthChange: 0.031 });
     expect(parseFigurePass({ [FIGURE_NODES.mask]: ['{"skipped":"hips or her outline not found"}'] })).toEqual({ skipped: 'hips or her outline not found' });
     expect(parseFigurePass({})).toBeUndefined();
+    expect(parseFigurePass({ [FIGURE_NODES.mask]: ['{"mask":0.09}'], [FIGURE_NODES.composite]: ['{"completed":false,"fallback":"paste-back not completed (composite timed out after 90s); photo left as made"}'] }))
+      .toEqual({ completed: false, fallback: 'paste-back not completed (composite timed out after 90s); photo left as made', mask: 0.09 });
   });
 });

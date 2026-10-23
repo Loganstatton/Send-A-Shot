@@ -151,6 +151,36 @@ def test_outline_change_reports_wider_hips():
     assert fg.outline_change(a, a, (450, 650))["hip_width_change"] == 0
 
 
+
+def test_a_stalled_step_is_killed_on_time_and_reported():
+    import time
+    t = time.time()
+    res, info = fg.run_isolated("sleep", {}, {"seconds": 30}, timeout=2)
+    assert res is None and "timed out after 2s" in info["error"]
+    assert time.time() - t < 15  # killed, not waited out
+
+
+def test_a_crashing_step_is_reported_not_raised():
+    res, info = fg.run_isolated("no-such-task", {}, {}, timeout=30)
+    assert res is None and "failed" in info["error"]
+
+
+def test_mask_and_composite_run_in_the_worker_process():
+    kp = standing()
+    img = _leggings((0.05, 0.05, 0.06))
+    res, info = fg.run_isolated("mask", {"image": img, "person": silhouette()},
+                                {"kp": [[float(p[0]), float(p[1])] if p else None for p in kp[:14]], "grow": 0.08}, timeout=60)
+    assert res is not None, info
+    hard, soft = res["hard"], res["soft"]
+    want, _, _ = fg.figure_region((H, W), silhouette(), kp[:14], None, None, grow=0.08)
+    assert np.array_equal(hard, want) and "timing" in info
+    red = _leggings((0.11, 0.11, 0.12))
+    res2, info2 = fg.run_isolated("composite", {"src": img, "red": red, "hard": hard, "soft": soft}, {"color_match": 1.0}, timeout=60)
+    assert res2 is not None, info2
+    out = res2["image"]
+    assert out.shape == img.shape and np.array_equal(out[soft == 0], img[soft == 0])
+    assert "blend" in info2["timing"]
+
 if __name__ == "__main__":
     for k, v in list(globals().items()):
         if k.startswith("test_"):

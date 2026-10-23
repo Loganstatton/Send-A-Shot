@@ -963,6 +963,9 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         const faceOn = !!face?.available;
         if (checks.face && !face) faceProblem = 'the face check returned no result';
         else if (face && !face.available) faceProblem = `the face check could not run (${face.error ?? 'models not installed'})`;
+        // targeted figure pass (test requests): a stalled or failed step leaves the photo as made — say so
+        const figureReport = rec.figurePass?.status === 'on' ? parseFigurePass(state.texts) : undefined;
+        if (figureReport && figureReport.completed === false) notes.push(`Figure adjustment not applied — ${figureReport.fallback ?? 'the pass did not finish'}.`);
         if (topOn || faceOn || bodyFraming !== undefined || poseCheck || knees) {
           const attempts = [
             ...guard.attempts,
@@ -974,7 +977,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               // her joints beat the face-size guess whenever the body could be judged
               ...(bodyFraming !== undefined ? { framingOk: bodyFraming } : {}),
               ...(knees?.miss ? { framingMiss: knees.miss } : {}),
-              ...(rec.figurePass?.status === 'on' ? { figure: parseFigurePass(state.texts) } : {}),
+              ...(figureReport ? { figure: figureReport } : {}),
               ...(poseCheck ? { poseOk: poseCheck.ok } : {}),
               // a correction records the photo it was made from (and whether she was kept pixel for pixel)
               ...(guard.next ? { basedOn: guard.next.basedOn, ...(guard.next.keptPerson ? { keptPerson: true } : {}) } : {}),

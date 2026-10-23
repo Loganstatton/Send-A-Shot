@@ -9,6 +9,12 @@ Region = her silhouette between the waist and the glute fold (from the DWPose hi
 past the outline so the curve can grow outward, minus face, hair, hands and the arms beside her hips.
 No ComfyUI imports: tested on CPU (tests/test_sienna_figure.py).
 """
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
@@ -156,21 +162,29 @@ def composite(src: np.ndarray, red: np.ndarray, soft: np.ndarray, tone_sigma: fl
     hard = s > 0.5
     if not hard.any():
         return src3.copy()
-    h = s.shape[0]
+    h, w = s.shape
     used = s > 1e-3  # every pixel the paste-back touches, the feathered rim included
-    inner = cv2.erode(used.astype(np.uint8), _disk(0.04 * h)) > 0
-    band = used & ~inner
-    sig = max(2.0, tone_sigma * h)
     d = red3 - src3
     # only where the content is the same and just the tone drifted (a new curve over old background is a real change,
     # not a tone error — correcting it would leave a halo around the new outline)
-    same = band & (np.abs(d).max(-1) < content_change)
-    diff = np.where(same[..., None], d, 0).astype(np.float32)
-    wsum = cv2.GaussianBlur(same.astype(np.float32), (0, 0), sig) + 1e-4
-    low = cv2.GaussianBlur(diff, (0, 0), sig) / wsum[..., None]
-    dist = cv2.distanceTransform(used.astype(np.uint8), cv2.DIST_L2, 5)
-    fade = np.clip(1 - dist / max(1.0, tone_fade * h), 0, 1) * used
-    red2 = red3 - low * fade[..., None]
+    same = used & (np.abs(d).max(-1) < content_change)
+    # the tone correction is low-frequency by design, so it is measured and smoothed at 1/8 size (small kernels only;
+    # the full-size version stalled on the GPU machine, 23 Oct) and the correction is scaled back up
+    k = 8
+    sw, sh = max(8, w // k), max(8, h // k)
+    small = lambda a: cv2.resize(np.ascontiguousarray(a, np.float32), (sw, sh), interpolation=cv2.INTER_AREA)
+    used_s = small(used.astype(np.float32)) > 0.5
+    inner_s = cv2.erode(used_s.astype(np.uint8), _disk(0.04 * sh)) > 0
+    band_s = (used_s & ~inner_s).astype(np.float32)
+    same_s = small(same.astype(np.float32)) * band_s
+    diff_s = small(np.where(same[..., None], d, 0)) * band_s[..., None]
+    sig = max(1.0, tone_sigma * sh)
+    wsum = cv2.GaussianBlur(same_s, (0, 0), sig) + 1e-4
+    low_s = cv2.GaussianBlur(diff_s, (0, 0), sig) / wsum[..., None]
+    dist_s = cv2.distanceTransform(used_s.astype(np.uint8), cv2.DIST_L2, 3)
+    fade_s = np.clip(1 - dist_s / max(1.0, tone_fade * sh), 0, 1) * used_s
+    corr = cv2.resize(np.ascontiguousarray(low_s * fade_s[..., None], np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+    red2 = red3 - corr * used[..., None]
     # top (waist) and bottom (mid-thigh) edges: ramps back to the original; the bottom one long, as tested offline
     ys = np.where(used.any(1))[0]
     top, bot = int(ys.min()), int(ys.max())
@@ -197,3 +211,53 @@ def outline_change(src_person: np.ndarray, res_person: np.ndarray, band: Sequenc
         widths.append(float(np.median(rows)) if rows else 0.0)
     return {"hip_width_src": widths[0], "hip_width_res": widths[1],
             "hip_width_change": round((widths[1] - widths[0]) / widths[0], 4) if widths[0] else None}
+
+
+WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sienna_figure_worker.py")
+MASK_TIMEOUT = 60
+COMPOSITE_TIMEOUT = 90
+
+
+def log(msg: str) -> None:
+    print(f"[SiennaFigure] {time.strftime('%H:%M:%S')} {msg}", flush=True)
+
+
+def run_isolated(task: str, arrays: Dict[str, np.ndarray], params: Dict, timeout: float) -> Tuple[Optional[Dict[str, np.ndarray]], Dict]:
+    """Runs one step in sienna_figure_worker.py as a separate process and kills it after `timeout` seconds: a stalled
+    step (two did on the GPU machine, 23 Oct) can't hold up the photo. Returns (arrays, info) or (None, {"error": ...})."""
+    t0 = time.time()
+    log(f"{task}: start (timeout {timeout:.0f}s)")
+    with tempfile.TemporaryDirectory(prefix="sienna_fig_") as td:
+        inp, out = os.path.join(td, "in.npz"), os.path.join(td, "out.npz")
+        np.savez(inp, task=np.array(task), params=np.array(json.dumps(params)), **{k: v for k, v in arrays.items() if v is not None})
+        err = os.path.join(td, "worker.log")
+        with open(err, "w") as f:
+            # own process group, output to a file (no pipes to block on): a timeout kills everything it started
+            p = subprocess.Popen([sys.executable, WORKER, inp, out], stdout=f, stderr=f, start_new_session=True)
+            try:
+                rc = p.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(p.pid, 9)
+                except OSError:
+                    p.kill()
+                try:
+                    p.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+                rc = None
+        tail = open(err, errors="replace").read()[-600:]
+        if rc is None:
+            log(f"{task}: TIMED OUT after {timeout:.0f}s, worker killed. Last worker output: {tail.strip()[-300:]}")
+            return None, {"error": f"{task} timed out after {timeout:.0f}s", "worker_log": tail}
+        for line in tail.strip().splitlines()[-12:]:
+            log(f"{task}: {line}")
+        if rc != 0 or not os.path.exists(out):
+            log(f"{task}: FAILED (exit {rc})")
+            return None, {"error": f"{task} failed (exit {rc})", "worker_log": tail}
+        res = np.load(out, allow_pickle=False)
+        info = json.loads(str(res["info"]))
+        result = {k: res[k] for k in res.files if k != "info"}
+    info["seconds"] = round(time.time() - t0, 2)
+    log(f"{task}: done in {info['seconds']:.2f}s")
+    return result, info

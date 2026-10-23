@@ -100,6 +100,9 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
 }
 
 export interface FigurePassReport {
+  /** false when the region or the paste-back didn't finish (stalled, failed or empty): the photo is left as made */
+  completed?: boolean;
+  fallback?: string;
   mask?: number;
   skipped?: string;
   colorShift?: Record<string, number[]>;
@@ -117,7 +120,10 @@ export function parseFigurePass(texts: Record<string, string[]> | undefined): Fi
   const m = read(FIGURE_NODES.mask);
   const c = read(FIGURE_NODES.composite);
   if (!m && !c) return undefined;
+  const fallback = c?.fallback ?? m?.fallback;
   return {
+    ...(c && typeof c.completed === 'boolean' ? { completed: c.completed } : {}),
+    ...(fallback ? { fallback } : {}),
     ...(typeof m?.mask === 'number' ? { mask: m.mask } : {}),
     ...(m?.skipped || c?.skipped ? { skipped: m?.skipped ?? c?.skipped } : {}),
     ...(c?.color_shift ? { colorShift: c.color_shift } : {}),

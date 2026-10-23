@@ -487,14 +487,17 @@ class SiennaFigureMask:
     def run(self, image, pose_keypoint, grow, person_mask=None, face_mask=None):
         img = image[0].detach().cpu().numpy().astype(np.float32)
         shape = img.shape[:2]
-        classes = segment_classes(img)
-        person = _mask_np(person_mask, 0, shape)
-        if person is None and classes:
-            person = 1.0 - classes[0]
-        hard, soft, info = sienna_figure.figure_region(shape, person, _kp_for(pose_keypoint, shape), classes,
-                                                       _mask_np(face_mask, 0, shape), grow=grow)
+        kp = _kp_for(pose_keypoint, shape)
+        arrays = {"image": img[..., :3], "person": _mask_np(person_mask, 0, shape), "face": _mask_np(face_mask, 0, shape)}
+        params = {"kp": [[float(p[0]), float(p[1])] if p else None for p in kp], "grow": float(grow)}
+        res, info = sienna_figure.run_isolated("mask", arrays, params, sienna_figure.MASK_TIMEOUT)
+        if res is None:  # stalled or failed: nothing is redrawn and the report says so
+            hard = soft = np.zeros(shape, np.float32)
+            info = {"completed": False, "fallback": f"figure region not computed ({info['error']}); photo left as made", **info}
+        else:
+            hard, soft = res["hard"], res["soft"]
         text = json.dumps(info)
-        t = lambda a: torch.from_numpy(np.ascontiguousarray(a))[None, ...]
+        t = lambda a: torch.from_numpy(np.ascontiguousarray(a, np.float32))[None, ...]
         return {"ui": {"text": [text]}, "result": (t(hard), t(soft), text)}
 
 
@@ -527,24 +530,19 @@ class SiennaFigureComposite:
             red = cv2.resize(red, (src.shape[1], src.shape[0]), interpolation=cv2.INTER_LANCZOS4)
         shape = src.shape[:2]
         hard, soft = _mask_np(mask, 0, shape), _mask_np(soft_mask, 0, shape)
-        info = {}
+        out = src[..., :3]
         if hard is None or not (hard > 0.5).any():
-            info["skipped"] = "empty region"
-            out = src[..., :3]
+            info = {"completed": False, "fallback": "empty region: nothing redrawn, photo left as made"}
         else:
-            cs, cr = segment_classes(src), segment_classes(red)
-            matched, info["color_shift"] = sienna_figure.match_colors(src, red, cv2.dilate((hard > 0.5).astype(np.uint8), np.ones((15, 15), np.uint8)),
-                                                                    cs, cr, color_match)
-            out = sienna_figure.composite(src, matched, soft)
-            if cs:
-                band = np.where((hard > 0.5).any(1))[0]
-                co = segment_classes(out)
-                if co is not None and band.size:
-                    info.update(sienna_figure.outline_change(1.0 - cs[0], 1.0 - co[0], (band.min(), band.max())))
+            res, info = sienna_figure.run_isolated("composite", {"src": src[..., :3], "red": red[..., :3], "hard": hard, "soft": soft},
+                                                   {"color_match": float(color_match)}, sienna_figure.COMPOSITE_TIMEOUT)
+            if res is None:  # stalled or failed: the original photo, never a half-blended one, and the report says so
+                info = {"completed": False, "fallback": f"paste-back not completed ({info['error']}); photo left as made", **info}
             else:
-                info["segmenter_error"] = segmenter_error()
+                out, info = res["image"], {**info, "completed": True}
+        sienna_figure.log(f"composite node: completed={info.get('completed')} {info.get('fallback', '')}")
         text = json.dumps(info)
-        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out))[None, ...], text)}
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...], text)}
 
 
 NODE_CLASS_MAPPINGS = {
