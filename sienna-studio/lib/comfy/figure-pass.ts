@@ -31,11 +31,12 @@ export const FIGURE_WORDS = '(full round butt, round lifted glutes:1.15), (defin
 /** Added to the redraw's negative only: the figure LoRA's fitness-wear look drew gathered "scrunch" seams on shorts,
  * leggings and a bodycon dress (Stage B, 23 Oct). */
 export const FIGURE_NEGATIVE_WORDS = '(scrunch butt, ruched fabric, gathered fabric, seam down the middle of the butt:1.2)';
-/** Test style "fuller" (23 Oct, from the owner's reference photo): much more volume and projection, the lower cheeks
- * resting over the backs of the thighs with a deep curved crease under each — firm, not sagging. */
+/** Test style "fuller" (23 Oct, from the owner's reference photo): a round bubble butt, fullest at the lower cheeks
+ * (a "heart" shape), with strong projection; the lower cheeks rest over the backs of the thighs with a deep curved
+ * crease under each — firm, not sagging. */
 export const FIGURE_STYLES = {
   fuller: {
-    words: '(very full round bubble butt, big round lifted glutes with strong projection:1.25), (lower buttocks resting over the backs of her thighs, deep curved underbutt crease under each cheek:1.2), smooth firm skin',
+    words: '(very full round bubble butt, heart-shaped, fullest at the lower cheeks, strong projection:1.25), (lower buttocks resting over the backs of her thighs, deep curved underbutt crease under each cheek:1.2), smooth firm skin',
     negative: '(cellulite, saggy buttocks, lumpy fat rolls, dimpled skin:1.2)',
     grow: 0.12,
   },
