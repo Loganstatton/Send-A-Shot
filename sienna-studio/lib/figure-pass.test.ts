@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { addFigurePass, ENLARGE_GROW, FIGURE_NEGATIVE_WORDS, FIGURE_NODES, FIGURE_STYLES, FIGURE_WORDS, parseFigurePass } from './comfy/figure-pass';
+import { addFigurePass, ENLARGE_GROW, FIGURE_NEGATIVE_WORDS, FIGURE_NODES, FIGURE_PRESETS, FIGURE_STYLES, FIGURE_WORDS, figurePassFromEnv, parseFigurePass } from './comfy/figure-pass';
 import type { ComfyGraph } from './types';
 
 const prod = (): ComfyGraph => JSON.parse(readFileSync(new URL('../workflows/examples/sienna-sdxl-production.json', import.meta.url), 'utf8'));
@@ -53,6 +53,15 @@ describe('targeted figure pass (test only)', () => {
       .toEqual({ mask: 0.2, enlarge: { amount: 0.2, hipWidthChange: 0.0529 } });
     expect(parseFigurePass({ [FIGURE_NODES.mask]: ['{"skipped":"front view","enlarge":{"amount":0.2,"skipped":"front view or hips not found"}}'] }))
       .toEqual({ skipped: 'front view', enlarge: { amount: 0.2, skipped: 'front view or hips not found' } });
+  });
+  it('SIENNA_FIGURE=medium: the owner\'s chosen settings (fuller wording + medium reshaping); anything else is off', () => {
+    expect(figurePassFromEnv('medium')).toEqual({ file: 'pack_1883628.safetensors', strength: 0.85, denoise: 0.55, style: 'fuller', enlarge: 0.2 });
+    expect(figurePassFromEnv(undefined)).toBeUndefined();
+    expect(figurePassFromEnv('')).toBeUndefined();
+    expect(figurePassFromEnv('large')).toBeUndefined();
+    const g = addFigurePass(prod(), { ...FIGURE_PRESETS.medium, baseLoraId: '2', faceRefineId: '51' })!;
+    expect(g[FIGURE_NODES.mask].inputs.enlarge).toBe(0.2);
+    expect(g[FIGURE_NODES.sampler].inputs.denoise).toBe(0.55);
   });
   it('nothing to copy from: no pass', () => {
     expect(addFigurePass(prod(), { ...opts, faceRefineId: 'nope' })).toBeNull();

@@ -65,6 +65,20 @@ def test_a_photo_that_came_out_facing_the_camera_is_left_alone():
     assert fg.facing_camera(standing_front()) and not fg.facing_camera(standing())
 
 
+def test_looking_back_over_her_shoulder_is_not_a_front_view():
+    """Seen from behind, face in profile over her shoulder, and the pose model labelled her shoulders and hips as if
+    she faced the camera (crop top + denim shorts s202, 23 Oct): still a rear photo."""
+    kp = standing_front()  # front-view labels (right shoulder on the image's left)...
+    sh = abs(kp[2][0] - kp[5][0])
+    kp[0] = (kp[2][0] - 0.05 * sh, 110)  # ...but the face is a profile: nose past the eyes, eyes close together
+    kp[14], kp[15] = (kp[2][0] + 0.02 * sh, 100), (kp[2][0] + 0.08 * sh, 100)
+    assert not fg.facing_camera(kp)
+    hard, _, info = fg.figure_region((H, W), silhouette(), kp)
+    assert "skipped" not in info and hard.any()
+    out, _, einfo = fg.enlarge(_skin_photo(), kp, silhouette(), None, 0.20)
+    assert "skipped" not in einfo
+
+
 def test_the_region_reaches_below_the_glute_fold():
     hard, _, info = fg.figure_region((H, W), silhouette(), standing(long_legs=1.3))  # real proportions: knees ~1.07 torso below the hips
     ys = np.where(hard.any(1))[0]

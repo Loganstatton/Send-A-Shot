@@ -46,7 +46,18 @@ def facing_camera(kp: Sequence[Point]) -> bool:
     the person's own sides). A "from behind" request came out facing the camera (Stage B, string bikini s202) and
     the pass redrew the front of her bikini bottoms; the view in the photo decides, not the request's wording."""
     rs, ls = _p(kp, R_SH), _p(kp, L_SH)
-    if not (_p(kp, NOSE) and _p(kp, R_EYE) and _p(kp, L_EYE) and rs and ls):
+    nose, re, le = _p(kp, NOSE), _p(kp, R_EYE), _p(kp, L_EYE)
+    if not (nose and re and le and rs and ls):
+        return False
+    # the face itself must face the camera: eyes well apart, nose between them. Looking back over her shoulder the
+    # face is in profile (eyes 0.01-0.10 x shoulder width apart, nose outside them) and the pose model can then label
+    # her shoulders as if she faced the camera: a rear photo was skipped (crop top + denim shorts s202, 23 Oct).
+    # Real front views measured 0.19-0.22 with the nose between the eyes.
+    eye_gap = abs(re[0] - le[0])
+    if eye_gap < 0.13 * abs(rs[0] - ls[0]):
+        return False
+    lo, hi = min(re[0], le[0]) - 0.15 * eye_gap, max(re[0], le[0]) + 0.15 * eye_gap
+    if not lo <= nose[0] <= hi:
         return False
     rh, lh = _p(kp, R_HIP), _p(kp, L_HIP)
     hips_front = rh[0] < lh[0] if rh and lh else True

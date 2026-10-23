@@ -43,6 +43,16 @@ export const FIGURE_STYLES = {
 } as const;
 export type FigureStyle = keyof typeof FIGURE_STYLES;
 
+/** The settings normal generations use when SIENNA_FIGURE=medium (owner's choice, 23 Oct): the "fuller" wording plus
+ * the "medium" reshaping, on rear and three-quarter-rear photos only. Unset SIENNA_FIGURE to turn it off. */
+export const FIGURE_PRESETS = {
+  medium: { file: 'pack_1883628.safetensors', strength: 0.85, denoise: 0.55, style: 'fuller', enlarge: 0.2 },
+} as const;
+
+export function figurePassFromEnv(v: string | undefined): (typeof FIGURE_PRESETS)[keyof typeof FIGURE_PRESETS] | undefined {
+  return v && v in FIGURE_PRESETS ? FIGURE_PRESETS[v as keyof typeof FIGURE_PRESETS] : undefined;
+}
+
 export interface FigurePassOptions {
   file: string;
   strength: number;

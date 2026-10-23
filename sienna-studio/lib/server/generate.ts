@@ -43,7 +43,7 @@ import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
-import { addFigurePass, FIGURE_NODES, parseFigurePass } from '../comfy/figure-pass';
+import { addFigurePass, FIGURE_NODES, figurePassFromEnv, parseFigurePass } from '../comfy/figure-pass';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, kneeFramingOk, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
@@ -652,11 +652,12 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     handRefine = { status: 'skipped', reason: 'needs face refinement on' };
   }
 
-  // ── Targeted figure pass (test requests only): her hip/butt region redrawn with the figure LoRA, colours matched
-  // back, pasted in; before the photo checks so they see the final image ──
+  // ── Targeted figure pass: her hip/butt region reshaped and redrawn with the figure LoRA, colours matched back,
+  // pasted in; before the photo checks so they see the final image. A test request sets its own; otherwise
+  // SIENNA_FIGURE=medium turns it on for rear and three-quarter-rear photos (front views are never changed) ──
   let figurePass: GenerationRecord['figurePass'];
-  if (p.figurePass) {
-    const fp = p.figurePass;
+  const fp = p.figurePass ?? figurePassFromEnv(process.env.SIENNA_FIGURE);
+  if (fp) {
     const inView = rear || /\bthree[- ]quarter (rear|back)\b/i.test(`${req.fields.camera} ${req.fields.pose} ${req.fields.framing}`);
     let reason: string | null = !inView ? 'front view: her butt is not in the photo, so nothing to redraw'
       : !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
