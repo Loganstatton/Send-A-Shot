@@ -89,8 +89,57 @@ def test_composite_leaves_everything_outside_the_soft_mask_pixel_identical():
     out = fg.composite(src, red, soft)
     outside = soft == 0
     assert outside.mean() > 0.7 and np.array_equal(out[outside], src[outside])
-    inside = soft == 1
-    assert inside.any() and np.allclose(out[inside], red[inside])
+    # inside, above the bottom ramp, the redraw is kept; only its local average tone near the edges is corrected
+    # (random noise has none to speak of)
+    ys = np.where(hard.any(1))[0]
+    core = np.zeros((H, W), bool)
+    core[ys.min() + 30:ys.max() - int(0.12 * H) - 5] = True
+    core &= hard > 0.5
+    assert core.any() and float(np.abs(out[core] - red[core]).mean()) < 0.02
+
+
+def _leggings(tone):
+    img = np.zeros((H, W, 3), np.float32)
+    img[...] = (0.55, 0.55, 0.55)  # pavement
+    img[180:990, 240:360] = tone   # black leggings down the whole leg
+    return img
+
+
+def test_no_tone_step_where_the_redraw_ends_on_black_leggings():
+    """Stage A (23 Oct): the redraw's black came out a shade lighter; a plain feather left a line across the thighs."""
+    src = _leggings((0.05, 0.05, 0.06))
+    red = _leggings((0.11, 0.11, 0.12))  # the redraw's slightly lighter black inside the region
+    hard, soft, _ = fg.figure_region((H, W), silhouette(), standing())
+    out = fg.composite(src, red, soft)
+    col = out[:, 300, 0]
+    ys = np.where(hard[:, 300] > 0.5)[0]
+    seg = col[ys.min() - 40:ys.max() + 40]
+    assert np.abs(np.diff(seg)).max() < 0.004  # no step anywhere down the leg: the change is spread out
+    assert abs(col[ys.max() + 30] - 0.05) < 1e-6  # below the region: the original exactly
+    plain = (src * (1 - soft[..., None]) + red * soft[..., None])[:, 300, 0]
+    assert np.abs(np.diff(plain[ys.min() - 40:ys.max() + 40])).max() > 0.004  # the old paste-back did have one
+
+
+def test_the_new_shape_survives_the_blend():
+    kp = standing()
+    kp[3], kp[4], kp[6], kp[7] = (150, 300), (120, 200), (450, 300), (480, 200)  # hands on her head: hips clear
+    src = _leggings((0.05, 0.05, 0.06))
+    red = src.copy()
+    red[480:560, 362:372] = (0.05, 0.05, 0.06)  # the curve now reaches 12 px further out at the side of the butt
+    hard, soft, _ = fg.figure_region((H, W), silhouette(), kp)
+    out = fg.composite(src, red, soft)
+    assert hard[520, 366] > 0.5
+    assert out[520, 366, 0] < 0.1  # drawn as leggings, not pavement
+
+
+def test_a_hand_resting_on_the_hip_stays_out():
+    kp = standing()
+    kp[3], kp[4] = (250, 380), (262, 520)  # elbow and wrist: the hand rests on her hip, fingers pointing down
+    classes = [np.zeros((H, W), np.float32) for _ in range(6)]
+    classes[fg.BODY_SKIN][515:600, 245:285] = 1  # the hand's skin
+    hard, _, _ = fg.figure_region((H, W), silhouette(), kp, classes)
+    assert hard[515:600, 245:285].max() == 0
+    assert hard[470, 300] > 0.5  # the rest of the hips still redrawn
 
 
 def test_outline_change_reports_wider_hips():

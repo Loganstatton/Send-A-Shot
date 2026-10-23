@@ -85,11 +85,20 @@ def figure_region(
     for a, b in ((R_EL, R_WR), (L_EL, L_WR), (R_SH, R_EL), (L_SH, L_EL)):
         pa, pb = _p(kp, a), _p(kp, b)
         if pa and pb:
-            cv2.line(arms, (int(pa[0]), int(pa[1])), (int(pb[0]), int(pb[1])), 1, max(1, int(0.13 * torso)))
-    for wr in (_p(kp, R_WR), _p(kp, L_WR)):
+            cv2.line(arms, (int(pa[0]), int(pa[1])), (int(pb[0]), int(pb[1])), 1, max(1, int(0.15 * torso)))
+    # hands: a wide disc past the wrist toward the fingertips (a hand resting on her hip came out smeared at denoise
+    # 0.7, 23 Oct), plus any bare skin of that hand the segmenter sees around it
+    hands = np.zeros((h, w), np.uint8)
+    for el, wr in ((_p(kp, R_EL), _p(kp, R_WR)), (_p(kp, L_EL), _p(kp, L_WR))):
         if wr:
-            cv2.circle(arms, (int(wr[0]), int(wr[1] + 0.06 * torso)), int(0.12 * torso), 1, -1)
-    keep_out |= arms > 0
+            dx, dy = (wr[0] - el[0], wr[1] - el[1]) if el else (0.0, 1.0)
+            n = max(1e-3, float(np.hypot(dx, dy)))
+            c = (int(wr[0] + dx / n * 0.10 * torso), int(wr[1] + dy / n * 0.10 * torso))
+            cv2.circle(hands, c, int(0.17 * torso), 1, -1)
+    if classes and hands.any():
+        near = cv2.dilate(hands, _disk(0.06 * torso)) > 0
+        hands |= ((classes[BODY_SKIN] > 0.5) & near).astype(np.uint8)
+    keep_out |= (arms > 0) | (cv2.dilate(hands, _disk(0.015 * h)) > 0)
     hard = region & ~keep_out
     hard = cv2.morphologyEx(hard.astype(np.uint8), cv2.MORPH_OPEN, _disk(0.004 * h)) > 0
     soft = cv2.GaussianBlur(hard.astype(np.float32), (0, 0), max(1.0, feather_frac * h))
@@ -133,9 +142,46 @@ def match_colors(src: np.ndarray, red: np.ndarray, mask: np.ndarray, src_classes
     return res.astype(np.float32), info
 
 
-def composite(src: np.ndarray, red: np.ndarray, soft: np.ndarray) -> np.ndarray:
-    s = np.asarray(soft, np.float32)[..., None]
-    return (src[..., :3] * (1 - s) + red[..., :3] * s).astype(np.float32)
+def composite(src: np.ndarray, red: np.ndarray, soft: np.ndarray, tone_sigma: float = 0.02, tone_fade: float = 0.075,
+              ramp: float = 0.12, content_change: float = 0.1) -> np.ndarray:
+    """The redrawn region pasted into the original without a visible edge (a plain feather left a straight tone step
+    across both thighs in every Stage A photo, 23 Oct):
+      1. tone: the redraw's low-frequency difference from the original, measured in a band just inside the edge, is
+         removed at the edge and faded out over `tone_fade` x height toward the inside; pixels whose content changed
+         (more than `content_change`, e.g. the new curve over old background) are left out of the measurement;
+      2. bottom edge (mid-thigh): a long vertical ramp, `ramp` x height, back to the original instead of a ~15 px feather.
+    Pixels outside the feathered mask are the original's exactly."""
+    s = np.clip(np.asarray(soft, np.float32), 0, 1)
+    src3, red3 = src[..., :3].astype(np.float32), red[..., :3].astype(np.float32)
+    hard = s > 0.5
+    if not hard.any():
+        return src3.copy()
+    h = s.shape[0]
+    used = s > 1e-3  # every pixel the paste-back touches, the feathered rim included
+    inner = cv2.erode(used.astype(np.uint8), _disk(0.04 * h)) > 0
+    band = used & ~inner
+    sig = max(2.0, tone_sigma * h)
+    d = red3 - src3
+    # only where the content is the same and just the tone drifted (a new curve over old background is a real change,
+    # not a tone error — correcting it would leave a halo around the new outline)
+    same = band & (np.abs(d).max(-1) < content_change)
+    diff = np.where(same[..., None], d, 0).astype(np.float32)
+    wsum = cv2.GaussianBlur(same.astype(np.float32), (0, 0), sig) + 1e-4
+    low = cv2.GaussianBlur(diff, (0, 0), sig) / wsum[..., None]
+    dist = cv2.distanceTransform(used.astype(np.uint8), cv2.DIST_L2, 5)
+    fade = np.clip(1 - dist / max(1.0, tone_fade * h), 0, 1) * used
+    red2 = red3 - low * fade[..., None]
+    # top (waist) and bottom (mid-thigh) edges: ramps back to the original; the bottom one long, as tested offline
+    ys = np.where(used.any(1))[0]
+    top, bot = int(ys.min()), int(ys.max())
+    r = np.zeros(h, np.float32)
+    y_top = min(bot, top + int(0.04 * h))
+    y_bot = max(y_top, bot - int(ramp * h))
+    r[top:y_top] = np.linspace(0, 1, y_top - top, endpoint=False)
+    r[y_top:y_bot] = 1
+    r[y_bot:bot + 1] = np.linspace(1, 0, bot + 1 - y_bot)
+    wgt = (s * r[:, None])[..., None]
+    return np.clip(src3 * (1 - wgt) + red2 * wgt, 0, 1).astype(np.float32)
 
 
 def outline_change(src_person: np.ndarray, res_person: np.ndarray, band: Sequence[int]) -> Dict:
