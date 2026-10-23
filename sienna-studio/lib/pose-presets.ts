@@ -118,7 +118,7 @@ const AUTO_PRESETS: [string, RegExp][] = [
   ['mirror_selfie', /\bmirror selfie\b/i],
   ['kneeling_upright', /\bkneel(ing|s)?( up| upright)?\b(?![^,.]*\b(all fours|bent over|bending|sitting back)\b)/i],
 ];
-const NOT_STANDING_RE = /\b(sit|sitting|sits|seated|lying|laying|lies|kneel|kneeling|crouch|crouching|squat|squatting|bend|bending|bent over|leaning|walking|running|dancing|jumping)\b/i;
+export const NOT_STANDING_RE = /\b(sit|sitting|sits|seated|lying|laying|lies|kneel|kneeling|crouch|crouching|squat|squatting|bend|bending|bent over|leaning|walking|running|dancing|jumping)\b/i;
 
 const POSED_LIMBS_RE =
   /\b(hands?|arms?|hips?|elbows?|wrists?|fingers?|legs?|knees?|foot|feet|shoulders?|holding|holds|touching|brushing|running (her|a) hand|reaching|pointing|waving|crossed|leaning|lean(s|ing)? (on|against)|weight on|contrapposto|twist(ed|ing)?|turned|stretching|posing|pose)\b/i;

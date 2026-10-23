@@ -36,7 +36,7 @@ import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt, COVER_GARMENTS, fullBodyFraming, withoutAbs, type CoverGarment } from '../prompt';
 import { checkRules } from '../ai-prompts';
-import { CAMERA_ANGLE_RE, matchPosePreset, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
+import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
@@ -656,7 +656,10 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // pasted in; before the photo checks so they see the final image. A test request sets its own; otherwise
   // SIENNA_FIGURE=medium turns it on for rear and three-quarter-rear photos (front views are never changed) ──
   let figurePass: GenerationRecord['figurePass'];
-  const fp = p.figurePass ?? figurePassFromEnv(process.env.SIENNA_FIGURE);
+  // the live setting is verified on standing photos only: bent over, sitting, kneeling or lying, the reshaping (built
+  // around an upright body) did nothing and the redraw region fell across her back and hair (offline, 23 Oct)
+  const standingPose = !NOT_STANDING_RE.test(req.fields.pose) && (!req.params.posePreset || /^(standing|looking_back|arms_crossed|hand_in_hair|mirror_selfie)/.test(req.params.posePreset));
+  const fp = p.figurePass ?? (standingPose ? figurePassFromEnv(process.env.SIENNA_FIGURE) : undefined);
   if (fp) {
     const inView = rear || /\bthree[- ]quarter (rear|back)\b/i.test(`${req.fields.camera} ${req.fields.pose} ${req.fields.framing}`);
     let reason: string | null = !inView ? 'front view: her butt is not in the photo, so nothing to redraw'
