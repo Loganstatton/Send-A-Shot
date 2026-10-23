@@ -31,6 +31,9 @@ export const FIGURE_WORDS = '(full round butt, round lifted glutes:1.15), (defin
 /** Added to the redraw's negative only: the figure LoRA's fitness-wear look drew gathered "scrunch" seams on shorts,
  * leggings and a bodycon dress (Stage B, 23 Oct). */
 export const FIGURE_NEGATIVE_WORDS = '(scrunch butt, ruched fabric, gathered fabric, seam down the middle of the butt:1.2)';
+/** Added to the redraw's negative when she wears bottoms: the redraw covers the area between her thighs, and two of six
+ * provocative test photos (thong, sheer bodysuit) came out with a sliver of genital detail below the fabric (23 Oct). */
+export const FIGURE_COVER_NEGATIVE_WORDS = '(exposed genitals, vulva, labia, pubic hair, bare crotch:1.35)';
 /** Test style "fuller" (23 Oct, from the owner's reference photo): a round bubble butt, fullest at the lower cheeks
  * (a "heart" shape), with strong projection; the lower cheeks rest over the backs of the thighs with a deep curved
  * crease under each — firm, not sagging. */
@@ -65,6 +68,8 @@ export interface FigurePassOptions {
   grow?: number;
   /** test style: stronger wording and more room past her outline */
   style?: FigureStyle;
+  /** she wears bottoms: the redraw must not draw her bare crotch (FIGURE_COVER_NEGATIVE_WORDS) */
+  covered?: boolean;
   /** reshape her butt bigger before the redraw (SiennaFigureMask "enlarge"; 0.20 = "medium", 23 Oct): the redraw
    * alone kept her outline (hip width +0%) and the change didn't show at normal size */
   enlarge?: number;
@@ -118,7 +123,7 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
     },
     [n.positive]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${posText}, ${o.style ? FIGURE_STYLES[o.style].words : FIGURE_WORDS}` }, _meta: { title: 'Figure pass: prompt' } },
     ...(typeof negText === 'string'
-      ? { [n.negative]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${negText}, ${FIGURE_NEGATIVE_WORDS}${o.style ? `, ${FIGURE_STYLES[o.style].negative}` : ''}` }, _meta: { title: 'Figure pass: negative' } } }
+      ? { [n.negative]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${negText}, ${FIGURE_NEGATIVE_WORDS}${o.style ? `, ${FIGURE_STYLES[o.style].negative}` : ''}${o.covered ? `, ${FIGURE_COVER_NEGATIVE_WORDS}` : ''}` }, _meta: { title: 'Figure pass: negative' } } }
       : {}),
     [n.encode]: { class_type: 'VAEEncode', inputs: { pixels, vae: face.inputs.vae }, _meta: { title: 'Figure pass: encode' } },
     [n.noiseMask]: { class_type: 'SetLatentNoiseMask', inputs: { samples: [n.encode, 0], mask: [n.mask, 0] }, _meta: { title: 'Figure pass: region only' } },

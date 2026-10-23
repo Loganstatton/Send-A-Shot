@@ -656,6 +656,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // pasted in; before the photo checks so they see the final image. A test request sets its own; otherwise
   // SIENNA_FIGURE=medium turns it on for rear and three-quarter-rear photos (front views are never changed) ──
   let figurePass: GenerationRecord['figurePass'];
+  // she wears bottoms unless the outfit says otherwise (topless still has bottoms)
+  const NO_BOTTOMS_RE = /\b(nude|naked|bottomless|nothing on|wearing nothing|no (bottoms|panties|underwear|thong))\b/i;
   // the live setting is verified on standing photos only: bent over, sitting, kneeling or lying, the reshaping (built
   // around an upright body) did nothing and the redraw region fell across her back and hair (offline, 23 Oct)
   const standingPose = !NOT_STANDING_RE.test(req.fields.pose) && (!req.params.posePreset || /^(standing|looking_back|arms_crossed|hand_in_hair|mirror_selfie)/.test(req.params.posePreset));
@@ -665,7 +667,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     let reason: string | null = !inView ? 'front view: her butt is not in the photo, so nothing to redraw'
       : !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
       : !loraChainEnd || graph[loraChainEnd]?.class_type !== 'LoraLoader' ? "Sienna's LoRA node not found" : null;
-    const withFigure = reason ? null : addFigurePass(graph, { file: fp.file, strength: fp.strength, denoise: fp.denoise, ...(fp.style ? { style: fp.style } : {}), ...(fp.enlarge ? { enlarge: fp.enlarge } : {}), baseLoraId: loraChainEnd!, faceRefineId: refineId! });
+    const withFigure = reason ? null : addFigurePass(graph, { file: fp.file, strength: fp.strength, denoise: fp.denoise, ...(fp.style ? { style: fp.style } : {}), ...(fp.enlarge ? { enlarge: fp.enlarge } : {}), covered: !NO_BOTTOMS_RE.test(req.fields.outfit), baseLoraId: loraChainEnd!, faceRefineId: refineId! });
     if (!reason && !withFigure) reason = 'the face pass has no prompt to copy';
     if (withFigure) {
       const missing = await missingClasses(backend, withFigure, Object.values(FIGURE_NODES));

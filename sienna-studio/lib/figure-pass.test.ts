@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { addFigurePass, ENLARGE_GROW, FIGURE_NEGATIVE_WORDS, FIGURE_NODES, FIGURE_PRESETS, FIGURE_STYLES, FIGURE_WORDS, figurePassFromEnv, parseFigurePass } from './comfy/figure-pass';
+import { addFigurePass, ENLARGE_GROW, FIGURE_COVER_NEGATIVE_WORDS, FIGURE_NEGATIVE_WORDS, FIGURE_NODES, FIGURE_PRESETS, FIGURE_STYLES, FIGURE_WORDS, figurePassFromEnv, parseFigurePass } from './comfy/figure-pass';
 import type { ComfyGraph } from './types';
 
 const prod = (): ComfyGraph => JSON.parse(readFileSync(new URL('../workflows/examples/sienna-sdxl-production.json', import.meta.url), 'utf8'));
@@ -62,6 +62,10 @@ describe('targeted figure pass (test only)', () => {
     const g = addFigurePass(prod(), { ...FIGURE_PRESETS.medium, baseLoraId: '2', faceRefineId: '51' })!;
     expect(g[FIGURE_NODES.mask].inputs.enlarge).toBe(0.2);
     expect(g[FIGURE_NODES.sampler].inputs.denoise).toBe(0.55);
+  });
+  it('covered: the redraw is told not to draw her bare crotch; not when the outfit is nude', () => {
+    expect(addFigurePass(prod(), { ...opts, covered: true })![FIGURE_NODES.negative].inputs.text).toContain(FIGURE_COVER_NEGATIVE_WORDS);
+    expect(addFigurePass(prod(), opts)![FIGURE_NODES.negative].inputs.text).not.toContain(FIGURE_COVER_NEGATIVE_WORDS);
   });
   it('nothing to copy from: no pass', () => {
     expect(addFigurePass(prod(), { ...opts, faceRefineId: 'nope' })).toBeNull();
