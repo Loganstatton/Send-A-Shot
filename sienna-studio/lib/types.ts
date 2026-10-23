@@ -148,6 +148,8 @@ export interface GenerationParams {
   /** Testing (figure preview): a figure LoRA chained right after Sienna's, and extra figure wording after her traits. */
   figurePack?: { file: string; strength: number };
   figureTrait?: string;
+  /** Testing (targeted figure pass, lib/comfy/figure-pass.ts): only her hip/butt region redrawn with the figure LoRA. */
+  figurePass?: { file: string; strength: number; denoise: number };
   /** Testing: the revealing-benchmark fixes on for this request (lib/fixes.ts); unset = SIENNA_FIXES. */
   fixes?: import('./fixes').Fix[];
   /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */
@@ -367,6 +369,8 @@ export interface GenerationRecord {
   /** Small-face refinement pass: whether it was in the graph and with which settings. */
   faceRefine?: { status: 'on' | 'off' | 'skipped'; denoise?: number; threshold?: number; reason?: string; siennaLoraOnly?: boolean; faceReferenceOnly?: boolean };
   handRefine?: { status: 'on' | 'off' | 'skipped'; reason?: string; denoise?: number };
+  /** Targeted figure pass (test requests only). */
+  figurePass?: { status: 'on' | 'skipped'; reason?: string; file?: string; strength?: number; denoise?: number };
   /** Photo checks: each photo is checked (top check when the outfit has a top, face check with Sienna Lock) and
    * redone with a new seed when one fails. Named for the first check it had. */
   exposureGuard?: {
@@ -392,6 +396,8 @@ export interface GenerationRecord {
       framingOk?: boolean;
       /** What the body check saw cut off by the frame ("her knees") when it wasn't redone for it. */
       framingMiss?: string;
+      /** Targeted figure pass report: region size, colour shift undone, hip width change. */
+      figure?: import('./comfy/figure-pass').FigurePassReport;
       poseOk?: boolean;
       aiOk?: boolean;
       aiScore?: number;

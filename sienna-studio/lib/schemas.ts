@@ -123,6 +123,8 @@ export const simpleCreateSchema = z.object({
        * copy was tested and discarded (23 Oct: shape close to baseline, added a tank top over the sports bra 2 of 2) */
       figurePack: z.object({ file: z.enum(['pack_1883628.safetensors', 'pack_1447606.safetensors']), strength: z.number().min(0.05).max(0.8) }).optional(),
       figureTrait: z.string().max(120).regex(/^[a-z ,-]+$/i).optional(),
+      /** targeted figure pass (23 Oct): Glute Goddess on her hip/butt region only */
+      figurePass: z.object({ file: z.enum(['pack_1883628.safetensors']), strength: z.number().min(0.3).max(0.9), denoise: z.number().min(0.3).max(0.8) }).optional(),
     })
     .optional(),
 });

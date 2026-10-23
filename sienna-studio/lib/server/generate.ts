@@ -43,6 +43,7 @@ import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { addFigurePass, FIGURE_NODES, parseFigurePass } from '../comfy/figure-pass';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, kneeFramingOk, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
@@ -576,6 +577,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // testing (figure preview): a figure LoRA goes right after Sienna's, before the packs; the face redraw still uses
   // Sienna's LoRA alone. A missing file fails the photo loudly rather than quietly testing nothing.
   const figure = req.params.figurePack;
+  let loraChainEnd: string | undefined = bindings.lora_name?.[0]?.nodeId;
   if (stylePacks.length || figure) {
     let after = bindings.lora_name?.[0]?.nodeId;
     if (after && graph[after]?.class_type !== 'LoraLoader') after = undefined;
@@ -594,6 +596,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       graph[spliced.nodeId]._meta = { title };
       if (graph[spliced.nodeId].class_type === 'LoraLoader') after = spliced.nodeId;
     }
+    loraChainEnd = after ?? loraChainEnd;
     // The face redraw goes back to Sienna's LoRA alone: packs shape the body and outfit, not her face.
     if (p.faceKeepsSiennaLora !== false && siennaLoraId && faceRefine?.status === 'on' && refineId && graph[refineId]) {
       graph[refineId].inputs.model = [siennaLoraId, 0];
@@ -647,6 +650,26 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
   } else {
     handRefine = { status: 'skipped', reason: 'needs face refinement on' };
+  }
+
+  // ── Targeted figure pass (test requests only): her hip/butt region redrawn with the figure LoRA, colours matched
+  // back, pasted in; before the photo checks so they see the final image ──
+  let figurePass: GenerationRecord['figurePass'];
+  if (p.figurePass) {
+    const fp = p.figurePass;
+    const inView = rear || /\bthree[- ]quarter (rear|back)\b/i.test(`${req.fields.camera} ${req.fields.pose} ${req.fields.framing}`);
+    let reason: string | null = !inView ? 'front view: her butt is not in the photo, so nothing to redraw'
+      : !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
+      : !loraChainEnd || graph[loraChainEnd]?.class_type !== 'LoraLoader' ? "Sienna's LoRA node not found" : null;
+    const withFigure = reason ? null : addFigurePass(graph, { file: fp.file, strength: fp.strength, denoise: fp.denoise, baseLoraId: loraChainEnd!, faceRefineId: refineId! });
+    if (!reason && !withFigure) reason = 'the face pass has no prompt to copy';
+    if (withFigure) {
+      const missing = await missingClasses(backend, withFigure, Object.values(FIGURE_NODES));
+      if (missing.length) reason = `server is missing ${describeMissing(missing)}`;
+      else graph = withFigure;
+    }
+    figurePass = reason ? { status: 'skipped', reason } : { status: 'on', file: fp.file, strength: fp.strength, denoise: fp.denoise };
+    if (reason && inView) warnings.push(`Figure pass skipped — ${reason}.`);
   }
 
   // ── Photo checks (retries happen in doRefresh): top check when the outfit has a top, face check with Sienna Lock ──
@@ -725,6 +748,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       prunedModules,
       faceRefine,
       handRefine,
+      ...(figurePass ? { figurePass } : {}),
       exposureGuard,
       submittedGraph: graph,
       images: [],
@@ -950,6 +974,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               // her joints beat the face-size guess whenever the body could be judged
               ...(bodyFraming !== undefined ? { framingOk: bodyFraming } : {}),
               ...(knees?.miss ? { framingMiss: knees.miss } : {}),
+              ...(rec.figurePass?.status === 'on' ? { figure: parseFigurePass(state.texts) } : {}),
               ...(poseCheck ? { poseOk: poseCheck.ok } : {}),
               // a correction records the photo it was made from (and whether she was kept pixel for pixel)
               ...(guard.next ? { basedOn: guard.next.basedOn, ...(guard.next.keptPerson ? { keptPerson: true } : {}) } : {}),

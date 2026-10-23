@@ -12,6 +12,8 @@ Sienna Studio custom ComfyUI nodes (installed by scripts/comfyui-bootstrap.sh).
   SiennaFaceCheck        image(s) + reference embedding → how close the face is to Sienna (OpenCV SFace; JSON)
   SiennaSafeFrame        photo + movement margins → photo with the missing room around her added + outpaint mask (video)
   SiennaLockCamera       video frames → frames with the camera's drift removed (background held still) + JSON report (video)
+  SiennaFigureMask       photo + person mask + DWPose → hip/butt region to redraw (figure pass, test only)
+  SiennaFigureComposite  original + redrawn photo + region → colours matched back per class, pasted in (figure pass)
 
 The math lives in sienna_pose.py / sienna_garment.py / sienna_crop.py / sienna_body.py / sienna_frame.py / sienna_stabilize.py
 (no ComfyUI imports; unit-tested).
@@ -32,6 +34,7 @@ from . import sienna_face
 from .sienna_redraw import GROW_MODES, erase, garment_region, overlay, segment_classes, segmenter_error
 from .sienna_garment import garment_composite
 from .sienna_pose import DEFAULT_PROPORTIONS, retarget_openpose
+from . import sienna_figure
 
 
 def _mask_np(mask, i, shape):
@@ -460,6 +463,90 @@ class SiennaLockCamera:
         return {"ui": {"text": [text]}, "result": (result, text)}
 
 
+class SiennaFigureMask:
+    """Figure pass (test only): the hip/butt region to resample with the figure LoRA; face, hair, hands and the arms
+    beside her hips stay out. Empty mask (nothing redrawn) when her hips or outline aren't found."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "pose_keypoint": ("POSE_KEYPOINT",),
+                "grow": ("FLOAT", {"default": 0.06, "min": 0.0, "max": 0.2, "step": 0.01}),
+            },
+            "optional": {"person_mask": ("MASK",), "face_mask": ("MASK",)},
+        }
+
+    RETURN_TYPES = ("MASK", "MASK", "STRING")
+    RETURN_NAMES = ("mask", "soft_mask", "info")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image, pose_keypoint, grow, person_mask=None, face_mask=None):
+        img = image[0].detach().cpu().numpy().astype(np.float32)
+        shape = img.shape[:2]
+        classes = segment_classes(img)
+        person = _mask_np(person_mask, 0, shape)
+        if person is None and classes:
+            person = 1.0 - classes[0]
+        hard, soft, info = sienna_figure.figure_region(shape, person, _kp_for(pose_keypoint, shape), classes,
+                                                       _mask_np(face_mask, 0, shape), grow=grow)
+        text = json.dumps(info)
+        t = lambda a: torch.from_numpy(np.ascontiguousarray(a))[None, ...]
+        return {"ui": {"text": [text]}, "result": (t(hard), t(soft), text)}
+
+
+class SiennaFigureComposite:
+    """Figure pass (test only): the redrawn region's skin and clothes colours matched to the original's, pasted into
+    the original with the feathered mask; reports how much wider her outline got in the hip band."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "original": ("IMAGE",),
+                "redrawn": ("IMAGE",),
+                "mask": ("MASK",),
+                "soft_mask": ("MASK",),
+                "color_match": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "info")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, original, redrawn, mask, soft_mask, color_match):
+        src = original[0].detach().cpu().numpy().astype(np.float32)
+        red = redrawn[0].detach().cpu().numpy().astype(np.float32)
+        if red.shape[:2] != src.shape[:2]:
+            red = cv2.resize(red, (src.shape[1], src.shape[0]), interpolation=cv2.INTER_LANCZOS4)
+        shape = src.shape[:2]
+        hard, soft = _mask_np(mask, 0, shape), _mask_np(soft_mask, 0, shape)
+        info = {}
+        if hard is None or not (hard > 0.5).any():
+            info["skipped"] = "empty region"
+            out = src[..., :3]
+        else:
+            cs, cr = segment_classes(src), segment_classes(red)
+            matched, info["color_shift"] = sienna_figure.match_colors(src, red, cv2.dilate((hard > 0.5).astype(np.uint8), np.ones((15, 15), np.uint8)),
+                                                                    cs, cr, color_match)
+            out = sienna_figure.composite(src, matched, soft)
+            if cs:
+                band = np.where((hard > 0.5).any(1))[0]
+                co = segment_classes(out)
+                if co is not None and band.size:
+                    info.update(sienna_figure.outline_change(1.0 - cs[0], 1.0 - co[0], (band.min(), band.max())))
+            else:
+                info["segmenter_error"] = segmenter_error()
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out))[None, ...], text)}
+
+
 NODE_CLASS_MAPPINGS = {
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
@@ -473,6 +560,8 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFaceCheck": SiennaFaceCheck,
     "SiennaSafeFrame": SiennaSafeFrame,
     "SiennaLockCamera": SiennaLockCamera,
+    "SiennaFigureMask": SiennaFigureMask,
+    "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaPoseRetarget": "Sienna Pose Retarget",
@@ -487,4 +576,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaFaceCheck": "Sienna Face Check",
     "SiennaSafeFrame": "Sienna Safe Frame (video)",
     "SiennaLockCamera": "Sienna Lock Camera (video)",
+    "SiennaFigureMask": "Sienna Figure Mask (test)",
+    "SiennaFigureComposite": "Sienna Figure Composite (test)",
 }
