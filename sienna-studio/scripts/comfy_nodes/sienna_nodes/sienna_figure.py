@@ -131,6 +131,89 @@ def figure_region(
     return hard.astype(np.float32), soft.astype(np.float32), info
 
 
+def _arm_mask(shape: Tuple[int, int], kp: Sequence[Point], torso: float, width: float) -> np.ndarray:
+    """Her arms (shoulder-elbow-wrist lines `width` x torso thick) and hands (a disc past each wrist)."""
+    m = np.zeros(shape, np.uint8)
+    for a, b in ((R_SH, R_EL), (R_EL, R_WR), (L_SH, L_EL), (L_EL, L_WR)):
+        pa, pb = _p(kp, a), _p(kp, b)
+        if pa and pb:
+            cv2.line(m, (int(pa[0]), int(pa[1])), (int(pb[0]), int(pb[1])), 1, max(1, int(width * torso)))
+    for el, wr in ((_p(kp, R_EL), _p(kp, R_WR)), (_p(kp, L_EL), _p(kp, L_WR))):
+        if wr:
+            dx, dy = (wr[0] - el[0], wr[1] - el[1]) if el else (0.0, 1.0)
+            n = max(1e-3, float(np.hypot(dx, dy)))
+            cv2.circle(m, (int(wr[0] + dx / n * 0.08 * torso), int(wr[1] + dy / n * 0.08 * torso)), int(0.11 * torso), 1, -1)
+    return m > 0
+
+
+def enlarge(img: np.ndarray, kp: Sequence[Point], person: Optional[np.ndarray], classes: Optional[List[np.ndarray]],
+            amount: float) -> Tuple[np.ndarray, Optional[np.ndarray], Dict]:
+    """Her butt made bigger by reshaping the photo before the redraw (the redraw alone kept her outline: hip width
+    +0% in every "fuller" photo, and the change didn't show at normal size, 23 Oct). Two smooth "bloat" fields, one
+    per cheek, centred low on the cheeks (fullest at the lower cheeks): nothing above her waist moves, the effect
+    fades out down the thighs. `amount` 0.20 = "medium" (picked by the owner from offline previews, 23 Oct).
+    Her arms and hands are in front of her hips: they are put back unmoved on top. Returns (image, person mask
+    reshaped the same way, info); unchanged when the photo faces the camera or her hips aren't found."""
+    h, w = img.shape[:2]
+    info: Dict = {"amount": amount}
+    hip = _mid(_p(kp, R_HIP), _p(kp, L_HIP))
+    shoulder = _mid(_p(kp, R_SH), _p(kp, L_SH)) or _p(kp, NECK)
+    if amount <= 0 or facing_camera(kp) or not hip or not shoulder:
+        info["skipped"] = "front view or hips not found" if amount > 0 else "off"
+        return img, person, info
+    torso = float(np.hypot(hip[0] - shoulder[0], hip[1] - shoulder[1]))
+    top, crease = hip[1] - 0.17 * torso, hip[1] + 0.35 * torso  # her waist and the fold under her cheeks
+    arms = _arm_mask((h, w), kp, torso, 0.15)
+    # her width at the cheeks: the outline's run through her midline, arms taken out; else from the hip joints
+    W = 0.0
+    hips_apart = abs(_p(kp, R_HIP)[0] - _p(kp, L_HIP)[0]) if _p(kp, R_HIP) and _p(kp, L_HIP) else 0.0
+    if person is not None:
+        y = int(min(h - 1, hip[1] + 0.12 * torso))
+        row = (np.asarray(person)[y] > 0.5) & ~arms[y]
+        x = int(np.clip(hip[0], 0, w - 1))
+        if row[x]:
+            l = r = x
+            while l > 0 and row[l - 1]:
+                l -= 1
+            while r < w - 1 and row[r + 1]:
+                r += 1
+            W = float(r - l)
+    if not (1.6 * hips_apart <= W <= 3.2 * hips_apart) and hips_apart:
+        W = 2.3 * hips_apart
+    if W < 0.05 * w:
+        info["skipped"] = "her width at the hips not found"
+        return img, person, info
+    yy, xx = np.mgrid[:h, :w].astype(np.float32)
+    cy = top + 0.62 * (crease - top)
+    up, down = cy - top, (crease - cy) + 0.55 * (crease - top)
+    dx, dy = np.zeros_like(xx), np.zeros_like(yy)
+    for side in (-1, 1):
+        cx = hip[0] + side * 0.25 * W
+        ry = np.where(yy < cy, up, down)
+        f = np.clip(1 - ((xx - cx) / (0.62 * W)) ** 2 - ((yy - cy) / ry) ** 2, 0, None) ** 2
+        dx += amount * f * (xx - cx)
+        dy += amount * f * (yy - cy) * np.where(yy > cy, 1.0, 0.6)
+    mx, my = xx - dx, yy - dy
+    out = cv2.remap(np.ascontiguousarray(img, np.float32), mx, my, cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
+    pout = None
+    if person is not None:
+        pout = cv2.remap(np.ascontiguousarray(person, np.float32), mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+    # arms and hands back on top, unmoved: their own pixels (skin or sleeve) near the pose lines
+    near = _arm_mask((h, w), kp, torso, 0.11)
+    if classes:
+        near &= (classes[BODY_SKIN] > 0.5) | (classes[CLOTHES] > 0.5)
+    elif person is not None:
+        near &= np.asarray(person) > 0.5
+    a = cv2.GaussianBlur(near.astype(np.float32), (0, 0), 1.5)[..., None]
+    out = np.clip(out * (1 - a) + np.asarray(img, np.float32) * a, 0, 1)
+    if pout is not None:
+        pout = np.maximum(pout, near.astype(np.float32))
+    info.update(width=round(W, 1), torso=round(torso, 1), band=[int(top), int(crease)])
+    if person is not None and pout is not None:
+        info.update(outline_change(person, pout, (int(top), int(crease))))
+    return out.astype(np.float32), pout, info
+
+
 def _lab(img: np.ndarray) -> np.ndarray:
     return cv2.cvtColor((np.clip(img[..., :3], 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
 

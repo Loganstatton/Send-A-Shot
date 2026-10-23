@@ -475,30 +475,34 @@ class SiennaFigureMask:
                 "pose_keypoint": ("POSE_KEYPOINT",),
                 "grow": ("FLOAT", {"default": 0.06, "min": 0.0, "max": 0.2, "step": 0.01}),
             },
-            "optional": {"person_mask": ("MASK",), "face_mask": ("MASK",)},
+            "optional": {"person_mask": ("MASK",), "face_mask": ("MASK",),
+                         "enlarge": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 0.4, "step": 0.01})},
         }
 
-    RETURN_TYPES = ("MASK", "MASK", "STRING")
-    RETURN_NAMES = ("mask", "soft_mask", "info")
+    RETURN_TYPES = ("MASK", "MASK", "STRING", "IMAGE")
+    RETURN_NAMES = ("mask", "soft_mask", "info", "image")
     FUNCTION = "run"
     OUTPUT_NODE = True
     CATEGORY = "sienna"
 
-    def run(self, image, pose_keypoint, grow, person_mask=None, face_mask=None):
+    def run(self, image, pose_keypoint, grow, person_mask=None, face_mask=None, enlarge=0.0):
         img = image[0].detach().cpu().numpy().astype(np.float32)
         shape = img.shape[:2]
         kp = _kp_for(pose_keypoint, shape)
         arrays = {"image": img[..., :3], "person": _mask_np(person_mask, 0, shape), "face": _mask_np(face_mask, 0, shape)}
-        params = {"kp": [[float(p[0]), float(p[1])] if p else None for p in kp], "grow": float(grow)}
+        params = {"kp": [[float(p[0]), float(p[1])] if p else None for p in kp], "grow": float(grow), "enlarge": float(enlarge)}
         res, info = sienna_figure.run_isolated("mask", arrays, params, sienna_figure.MASK_TIMEOUT)
-        if res is None:  # stalled or failed: nothing is redrawn and the report says so
+        out = img[..., :3]
+        if res is None:  # stalled or failed: nothing is redrawn or reshaped and the report says so
             hard = soft = np.zeros(shape, np.float32)
             info = {"completed": False, "fallback": f"figure region not computed ({info['error']}); photo left as made", **info}
         else:
             hard, soft = res["hard"], res["soft"]
+            if "image" in res and res["image"].shape[:2] == shape:
+                out = res["image"]  # reshaped (enlarge > 0) or the photo as made
         text = json.dumps(info)
         t = lambda a: torch.from_numpy(np.ascontiguousarray(a, np.float32))[None, ...]
-        return {"ui": {"text": [text]}, "result": (t(hard), t(soft), text)}
+        return {"ui": {"text": [text]}, "result": (t(hard), t(soft), text, t(out))}
 
 
 class SiennaFigureComposite:

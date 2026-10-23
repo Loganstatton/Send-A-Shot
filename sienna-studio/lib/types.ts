@@ -149,7 +149,7 @@ export interface GenerationParams {
   figurePack?: { file: string; strength: number };
   figureTrait?: string;
   /** Testing (targeted figure pass, lib/comfy/figure-pass.ts): only her hip/butt region redrawn with the figure LoRA. */
-  figurePass?: { file: string; strength: number; denoise: number; style?: import('./comfy/figure-pass').FigureStyle };
+  figurePass?: { file: string; strength: number; denoise: number; style?: import('./comfy/figure-pass').FigureStyle; enlarge?: number };
   /** Testing: the revealing-benchmark fixes on for this request (lib/fixes.ts); unset = SIENNA_FIXES. */
   fixes?: import('./fixes').Fix[];
   /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */
@@ -370,7 +370,7 @@ export interface GenerationRecord {
   faceRefine?: { status: 'on' | 'off' | 'skipped'; denoise?: number; threshold?: number; reason?: string; siennaLoraOnly?: boolean; faceReferenceOnly?: boolean };
   handRefine?: { status: 'on' | 'off' | 'skipped'; reason?: string; denoise?: number };
   /** Targeted figure pass (test requests only). */
-  figurePass?: { status: 'on' | 'skipped'; reason?: string; file?: string; strength?: number; denoise?: number; style?: string };
+  figurePass?: { status: 'on' | 'skipped'; reason?: string; file?: string; strength?: number; denoise?: number; style?: string; enlarge?: number };
   /** Photo checks: each photo is checked (top check when the outfit has a top, face check with Sienna Lock) and
    * redone with a new seed when one fails. Named for the first check it had. */
   exposureGuard?: {

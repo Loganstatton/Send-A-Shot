@@ -55,7 +55,14 @@ export interface FigurePassOptions {
   grow?: number;
   /** test style: stronger wording and more room past her outline */
   style?: FigureStyle;
+  /** reshape her butt bigger before the redraw (SiennaFigureMask "enlarge"; 0.20 = "medium", 23 Oct): the redraw
+   * alone kept her outline (hip width +0%) and the change didn't show at normal size */
+  enlarge?: number;
 }
+
+/** How far past her outline the region reaches when the photo is reshaped: the reshaping moves pixels up to ~0.2 x
+ * torso beyond her old outline (the curve and the background next to it), and all of that is redrawn. */
+export const ENLARGE_GROW = 0.2;
 
 /** The graph with the pass spliced in front of the SaveImage node, or null when there is nothing to copy from. */
 export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGraph | null {
@@ -71,6 +78,9 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
   const negText = Array.isArray(negRef) ? graph[negRef[0] as string]?.inputs?.text : undefined;
   if (typeof posText !== 'string') return null;
   const n = FIGURE_NODES;
+  const enlarge = o.enlarge && o.enlarge > 0 ? o.enlarge : 0;
+  // reshaped photo (output 3 of the region node) when enlarging: it is what gets redrawn and pasted into
+  const pixels = enlarge ? [n.mask, 3] : image;
   return {
     ...graph,
     [n.pose]: {
@@ -82,7 +92,13 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
     [n.person]: { class_type: 'SegmDetectorCombined_v2', inputs: { segm_detector: [n.segm, 1], image, threshold: 0.4, dilation: 0 }, _meta: { title: 'Figure pass: person' } },
     [n.mask]: {
       class_type: 'SiennaFigureMask',
-      inputs: { image, pose_keypoint: [n.pose, 1], grow: o.grow ?? (o.style ? FIGURE_STYLES[o.style].grow : 0.08), person_mask: [n.person, 0] },
+      inputs: {
+        image,
+        pose_keypoint: [n.pose, 1],
+        grow: o.grow ?? (enlarge ? ENLARGE_GROW : o.style ? FIGURE_STYLES[o.style].grow : 0.08),
+        person_mask: [n.person, 0],
+        ...(enlarge ? { enlarge } : {}),
+      },
       _meta: { title: 'Figure pass: hip region' },
     },
     [n.lora]: {
@@ -94,7 +110,7 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
     ...(typeof negText === 'string'
       ? { [n.negative]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${negText}, ${FIGURE_NEGATIVE_WORDS}${o.style ? `, ${FIGURE_STYLES[o.style].negative}` : ''}` }, _meta: { title: 'Figure pass: negative' } } }
       : {}),
-    [n.encode]: { class_type: 'VAEEncode', inputs: { pixels: image, vae: face.inputs.vae }, _meta: { title: 'Figure pass: encode' } },
+    [n.encode]: { class_type: 'VAEEncode', inputs: { pixels, vae: face.inputs.vae }, _meta: { title: 'Figure pass: encode' } },
     [n.noiseMask]: { class_type: 'SetLatentNoiseMask', inputs: { samples: [n.encode, 0], mask: [n.mask, 0] }, _meta: { title: 'Figure pass: region only' } },
     [n.sampler]: {
       class_type: 'KSampler',
@@ -115,7 +131,7 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
     [n.decode]: { class_type: 'VAEDecode', inputs: { samples: [n.sampler, 0], vae: face.inputs.vae }, _meta: { title: 'Figure pass: decode' } },
     [n.composite]: {
       class_type: 'SiennaFigureComposite',
-      inputs: { original: image, redrawn: [n.decode, 0], mask: [n.mask, 0], soft_mask: [n.mask, 1], color_match: 1 },
+      inputs: { original: pixels, redrawn: [n.decode, 0], mask: [n.mask, 0], soft_mask: [n.mask, 1], color_match: 1 },
       _meta: { title: 'Figure pass: colours matched, pasted in' },
     },
     [saveId]: { ...graph[saveId], inputs: { ...graph[saveId].inputs, images: [n.composite, 0] } },
@@ -130,6 +146,8 @@ export interface FigurePassReport {
   skipped?: string;
   colorShift?: Record<string, number[]>;
   hipWidthChange?: number | null;
+  /** the reshaping before the redraw: how much wider her outline got at the cheeks, or why it was skipped */
+  enlarge?: { amount?: number; hipWidthChange?: number | null; skipped?: string };
 }
 
 export function parseFigurePass(texts: Record<string, string[]> | undefined): FigurePassReport | undefined {
@@ -151,5 +169,8 @@ export function parseFigurePass(texts: Record<string, string[]> | undefined): Fi
     ...(m?.skipped || c?.skipped ? { skipped: m?.skipped ?? c?.skipped } : {}),
     ...(c?.color_shift ? { colorShift: c.color_shift } : {}),
     ...(c && 'hip_width_change' in c ? { hipWidthChange: c.hip_width_change } : {}),
+    ...(m?.enlarge
+      ? { enlarge: { amount: m.enlarge.amount, ...('hip_width_change' in m.enlarge ? { hipWidthChange: m.enlarge.hip_width_change } : {}), ...(m.enlarge.skipped ? { skipped: m.enlarge.skipped } : {}) } }
+      : {}),
   };
 }

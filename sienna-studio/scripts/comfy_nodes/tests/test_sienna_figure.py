@@ -2,6 +2,7 @@
 import os
 import sys
 
+import cv2
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sienna_nodes"))
@@ -172,6 +173,56 @@ def test_outline_change_reports_wider_hips():
     assert r["hip_width_src"] == 119 and abs(r["hip_width_change"] - 24 / 119) < 1e-3
     assert fg.outline_change(a, a, (450, 650))["hip_width_change"] == 0
 
+
+def _skin_photo():
+    img = np.zeros((H, W, 3), np.float32)
+    img[...] = (0.3, 0.6, 0.8)  # pool
+    img[silhouette() > 0.5] = (0.85, 0.65, 0.55)  # her
+    img[480:600, 240:360] = (0.05, 0.05, 0.06)  # bikini bottoms
+    return img
+
+
+def test_enlarge_makes_her_butt_wider_and_leaves_her_waist_and_upper_body_alone():
+    kp = standing()
+    kp[3], kp[4], kp[6], kp[7] = (150, 300), (120, 200), (450, 300), (480, 200)  # hands on her head: hips clear
+    img = _skin_photo()
+    out, person, info = fg.enlarge(img, kp, silhouette(), None, 0.20)
+    lo, hi = info["band"]
+    assert info["hip_width_change"] > 0.03  # visibly wider at the cheeks (medium: +4-6% on real photos)
+    row = lambda m, y: np.where(m[y] > 0.5)[0]
+    y = int(lo + 0.62 * (hi - lo))  # the fullest part: low on the cheeks
+    assert row(person, y).size >= row(silhouette(), y).size + 6  # 128 vs 120 px here
+    assert np.abs(out[:lo - 1] - img[:lo - 1]).max() < 1e-5  # nothing above her waist moves (float rounding only)
+    assert np.abs(out[960:] - img[960:]).max() < 0.02  # below mid-thigh: back to the photo as made
+
+
+def test_enlarge_puts_her_arms_and_hands_back_unmoved():
+    kp = standing()  # hands hanging beside her hips
+    img = _skin_photo()
+    for a, b in ((kp[3], kp[4]), (kp[6], kp[7])):
+        cv2.line(img, tuple(map(int, a)), tuple(map(int, b)), (0.9, 0.7, 0.6), 18)
+    person = np.maximum(silhouette(), (np.abs(img - (0.9, 0.7, 0.6)).max(-1) < 0.01).astype(np.float32))
+    out, _, _ = fg.enlarge(img, kp, person, None, 0.20)
+    for wx, wy in (kp[4], kp[7]):
+        assert np.abs(out[int(wy) - 20, int(wx)] - img[int(wy) - 20, int(wx)]).max() < 0.02
+
+
+def test_enlarge_does_nothing_on_a_front_view_or_when_off():
+    img = _skin_photo()
+    out, _, info = fg.enlarge(img, standing_front(), silhouette(), None, 0.20)
+    assert out is img and "skipped" in info
+    out, _, info = fg.enlarge(img, standing(), silhouette(), None, 0.0)
+    assert out is img and info["skipped"] == "off"
+
+
+def test_the_mask_step_returns_the_reshaped_photo_when_asked():
+    kp = [[float(p[0]), float(p[1])] if p else None for p in standing()]
+    img = _skin_photo()
+    res, info = fg.run_isolated("mask", {"image": img, "person": silhouette()}, {"kp": kp, "grow": 0.2, "enlarge": 0.2}, timeout=60)
+    assert res is not None, info
+    assert not np.array_equal(res["image"], img) and info["enlarge"]["hip_width_change"] > 0.03
+    res, info = fg.run_isolated("mask", {"image": img, "person": silhouette()}, {"kp": kp, "grow": 0.08}, timeout=60)
+    assert np.array_equal(res["image"], img) and "enlarge" not in info
 
 
 def test_a_stalled_step_is_killed_on_time_and_reported():

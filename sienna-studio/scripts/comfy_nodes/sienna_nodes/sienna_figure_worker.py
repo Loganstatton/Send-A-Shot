@@ -2,7 +2,7 @@
 this process if it stalls, so a hung step can never hold up the whole photo (two photos stalled in the paste-back on
 the GPU machine, 23 Oct). Reads <in.npz>, writes <out.npz>; timings go to stderr and into the result's info.
 
-  mask       image, person, face?  + params kp, grow       → hard, soft
+  mask       image, person, face?  + params kp, grow, enlarge?  → hard, soft, image (reshaped when enlarge > 0)
   composite  src, red, hard, soft  + params color_match    → image
   sleep      (tests only) sleeps params.seconds
 """
@@ -46,13 +46,23 @@ def main(inp: str, out: str) -> None:
         if person is None and classes:
             person = 1.0 - classes[0]
         kp = [tuple(p) if p else None for p in params["kp"]]
+        amount = float(params.get("enlarge", 0.0))
+        enl = None
+        if amount > 0:
+            img, person, enl = fg.enlarge(img, kp, person, classes, amount)
+            t = mark("enlarge", t)
+            if "skipped" not in enl:
+                classes = segment_classes(img)  # the region's keep-outs (hair, face, hands) on the reshaped photo
+                t = mark("segment_enlarged", t)
         hard, soft, info = fg.figure_region(img.shape[:2], person, kp, classes, data["face"] if "face" in data.files else None,
                                             grow=float(params.get("grow", 0.06)))
         t = mark("region", t)
         if classes is None:
             info["segmenter_error"] = segmenter_error()
+        if enl is not None:
+            info["enlarge"] = enl
         info["timing"] = timing
-        np.savez(out, hard=hard, soft=soft, info=np.array(json.dumps(info)))
+        np.savez(out, hard=hard, soft=soft, image=np.asarray(img, np.float32), info=np.array(json.dumps(info)))
     elif task == "composite":
         src, red, hard, soft = data["src"], data["red"], data["hard"], data["soft"]
         import cv2

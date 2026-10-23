@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { addFigurePass, FIGURE_NEGATIVE_WORDS, FIGURE_NODES, FIGURE_STYLES, FIGURE_WORDS, parseFigurePass } from './comfy/figure-pass';
+import { addFigurePass, ENLARGE_GROW, FIGURE_NEGATIVE_WORDS, FIGURE_NODES, FIGURE_STYLES, FIGURE_WORDS, parseFigurePass } from './comfy/figure-pass';
 import type { ComfyGraph } from './types';
 
 const prod = (): ComfyGraph => JSON.parse(readFileSync(new URL('../workflows/examples/sienna-sdxl-production.json', import.meta.url), 'utf8'));
@@ -34,6 +34,25 @@ describe('targeted figure pass (test only)', () => {
     expect(g[FIGURE_NODES.negative].inputs.text).toContain(`${FIGURE_NEGATIVE_WORDS}, ${FIGURE_STYLES.fuller.negative}`);
     expect(g[FIGURE_NODES.mask].inputs.grow).toBe(0.12);
     expect(addFigurePass(prod(), opts)![FIGURE_NODES.mask].inputs.grow).toBe(0.08);
+  });
+  it('enlarge: the region node reshapes the photo, and the reshaped photo is what gets redrawn and pasted into', () => {
+    const g = addFigurePass(prod(), { ...opts, style: 'fuller', enlarge: 0.2 })!;
+    const n = FIGURE_NODES;
+    expect(g[n.mask].inputs).toMatchObject({ image: ['51', 0], enlarge: 0.2, grow: ENLARGE_GROW });
+    expect(g[n.encode].inputs.pixels).toEqual([n.mask, 3]);
+    expect(g[n.composite].inputs.original).toEqual([n.mask, 3]);
+    expect(g['42'].inputs.images).toEqual([n.composite, 0]);
+    // without it: the graph is exactly as before (no enlarge input, the photo as made)
+    const plain = addFigurePass(prod(), { ...opts, style: 'fuller' })!;
+    expect(plain[n.mask].inputs).not.toHaveProperty('enlarge');
+    expect(plain[n.encode].inputs.pixels).toEqual(['51', 0]);
+    expect(addFigurePass(prod(), { ...opts, enlarge: 0 })![n.encode].inputs.pixels).toEqual(['51', 0]);
+  });
+  it('reports how much the reshaping widened her at the cheeks', () => {
+    expect(parseFigurePass({ [FIGURE_NODES.mask]: ['{"mask":0.2,"enlarge":{"amount":0.2,"width":354,"hip_width_change":0.0529}}'] }))
+      .toEqual({ mask: 0.2, enlarge: { amount: 0.2, hipWidthChange: 0.0529 } });
+    expect(parseFigurePass({ [FIGURE_NODES.mask]: ['{"skipped":"front view","enlarge":{"amount":0.2,"skipped":"front view or hips not found"}}'] }))
+      .toEqual({ skipped: 'front view', enlarge: { amount: 0.2, skipped: 'front view or hips not found' } });
   });
   it('nothing to copy from: no pass', () => {
     expect(addFigurePass(prod(), { ...opts, faceRefineId: 'nope' })).toBeNull();
