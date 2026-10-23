@@ -365,6 +365,23 @@ export const PACK_CONFLICTS: [string, string][] = [
   ['lace_bodysuit', 'french_lace'],
 ];
 
+/**
+ * Packs kept off rear-view requests until their coverage is validated from behind. Micro bikini from behind drew
+ * thong bottoms with exposure below them in 4 of 4 photos (23 Oct, seed 101, safe mode, baseline included); the GPU
+ * exposure check only looks at her chest, so it passed all four.
+ */
+export const REAR_UNSAFE_PACKS = ['micro_bikini'];
+
+/** The packs without the rear-unsafe ones when the request is a rear view, and the ids removed. */
+export function withoutRearUnsafePacks(packs: Record<string, number>, rear: boolean): { packs: Record<string, number>; dropped: string[] } {
+  if (!rear) return { packs, dropped: [] };
+  const dropped = REAR_UNSAFE_PACKS.filter((id) => (packs[id] ?? 0) > 0);
+  if (!dropped.length) return { packs, dropped };
+  const out = { ...packs };
+  for (const id of dropped) delete out[id];
+  return { packs: out, dropped };
+}
+
 /** The packs with every conflicting second pack removed, and the ids removed. */
 export function resolvePackConflicts(packs: Record<string, number>): { packs: Record<string, number>; dropped: string[] } {
   const out = { ...packs };

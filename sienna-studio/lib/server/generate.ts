@@ -47,7 +47,7 @@ import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hin
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
 import { ensurePhotoGpu, photoGpuEnabled, photoGpuReady, tickPhotoGpu, touchPhotoGpu } from './photo-gpu';
-import { activeStylePacks, nudeOnlyAllowed, packCoverage, resolvePackConflicts, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
+import { activeStylePacks, nudeOnlyAllowed, packCoverage, resolvePackConflicts, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withoutRearUnsafePacks, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import { fixesFromEnv, hasFix } from '../fixes';
 import { kneeUpRequest } from '../framing';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
@@ -172,6 +172,13 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     if (dropped.length) req = { ...req, params: { ...req.params, stylePacks: packs } };
   }
   const rear = rearRequest(`${req.fields.pose} ${req.fields.framing} ${req.fields.extra}`, null, false);
+  // Packs whose coverage from behind isn't validated stay off rear views, in every mode (micro bikini: exposure 4 of 4)
+  {
+    const rearView = rear || rearRequest(`${req.fields.camera} ${req.fields.pose}`, req.params.posePreset, false);
+    const { packs, dropped } = withoutRearUnsafePacks(req.params.stylePacks ?? {}, rearView);
+    for (const id of dropped) warnings.push(`Style pack “${STYLE_PACKS.find((p) => p.id === id)?.label ?? id}” skipped — from behind it drew bottoms that didn't cover her, so it stays off rear views until that is fixed.`);
+    if (dropped.length) req = { ...req, params: { ...req.params, stylePacks: packs } };
+  }
 
   // ── Prompt ─────────────────────────────────────────────────────────────
   // ── Pose preset: its skeleton stands in for a pose photo (wired straight to the ControlNet below) ──

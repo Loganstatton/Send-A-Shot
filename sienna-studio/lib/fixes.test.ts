@@ -16,7 +16,7 @@ import { FIXES, fixesFromEnv, type Fix } from './fixes';
 import { framingLevels, kneeUpRequest, withoutThighUp } from './framing';
 import { KNEE_EDGE, kneeFramingOk, type BodyFrame } from './body-frame';
 import { checkRules, checkUser, CHEEKY_RULE, COVERAGE_RULE, FULL_BODY_FRAMING_RULE, KNEE_FRAMING_RULE } from './ai-prompts';
-import { packFitsOutfit, packsForDescription, resolvePackConflicts } from './style-packs';
+import { packFitsOutfit, packsForDescription, REAR_UNSAFE_PACKS, resolvePackConflicts, withoutRearUnsafePacks } from './style-packs';
 import { POSE_PRESETS } from './pose-presets';
 import type { PromptFields } from './types';
 
@@ -76,6 +76,12 @@ describe('pack stacking (live since 23 Oct)', () => {
   it('the underboob pack still never replaces a named tank top (on a tank it came out exposed 2 of 2)', () => {
     expect(packFitsOutfit('underboob_shirt', OUTFITS.C2)).toBe(false);
     expect(packsForDescription({ outfit: OUTFITS.C2 }, 'adult')).toEqual({});
+  });
+  it('the micro bikini pack stays off rear views (exposure below the bottoms 4 of 4 from behind, 23 Oct)', () => {
+    expect(REAR_UNSAFE_PACKS).toEqual(['micro_bikini']);
+    expect(withoutRearUnsafePacks({ micro_bikini: 0.85, natural_skin: 0.3 }, true)).toEqual({ packs: { natural_skin: 0.3 }, dropped: ['micro_bikini'] });
+    expect(withoutRearUnsafePacks({ micro_bikini: 0.85 }, false)).toEqual({ packs: { micro_bikini: 0.85 }, dropped: [] });
+    expect(withoutRearUnsafePacks({ string_swimsuit: 0.7 }, true)).toEqual({ packs: { string_swimsuit: 0.7 }, dropped: [] });
   });
   it('a plain tank top keeps its full-length rule', () => {
     expect(build(bench(OUTFITS.B1)).negative).toContain(COVER_STOMACH_NEGATIVE);
