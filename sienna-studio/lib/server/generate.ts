@@ -36,7 +36,7 @@ import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt, COVER_GARMENTS, fullBodyFraming, withoutAbs, type CoverGarment } from '../prompt';
 import { checkRules } from '../ai-prompts';
-import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
+import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
@@ -185,9 +185,11 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // ── Pose preset: its skeleton stands in for a pose photo (wired straight to the ControlNet below) ──
   let posePre = !req.images.poseImage ? posePreset(req.params.posePreset) : undefined;
   let autoPose = false;
-  if (!posePre && !req.images.poseImage && !req.params.posePreset && req.params.autoPosePreset !== false && !CAMERA_ANGLE_RE.test(`${req.fields.camera} ${req.fields.framing} ${req.fields.pose}`)) {
-    // no preset or pose photo chosen: use the preset the Pose text describes (text alone often loses the position)
+  if (!posePre && !req.images.poseImage && !req.params.posePreset && req.params.autoPosePreset !== false) {
+    // no preset or pose photo chosen: use the preset the Pose text describes (text alone often loses the position),
+    // unless a camera angle is asked for that its skeleton can't show ("from behind" is the rear presets' own view)
     posePre = matchPosePreset(req.fields.pose, fullBodyFraming(req.fields).add);
+    if (posePre && !presetFitsCamera(posePre, `${req.fields.camera} ${req.fields.framing} ${req.fields.pose}`)) posePre = undefined;
     if (posePre) {
       warnings.push(`Used the “${POSE_PRESET_LABELS[posePre.id] ?? posePre.id}” pose preset to hold the position your Pose text describes.`);
       req = { ...req, params: { ...req.params, posePreset: posePre.id } };

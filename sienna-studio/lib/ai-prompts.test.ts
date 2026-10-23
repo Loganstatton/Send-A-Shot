@@ -176,6 +176,12 @@ describe('pose guides', () => {
     expect(presetFitsCamera(low, 'casual phone photo')).toBe(false);
     expect(presetFitsCamera(edge, 'casual phone photo')).toBe(true);
     expect(presetFitsCamera(edge, 'shot from above')).toBe(false);
+    // rear presets: "from behind" is their own view, other angles still rule them out
+    const bent = posePreset('bent_over_rear')!;
+    expect(presetFitsCamera(bent, 'casual iPhone photo, shot from behind bent over the pool table')).toBe(true);
+    expect(presetFitsCamera(posePreset('looking_back')!, 'seen from behind, looking back')).toBe(true);
+    expect(presetFitsCamera(bent, 'from behind, shot from above')).toBe(false);
+    expect(presetFitsCamera(edge, 'seen from behind')).toBe(false);
   });
 });
 

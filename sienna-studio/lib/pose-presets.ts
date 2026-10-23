@@ -148,14 +148,18 @@ export function offeredGuides(all: boolean): string[] {
   return all ? Object.keys(POSE_GUIDES) : POSE_GUIDES_LIVE;
 }
 
+/** Skeletons drawn from behind: "from behind" in the request describes their own view, not a camera angle. */
+export const REAR_PRESETS = new Set(['bent_over_rear', 'looking_back', 'standing_rear_knee_up', 'standing_rear_knee_up_away']);
+
 /**
  * A preset may be used with this camera wording: eye-level presets never with a camera angle; the low-angle preset
- * only with a low angle.
+ * only with a low angle. A rear preset accepts "from behind" — "bent over, seen from behind" dropped the bent-over
+ * guide, and every bent-over request came out standing or kneeling (23 Oct).
  */
 const LOW_ANGLE_RE = /\b(low[- ]angle|from (below|a low)|looking up at her|worm'?s[- ]eye)\b/i;
 export function presetFitsCamera(p: PosePreset, camera: string): boolean {
   if (p.view === 'low') return LOW_ANGLE_RE.test(camera);
-  return !CAMERA_ANGLE_RE.test(camera);
+  return !CAMERA_ANGLE_RE.test(REAR_PRESETS.has(p.id) ? camera.replace(/\bfrom behind\b/gi, '') : camera);
 }
 
 export function matchPosePreset(poseText: string, fullBody: boolean): PosePreset | undefined {
