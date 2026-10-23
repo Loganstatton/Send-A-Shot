@@ -116,6 +116,7 @@ export const POST = handle(async (req: Request) => {
       ];
     }
   }
+  if (body.test?.contentMode === 'adult' && adultContentAllowed()) it.contentMode = 'adult';
   const edit = it.reference.mode === 'edit' || it.reference.mode === 'edit+pose';
   const pose = it.reference.mode === 'pose' || it.reference.mode === 'edit+pose';
   const request: GenerateRequest = {

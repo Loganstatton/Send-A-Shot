@@ -6,7 +6,16 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "sienna_nodes"))
 import sienna_figure as fg  # noqa: E402
-from test_sienna_nodes import H, W, standing  # noqa: E402
+from test_sienna_nodes import H, W, standing as standing_front  # noqa: E402
+
+
+def standing(long_legs=1.0):
+    """The test skeleton seen from behind: no face points, her right side on the image's right."""
+    pts = standing_front(long_legs)
+    pts[0] = pts[14] = pts[15] = pts[16] = pts[17] = None
+    for a, b in ((2, 5), (3, 6), (4, 7), (8, 11), (9, 12), (10, 13)):
+        pts[a], pts[b] = pts[b], pts[a]
+    return pts
 
 
 def silhouette():
@@ -24,7 +33,7 @@ def test_region_is_the_hip_band_widened_sideways_only():
     assert "skipped" not in info
     ys, xs = np.where(hard > 0.5)
     torso = info["torso"]
-    assert ys.min() >= 500 - 0.30 * torso - 1 and ys.max() <= 500 + 0.62 * torso + 1  # waist to the glute fold
+    assert ys.min() >= 500 - 0.30 * torso - 1 and ys.max() <= 500 + 0.90 * torso + 1  # waist to below the glute fold
     assert ys.min() > 200  # never the chest or face
     g = int(0.06 * torso)
     assert xs.min() >= 240 - g - 1 and xs.max() <= 360 + g + 1  # a little past her outline, no further
@@ -47,6 +56,19 @@ def test_face_and_hair_classes_stay_out():
     classes[fg.HAIR] = hair
     hard, _, _ = fg.figure_region((H, W), silhouette(), kp, classes)
     assert hard[450, 300] == 0 and hard[600, 300] > 0
+
+
+def test_a_photo_that_came_out_facing_the_camera_is_left_alone():
+    hard, soft, info = fg.figure_region((H, W), silhouette(), standing_front())
+    assert "front view" in info["skipped"] and not hard.any() and not soft.any()
+    assert fg.facing_camera(standing_front()) and not fg.facing_camera(standing())
+
+
+def test_the_region_reaches_below_the_glute_fold():
+    hard, _, info = fg.figure_region((H, W), silhouette(), standing(long_legs=1.3))  # real proportions: knees ~1.07 torso below the hips
+    ys = np.where(hard.any(1))[0]
+    fold = 500 + 0.45 * info["torso"]  # the crease under the buttocks sits about this far below the hip joints
+    assert ys.max() - fold > 0.12 * H  # the paste-back's bottom fade (12% of the height) lies below it
 
 
 def test_no_hips_or_outline_means_nothing_is_redrawn():

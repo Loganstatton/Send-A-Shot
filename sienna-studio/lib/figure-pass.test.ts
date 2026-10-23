@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { addFigurePass, FIGURE_NODES, FIGURE_WORDS, parseFigurePass } from './comfy/figure-pass';
+import { addFigurePass, FIGURE_NEGATIVE_WORDS, FIGURE_NODES, FIGURE_WORDS, parseFigurePass } from './comfy/figure-pass';
 import type { ComfyGraph } from './types';
 
 const prod = (): ComfyGraph => JSON.parse(readFileSync(new URL('../workflows/examples/sienna-sdxl-production.json', import.meta.url), 'utf8'));
@@ -15,7 +15,10 @@ describe('targeted figure pass (test only)', () => {
     for (const id of [n.pose, n.person, n.mask]) expect(g[id].inputs.image).toEqual(['51', 0]);
     expect(g[n.composite].inputs).toMatchObject({ original: ['51', 0], redrawn: [n.decode, 0], mask: [n.mask, 0], soft_mask: [n.mask, 1] });
     expect(g[n.noiseMask].inputs).toEqual({ samples: [n.encode, 0], mask: [n.mask, 0] });
-    expect(g[n.sampler].inputs).toMatchObject({ model: [n.lora, 0], positive: [n.positive, 0], negative: ['4', 0], latent_image: [n.noiseMask, 0], denoise: 0.55 });
+    expect(g[n.sampler].inputs).toMatchObject({ model: [n.lora, 0], positive: [n.positive, 0], negative: [n.negative, 0], latent_image: [n.noiseMask, 0], denoise: 0.55 });
+    // her usual negative plus the no-scrunch words, through the figure LoRA's text encoder
+    expect(g[n.negative].inputs).toEqual({ clip: [n.lora, 1], text: `${prod()['4'].inputs.text}, ${FIGURE_NEGATIVE_WORDS}` });
+    expect(FIGURE_WORDS).toMatch(/gluteal fold/);
   });
   it('the figure LoRA and wording go only into the redraw: the main sampler and the face pass are unchanged', () => {
     const before = prod();

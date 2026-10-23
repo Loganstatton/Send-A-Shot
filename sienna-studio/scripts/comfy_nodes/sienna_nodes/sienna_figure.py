@@ -21,7 +21,8 @@ import cv2
 import numpy as np
 
 Point = Optional[Tuple[float, float]]
-NECK, R_SH, R_EL, R_WR, L_SH, L_EL, L_WR, R_HIP, R_KNEE, R_ANK, L_HIP, L_KNEE = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+NOSE, NECK, R_SH, R_EL, R_WR, L_SH, L_EL, L_WR, R_HIP, R_KNEE, R_ANK, L_HIP, L_KNEE = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+R_EYE, L_EYE = 14, 15
 HAIR, BODY_SKIN, FACE_SKIN, CLOTHES = 1, 2, 3, 4
 
 
@@ -40,6 +41,18 @@ def _disk(r: float) -> np.ndarray:
     return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
 
 
+def facing_camera(kp: Sequence[Point]) -> bool:
+    """She faces the camera: nose and both eyes found and her right shoulder on the image's left (OpenPose labels
+    the person's own sides). A "from behind" request came out facing the camera (Stage B, string bikini s202) and
+    the pass redrew the front of her bikini bottoms; the view in the photo decides, not the request's wording."""
+    rs, ls = _p(kp, R_SH), _p(kp, L_SH)
+    if not (_p(kp, NOSE) and _p(kp, R_EYE) and _p(kp, L_EYE) and rs and ls):
+        return False
+    rh, lh = _p(kp, R_HIP), _p(kp, L_HIP)
+    hips_front = rh[0] < lh[0] if rh and lh else True
+    return rs[0] < ls[0] and hips_front
+
+
 def figure_region(
     shape: Tuple[int, int],
     person: Optional[np.ndarray],
@@ -47,15 +60,20 @@ def figure_region(
     classes: Optional[List[np.ndarray]] = None,
     face_mask: Optional[np.ndarray] = None,
     top: float = 0.30,
-    bottom: float = 0.62,
+    bottom: float = 0.90,
     grow: float = 0.06,
     feather_frac: float = 0.012,
 ) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """(hard mask for sampling, feathered mask for the paste-back, info). Band from `top` x torso above the hips to
-    `bottom` x torso below them (or 40% of the way to the knees, whichever is higher); widened by `grow` x torso
+    `bottom` x torso below them (or 95% of the way to the knees, whichever is higher) — below the gluteal fold, so the
+    paste-back's fade to the original lies on the thighs and the fold is drawn in full; widened by `grow` x torso
     past her outline on each side. Empty (and info["skipped"]) when the hips or her outline aren't found."""
     h, w = shape
     info: Dict = {"top": top, "bottom": bottom, "grow": grow}
+    if facing_camera(kp):
+        info["skipped"] = "front view in the photo: her butt is not in it, nothing redrawn"
+        empty = np.zeros((h, w), np.float32)
+        return empty, empty, info
     hips = (_p(kp, R_HIP), _p(kp, L_HIP))
     hip = _mid(*hips)
     shoulder = _mid(_p(kp, R_SH), _p(kp, L_SH)) or _p(kp, NECK)
@@ -69,7 +87,7 @@ def figure_region(
     y0 = hip[1] - top * torso
     y1 = hip[1] + bottom * torso
     if knee:
-        y1 = min(y1, hip[1] + 0.85 * (knee[1] - hip[1]))
+        y1 = min(y1, hip[1] + 0.95 * (knee[1] - hip[1]))
     band = np.zeros((h, w), bool)
     band[max(0, int(y0)):max(0, min(h, int(y1)))] = True
     # columns: her outline in the band, widened sideways only (not up or down)

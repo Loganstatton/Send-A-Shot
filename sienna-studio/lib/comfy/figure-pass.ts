@@ -15,6 +15,7 @@ export const FIGURE_NODES = {
   mask: 'sienna_fig_mask',
   lora: 'sienna_fig_lora',
   positive: 'sienna_fig_positive',
+  negative: 'sienna_fig_negative',
   encode: 'sienna_fig_encode',
   noiseMask: 'sienna_fig_noise_mask',
   sampler: 'sienna_fig_sampler',
@@ -24,8 +25,12 @@ export const FIGURE_NODES = {
 
 export const FIGURE_PASS_CLASSES = ['DWPreprocessor', 'UltralyticsDetectorProvider', 'SegmDetectorCombined_v2', 'SiennaFigureMask', 'SiennaFigureComposite'];
 export const FIGURE_SEGM_MODEL = 'segm/person_yolov8m-seg.pt';
-/** Added to the redraw's prompt only (the main photo keeps her usual wording). */
-export const FIGURE_WORDS = '(full round butt, round lifted glutes:1.15)';
+/** Added to the redraw's prompt only (the main photo keeps her usual wording). The gluteal fold — the crease where
+ * the fuller cheeks rest over the backs of her thighs — is what makes the shape read as real (23 Oct, asked for). */
+export const FIGURE_WORDS = '(full round butt, round lifted glutes:1.15), (defined gluteal fold, natural crease where her buttocks meet the backs of her thighs:1.1)';
+/** Added to the redraw's negative only: the figure LoRA's fitness-wear look drew gathered "scrunch" seams on shorts,
+ * leggings and a bodycon dress (Stage B, 23 Oct). */
+export const FIGURE_NEGATIVE_WORDS = '(scrunch butt, ruched fabric, gathered fabric, seam down the middle of the butt:1.2)';
 
 export interface FigurePassOptions {
   file: string;
@@ -49,6 +54,8 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
   const posRef = face.inputs.positive;
   if (!Array.isArray(image) || !Array.isArray(posRef)) return null;
   const posText = graph[posRef[0] as string]?.inputs?.text;
+  const negRef = face.inputs.negative;
+  const negText = Array.isArray(negRef) ? graph[negRef[0] as string]?.inputs?.text : undefined;
   if (typeof posText !== 'string') return null;
   const n = FIGURE_NODES;
   return {
@@ -71,6 +78,9 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
       _meta: { title: `Figure pass: ${o.file}` },
     },
     [n.positive]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${posText}, ${FIGURE_WORDS}` }, _meta: { title: 'Figure pass: prompt' } },
+    ...(typeof negText === 'string'
+      ? { [n.negative]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${negText}, ${FIGURE_NEGATIVE_WORDS}` }, _meta: { title: 'Figure pass: negative' } } }
+      : {}),
     [n.encode]: { class_type: 'VAEEncode', inputs: { pixels: image, vae: face.inputs.vae }, _meta: { title: 'Figure pass: encode' } },
     [n.noiseMask]: { class_type: 'SetLatentNoiseMask', inputs: { samples: [n.encode, 0], mask: [n.mask, 0] }, _meta: { title: 'Figure pass: region only' } },
     [n.sampler]: {
@@ -78,7 +88,7 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
       inputs: {
         model: [n.lora, 0],
         positive: [n.positive, 0],
-        negative: face.inputs.negative,
+        negative: typeof negText === 'string' ? [n.negative, 0] : face.inputs.negative,
         latent_image: [n.noiseMask, 0],
         seed: face.inputs.seed,
         steps: Math.max(20, Number(face.inputs.steps) || 20),
