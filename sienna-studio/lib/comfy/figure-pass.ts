@@ -35,6 +35,7 @@ export interface FigurePassOptions {
   baseLoraId: string;
   /** the face pass's node: its sampler settings, VAE and negative conditioning are reused */
   faceRefineId: string;
+  /** how far past her outline (x torso) the region reaches sideways, so a fuller curve can change the outline */
   grow?: number;
 }
 
@@ -61,7 +62,7 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
     [n.person]: { class_type: 'SegmDetectorCombined_v2', inputs: { segm_detector: [n.segm, 1], image, threshold: 0.4, dilation: 0 }, _meta: { title: 'Figure pass: person' } },
     [n.mask]: {
       class_type: 'SiennaFigureMask',
-      inputs: { image, pose_keypoint: [n.pose, 1], grow: o.grow ?? 0.06, person_mask: [n.person, 0] },
+      inputs: { image, pose_keypoint: [n.pose, 1], grow: o.grow ?? 0.08, person_mask: [n.person, 0] },
       _meta: { title: 'Figure pass: hip region' },
     },
     [n.lora]: {
