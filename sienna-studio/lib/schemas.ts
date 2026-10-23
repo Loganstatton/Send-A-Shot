@@ -119,9 +119,9 @@ export const simpleCreateSchema = z.object({
       figureNoAbs: z.boolean().optional(),
       coverStomach: z.boolean().optional(),
       fixes: z.array(z.enum(FIXES)).optional(),
-      /** figure preview (23 Oct): only the two licence-checked figure LoRAs, at most 0.8; experimental/ holds the
-       * body-focused Glute Goddess copy (low-resolution UNet blocks only), never used outside these test requests */
-      figurePack: z.object({ file: z.enum(['pack_1883628.safetensors', 'pack_1447606.safetensors', 'experimental/gg_body_v1.safetensors']), strength: z.number().min(0.05).max(0.8) }).optional(),
+      /** figure preview (23 Oct): only the two licence-checked figure LoRAs, at most 0.8. The body-only Glute Goddess
+       * copy was tested and discarded (23 Oct: shape close to baseline, added a tank top over the sports bra 2 of 2) */
+      figurePack: z.object({ file: z.enum(['pack_1883628.safetensors', 'pack_1447606.safetensors']), strength: z.number().min(0.05).max(0.8) }).optional(),
       figureTrait: z.string().max(120).regex(/^[a-z ,-]+$/i).optional(),
     })
     .optional(),
