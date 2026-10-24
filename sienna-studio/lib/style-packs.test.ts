@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives, packCoverage, withPackOutfit, nudeOnlyAllowed } from './style-packs';
+import { activeStylePacks, STYLE_PACKS, stylePacksFor, withTriggers, withPackNegatives, packCoverage, withPackOutfit, nudeOnlyAllowed, toplessAllowed, packsForDescription, resolvePackConflicts } from './style-packs';
 
 describe('activeStylePacks', () => {
   it('keeps packs above zero, clamps to each max, ignores unknown ids, in catalogue order', () => {
@@ -198,5 +198,34 @@ describe('the description wins over a pack\'s own outfit wording', () => {
     const micro = activeStylePacks({ micro_bikini: 0.85 }, 'sfw');
     expect(withPackOutfit('black micro bikini', micro)).toContain('tiny micro triangle bikini');
     expect(withPackOutfit('black micro bikini with high-waisted bottoms', micro)).toBe('black micro bikini with high-waisted bottoms');
+  });
+});
+
+describe('24 Oct packs (fuller bust, laced lingerie, realistic breasts)', () => {
+  it('adult mode only; the bust slider adds no trigger word', () => {
+    const ids = stylePacksFor('sfw').map((p) => p.id);
+    for (const id of ['fuller_bust', 'laced_lingerie', 'breast_detail']) expect(ids).not.toContain(id);
+    const bust = activeStylePacks({ fuller_bust: 1 }, 'adult');
+    expect(bust[0].strength).toBe(0.8);
+    expect(withTriggers('photo of Sienna', bust)).toBe('photo of Sienna');
+  });
+  it('realistic breasts only on a bare chest', () => {
+    expect(toplessAllowed('adult', { outfit: 'topless, tiny black thong' })).toBe(true);
+    expect(toplessAllowed('adult', { outfit: 'completely nude' })).toBe(true);
+    expect(toplessAllowed('sfw', { outfit: 'topless, tiny black thong' })).toBe(false);
+    expect(toplessAllowed('adult', { outfit: 'tiny black thong' })).toBe(false);
+    expect(toplessAllowed('adult', { outfit: 'topless, open white shirt' })).toBe(false);
+    expect(toplessAllowed('adult', { outfit: 'topless, jeans', pose: 'hands covering her breasts' })).toBe(false);
+    expect(toplessAllowed('adult', { outfit: 'nude-colour bra and panties' })).toBe(false);
+  });
+  it('picked from the description', () => {
+    expect(packsForDescription({ outfit: 'topless, tiny black thong' }, 'adult')).toEqual({ breast_detail: 0.6 });
+    expect(packsForDescription({ outfit: 'red lace lingerie' }, 'adult')).toEqual({ laced_lingerie: 0.8 });
+    expect(packsForDescription({ outfit: 'lace bra and jeans' }, 'adult')).toEqual({});
+    expect(packsForDescription({ outfit: 'tight white tank top', bodyPresentation: 'bigger breasts' }, 'adult')).toEqual({ fuller_bust: 0.8 });
+  });
+  it('one lingerie pack at a time; french lace by name wins; the nude-body pack over realistic breasts', () => {
+    expect(resolvePackConflicts({ french_lace: 0.6, laced_lingerie: 0.8 })).toEqual({ packs: { french_lace: 0.6 }, dropped: ['laced_lingerie'] });
+    expect(resolvePackConflicts({ realistic_nudes: 0.4, breast_detail: 0.6 }).packs).toEqual({ realistic_nudes: 0.4 });
   });
 });

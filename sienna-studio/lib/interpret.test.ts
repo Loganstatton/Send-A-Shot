@@ -113,7 +113,8 @@ describe('style packs from the description', () => {
   const packs = (t: string, adultAllowed = true) => interpretPrompt(t, { adultAllowed }).packs;
   it('switches on the pack the outfit names, at its default strength', () => {
     expect(packs('Sienna on the beach in a black micro bikini', false)).toEqual({ micro_bikini: 0.85 });
-    expect(packs('Sienna in a white lace bra and panties on her bed')).toEqual({ french_lace: 0.6 });
+    expect(packs('Sienna in a white lace bra and panties on her bed')).toEqual({ laced_lingerie: 0.8 });
+    expect(packs('Sienna in white french lace lingerie on her bed')).toEqual({ french_lace: 0.6 });
     expect(packs('Sienna in a black plunging monokini by the pool')).toEqual({ monokini: 0.5 });
     expect(packs('Sienna in a thin white cotton t-shirt and denim shorts, real photo')).toEqual({ wet_tshirt: 0.4 });
   });

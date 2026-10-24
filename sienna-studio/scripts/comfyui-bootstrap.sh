@@ -404,6 +404,12 @@ if (( OUTFIT || POSE || QWEN || PACKS || WAN || WAN1 || WAN2 )); then
     cp -r "$src" "$COMFYUI_DIR/custom_nodes/sienna_nodes"
     rm -rf "$COMFYUI_DIR/custom_nodes/sienna_nodes/__pycache__"
     echo "installed from $src"
+    # close-up detail pass (SiennaDetailRegion / SiennaDetailPaste): its own package next to sienna_nodes
+    if [[ -f "$src/../sienna_detail/__init__.py" ]]; then
+      rm -rf "$COMFYUI_DIR/custom_nodes/sienna_detail"
+      cp -r "$src/../sienna_detail" "$COMFYUI_DIR/custom_nodes/sienna_detail"
+      rm -rf "$COMFYUI_DIR/custom_nodes/sienna_detail/__pycache__"
+    fi
     # Face check (SiennaFaceCheck): OpenCV YuNet (MIT) + SFace (Apache-2.0). Hand touch-up: Bingsu/adetailer hand_yolov8s (Apache-2.0).
     fetch_model "$HF/opencv/face_detection_yunet/resolve/main/face_detection_yunet_2023mar.onnx" "$COMFYUI_DIR/models/sienna/face_detection_yunet_2023mar.onnx" 100000
     fetch_model "$HF/opencv/face_recognition_sface/resolve/main/face_recognition_sface_2021dec.onnx" "$COMFYUI_DIR/models/sienna/face_recognition_sface_2021dec.onnx" 30000000

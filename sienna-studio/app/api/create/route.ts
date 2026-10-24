@@ -148,6 +148,8 @@ export const POST = handle(async (req: Request) => {
       ...(body.test?.figurePack ? { figurePack: body.test.figurePack } : {}),
       ...(body.test?.figureTrait ? { figureTrait: body.test.figureTrait } : {}),
       ...(body.test?.figurePass ? { figurePass: body.test.figurePass } : {}),
+      ...(body.test?.noFigurePass ? { noFigurePass: true } : {}),
+      ...(body.test?.detailPass ? { detailPass: body.test.detailPass } : {}),
     },
     images: {
       initImage: ref && edit ? ref : null,

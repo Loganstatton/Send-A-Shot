@@ -150,6 +150,10 @@ export interface GenerationParams {
   figureTrait?: string;
   /** Testing (targeted figure pass, lib/comfy/figure-pass.ts): only her hip/butt region redrawn with the figure LoRA. */
   figurePass?: { file: string; strength: number; denoise: number; style?: import('./comfy/figure-pass').FigureStyle; enlarge?: number };
+  /** Testing: the targeted figure pass off for this request (SIENNA_FIGURE ignored). */
+  noFigurePass?: boolean;
+  /** Testing (close-up detail pass, lib/comfy/detail-pass.ts): style and settings, or 'off'; unset = SIENNA_DETAIL. */
+  detailPass?: 'off' | { style: import('./comfy/detail-pass').DetailStyle; strength?: number; denoise?: number };
   /** Testing: the revealing-benchmark fixes on for this request (lib/fixes.ts); unset = SIENNA_FIXES. */
   fixes?: import('./fixes').Fix[];
   /** Pose preset id (lib/pose-presets.ts): its skeleton drives the pose ControlNet when no pose photo is set. */
@@ -371,6 +375,8 @@ export interface GenerationRecord {
   handRefine?: { status: 'on' | 'off' | 'skipped'; reason?: string; denoise?: number };
   /** Targeted figure pass (test requests only). */
   figurePass?: { status: 'on' | 'skipped'; reason?: string; file?: string; strength?: number; denoise?: number; style?: string; enlarge?: number };
+  /** Close-up detail pass (nude / bottomless photos in adult mode). */
+  detailPass?: { status: 'on' | 'skipped'; reason?: string; style?: string; file?: string; strength?: number; denoise?: number };
   /** Photo checks: each photo is checked (top check when the outfit has a top, face check with Sienna Lock) and
    * redone with a new seed when one fails. Named for the first check it had. */
   exposureGuard?: {
@@ -398,6 +404,7 @@ export interface GenerationRecord {
       framingMiss?: string;
       /** Targeted figure pass report: region size, colour shift undone, hip width change. */
       figure?: import('./comfy/figure-pass').FigurePassReport;
+      detail?: import('./comfy/detail-pass').DetailPassReport;
       poseOk?: boolean;
       aiOk?: boolean;
       aiScore?: number;

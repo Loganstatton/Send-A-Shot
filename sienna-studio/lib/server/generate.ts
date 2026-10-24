@@ -44,11 +44,12 @@ import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comf
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { addFigurePass, FIGURE_NODES, figurePassFromEnv, parseFigurePass } from '../comfy/figure-pass';
+import { addDetailPass, bareBelow, DETAIL_NODES, DETAIL_DENOISE, DETAIL_STYLES, detailFile, detailPassFromEnv, parseDetailPass } from '../comfy/detail-pass';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, kneeFramingOk, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
 import { ensurePhotoGpu, photoGpuEnabled, photoGpuReady, tickPhotoGpu, touchPhotoGpu } from './photo-gpu';
-import { activeStylePacks, nudeOnlyAllowed, packCoverage, resolvePackConflicts, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withoutRearUnsafePacks, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
+import { activeStylePacks, nudeOnlyAllowed, toplessAllowed, packCoverage, resolvePackConflicts, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withoutRearUnsafePacks, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import { fixesFromEnv, hasFix } from '../fixes';
 import { kneeUpRequest } from '../framing';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
@@ -241,7 +242,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   const requested = activeStylePacks(req.params.stylePacks, contentMode);
   const packOutfit = withPackOutfit(req.fields.outfit, requested.filter((a) => !a.pack.nudeOnly));
   const nudeOk = nudeOnlyAllowed(contentMode, { ...req.fields, outfit: packOutfit });
-  const usable = (active: typeof requested) => active.filter((a) => !a.pack.nudeOnly || nudeOk);
+  const toplessOk = toplessAllowed(contentMode, { ...req.fields, outfit: packOutfit });
+  const usable = (active: typeof requested) => active.filter((a) => (!a.pack.nudeOnly || nudeOk) && (!a.pack.toplessOnly || toplessOk));
   // a pose guide's wording goes after the outfit (inside the prompt), not in front of everything like other presets
   const guidePrompt = posePre && POSE_GUIDES[posePre.id] ? POSE_PRESET_PROMPTS[posePre.id] : undefined;
   const built = buildPrompt({
@@ -268,6 +270,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   let stylePacks = activeStylePacks(req.params.stylePacks, contentMode);
   for (const a of stylePacks.filter((x) => x.pack.nudeOnly && !nudeOk)) {
     warnings.push(`Style pack “${a.pack.label}” is for nude shots only — skipped. It runs only when the Outfit says “completely nude” (jewellery is fine) and nothing in the request mentions clothing.`);
+  }
+  for (const a of stylePacks.filter((x) => x.pack.toplessOnly && !toplessOk)) {
+    warnings.push(`Style pack “${a.pack.label}” is for topless and nude shots only — skipped. It runs only when the Outfit says “topless” or “nude” and nothing in the request covers her chest.`);
   }
   stylePacks = usable(stylePacks);
   const adultOnly = activeStylePacks(req.params.stylePacks, 'adult').filter((a) => !requested.some((b) => b.pack.id === a.pack.id));
@@ -663,7 +668,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // the live setting is verified on standing photos only: bent over, sitting, kneeling or lying, the reshaping (built
   // around an upright body) did nothing and the redraw region fell across her back and hair (offline, 23 Oct)
   const standingPose = !NOT_STANDING_RE.test(req.fields.pose) && (!req.params.posePreset || /^(standing|looking_back|arms_crossed|hand_in_hair|mirror_selfie)/.test(req.params.posePreset));
-  const fp = p.figurePass ?? (standingPose ? figurePassFromEnv(process.env.SIENNA_FIGURE) : undefined);
+  const fp = p.figurePass ?? (standingPose && !p.noFigurePass ? figurePassFromEnv(process.env.SIENNA_FIGURE) : undefined);
   if (fp) {
     const inView = rear || /\bthree[- ]quarter (rear|back)\b/i.test(`${req.fields.camera} ${req.fields.pose} ${req.fields.framing}`);
     let reason: string | null = !inView ? 'front view: her butt is not in the photo, so nothing to redraw'
@@ -678,6 +683,30 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
     figurePass = reason ? { status: 'skipped', reason } : { status: 'on', file: fp.file, strength: fp.strength, denoise: fp.denoise, ...(fp.style ? { style: fp.style } : {}), ...(fp.enlarge ? { enlarge: fp.enlarge } : {}) };
     if (reason && inView) warnings.push(`Figure pass skipped — ${reason}.`);
+  }
+
+  // ── Close-up detail pass: nude / bottomless photos in adult mode only (the node itself also touches only an area
+  // NudeNet sees as exposed). A test request sets its own (or 'off'); otherwise SIENNA_DETAIL=peach|butterfly|lotte ──
+  let detailPass: GenerationRecord['detailPass'];
+  const dp = p.detailPass === 'off' ? undefined : p.detailPass ?? detailPassFromEnv(process.env.SIENNA_DETAIL);
+  if (dp && contentMode === 'adult' && bareBelow(req.fields.outfit, nudeOk)) {
+    const dRear = rear || /(from behind|back to the camera|rear view)/i.test(`${req.fields.camera} ${req.fields.pose}`);
+    let reason: string | null = !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
+      : !loraChainEnd || graph[loraChainEnd]?.class_type !== 'LoraLoader' ? "Sienna's LoRA node not found" : null;
+    const file = detailFile(dp.style, dRear);
+    const strength = dp.strength ?? DETAIL_STYLES[dp.style].strength;
+    const denoise = dp.denoise ?? DETAIL_DENOISE;
+    const withDetail = reason ? null : addDetailPass(graph, { style: dp.style, rear: dRear, strength, denoise, baseLoraId: loraChainEnd!, faceRefineId: refineId! });
+    if (!reason && !withDetail) reason = 'nothing to copy the sampler settings from';
+    if (withDetail) {
+      const missing = await missingClasses(backend, withDetail, Object.values(DETAIL_NODES));
+      const loras = missing.length ? null : await loraFiles(backend);
+      if (missing.length) reason = `server is missing ${describeMissing(missing)}`;
+      else if (loras && !loras.includes(file)) reason = `${file} is not on the server`;
+      else graph = withDetail;
+    }
+    detailPass = reason ? { status: 'skipped', reason } : { status: 'on', style: dp.style, file, strength, denoise };
+    if (reason) warnings.push(`Close-up detail skipped — ${reason}.`);
   }
 
   // ── Photo checks (retries happen in doRefresh): top check when the outfit has a top, face check with Sienna Lock ──
@@ -757,6 +786,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       faceRefine,
       handRefine,
       ...(figurePass ? { figurePass } : {}),
+      ...(detailPass ? { detailPass } : {}),
       exposureGuard,
       submittedGraph: graph,
       images: [],
@@ -974,6 +1004,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         // targeted figure pass (test requests): a stalled or failed step leaves the photo as made — say so
         const figureReport = rec.figurePass?.status === 'on' ? parseFigurePass(state.texts) : undefined;
         if (figureReport && figureReport.completed === false) notes.push(`Figure adjustment not applied — ${figureReport.fallback ?? 'the pass did not finish'}.`);
+        const detailReport = rec.detailPass?.status === 'on' ? parseDetailPass(state.texts) : undefined;
         if (topOn || faceOn || bodyFraming !== undefined || poseCheck || knees) {
           const attempts = [
             ...guard.attempts,
@@ -986,6 +1017,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               ...(bodyFraming !== undefined ? { framingOk: bodyFraming } : {}),
               ...(knees?.miss ? { framingMiss: knees.miss } : {}),
               ...(figureReport ? { figure: figureReport } : {}),
+              ...(detailReport ? { detail: detailReport } : {}),
               ...(poseCheck ? { poseOk: poseCheck.ok } : {}),
               // a correction records the photo it was made from (and whether she was kept pixel for pixel)
               ...(guard.next ? { basedOn: guard.next.basedOn, ...(guard.next.keptPerson ? { keptPerson: true } : {}) } : {}),

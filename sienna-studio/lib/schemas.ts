@@ -9,13 +9,12 @@ const str = (max = 4000) => z.string().max(max);
 /** Pose LoRAs under test (24 Oct), installed on both drives: Twerking pose (1285064), Bending forward butt view
  * (571575), Joschek's All Fours v2 (319204). Their licences allow personal use but not commercial use of the images. */
 export const POSE_TEST_PACKS = ['pack_1285064.safetensors', 'pack_571575.safetensors', 'pack_319204.safetensors'] as const;
-/** General NSFW LoRAs under test (24 Oct), SDXL 1.0 versions, installed on both drives: MS Real XL Butt Lift (151028),
- * ULtraReal Breast & Nipple Detailer (1259365), LEAKCORE amateur (1439962), iPhone Mirror Selfie (256058), Breast Size
- * Slider (481119), Laced Lingerie (1844408), Sweaty/Wet Body (1515753), See Through Clothes (156205), and the Real Pussy
- * series: Peach Rear v2 (99174), Lotte (89005), Butterfly (90740). The Real Pussy licences do not allow commercial image use. */
-export const NSFW_TEST_PACKS = ['pack_151028.safetensors', 'pack_1259365.safetensors', 'pack_1439962.safetensors', 'pack_256058.safetensors',
-  'pack_481119.safetensors', 'pack_1844408.safetensors', 'pack_1515753.safetensors', 'pack_156205.safetensors',
-  'pack_99174.safetensors', 'pack_89005.safetensors', 'pack_90740.safetensors'] as const;
+/** NSFW LoRAs still under test (24 Oct), SDXL 1.0 versions on both drives: MS Real XL Butt Lift (151028, to re-test
+ * without the reshaping), LEAKCORE amateur (1439962), and the Real Pussy series — Peach Rear v2 (99174), Lotte (89005),
+ * Butterfly (90740) — which the close-up detail pass uses (their licences don't allow commercial image use). Breast
+ * slider, Laced lingerie and Breast detailer passed and are style packs now; iPhone Mirror Selfie (undressed her 2/2),
+ * Sweaty Body (no effect) and See Through (dropped the bra) were dropped. */
+export const NSFW_TEST_PACKS = ['pack_151028.safetensors', 'pack_1439962.safetensors', 'pack_99174.safetensors', 'pack_89005.safetensors', 'pack_90740.safetensors'] as const;
 
 export const storedImageSchema = z.object({
   id: z.string().max(64),
@@ -140,6 +139,10 @@ export const simpleCreateSchema = z.object({
       contentMode: z.literal('adult').optional(),
       /** targeted figure pass (23 Oct): Glute Goddess on her hip/butt region only */
       figurePass: z.object({ file: z.enum(['pack_1883628.safetensors']), strength: z.number().min(0.3).max(0.9), denoise: z.number().min(0.3).max(0.8), style: z.enum(['fuller']).optional(), enlarge: z.number().min(0).max(0.35).optional() }).optional(),
+      /** close-up detail pass (24 Oct, lib/comfy/detail-pass.ts): nude / bottomless requests in adult mode only; 'off' turns SIENNA_DETAIL off */
+      detailPass: z.union([z.literal('off'), z.object({ style: z.enum(['peach', 'butterfly', 'lotte']), strength: z.number().min(0.2).max(0.9).optional(), denoise: z.number().min(0.2).max(0.75).optional() })]).optional(),
+      /** benchmark: the targeted figure pass off for this request (SIENNA_FIGURE ignored) */
+      noFigurePass: z.boolean().optional(),
     })
     .optional(),
 });

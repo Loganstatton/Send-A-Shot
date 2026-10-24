@@ -411,6 +411,47 @@ def test_exposure_summary_flags_exposed_breasts_above_threshold_only():
     shown = covered + [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.63}]
     assert ex.summarize(shown) == {"exposed": True, "score": 0.63, "classes": ["FEMALE_BREAST_EXPOSED"]}
     assert ex.summarize(faint, threshold=0.25)["exposed"] is True
+    via_crop = covered + [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.71, "crop": True}]
+    assert ex.summarize(via_crop) == {"exposed": True, "score": 0.71, "classes": ["FEMALE_BREAST_EXPOSED"], "crop": True}
+
+
+def test_exposure_chest_crop_box_pads_covered_breasts_and_stays_in_frame():
+    dets = [{"class": "FEMALE_BREAST_COVERED", "score": 0.7, "box": [300, 600, 100, 80]},
+            {"class": "FEMALE_BREAST_COVERED", "score": 0.6, "box": [450, 610, 100, 80]},
+            {"class": "FEMALE_BREAST_COVERED", "score": 0.1, "box": [0, 0, 50, 50]},   # too faint: ignored
+            {"class": "FACE_FEMALE", "score": 0.9, "box": [350, 100, 150, 150]}]
+    # union 300..550 x 600..690, padded by 0.35 × 250
+    assert ex.chest_crop_box(dets, 832, 1216) == (213, 513, 637, 777)
+    assert ex.chest_crop_box(dets, 600, 700) == (213, 513, 600, 700)
+    assert ex.chest_crop_box([{"class": "FACE_FEMALE", "score": 0.9, "box": [1, 1, 5, 5]}], 832, 1216) is None
+
+
+def test_exposure_detector_looks_again_at_a_covered_chest():
+    import tempfile
+
+    import cv2
+    path = os.path.join(tempfile.mkdtemp(), "p.png")
+    cv2.imwrite(path, np.zeros((1216, 832, 3), np.uint8))
+
+    class Fake:
+        def __init__(self, full, crop):
+            self.full, self.crop, self.calls = full, crop, []
+
+        def detect(self, p):
+            self.calls.append(p)
+            return self.full if p == path else self.crop
+
+    covered = [{"class": "FEMALE_BREAST_COVERED", "score": 0.7, "box": [300, 600, 250, 90]}]
+    f = Fake(covered, [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.71, "box": [10, 20, 30, 30]}])
+    out = ex.ChestCropDetector(f).detect(path)
+    assert len(f.calls) == 2 and out[-1] == {"class": "FEMALE_BREAST_EXPOSED", "score": 0.71, "box": [223, 533, 30, 30], "crop": True}
+    assert ex.summarize(out)["exposed"] is True
+    # nothing covered: no second look; already exposed: no second look
+    f2 = Fake([{"class": "FACE_FEMALE", "score": 0.9, "box": [1, 1, 5, 5]}], [])
+    assert ex.ChestCropDetector(f2).detect(path) == f2.full and len(f2.calls) == 1
+    f3 = Fake(covered + [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.8, "box": [1, 1, 5, 5]}], [])
+    ex.ChestCropDetector(f3).detect(path)
+    assert len(f3.calls) == 1
 
 
 def test_face_reference_and_check():

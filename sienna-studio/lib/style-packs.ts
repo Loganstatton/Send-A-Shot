@@ -27,6 +27,9 @@ export interface StylePack {
   /** Only applied when the outfit has no top: with a dress or top on, the pack undressed her (and the top check
    * missed it). */
   nudeOnly?: boolean;
+  /** Only applied when her chest is bare (topless or nude, nothing covering it): a breast pack on a covered chest would
+   * undress her. */
+  toplessOnly?: boolean;
   /** The pack turns her away from the camera (used only by the experimental pose-aware face check). */
   rearPose?: boolean;
 }
@@ -219,6 +222,42 @@ export const STYLE_PACKS: StylePack[] = [
     section: 'adult',
     nudeOnly: true,
   },
+  {
+    id: 'fuller_bust',
+    label: 'Fuller bust',
+    hint: 'A noticeably fuller bust with the outfit and face unchanged (2 of 2 passed the AI check at 0.8, 24 Oct). Turn it down for a subtler change.',
+    file: 'pack_481119.safetensors',
+    // a slider: no trigger word, the strength is the size
+    trigger: '',
+    max: 0.8,
+    default: 0.8,
+    source: 'https://civitai.com/models/481119',
+    section: 'adult',
+  },
+  {
+    id: 'laced_lingerie',
+    label: 'Laced lingerie',
+    hint: 'Bra-and-panty lingerie sets with fine lace, underwire cups and sheer panels (e.g. “red lace bra and panties”). 2 of 2 passed the AI check at 0.8 (24 Oct). For a lace bodysuit use Lace bodysuit.',
+    file: 'pack_1844408.safetensors',
+    trigger: 'lingerie',
+    max: 0.8,
+    default: 0.8,
+    source: 'https://civitai.com/models/1844408',
+    section: 'adult',
+  },
+  {
+    id: 'breast_detail',
+    label: 'Realistic breasts (topless)',
+    hint: 'Realistic skin, nipples and natural shape for topless and nude shots; skipped when anything covers her chest. Face and body stayed the same at 0.6 (24 Oct).',
+    file: 'pack_1259365.safetensors',
+    // from the pack's own tags; its "saggy breasts" tag is left out
+    trigger: 'skin detail',
+    max: 0.6,
+    default: 0.6,
+    source: 'https://civitai.com/models/1259365',
+    section: 'adult',
+    toplessOnly: true,
+  },
 ];
 
 /** Stacking more than this many packs visibly changes Sienna's face (and pose) in testing. */
@@ -291,6 +330,25 @@ export function nudeOnlyAllowed(
   return !CLOTHING_RE.test(rest);
 }
 
+const BARE_CHEST_RE = /\b(topless|nude|naked|bare (breasts|chest|boobs)|nothing on|wearing nothing)\b/i;
+/** Anything that covers her chest (a hand over it too). "topless" itself is not a top: \btop\b needs a word end. */
+const CHEST_COVER_RE =
+  /\b(bras?|bralette|bikini|top|shirt|t-shirt|tee|tank|blouse|dress|gown|nightgown|nightie|slip|bodysuit|leotard|swimsuit|monokini|one-piece|sweater|jumper|hoodie|jacket|coat|blazer|cardigan|robe|kimono|towel|corset|bustier|camisole|cami|crop|lingerie|teddy|babydoll|pasties|tape|sheet|blanket|cover(s|ed|ing)?|hands? over|arms? over|hiding)\b/i;
+
+/**
+ * Whether a topless-only pack may run: adult mode, the request says her chest is bare (topless, nude …), and nothing
+ * in the outfit, pose, body or extra fields covers it. Fail-closed like nudeOnlyAllowed.
+ */
+export function toplessAllowed(
+  contentMode: 'sfw' | 'adult',
+  fields: { outfit?: string; pose?: string; bodyPresentation?: string; extra?: string },
+): boolean {
+  if (contentMode !== 'adult') return false;
+  const outfit = fields.outfit ?? '';
+  if (!BARE_CHEST_RE.test(outfit)) return false;
+  return !CHEST_COVER_RE.test([outfit, fields.pose, fields.bodyPresentation, fields.extra].filter(Boolean).join(' '));
+}
+
 /** Negative prompt with the active packs' own negatives added. */
 export function withPackNegatives(negative: string, active: ActiveStylePack[]): string {
   const extra = active.map((a) => a.pack.negative ?? '').filter((n) => n && !negative.includes(n));
@@ -315,7 +373,9 @@ const AUTO_PACKS: [string, RegExp][] = [
   ['string_swimsuit', /\bstring\s+(thong\s+)?(bikini|swimsuit)\b|\bstring thong bottoms?\b/i],
   ['micro_bikini', /\bmicro[- ]?(triangle\s+)?bikini\b/i],
   ['lace_bodysuit', /\b(lace\s+)?(high-cut\s+)?(bodysuit|leotard)\b/i],
-  ['french_lace', /\bfrench lace\b|\blace\s+(lingerie|bra|bralette|panties|underwear|teddy)\b|\blingerie\b[^.]{0,40}\blace\b/i],
+  ['french_lace', /\bfrench lace\b/i],
+  // lingerie sets: the laced pack (24 Oct: 2/2 passed) took over from French lace, which stays for "french lace"
+  ['laced_lingerie', /\blingerie\b|\blace\s+(bra|bralette|panties|underwear)\b|\bbra and pant(y|ies)\b/i],
   ['belly_cutout_dress', /\b(belly\s+)?cut-?out dress\b|\bbelly cut-?out\b/i],
   ['mesh_top', /\b(shiny|metallic|chain(-?mail)?|chain-mesh)\s+(mesh\s+)?top\b|\bmesh top\b/i],
   ['underboob_shirt', /\bunderboob\b/i],
@@ -324,6 +384,8 @@ const AUTO_PACKS: [string, RegExp][] = [
   ['all_fours', /\bon all fours\b|\bon (her )?hands and knees\b/i],
   ['sink_selfie', /\bsink selfie\b|\b(sitting|sat|perched) on the (bathroom )?(sink|vanity|counter by the sink)\b/i],
   ['realistic_nudes', /\b(nude|naked)\b/i],
+  ['breast_detail', /\btopless\b/i],
+  ['fuller_bust', /\b(bigger|larger|fuller|huge|big|massive)\s+(breasts|boobs|bust|tits|chest)\b/i],
   ['natural_skin', /\b(natural|matte|textured|real) skin( texture)?\b|\bvisible pores\b|\bno makeup\b/i],
 ];
 
@@ -344,6 +406,7 @@ const PACK_REPLACES: Record<string, RegExp[]> = {
   mesh_top: [/\b(t-?shirt|tee|tank top|sweater|hoodie|blouse|bikini top)\b/i],
   underboob_shirt: [/\b(tank top|sweater|hoodie|blouse|bikini top|bra)\b/i],
   lace_bandeau: [/\b(t-?shirt|tee|tank top|sweater|hoodie|blouse|bikini top|bra)\b/i],
+  laced_lingerie: [BOTTOMS_RE, TOPS_RE, /\bdress\b/i, /\bbikini\b/i, /\b(bodysuit|leotard|teddy)\b/i],
 };
 
 /** The pack fits the requested outfit: it doesn't replace a garment the request names. Packs that draw no outfit always fit. */
@@ -363,6 +426,11 @@ export function packFitsOutfit(id: string, outfit: string): boolean {
 export const PACK_CONFLICTS: [string, string][] = [
   ['string_swimsuit', 'micro_bikini'],
   ['lace_bodysuit', 'french_lace'],
+  // two lingerie packs draw two different lace looks; "french lace" asked for by name wins
+  ['french_lace', 'laced_lingerie'],
+  ['lace_bodysuit', 'laced_lingerie'],
+  // untested together: the nude-body pack already covers her chest in nude shots
+  ['realistic_nudes', 'breast_detail'],
 ];
 
 /**
@@ -423,6 +491,7 @@ export function packsForDescription(
     // "completely nude on her bed" → "completely nude": the place and pose aren't outfit items (the check stays strict)
     const outfit = (fields.outfit ?? '').replace(/^\s*(she'?s|she is|she|her)\s+/i, '').replace(/\s+\b(on|in|at|by|near|lying|sitting|standing|kneeling|posing)\b.*$/i, '');
     if (pack.nudeOnly && !nudeOnlyAllowed(contentMode, { ...fields, outfit })) continue;
+    if (pack.toplessOnly && !toplessAllowed(contentMode, fields)) continue;
     if (!packFitsOutfit(id, fields.outfit ?? '')) continue;
     // a string bikini already has the string swimsuit pack; the micro pack on top lowers coverage (PACK_CONFLICTS)
     if (PACK_CONFLICTS.some(([keep, drop]) => id === drop && out[keep])) continue;
