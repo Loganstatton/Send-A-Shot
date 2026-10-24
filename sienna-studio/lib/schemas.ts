@@ -6,6 +6,10 @@ import { FIXES } from './fixes';
 
 const str = (max = 4000) => z.string().max(max);
 
+/** Pose LoRAs under test (24 Oct), installed on both drives: Twerking pose (1285064), Bending forward butt view
+ * (571575), Joschek's All Fours v2 (319204). Their licences allow personal use but not commercial use of the images. */
+export const POSE_TEST_PACKS = ['pack_1285064.safetensors', 'pack_571575.safetensors', 'pack_319204.safetensors'] as const;
+
 export const storedImageSchema = z.object({
   id: z.string().max(64),
   file: z.string().regex(/^[a-z0-9_-]+\.(png|jpg|webp)$/i),
@@ -119,9 +123,10 @@ export const simpleCreateSchema = z.object({
       figureNoAbs: z.boolean().optional(),
       coverStomach: z.boolean().optional(),
       fixes: z.array(z.enum(FIXES)).optional(),
-      /** figure preview (23 Oct): only the two licence-checked figure LoRAs, at most 0.8. The body-only Glute Goddess
+      /** figure preview (23 Oct): only the two licence-checked figure LoRAs, at most 0.8 — and, for the pose test (24 Oct),
+       * three pose LoRAs (POSE_TEST_PACKS; personal use only, no commercial image use). The body-only Glute Goddess
        * copy was tested and discarded (23 Oct: shape close to baseline, added a tank top over the sports bra 2 of 2) */
-      figurePack: z.object({ file: z.enum(['pack_1883628.safetensors', 'pack_1447606.safetensors']), strength: z.number().min(0.05).max(0.8) }).optional(),
+      figurePack: z.object({ file: z.enum(['pack_1883628.safetensors', 'pack_1447606.safetensors', ...POSE_TEST_PACKS]), strength: z.number().min(0.05).max(0.8) }).optional(),
       figureTrait: z.string().max(120).regex(/^[a-z ,-]+$/i).optional(),
       /** benchmark only: adult mode for revealing cuts the reader left in safe mode (Stage B cheeky shorts came out
        * modest); still only where the server allows adult content */
