@@ -149,6 +149,7 @@ export const POST = handle(async (req: Request) => {
       ...(body.test?.figureTrait ? { figureTrait: body.test.figureTrait } : {}),
       ...(body.test?.figurePass ? { figurePass: body.test.figurePass } : {}),
       ...(body.test?.noFigurePass ? { noFigurePass: true } : {}),
+      ...(body.test?.hires ? { hires: true, hiresScale: body.test.hires.scale, ...(body.test.hires.denoise ? { hiresDenoise: body.test.hires.denoise } : {}) } : {}),
       ...(body.test?.detailPass ? { detailPass: body.test.detailPass } : {}),
     },
     images: {
