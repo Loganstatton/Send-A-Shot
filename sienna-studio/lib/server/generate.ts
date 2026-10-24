@@ -386,7 +386,13 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // Nude / bottomless photos that get the close-up detail pass are made at 1.5× (the hi-res pass): at normal size the
   // area is ~150-200 px and the redraw lost its detail when scaled back; at 1.5× it looked clearly more real from the
   // front and from behind, face and body unchanged (fig24, 24 Oct)
-  const detailHires = p.detailPass !== 'off' && !!(p.detailPass ?? detailPassFromEnv(process.env.SIENNA_DETAIL)) && contentMode === 'adult' && bareBelow(req.fields.outfit, nudeOk);
+  const detailRearView = rear || /\b(from behind|back to the camera|rear view)\b/i.test(`${req.fields.camera} ${req.fields.pose}`);
+  // The live setting (SIENNA_DETAIL) runs on rear views only: from behind 3 of 3 came out better, from the front 2 of 3
+  // and the third got a dark grey patch, worse than no touch-up (24 Oct). SIENNA_DETAIL_FRONT=true adds front views back.
+  // A test request sets its own (or 'off').
+  const detailWanted = p.detailPass === 'off' ? undefined
+    : p.detailPass ?? (detailRearView || process.env.SIENNA_DETAIL_FRONT === 'true' ? detailPassFromEnv(process.env.SIENNA_DETAIL) : undefined);
+  const detailHires = !!detailWanted && contentMode === 'adult' && bareBelow(req.fields.outfit, nudeOk);
   if (p.hires || (detailHires && !!bindings.hires_denoise?.length)) {
     if (!bindings.hires_denoise?.length) unsupported('The refinement pass');
     else quality.hires = true;
@@ -692,9 +698,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // ── Close-up detail pass: nude / bottomless photos in adult mode only (the node itself also touches only an area
   // NudeNet sees as exposed). A test request sets its own (or 'off'); otherwise SIENNA_DETAIL=peach|butterfly|lotte ──
   let detailPass: GenerationRecord['detailPass'];
-  const dp = p.detailPass === 'off' ? undefined : p.detailPass ?? detailPassFromEnv(process.env.SIENNA_DETAIL);
+  const dp = detailWanted;
   if (dp && contentMode === 'adult' && bareBelow(req.fields.outfit, nudeOk)) {
-    const dRear = rear || /(from behind|back to the camera|rear view)/i.test(`${req.fields.camera} ${req.fields.pose}`);
+    const dRear = detailRearView;
     let reason: string | null = !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
       : !loraChainEnd || graph[loraChainEnd]?.class_type !== 'LoraLoader' ? "Sienna's LoRA node not found" : null;
     const file = detailFile(dp.style, dRear);
