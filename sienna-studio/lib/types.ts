@@ -376,7 +376,7 @@ export interface GenerationRecord {
   /** Targeted figure pass (test requests only). */
   figurePass?: { status: 'on' | 'skipped'; reason?: string; file?: string; strength?: number; denoise?: number; style?: string; enlarge?: number };
   /** Close-up detail pass (nude / bottomless photos in adult mode). */
-  detailPass?: { status: 'on' | 'skipped'; reason?: string; style?: string; file?: string; strength?: number; denoise?: number };
+  detailPass?: { status: 'on' | 'skipped'; reason?: string; style?: string; file?: string; strength?: number; denoise?: number; hires?: boolean };
   /** Photo checks: each photo is checked (top check when the outfit has a top, face check with Sienna Lock) and
    * redone with a new seed when one fails. Named for the first check it had. */
   exposureGuard?: {

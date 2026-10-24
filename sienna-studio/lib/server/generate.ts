@@ -383,7 +383,11 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       else quality.poseRetarget = clamp(p.poseRetarget!, 0, 1);
     }
   }
-  if (p.hires) {
+  // Nude / bottomless photos that get the close-up detail pass are made at 1.5× (the hi-res pass): at normal size the
+  // area is ~150-200 px and the redraw lost its detail when scaled back; at 1.5× it looked clearly more real from the
+  // front and from behind, face and body unchanged (fig24, 24 Oct)
+  const detailHires = p.detailPass !== 'off' && !!(p.detailPass ?? detailPassFromEnv(process.env.SIENNA_DETAIL)) && contentMode === 'adult' && bareBelow(req.fields.outfit, nudeOk);
+  if (p.hires || (detailHires && !!bindings.hires_denoise?.length)) {
     if (!bindings.hires_denoise?.length) unsupported('The refinement pass');
     else quality.hires = true;
   }
@@ -705,7 +709,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       else if (loras && !loras.includes(file)) reason = `${file} is not on the server`;
       else graph = withDetail;
     }
-    detailPass = reason ? { status: 'skipped', reason } : { status: 'on', style: dp.style, file, strength, denoise };
+    detailPass = reason ? { status: 'skipped', reason } : { status: 'on', style: dp.style, file, strength, denoise, ...(quality.hires ? { hires: true } : {}) };
     if (reason) warnings.push(`Close-up detail skipped — ${reason}.`);
   }
 
