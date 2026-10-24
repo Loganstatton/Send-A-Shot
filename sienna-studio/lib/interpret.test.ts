@@ -200,3 +200,18 @@ describe('tiny string bikini (live: regular-size cups at the 0.6 default)', () =
     expect(r.fields.outfit).not.toContain('very small triangle cups');
   });
 });
+
+describe('nude requests (rule-based reader: nudity never goes to the AI)', () => {
+  it('the nudity is the outfit; the rest of the clause keeps its own field', () => {
+    const a = interpretPrompt('Sienna completely nude lying on her back on her bed, legs apart, facing the camera.', { adultAllowed: true });
+    expect(a.fields.outfit).toBe('completely nude');
+    expect(a.fields.pose).toBe('lying on her back on her bed, legs apart, facing the camera');
+    expect(a.contentMode).toBe('adult');
+    const b = interpretPrompt('Sienna on all fours on her bed from behind, looking back over her shoulder, completely naked.', { adultAllowed: true });
+    expect(b.fields.outfit).toBe('completely naked');
+    expect(b.fields.pose).toContain('on all fours');
+    expect(interpretPrompt('Sienna completely nude.', { adultAllowed: true }).fields.outfit).toBe('completely nude');
+    // a garment named "nude" is not nudity
+    expect(interpretPrompt('Sienna in a nude bodycon dress, standing in the kitchen.', { adultAllowed: true }).fields.outfit).toContain('nude bodycon dress');
+  });
+});

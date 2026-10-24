@@ -105,6 +105,9 @@ const LEAD_IN_RE =
 const NEGATION_RE = /\b(?:no|without|avoid|avoiding|never|not|don't|do not|doesn't|does not|shouldn't|should not)\b\s+(?:(?:show|include|add|have|use|make|be|any|wear|wearing)\s+)*(?:(?:an?|the|any|her)\s+)?([^,.;]+)/gi;
 const KEEP_NEGATION_RE = /^(too|very|overly|so|that|just|only|exactly|quite)\b/i;
 
+/** A leading or trailing "(completely) nude / naked" in a clause that says more (pose, place …). */
+const NUDE_PART_RE = /^\s*(?:(?:completely|fully|totally|entirely)\s+)?(?:nude|naked)\b(?!-)[\s,;]*|[\s,;]+(?:(?:completely|fully|totally|entirely)\s+)?(?:nude|naked)\s*$/i;
+
 const ADULT_RE = /\b(nude|naked|nudity|topless|bottomless|lingerie|see-through|sheer|bare (breasts|chest|butt|bottom)|nipples?|implied nud\w*|g-string|thong)\b/i;
 const OUTDOOR_RE = /\b(beach|ocean|sea|lake|forest|park|street|city|outdoors?|outside|garden|backyard|mountain|desert|pool|balcony|sun|sunlight|sunset|sunrise|golden hour|daylight)\b/i;
 
@@ -204,8 +207,17 @@ export function interpretPrompt(
     changes.push(...clothingChanges(raw));
     const s = tidyClause(raw);
     if (!s) continue;
-    const [kept, neg] = splitNegatives(s);
+    const [kept0, neg] = splitNegatives(s);
     avoid.push(...neg);
+    // "completely nude lying on her back …": the nudity is the outfit, the rest is classified on its own (else the
+    // pose words win and the outfit stays empty, so nude-only steps never see a nude request — fig21, 24 Oct)
+    const nude = NUDE_PART_RE.exec(kept0);
+    const kept = nude ? kept0.replace(NUDE_PART_RE, ' ').replace(/\s{2,}/g, ' ').replace(/^[\s,;]+|[\s,;]+$/g, '') : kept0;
+    if (nude && kept) (buckets.outfit ??= []).push(nude[0].replace(/^[\s,;]+|[\s,;]+$/g, ''));
+    else if (nude) {
+      (buckets.outfit ??= []).push(kept0);
+      continue;
+    }
     if (!kept) continue;
     const slot = classify(kept);
     if (slot === 'identity') {
