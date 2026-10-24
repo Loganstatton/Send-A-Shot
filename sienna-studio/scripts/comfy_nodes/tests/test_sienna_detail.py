@@ -43,13 +43,25 @@ def test_plan_cut_paste_round_trip_changes_only_the_oval():
     assert info["found"] and info["side"] == 195 and info["size"] == 512
     crop, mask = sd.cut(img, info)
     assert crop.shape == (512, 512, 3) and mask.shape == (512, 512) and mask[256, 256] == 1
-    redrawn = np.clip(crop + 0.1, 0, 1)                         # brighter redraw: the colour match takes it back
+    # a brighter redraw with a detail in the middle: cloning keeps the detail, takes the tone from around it
+    redrawn = np.clip(crop + 0.15, 0, 1)
+    redrawn[240:272, 240:272] = 0.0
     out, rep = sd.paste(img, redrawn, info)
-    assert rep["pasted"] and rep["color_shift"][0] < 0
+    assert rep["pasted"] and rep["blend"] == "seamless"
     x0, y0, side = info["x0"], info["y0"], info["side"]
     assert np.array_equal(out[:y0], img[:y0]) and np.array_equal(out[:, :x0], img[:, :x0])   # outside the square: identical
-    assert np.array_equal(out[y0, x0], img[y0, x0])                                            # square corner: outside the oval
-    assert not np.allclose(out[y0 + side // 2, x0 + side // 2], img[y0 + side // 2, x0 + side // 2], atol=1e-4)
+    assert np.allclose(out[y0 + 2, x0 + 2], img[y0 + 2, x0 + 2], atol=1 / 255 + 1e-6)          # square corner: outside the oval
+    c = (y0 + side // 2, x0 + side // 2)
+    assert out[c].mean() < img[c].mean() - 0.1                                                 # the detail is there
+    ring = out[y0 + side // 2, x0 + side // 2 - 50]                                            # inside the oval, off the detail:
+    assert abs(float(ring.mean()) - float(img[y0 + side // 2, x0 + side // 2 - 50].mean())) < 0.12   # not 0.15 brighter
+
+
+def test_paste_falls_back_to_feathered_when_the_oval_is_too_small_to_clone():
+    img = np.full((300, 300, 3), 0.5, np.float32)
+    info = {"found": True, "score": 0.5, "box": [100, 100, 0, 0], "x0": 100, "y0": 100, "side": 100, "size": 100}
+    out, rep = sd.paste(img, np.full((100, 100, 3), 0.6, np.float32), info)
+    assert rep["blend"] == "feathered" and "color_shift" in rep
 
 
 def test_nothing_found_leaves_the_photo_unchanged():

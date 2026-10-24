@@ -105,19 +105,54 @@ def cut(image: np.ndarray, info: Dict) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def paste(image: np.ndarray, redrawn: np.ndarray, info: Dict) -> Tuple[np.ndarray, Dict]:
-    """The photo with the redrawn square scaled back, colour-matched and blended in through the soft oval."""
+    """The photo with the redrawn square scaled back and blended in. Seamless (Poisson) cloning inside an oval a little
+    smaller than the redrawn one: the redraw keeps its detail but takes its tone from the skin around it. A plain
+    feathered paste with a mean-colour shift left a visible disc — lighter on a front view, redder from behind (fig22,
+    24 Oct); cloning removed it on the same photos. The feathered paste stays as the fallback."""
     if not info.get("found"):
         return image, {"skipped": info.get("skipped", "nothing to paste")}
     x0, y0, side = info["x0"], info["y0"], info["side"]
     bx, by, bw, bh = info["box"]
     orig = image[y0:y0 + side, x0:x0 + side]
     back = resize(redrawn, side)
-    _, soft = oval_masks(side, (bx - x0, by - y0, bw, bh))
-    back, shift = color_match(back, orig, soft)
     out = image.copy()
-    out[y0:y0 + side, x0:x0 + side] = orig * (1 - soft[..., None]) + back * soft[..., None]
+    cloned = seamless(orig, back, (bx - x0, by - y0, bw, bh))
+    if cloned is not None:
+        out[y0:y0 + side, x0:x0 + side] = cloned
+        how, shift = "seamless", None
+    else:
+        _, soft = oval_masks(side, (bx - x0, by - y0, bw, bh))
+        back, shift = color_match(back, orig, soft)
+        out[y0:y0 + side, x0:x0 + side] = orig * (1 - soft[..., None]) + back * soft[..., None]
+        how = "feathered"
     changed = float(np.abs(out - image).mean() * 255)
-    return out, {"pasted": True, "side": side, "score": info.get("score"), "color_shift": shift, "mean_change": round(changed, 3)}
+    report = {"pasted": True, "blend": how, "side": side, "score": info.get("score"), "mean_change": round(changed, 3)}
+    if shift is not None:
+        report["color_shift"] = shift
+    return out, report
+
+
+CLONE_GROW = 1.45  # inside the 1.6× oval that was redrawn, so only redrawn pixels are cloned
+
+
+def seamless(orig: np.ndarray, back: np.ndarray, box_in_crop: Tuple[float, float, float, float]) -> Optional[np.ndarray]:
+    """back cloned into orig (same-size squares, 0..1) inside the oval around the box; None if OpenCV can't."""
+    import cv2
+
+    side = orig.shape[0]
+    hard, _ = oval_masks(side, box_in_crop, grow=CLONE_GROW)
+    hard[:2] = 0; hard[-2:] = 0; hard[:, :2] = 0; hard[:, -2:] = 0
+    ys, xs = np.where(hard > 0)
+    if len(xs) < 16:
+        return None
+    # OpenCV centres the mask's bounding box on this point: chosen so nothing moves
+    centre = (int(xs.min() + (xs.max() - xs.min() + 1) // 2), int(ys.min() + (ys.max() - ys.min() + 1) // 2))
+    to8 = lambda a: np.ascontiguousarray(np.clip(np.round(a * 255), 0, 255).astype(np.uint8))
+    try:
+        out = cv2.seamlessClone(to8(back), to8(orig), to8(hard), centre, cv2.NORMAL_CLONE)
+    except cv2.error:
+        return None
+    return out.astype(np.float32) / 255
 
 
 def detector():
