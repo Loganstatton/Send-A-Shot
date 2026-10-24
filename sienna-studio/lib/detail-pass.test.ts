@@ -14,7 +14,7 @@ describe('close-up detail pass', () => {
     expect(g[n.region].inputs).toMatchObject({ image: ['51', 0], threshold: 0.3, size: 1024 });
     expect(g[n.encode].inputs.pixels).toEqual([n.region, 0]);
     expect(g[n.noiseMask].inputs).toEqual({ samples: [n.encode, 0], mask: [n.region, 1] });
-    expect(g[n.sampler].inputs).toMatchObject({ model: [n.lora, 0], latent_image: [n.noiseMask, 0], denoise: 0.5 });
+    expect(g[n.sampler].inputs).toMatchObject({ model: [n.lora, 0], latent_image: [n.noiseMask, 0], denoise: 0.62 });
     expect(g[n.paste].inputs).toEqual({ original: ['51', 0], redrawn: [n.decode, 0], info: [n.region, 2] });
     expect(g[n.lora].inputs).toMatchObject({ model: ['2', 0], clip: ['2', 1], lora_name: 'pack_99174_front.safetensors', strength_model: 0.7 });
     expect(g[n.positive].inputs.text).toBe(DETAIL_WORDS);
@@ -26,6 +26,7 @@ describe('close-up detail pass', () => {
   it('rear view: the rear version of Peach and rear wording; other styles use one file and their own settings', () => {
     const g = addDetailPass(prod(), { ...opts, rear: true })!;
     expect(g[DETAIL_NODES.lora].inputs.lora_name).toBe('pack_99174.safetensors');
+    expect(g[DETAIL_NODES.sampler].inputs.denoise).toBe(0.5);
     expect(String(g[DETAIL_NODES.positive].inputs.text).startsWith(DETAIL_REAR_WORDS)).toBe(true);
     expect(detailFile('lotte', true)).toBe('pack_89005.safetensors');
     const b = addDetailPass(prod(), { ...opts, style: 'butterfly', denoise: 0.4, strength: 0.6 })!;

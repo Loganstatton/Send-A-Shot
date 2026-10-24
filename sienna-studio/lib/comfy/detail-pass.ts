@@ -35,7 +35,10 @@ export type DetailStyle = keyof typeof DETAIL_STYLES;
 export const DETAIL_WORDS = 'close-up photo, pussy_scale3, realistic natural vulva, natural labia, detailed natural skin texture, soft natural light';
 export const DETAIL_REAR_WORDS = 'from behind, between her thighs';
 export const DETAIL_NEGATIVE_WORDS = '(blurry, smooth plastic skin, deformed, malformed anatomy, cartoon, painting:1.2)';
-export const DETAIL_DENOISE = 0.5;
+/** GPU check (fig23, 24 Oct, seeds 101 and 303): from the front 0.62 gave clear, natural detail on both and 0.5 a lumpy
+ * shape on one; from behind 0.5 looked right on both (0.62 untested there). */
+export const DETAIL_DENOISE = { front: 0.62, rear: 0.5 } as const;
+export const detailDenoise = (rear: boolean) => (rear ? DETAIL_DENOISE.rear : DETAIL_DENOISE.front);
 
 export function detailPassFromEnv(v: string | undefined): { style: DetailStyle; strength?: number; denoise?: number } | undefined {
   return v && v in DETAIL_STYLES ? { style: v as DetailStyle } : undefined;
@@ -111,7 +114,7 @@ export function addDetailPass(graph: ComfyGraph, o: DetailPassOptions): ComfyGra
         cfg: face.inputs.cfg,
         sampler_name: face.inputs.sampler_name,
         scheduler: face.inputs.scheduler,
-        denoise: o.denoise ?? DETAIL_DENOISE,
+        denoise: o.denoise ?? detailDenoise(o.rear),
       },
       _meta: { title: 'Detail pass: redraw' },
     },

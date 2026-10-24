@@ -44,7 +44,7 @@ import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comf
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { addFigurePass, FIGURE_NODES, figurePassFromEnv, parseFigurePass } from '../comfy/figure-pass';
-import { addDetailPass, bareBelow, DETAIL_NODES, DETAIL_DENOISE, DETAIL_STYLES, detailFile, detailPassFromEnv, parseDetailPass } from '../comfy/detail-pass';
+import { addDetailPass, bareBelow, DETAIL_NODES, detailDenoise, DETAIL_STYLES, detailFile, detailPassFromEnv, parseDetailPass } from '../comfy/detail-pass';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, kneeFramingOk, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
@@ -695,7 +695,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       : !loraChainEnd || graph[loraChainEnd]?.class_type !== 'LoraLoader' ? "Sienna's LoRA node not found" : null;
     const file = detailFile(dp.style, dRear);
     const strength = dp.strength ?? DETAIL_STYLES[dp.style].strength;
-    const denoise = dp.denoise ?? DETAIL_DENOISE;
+    const denoise = dp.denoise ?? detailDenoise(dRear);
     const withDetail = reason ? null : addDetailPass(graph, { style: dp.style, rear: dRear, strength, denoise, baseLoraId: loraChainEnd!, faceRefineId: refineId! });
     if (!reason && !withDetail) reason = 'nothing to copy the sampler settings from';
     if (withDetail) {
