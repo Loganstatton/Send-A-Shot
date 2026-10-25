@@ -106,7 +106,19 @@ const NEGATION_RE = /\b(?:no|without|avoid|avoiding|never|not|don't|do not|doesn
 const KEEP_NEGATION_RE = /^(too|very|overly|so|that|just|only|exactly|quite)\b/i;
 
 /** A leading or trailing "(completely) nude / naked" in a clause that says more (pose, place …). */
-const NUDE_PART_RE = new RegExp(String.raw`^\s*(?:(?:completely|fully|totally|entirely)\s+)?(?:nude|naked)\b(?!-)${NUDE_COLOUR_LOOKAHEAD}[\s,;]*|[\s,;]+(?:(?:completely|fully|totally|entirely)\s+)?(?:nude|naked)\s*$`, 'i');
+const NUDE_INTENSIFIER = String.raw`(?:completely|fully|totally|entirely|stark)\s+`;
+const NUDE_FOLLOW = String.raw`(?=\s*(?:[,;]|$)|\s+(?:on|in|at|by|lying|laying|sitting|standing|kneeling|posing|leaning|bent|bending|with|and|under|against|outside|inside)\b)`;
+const NUDE_PART_RE = new RegExp(
+  [
+    String.raw`^\s*${NUDE_INTENSIFIER}(?:nude|naked)\b(?!-)${NUDE_COLOUR_LOOKAHEAD}[\s,;]*`,
+    String.raw`^\s*naked\b(?!-)${NUDE_COLOUR_LOOKAHEAD}[\s,;]*`,
+    String.raw`^\s*nude\b(?!-)${NUDE_FOLLOW}[\s,;]*`,
+    String.raw`[\s]*[,;]\s*(?:${NUDE_INTENSIFIER})?(?:nude|naked)\s*$`,
+    String.raw`\s+${NUDE_INTENSIFIER}(?:nude|naked)\s*$`,
+    String.raw`\s+naked\s*$`,
+  ].join('|'),
+  'i',
+);
 
 const ADULT_RE = /\b(nude|naked|nudity|topless|bottomless|lingerie|see-through|sheer|bare (breasts|chest|butt|bottom)|nipples?|implied nud\w*|g-string|thong)\b/i;
 const OUTDOOR_RE = /\b(beach|ocean|sea|lake|forest|park|street|city|outdoors?|outside|garden|backyard|mountain|desert|pool|balcony|sun|sunlight|sunset|sunrise|golden hour|daylight)\b/i;
@@ -135,7 +147,7 @@ export function tidyClause(raw: string): string {
   s = s.replace(/\b(of|with|for|to|at|like|beside|next to)\s+Sienna(?: Brooks)?\b/g, '$1 her');
   s = s.replace(/\bSienna(?: Brooks)?'s\b/g, 'her').replace(/\bSienna(?: Brooks)?\b/g, 'she');
   s = s.replace(/^she\s+(in|wearing|with|on|at)\b/i, '$1'); // "Sienna in a red dress" → "in a red dress"
-  s = s.replace(/^she\s+(?=\w+ing\b|(completely|fully|totally|nude|naked|topless|barefoot)\b)/i, ''); // "Sienna standing in …" / "Sienna completely nude" → "standing in …" / "completely nude"
+  s = s.replace(/^she\s+(?=\w+ing\b|(completely|fully|totally|entirely|stark|nude|naked|topless|barefoot)\b)/i, ''); // "Sienna standing in …" / "Sienna completely nude" → "standing in …" / "completely nude"
   return s.replace(/\s{2,}/g, ' ').replace(/^[\s,;:]+|[\s,;:]+$/g, '').trim();
 }
 

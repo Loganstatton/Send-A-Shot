@@ -82,3 +82,21 @@ describe('targeted figure pass (test only)', () => {
       .toEqual({ completed: false, fallback: 'paste-back not completed (composite timed out after 90s); photo left as made', mask: 0.09 });
   });
 });
+
+describe('figure pass: negative that is not plain text', () => {
+  it('its own negative words (and the no-bare-crotch guard) are combined with the face pass negative', () => {
+    const g = prod();
+    const negId = (g['51'].inputs.negative as [string, number])[0];
+    g['neg_combined'] = { class_type: 'ConditioningCombine', inputs: { conditioning_1: [negId, 0], conditioning_2: [negId, 0] } };
+    g['51'].inputs.negative = ['neg_combined', 0];
+    const out = addFigurePass(g, { ...opts, covered: true })!;
+    const n = FIGURE_NODES;
+    expect(out[n.sampler].inputs.negative).toEqual([n.negativeCombine, 0]);
+    expect(out[n.negativeCombine].inputs).toEqual({ conditioning_1: ['neg_combined', 0], conditioning_2: [n.negative, 0] });
+    expect(out[n.negative].inputs.text).toContain(FIGURE_COVER_NEGATIVE_WORDS);
+  });
+  it('a failed mask step is reported as the cause', () => {
+    expect(parseFigurePass({ [FIGURE_NODES.mask]: ['{"completed":false,"fallback":"figure region not computed (mask timed out after 60s); photo left as made"}'], [FIGURE_NODES.composite]: ['{"completed":false,"fallback":"empty region: nothing redrawn, photo left as made"}'] })?.fallback)
+      .toMatch(/mask timed out/);
+  });
+});

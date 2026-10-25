@@ -224,3 +224,17 @@ describe('"nude" as a colour in the rule-based reader', () => {
     expect(interpretPrompt('Sienna nude thong, kneeling on the bed.', { adultAllowed: true }).fields.outfit).not.toBe('nude');
   });
 });
+
+describe('"nude" in the rule-based reader: nudity or a colour', () => {
+  const outfit = (t: string) => interpretPrompt(t, { adultAllowed: true }).fields.outfit;
+  it('a colour or makeup use stays as written', () => {
+    expect(outfit('Nude lipstick, red satin dress, standing in the kitchen.')).not.toMatch(/^nude,/i);
+    expect(outfit('Nude mini skirt and white tee, standing in the kitchen.')).not.toMatch(/^nude,/i);
+    expect(outfit('Sienna in a satin slip dress in nude.')).not.toBe('nude');
+  });
+  it('nudity alone, after an intensifier, or before a place or pose is the outfit', () => {
+    expect(outfit('Sienna nude on her bed, lying on her back.')).toBe('nude');
+    expect(outfit('Sienna naked, kneeling on the bed.')).toBe('naked');
+    expect(outfit('Sienna stark naked lying on the couch.')).toBe('stark naked');
+  });
+});

@@ -386,13 +386,21 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // Nude / bottomless photos that get the close-up detail pass are made at 1.5× (the hi-res pass): at normal size the
   // area is ~150-200 px and the redraw lost its detail when scaled back; at 1.5× it looked clearly more real from the
   // front and from behind, face and body unchanged (fig24, 24 Oct)
-  const detailRearView = rear || /\b(from behind|back to the camera|rear view)\b/i.test(`${req.fields.camera} ${req.fields.pose}`);
+  // her back to the camera, for the detail pass: the pose preset (chosen or matched) and rear pose packs count; a side
+  // profile doesn't (REAR_POSE_RE counts it as rear for the face check, but the crotch is then seen from the side)
+  const detailRearView =
+    rearRequest(`${req.fields.camera} ${req.fields.pose} ${req.fields.framing} ${req.fields.extra}`.replace(/\b(side profile|profile view)\b/gi, ' '), posePre?.id ?? req.params.posePreset, stylePacks.some((a) => a.pack.rearPose));
   // The live setting (SIENNA_DETAIL) runs on rear views only: from behind 3 of 3 came out better, from the front 2 of 3
   // and the third got a dark grey patch, worse than no touch-up (24 Oct). SIENNA_DETAIL_FRONT=true adds front views back.
   // A test request sets its own (or 'off').
   const detailWanted = p.detailPass === 'off' ? undefined
     : p.detailPass ?? (detailRearView || process.env.SIENNA_DETAIL_FRONT === 'true' ? detailPassFromEnv(process.env.SIENNA_DETAIL) : undefined);
-  const detailHires = !!detailWanted && contentMode === 'adult' && bareBelow(req.fields.outfit, nudeOk);
+  let detailHires = !!detailWanted && contentMode === 'adult' && bareBelow(req.fields.outfit, nudeOk) && p.faceRefine !== false && Math.round(clamp(p.batchSize, 1, 8)) === 1;
+  if (detailHires && detailWanted) {
+    const probe: ComfyGraph = { r: { class_type: 'SiennaDetailRegion', inputs: {} }, s: { class_type: 'SiennaDetailPaste', inputs: {} } };
+    const [missingDetail, loras] = await Promise.all([missingClasses(backend, probe, ['r', 's']), loraFiles(backend)]);
+    if (missingDetail.length || (loras && !loras.includes(detailFile(detailWanted.style, detailRearView)))) detailHires = false;
+  }
   if (p.hires || (detailHires && !!bindings.hires_denoise?.length)) {
     if (!bindings.hires_denoise?.length) unsupported('The refinement pass');
     else quality.hires = true;
@@ -682,6 +690,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   if (fp) {
     const inView = rear || /\bthree[- ]quarter (rear|back)\b/i.test(`${req.fields.camera} ${req.fields.pose} ${req.fields.framing}`);
     let reason: string | null = !inView ? 'front view: her butt is not in the photo, so nothing to redraw'
+      : Math.round(clamp(p.batchSize, 1, 8)) > 1 ? 'it works on one photo at a time (batch size is above 1), and would return only the first'
       : !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
       : !loraChainEnd || graph[loraChainEnd]?.class_type !== 'LoraLoader' ? "Sienna's LoRA node not found" : null;
     const withFigure = reason ? null : addFigurePass(graph, { file: fp.file, strength: fp.strength, denoise: fp.denoise, ...(fp.style ? { style: fp.style } : {}), ...(fp.enlarge ? { enlarge: fp.enlarge } : {}), covered: !bareBelow(req.fields.outfit, nudeOk), baseLoraId: loraChainEnd!, faceRefineId: refineId! });
@@ -701,7 +710,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   const dp = detailWanted;
   if (dp && contentMode === 'adult' && bareBelow(req.fields.outfit, nudeOk)) {
     const dRear = detailRearView;
-    let reason: string | null = !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
+    let reason: string | null = Math.round(clamp(p.batchSize, 1, 8)) > 1 ? 'it works on one photo at a time (batch size is above 1)'
+      : !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
       : !loraChainEnd || graph[loraChainEnd]?.class_type !== 'LoraLoader' ? "Sienna's LoRA node not found" : null;
     const file = detailFile(dp.style, dRear);
     const strength = dp.strength ?? DETAIL_STYLES[dp.style].strength;
@@ -1014,7 +1024,12 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         else if (face && !face.available) faceProblem = `the face check could not run (${face.error ?? 'models not installed'})`;
         // targeted figure pass (test requests): a stalled or failed step leaves the photo as made — say so
         const figureReport = rec.figurePass?.status === 'on' ? parseFigurePass(state.texts) : undefined;
-        if (figureReport && figureReport.completed === false) notes.push(`Figure adjustment not applied — ${figureReport.fallback ?? 'the pass did not finish'}.`);
+        // an intentional skip (front view, no hips found) is not a failure; with the reshaping on, a failed redraw
+        // still returns the reshaped photo, so say that rather than "left as made"
+        if (figureReport && figureReport.completed === false && !figureReport.skipped) {
+          const reshaped = typeof figureReport.enlarge?.hipWidthChange === 'number';
+          notes.push(`Figure adjustment not applied — ${(figureReport.fallback ?? 'the pass did not finish').replace(/; photo left as made$/, '')}${reshaped ? '; the reshaping was kept without the redraw' : ''}.`);
+        }
         const detailReport = rec.detailPass?.status === 'on' ? parseDetailPass(state.texts) : undefined;
         if (topOn || faceOn || bodyFraming !== undefined || poseCheck || knees) {
           const attempts = [

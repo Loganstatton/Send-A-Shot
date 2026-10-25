@@ -16,6 +16,7 @@ export const FIGURE_NODES = {
   lora: 'sienna_fig_lora',
   positive: 'sienna_fig_positive',
   negative: 'sienna_fig_negative',
+  negativeCombine: 'sienna_fig_negative_combine',
   encode: 'sienna_fig_encode',
   noiseMask: 'sienna_fig_noise_mask',
   sampler: 'sienna_fig_sampler',
@@ -96,6 +97,7 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
   const enlarge = o.enlarge && o.enlarge > 0 ? o.enlarge : 0;
   // reshaped photo (output 3 of the region node) when enlarging: it is what gets redrawn and pasted into
   const pixels = enlarge ? [n.mask, 3] : image;
+  const extraNeg = `${FIGURE_NEGATIVE_WORDS}${o.style ? `, ${FIGURE_STYLES[o.style].negative}` : ''}${o.covered ? `, ${FIGURE_COVER_NEGATIVE_WORDS}` : ''}`;
   return {
     ...graph,
     [n.pose]: {
@@ -123,8 +125,13 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
     },
     [n.positive]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${posText}, ${o.style ? FIGURE_STYLES[o.style].words : FIGURE_WORDS}` }, _meta: { title: 'Figure pass: prompt' } },
     ...(typeof negText === 'string'
-      ? { [n.negative]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${negText}, ${FIGURE_NEGATIVE_WORDS}${o.style ? `, ${FIGURE_STYLES[o.style].negative}` : ''}${o.covered ? `, ${FIGURE_COVER_NEGATIVE_WORDS}` : ''}` }, _meta: { title: 'Figure pass: negative' } } }
-      : {}),
+      ? { [n.negative]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: `${negText}, ${extraNeg}` }, _meta: { title: 'Figure pass: negative' } } }
+      : {
+          // the face pass's negative isn't plain text (combined conditioning): the redraw's own negative words are
+          // added to it, so the no-bare-crotch guard is never dropped
+          [n.negative]: { class_type: 'CLIPTextEncode', inputs: { clip: [n.lora, 1], text: extraNeg }, _meta: { title: 'Figure pass: negative words' } },
+          [n.negativeCombine]: { class_type: 'ConditioningCombine', inputs: { conditioning_1: face.inputs.negative, conditioning_2: [n.negative, 0] }, _meta: { title: 'Figure pass: negative' } },
+        }),
     [n.encode]: { class_type: 'VAEEncode', inputs: { pixels, vae: face.inputs.vae }, _meta: { title: 'Figure pass: encode' } },
     [n.noiseMask]: { class_type: 'SetLatentNoiseMask', inputs: { samples: [n.encode, 0], mask: [n.mask, 0] }, _meta: { title: 'Figure pass: region only' } },
     [n.sampler]: {
@@ -132,7 +139,7 @@ export function addFigurePass(graph: ComfyGraph, o: FigurePassOptions): ComfyGra
       inputs: {
         model: [n.lora, 0],
         positive: [n.positive, 0],
-        negative: typeof negText === 'string' ? [n.negative, 0] : face.inputs.negative,
+        negative: typeof negText === 'string' ? [n.negative, 0] : [n.negativeCombine, 0],
         latent_image: [n.noiseMask, 0],
         seed: face.inputs.seed,
         steps: Math.max(20, Number(face.inputs.steps) || 20),
@@ -176,7 +183,8 @@ export function parseFigurePass(texts: Record<string, string[]> | undefined): Fi
   const m = read(FIGURE_NODES.mask);
   const c = read(FIGURE_NODES.composite);
   if (!m && !c) return undefined;
-  const fallback = c?.fallback ?? m?.fallback;
+  // the mask step's failure is the cause; the composite then only sees an empty region
+  const fallback = m?.fallback ?? c?.fallback;
   return {
     ...(c && typeof c.completed === 'boolean' ? { completed: c.completed } : {}),
     ...(fallback ? { fallback } : {}),
