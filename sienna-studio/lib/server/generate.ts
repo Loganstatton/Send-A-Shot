@@ -844,7 +844,7 @@ async function submitGeneration(req: GenerateRequest, keep: { id: string; create
   try {
     const { promptId } = await prep.backend.queuePrompt(prep.graph, clientId);
     if (photoGpuEnabled()) await touchPhotoGpu();
-    return saveRecord({ ...base, status: 'queued', promptId });
+    return saveRecord({ ...base, status: 'queued', promptId, promptAt: new Date().toISOString() });
   } catch (e) {
     if (!(e instanceof ComfyError)) throw e;
     // ComfyUI rejected the graph (missing model file, bad value…): keep a
@@ -902,6 +902,10 @@ let submitting: Promise<void> | null = null;
 /** Starts/stops the photo GPU as needed and submits photos that were waiting for it (timer + status polls). */
 export async function photoGpuHousekeeping(): Promise<void> {
   if (!photoGpuEnabled()) return;
+  // Records only move on when they are checked. Check the unfinished ones here too, so a photo nobody is watching
+  // (app closed mid-generation) finishes or fails and stops counting as busy; else the idle stop never comes.
+  // (only submitted ones: a photo still waiting for the GPU is handled below, and checking it here would re-enter this)
+  await advanceBusy((await listHistory()).filter((r) => photoBusy(r) && !photoWaiting(r) && !!r.promptId));
   const recs = await listHistory();
   const probe = async (url: string) => (await createBackend(url).systemInfo().then(() => true, () => false));
   const session = await tickPhotoGpu(recs.filter(photoBusy).length, probe);
@@ -938,6 +942,17 @@ export async function photoGpuHousekeeping(): Promise<void> {
     submitting = null;
   });
   return submitting;
+}
+
+async function advanceBusy(busy: GenerationRecord[]) {
+  for (const r of busy) {
+    try {
+      if (r.outfitEdit) await (await import('./outfit-edit')).refreshOutfitEdit(r.id);
+      else await refreshStatus(r.id);
+    } catch (e: any) {
+      console.error('[photo-gpu] could not check', r.id, e?.message ?? e);
+    }
+  }
 }
 
 function failWaiting(r: GenerationRecord, error: string) {
@@ -980,7 +995,17 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
     return { ...rec, warnings: [...rec.warnings.filter((w) => !w.startsWith('Status check:')), `Status check: ${e.message}`] };
   }
 
-  const ageSec = (Date.now() - Date.parse(rec.createdAt)) / 1000;
+  // the current prompt's age: a redo is queued long after the record was made (and a photo waiting for the GPU
+  // was created before the GPU booted)
+  const ageSec = (Date.now() - Date.parse(rec.promptAt ?? rec.createdAt)) / 1000;
+  // ComfyUI's history is read before its queue: a prompt finishing between the two reads looks unknown. Ask again.
+  if (state.state === 'unknown' && ageSec > Math.max(60, settings.generationTimeoutSec)) {
+    try {
+      state = await backend.jobState(rec.promptId, workflow?.outputNodeIds ?? []);
+    } catch {
+      return rec;
+    }
+  }
   switch (state.state) {
     case 'pending':
       return patchRecord(id, { status: 'queued', queuePosition: state.position });
@@ -999,7 +1024,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
       return rec;
     case 'done': {
       if (state.images.length === 0) {
-        return patchRecord(id, { status: 'error', error: 'Workflow finished but produced no images. Does it have a SaveImage node?' });
+        return patchRecord(id, { status: 'error', error: 'Workflow finished but produced no images. Does it have a SaveImage node?', completedAt: new Date().toISOString() });
       }
       let refs = state.images;
       const extra: Partial<GenerationRecord> = {};
@@ -1132,7 +1157,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
             try {
               const { promptId } = await backend.queuePrompt(graph, rec.clientId ?? newId('sienna-'));
               return patchRecord(id, {
-                status: 'queued', promptId, seed, submittedGraph: graph, queuePosition: 0,
+                status: 'queued', promptId, promptAt: new Date().toISOString(), seed, submittedGraph: graph, queuePosition: 0,
                 exposureGuard: { ...guard, attempts, next, base: guard.base ?? { positive: rec.positivePrompt, negative: rec.negativePrompt } },
                 positivePrompt: prompts.positive, negativePrompt: prompts.negative,
               });

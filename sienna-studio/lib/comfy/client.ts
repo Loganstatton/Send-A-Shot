@@ -66,6 +66,8 @@ export interface ComfyBackend {
   jobState(promptId: string, outputNodeIds: string[]): Promise<JobState>;
   fetchImage(ref: OutputImageRef): Promise<{ bytes: Buffer; mime: string }>;
   interrupt(): Promise<void>;
+  /** Stops this prompt only: interrupts it if it is running, removes it from the queue if it is waiting. */
+  cancel(promptId: string): Promise<void>;
 }
 
 export interface NodeInfo {
@@ -282,6 +284,14 @@ export class RealComfy implements ComfyBackend {
   async interrupt() {
     await this.req('/interrupt', { method: 'POST' });
   }
+
+  async cancel(promptId: string) {
+    const q = await this.json<{ queue_running: any[]; queue_pending: any[] }>('/queue');
+    // /interrupt stops whatever is running, so only when it is this prompt
+    if (q.queue_running?.some((item) => item[1] === promptId)) await this.interrupt();
+    else if (q.queue_pending?.some((item) => item[1] === promptId))
+      await this.req('/queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delete: [promptId] }) });
+  }
 }
 
 function describePromptError(body: any): string | null {
@@ -467,6 +477,9 @@ export class MockComfy implements ComfyBackend {
     throw new ComfyError('Mock image not found (server restarted?).', 404);
   }
   async interrupt() {}
+  async cancel(promptId: string) {
+    mockJobs.delete(promptId);
+  }
 }
 
 /** Mock video: a slow zoom over the photo (needs the app server's ffmpeg). */

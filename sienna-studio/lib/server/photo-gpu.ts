@@ -245,6 +245,12 @@ async function createPodAt(c: PhotoGpuConfig, loc: PhotoGpuLocation, name: strin
       if (!pod?.id) throw new GpuError('RunPod returned no pod id');
       return { pod, gpu: pod.machine?.gpuTypeId || (tier.length === 1 ? tier[0] : 'one of ' + tier.length + ' GPU types') };
     } catch (e: any) {
+      // the request timed out or the connection dropped, but RunPod may still have made the pod: use it if so
+      // (ordering another would leave this one billing, untracked)
+      if (/could not be reached/.test(e?.message ?? '')) {
+        const late = (await listPhotoPods(c).catch(() => [] as PodInfo[])).find((p) => p.name === name);
+        if (late) return { pod: late, gpu: late.machine?.gpuTypeId || tier[0] };
+      }
       attempts.push(`${loc.dataCenter} ${tier.length === 1 ? tier[0] : 'other GPU types'}: ${e.message}`);
       if (e instanceof GpuError && e.status === 502) throw e; // bad API key: no point trying elsewhere
     }
@@ -308,8 +314,15 @@ export function ensurePhotoGpu(): Promise<PhotoGpuSession> {
   return withLock(async () => {
     const c = photoGpuConfig();
     if (!c) throw new GpuError('The on-demand photo GPU is not configured.', 500);
-    const st = await load();
+    let st = await load();
     if (active(st.session) && st.session.status !== 'stopping') return st.session;
+    // a session whose shutdown failed: finish stopping it first (its cost goes to the ledger, its pod is removed);
+    // starting over it would lose the cost and could leave its pod running untracked
+    if (st.session?.status === 'stopping') {
+      const r = await stopLocked(st.session.stopReason ?? 'stopping');
+      if (r?.status === 'stopping') throw new GpuError('The previous photo GPU is still being shut down on RunPod — try again in a minute.', 503);
+      st = await load();
+    }
     if (monthSpend(st) + c.estRate * (c.idleMin + 5) / 60 > c.monthlyBudgetUsd)
       throw new GpuError(
         `This month’s photo GPU budget is used up ($${monthSpend(st).toFixed(2)} of $${c.monthlyBudgetUsd.toFixed(2)}). Raise PHOTO_GPU_MONTHLY_BUDGET_USD to continue.`,
@@ -415,7 +428,14 @@ export function tickPhotoGpu(busy: number, probe: PhotoProbe): Promise<PhotoGpuS
         // RunPod sometimes hands out a machine that never starts the container (or can't attach the volume): replace
         // it on another machine, in the next location when there is one
         const priorUsd = s.priorUsd + podCost({ ...s, endedAt: new Date().toISOString() });
-        await terminatePod(c, s.podId).catch(() => {});
+        // the old machine must be gone before a new one is ordered: else it keeps billing, untracked
+        try {
+          await terminatePod(c, s.podId);
+        } catch (e: any) {
+          st.session = { ...s, phase: 'that machine didn’t start — waiting for RunPod to remove it before trying another' };
+          await save(st);
+          return st.session;
+        }
         const maxPods = Math.max(2, c.locations.length + 1);
         if (s.pods >= maxPods) {
           const where = [...new Set(c.locations.map((l) => l.dataCenter))].join(', ');

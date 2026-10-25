@@ -397,7 +397,15 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
   } catch (e: any) {
     return { ...rec, warnings: [...rec.warnings.filter((w) => !w.startsWith('Status check:')), `Status check: ${e.message}`] };
   }
-  const ageSec = (Date.now() - Date.parse(rec.createdAt)) / 1000;
+  const ageSec = (Date.now() - Date.parse(rec.promptAt ?? rec.createdAt)) / 1000;
+  // ComfyUI's history is read before its queue: a prompt finishing between the two reads looks unknown. Ask again.
+  if (state.state === 'unknown' && ageSec > Math.max(60, settings.generationTimeoutSec)) {
+    try {
+      state = await backend.jobState(rec.promptId, []);
+    } catch {
+      return rec;
+    }
+  }
   switch (state.state) {
     case 'pending':
       return patchRecord(id, { status: 'queued', queuePosition: state.position });

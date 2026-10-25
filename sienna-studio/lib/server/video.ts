@@ -628,6 +628,8 @@ let submitting: Promise<void> | null = null;
 export async function videoGpuHousekeeping(): Promise<void> {
   const gpu = videoGpuConfig();
   if (!gpu) return;
+  // check unfinished videos here too: one nobody is watching would otherwise count as busy forever (no idle stop)
+  for (const r of (await listHistory()).filter((r) => gpuBusy(r) && !gpuWaiting(r) && !!r.promptId)) await refreshVideo(r.id).catch((e: any) => console.error('[video-gpu] could not check', r.id, e?.message ?? e));
   const recs = await listHistory();
   const session = await tickVideoGpu(recs.filter(gpuBusy).length, probeVideoGpu);
   const waiting = recs.filter(gpuWaiting).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -742,10 +744,6 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
     const session = await currentSession();
     if (session && session.url === gpu.url && (session.status === 'stopped' || session.status === 'failed'))
       return finishGpuJob(rec, `The video GPU stopped before this video finished (${session.error ?? session.stopReason ?? 'unknown reason'}). Nothing was retried automatically.`);
-    if (cfg && Date.now() - Date.parse(gpu.submittedAt) > cfg.jobTimeoutMin * 60_000) {
-      await backend.interrupt().catch(() => {});
-      return finishGpuJob(rec, `The video took longer than ${cfg.jobTimeoutMin} min on the GPU and was stopped. Nothing was retried automatically.`);
-    }
   }
   let state;
   try {
@@ -753,7 +751,28 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
   } catch (e: any) {
     return { ...rec, warnings: [...rec.warnings.filter((w) => !w.startsWith('Status check:')), `Status check: ${e.message}`] };
   }
-  const ageSec = (Date.now() - Date.parse(rec.createdAt)) / 1000;
+  // GPU job timeout: from when this video started running (one waiting behind another isn't late), with a generous
+  // cap for one stuck in the queue; only this video's prompt is stopped (an interrupt would stop whichever is running)
+  if (gpu?.submittedAt && (state.state === 'running' || state.state === 'pending')) {
+    const cfg = videoGpuConfig();
+    const limit = (cfg?.jobTimeoutMin ?? 0) * 60_000;
+    const since = gpu.runningSince ?? (state.state === 'running' ? new Date().toISOString() : undefined);
+    const late = limit > 0 && (since ? Date.now() - Date.parse(since) > limit : Date.now() - Date.parse(gpu.submittedAt) > 3 * limit);
+    if (late) {
+      await backend.cancel(rec.promptId).catch(() => {});
+      return finishGpuJob(rec, `The video took longer than ${cfg!.jobTimeoutMin} min on the GPU and was stopped. Nothing was retried automatically.`);
+    }
+    if (since && !gpu.runningSince) await patchRecord(id, { video: { ...rec.video, gpu: { ...gpu, runningSince: since } } });
+  }
+  // a redo is queued long after the record was made; ComfyUI's history is read before its queue, so ask twice
+  const ageSec = (Date.now() - Date.parse(rec.promptAt ?? gpu?.submittedAt ?? rec.createdAt)) / 1000;
+  if (state.state === 'unknown' && ageSec > Math.max(120, settings.generationTimeoutSec)) {
+    try {
+      state = await backend.jobState(rec.promptId, []);
+    } catch {
+      return rec;
+    }
+  }
   switch (state.state) {
     case 'pending':
       return patchRecord(id, { status: 'queued', queuePosition: state.position });

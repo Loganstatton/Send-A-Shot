@@ -343,6 +343,8 @@ export interface GenerationRecord {
   error?: string;
   backend: 'comfyui' | 'mock';
   promptId?: string;
+  /** When the current prompt (first try or a redo) was queued; the 'unknown job' timeout counts from here. */
+  promptAt?: string;
   clientId?: string;
   queuePosition?: number;
 
@@ -521,6 +523,8 @@ export interface VideoInfo {
     waitingFor?: string;
     url?: string;
     submittedAt?: string;
+    /** First seen running on the GPU: the job timeout counts from here (a video waiting behind another isn't late). */
+    runningSince?: string;
     /** usd = gpuSeconds at `rate` + startupUsd (only for the video that started the GPU). */
     cost?: { usd: number; gpuSeconds: number; startupUsd: number; rate: number; gpu: string };
   };

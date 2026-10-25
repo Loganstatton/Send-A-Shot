@@ -292,8 +292,15 @@ export function ensureVideoGpu(): Promise<VideoGpuSession> {
   return withGpuLock(async () => {
     const c = videoGpuConfig();
     if (!c) throw new GpuError('The on-demand video GPU is not configured.', 500);
-    const st = await load();
+    let st = await load();
     if (active(st.session) && st.session.status !== 'stopping') return st.session;
+    // a session whose shutdown failed: finish stopping it first (its cost goes to the ledger, its pod is removed);
+    // starting over it would lose the cost and could leave its pod running untracked
+    if (st.session?.status === 'stopping') {
+      const r = await stopLocked(st.session.stopReason ?? 'stopping');
+      if (r?.status === 'stopping') throw new GpuError('The previous video GPU is still being shut down on RunPod — try again in a minute.', 503);
+      st = await load();
+    }
     if (monthSpend(st) + estimateVideoUsd(c, true, 3) > c.monthlyBudgetUsd)
       throw new GpuError(
         `This month’s video GPU budget is used up ($${monthSpend(st).toFixed(2)} of $${c.monthlyBudgetUsd.toFixed(2)}). Raise VIDEO_GPU_MONTHLY_BUDGET_USD to continue.`,
@@ -341,6 +348,21 @@ export function ensureVideoGpu(): Promise<VideoGpuSession> {
       attempts,
     };
     await save(st);
+    const adopt = async (pod: PodInfo, gpu: string): Promise<VideoGpuSession> => {
+      const s: VideoGpuSession = {
+        ...st.session!,
+        podId: pod.id,
+        gpu,
+        rate: Number(pod.costPerHr) || c.estRate,
+        url: c.urlTemplate.replace('{id}', pod.id),
+        phase: 'booting the GPU',
+        attempts,
+        createdAt: new Date().toISOString(),
+      };
+      st.session = s;
+      await save(st);
+      return s;
+    };
     for (const gpu of c.gpuTypes) {
       try {
         const pod = await runpod<PodInfo>(c, 'POST', '/pods', {
@@ -359,20 +381,14 @@ export function ensureVideoGpu(): Promise<VideoGpuSession> {
           dockerStartCmd: [podStartCommand(c, kitUrl)],
         });
         if (!pod?.id) throw new GpuError('RunPod returned no pod id');
-        const s: VideoGpuSession = {
-          ...st.session,
-          podId: pod.id,
-          gpu,
-          rate: Number(pod.costPerHr) || c.estRate,
-          url: c.urlTemplate.replace('{id}', pod.id),
-          phase: 'booting the GPU',
-          attempts,
-          createdAt: new Date().toISOString(),
-        };
-        st.session = s;
-        await save(st);
-        return s;
+        return await adopt(pod, gpu);
       } catch (e: any) {
+        // the request timed out or the connection dropped, but RunPod may still have made the pod: use it if so
+        // (ordering another would leave this one billing, untracked)
+        if (/could not be reached/.test(e?.message ?? '')) {
+          const late = (await listVideoPods(c).catch(() => [] as PodInfo[])).find((p) => p.name === name);
+          if (late) return await adopt(late, gpu);
+        }
         attempts.push(`${gpu}: ${e.message}`);
         if (e instanceof GpuError && e.status === 502) break; // bad API key: no point trying other GPU types
       }
