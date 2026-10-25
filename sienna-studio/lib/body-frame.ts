@@ -43,6 +43,18 @@ export interface BodyFrame {
   joints?: Joint[];
 }
 
+/** DWPose's neck is the midpoint of the shoulders, so it is found even when the photo cuts off at her chin. With no
+ * nose (her face turned away), the head counts as in the picture only when there is room for it above the neck: at
+ * least a third of the neck-to-hip length. */
+export const HEAD_ROOM = 1 / 3;
+function headRoom(j: Joint[]): boolean {
+  const neck = j[1];
+  const hips = [j[8], j[11]].filter((h): h is [number, number] => !!h);
+  if (!neck || !hips.length) return false;
+  const hip = hips.reduce((a, b) => [a[0] + b[0] / hips.length, a[1] + b[1] / hips.length], [0, 0] as [number, number]);
+  return neck[1] >= HEAD_ROOM * Math.hypot(hip[0] - neck[0], hip[1] - neck[1]);
+}
+
 /** Joints are OpenPose-18 (0 nose … 10 right ankle, 13 left ankle); SiennaBodyMeasure reports the first 14. */
 export function parseBodyFrame(texts: string[] | undefined): BodyFrame | null {
   if (!texts?.length) return null;
@@ -53,7 +65,7 @@ export function parseBodyFrame(texts: string[] | undefined): BodyFrame | null {
     const j = m.joints as (unknown[] | null)[];
     const has = (i: number) => Array.isArray(j[i]) && j[i]!.length >= 2;
     const joints: Joint[] = Array.from({ length: 14 }, (_, i) => (has(i) ? [Number(j[i]![0]), Number(j[i]![1])] : null));
-    return { found: true, head: has(0) || has(1), feet: has(10) || has(13), joints };
+    return { found: true, head: has(0) || headRoom(joints), feet: has(10) || has(13), joints };
   } catch {
     return null;
   }

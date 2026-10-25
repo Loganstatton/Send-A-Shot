@@ -23,6 +23,8 @@ describe('promptAdvice', () => {
     const filler = Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ');
     const ids = (p: string, o: string, a = '') => promptAdvice({ positive: p, outfit: o, avoid: a }).map((x) => x.id);
     expect(ids(`${filler}, red dress`, 'red dress')).toContain('buried');
+    // the prompt carries colour weights the outfit field doesn't
+    expect(promptAdvice({ positive: `${filler}, (red:1.2) dress`, outfit: 'red dress', outfitText: '(red:1.2) dress' }).map((x) => x.id)).toContain('buried');
     expect(ids('micro bikini with wide cups', 'micro bikini with wide cups')).toContain('size-conflict');
     expect(ids('micro bikini, no wide cups', 'micro bikini, no wide cups')).not.toContain('size-conflict');
     expect(ids('black, white and red striped dress', 'black, white and red striped dress')).toContain('colours');

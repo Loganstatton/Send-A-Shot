@@ -352,6 +352,7 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
       model: 'qwen-image-edit-2509',
       sourceId: source.id,
       sourceImage,
+      imageIndex: req.imageIndex,
       reference: req.reference,
       manualCrop: req.manualCrop,
       referenceCrop: null,

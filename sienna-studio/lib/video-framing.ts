@@ -75,11 +75,11 @@ export const SAFE_FRAME_MIN_ASPECT = 9 / 16;
 /** Guess the movement from free text (Animate Image) when no preset is selected. */
 export function movementFromText(text: string): MovementKind {
   const t = text.toLowerCase();
-  if (/\b(jump|hop|leap|bounc)/.test(t)) return 'jump';
-  if (/\b(danc|twirl|spin|run|kick|cartwheel|workout|exercis)/.test(t)) return 'athletic';
+  if (/\b(jump(s|ing|ed)?|hop(s|ping|ped)?|leap(s|ing|t)?|bounc(e|es|ing))\b/.test(t)) return 'jump';
+  if (/\b(danc(e|es|ing)|twirl(s|ing)?|spin(s|ning)?|run(s|ning)?|kick(s|ing)?|cartwheels?|workout|exercis(e|es|ing))\b/.test(t)) return 'athletic';
   if (/\bturns?\s+(all the way\s+)?around\b|\bturning around\b|\bback (faces|to) the camera\b/.test(t)) return 'turn';
-  if (/\b(bend|bends|bending|pick(s|ing)? (it |something )?up|crouch|squat|kneel)/.test(t)) return 'bend';
-  if (/\b(walk|step|stroll|approach)/.test(t)) return 'walk';
-  if (/\b(sway|shift|rock|stance|lean)/.test(t)) return 'small';
+  if (/\b(bend|bends|bending|pick(s|ing)? (it |something )?up|crouch(es|ing)?|squat(s|ting)?|kneel(s|ing)?)\b/.test(t)) return 'bend';
+  if (/\b(walk(s|ing)?|steps? (forward|back|closer|toward|towards|in|out|aside)|stepping|stroll(s|ing)?|approach(es|ing)?)\b/.test(t)) return 'walk';
+  if (/\b(sway(s|ing)?|shift(s|ing)?|rock(s|ing)|stance|lean(s|ing)?)\b/.test(t)) return 'small';
   return 'still';
 }

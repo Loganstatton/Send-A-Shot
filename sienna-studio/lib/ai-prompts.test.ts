@@ -125,6 +125,8 @@ describe('live controlled test fixes (21 Oct)', () => {
     const latest = [i('camera', 'low camera angle near the floor'), i('pose', 'left hand holding the glass')];
     expect(pickFixes(latest, earlier).map((x) => x.emphasize)).toEqual(['low camera angle near the floor', 'left hand holding the glass', 'black bike shorts']);
     expect(pickFixes([i('a', '1'), i('b', '2'), i('c', '3'), i('d', '4')], []).length).toBe(3);
+    // an aspect comes from the newest earlier photo that had it, not from every one
+    expect(pickFixes([], [[i('outfit', 'red bikini')], [i('outfit', 'tiny red bikini top')]]).map((x) => x.emphasize)).toEqual(['tiny red bikini top']);
   });
   it('a camera angle keeps the pose presets away', () => {
     expect(CAMERA_ANGLE_RE.test('taken from a low angle, looking up at her, full body')).toBe(true);
@@ -295,6 +297,30 @@ describe('keep-person graph', () => {
   });
   it('no plain first pass: no keep-person', () => {
     expect(addKeepPerson({ '9': { class_type: 'SaveImage', inputs: {} } }, { filename: 'a.png' })).toBeNull();
+  });
+  it('a later correction keeps its own prompt and seed after the keep-person redraw is taken out', async () => {
+    const { swapPrompts, reseed } = await import('./exposure');
+    const withText = { ...g, '3': { class_type: 'CLIPTextEncode', inputs: { text: 'first fix' } } };
+    const k = reseed(addKeepPerson(withText, { filename: 'a.png' })!, 5, 7);
+    const next = stripKeepPerson(swapPrompts(k, { positive: 'first fix', negative: '' }, { positive: 'base', negative: '' }));
+    expect(next['3'].inputs.text).toBe('base');
+    expect(next['40'].inputs.seed).toBe(7);
+    expect(next.kp_paste).toBeUndefined();
+  });
+  it('not with the hi-res pass (it would resample her after the paste)', () => {
+    expect(addKeepPerson({ ...g, '81': { class_type: 'ImageScaleBy', inputs: { image: ['41', 0], scale_by: 1.5 } } }, { filename: 'a.png' })).toBeNull();
+  });
+  it('the figure and detail passes are skipped: she is pasted back as she was', () => {
+    const withPasses = {
+      ...g,
+      sienna_fig_mask: { class_type: 'SiennaFigureMask', inputs: { image: ['51', 0] } },
+      sienna_fig_composite: { class_type: 'SiennaFigureComposite', inputs: { original: ['51', 0] } },
+      sienna_detail_paste: { class_type: 'SiennaDetailPaste', inputs: { original: ['sienna_fig_composite', 0] } },
+      '42': { class_type: 'SaveImage', inputs: { images: ['sienna_detail_paste', 0] } },
+    };
+    const k = addKeepPerson(withPasses, { filename: 'a.png' })!;
+    expect(k['42'].inputs.images).toEqual(['kp_paste', 0]);
+    expect(Object.keys(k).filter((id) => id.startsWith('sienna_'))).toEqual([]);
   });
 });
 

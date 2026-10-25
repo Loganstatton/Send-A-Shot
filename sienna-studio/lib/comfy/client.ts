@@ -110,6 +110,9 @@ const OBJECT_INFO_MISS_TTL = 30_000;
 const gc = globalThis as unknown as { __siennaObjectInfo?: Map<string, Map<string, { at: number; data: NodeInfo | null }>> };
 const objectInfoCaches = (gc.__siennaObjectInfo ??= new Map());
 
+/** Statuses a Response can't carry a body for. */
+const NULL_BODY_STATUSES = [101, 204, 205, 304];
+
 export class RealComfy implements ComfyBackend {
   readonly kind = 'comfyui' as const;
   private base: string;
@@ -131,7 +134,10 @@ export class RealComfy implements ComfyBackend {
         signal: ctrl.signal,
         cache: 'no-store',
       });
-      return res;
+      // read the body before the timer is cleared: a proxy that sends headers and then stalls would otherwise hang
+      // the caller's res.text() / arrayBuffer() forever
+      const body = NULL_BODY_STATUSES.includes(res.status) ? null : await res.arrayBuffer();
+      return new Response(body, { status: res.status, statusText: res.statusText, headers: res.headers });
     } catch (e: any) {
       const reason = e?.name === 'AbortError' ? 'timed out' : e?.cause?.code || e?.message || 'network error';
       throw new ComfyError(`Could not reach ComfyUI at ${this.base} (${reason}).`, 502);
@@ -275,7 +281,7 @@ export class RealComfy implements ComfyBackend {
 
   async fetchImage(ref: OutputImageRef) {
     const qs = new URLSearchParams({ filename: ref.filename, subfolder: ref.subfolder, type: ref.type });
-    const res = await this.req(`/view?${qs}`, { timeoutMs: 60000 });
+    const res = await this.req(`/view?${qs}`, { timeoutMs: 120000 });
     if (!res.ok) throw new ComfyError(`Could not download ${ref.filename} from ComfyUI (HTTP ${res.status}).`);
     const fallback = /\.mp4$/i.test(ref.filename) ? 'video/mp4' : 'image/png';
     return { bytes: Buffer.from(await res.arrayBuffer()), mime: res.headers.get('content-type') || fallback };

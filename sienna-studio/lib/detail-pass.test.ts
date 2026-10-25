@@ -34,6 +34,16 @@ describe('close-up detail pass', () => {
     expect(b[DETAIL_NODES.sampler].inputs.denoise).toBe(0.4);
     expect(b[DETAIL_NODES.lora].inputs.strength_model).toBe(0.6);
   });
+  it('a combined (non-text) face-pass negative is kept and the pass words are added to it', () => {
+    const g0 = prod();
+    g0['4c'] = { class_type: 'ConditioningCombine', inputs: { conditioning_1: ['4', 0], conditioning_2: ['4', 0] } };
+    g0['51'] = { ...g0['51'], inputs: { ...g0['51'].inputs, negative: ['4c', 0] } };
+    const g = addDetailPass(g0, opts)!;
+    expect(g[DETAIL_NODES.negativeCombine].inputs).toEqual({ conditioning_1: ['4c', 0], conditioning_2: [DETAIL_NODES.negative, 0] });
+    expect(g[DETAIL_NODES.sampler].inputs.negative).toEqual([DETAIL_NODES.negativeCombine, 0]);
+    expect(addDetailPass(prod(), opts)![DETAIL_NODES.negativeCombine]).toBeUndefined();
+    expect(detailPassFromEnv('toString')).toBeUndefined();
+  });
   it('nothing to hook into: no pass', () => {
     expect(addDetailPass(prod(), { ...opts, faceRefineId: 'nope' })).toBeNull();
     const g = prod();

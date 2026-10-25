@@ -214,7 +214,7 @@ export function CreateScreen() {
   }, [draft, character]);
 
   const advice = useMemo(
-    () => (built && draft ? promptAdvice({ positive: built.positive, outfit: built.effectiveFields.outfit, avoid: draft.fields.avoid }) : []),
+    () => (built && draft ? promptAdvice({ positive: built.positive, outfit: built.effectiveFields.outfit, outfitText: built.outfitText, avoid: draft.fields.avoid }) : []),
     [built, draft],
   );
 

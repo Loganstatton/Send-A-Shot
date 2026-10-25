@@ -44,18 +44,26 @@ export function useApi<T>(url: string | null) {
   const urlRef = useRef(url);
   urlRef.current = url;
 
+  const seq = useRef(0);
+
   const reload = useCallback(async () => {
-    if (!urlRef.current) return;
+    const u = urlRef.current;
+    if (!u) return;
+    // only the latest request may set state: an older, slower answer (an earlier url, or a reload overtaken by
+    // another) is dropped
+    const mine = ++seq.current;
     setLoading(true);
     try {
-      const d = await api<T>(urlRef.current);
-      setData(d);
-      setError(null);
+      const d = await api<T>(u);
+      if (mine === seq.current) {
+        setData(d);
+        setError(null);
+      }
       return d;
     } catch (e: any) {
-      setError(e.message);
+      if (mine === seq.current) setError(e.message);
     } finally {
-      setLoading(false);
+      if (mine === seq.current) setLoading(false);
     }
   }, []);
 

@@ -420,6 +420,11 @@ describe('safe framing', () => {
     expect(movementFromText('she bends down to pick something up')).toBe('bend');
     expect(movementFromText('she walks toward the camera')).toBe('walk');
     expect(movementFromText('she smiles')).toBe('still');
+    // look-alike words are not movements
+    expect(movementFromText('hopeful smile on a rocky beach, she holds her spine straight')).toBe('still');
+    expect(movementFromText('sitting on the front steps, cleaning her sunglasses')).toBe('still');
+    expect(movementFromText('she is spinning and dancing')).toBe('athletic');
+    expect(movementFromText('she steps forward')).toBe('walk');
     expect(SAFE_FRAMING_DEFAULT).toMatchObject({ jump: true, turn: true, athletic: true, walk: false, bend: false, still: false });
     expect(MOVEMENT_MARGINS.jump.top).toBeGreaterThanOrEqual(0.18); // reference jump: feet rose 0.18 of her height
     expect(typeof buildSafeFrame).toBe('function');

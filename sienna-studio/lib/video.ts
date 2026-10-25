@@ -18,6 +18,7 @@
 
 import type { ComfyGraph } from './types';
 import { MOVEMENT_MARGINS, MovementKind, SAFE_FRAME_MAX_PAD, SAFE_FRAME_MIN_ASPECT } from './video-framing';
+import { NUDE_COLOUR_LOOKAHEAD } from './defaults';
 
 export const VIDEO_FPS = 16;
 
@@ -183,7 +184,8 @@ const UNDRESS_RE = /\b(take|takes|taking|took|remove|removes|removing|untie|unti
 export const UNDRESS_NEGATIVE = 'ripping, tearing, yanking, torn fabric, clothing vanishing into thin air, jerky sudden arm movements';
 /** A nude photo: the video model must not add underwear or swimwear that isn't there. */
 export const NUDE_SOURCE_NEGATIVE = 'underwear, panties, thong, g-string, briefs, bikini bottom, swimsuit, fabric covering her body';
-const NUDE_OUTFIT_RE = /\b(nude|naked|no clothes|unclothed)\b/i;
+// "nude <garment>" is a colour, not a nude photo
+const NUDE_OUTFIT_RE = new RegExp(String.raw`\b(nude${NUDE_COLOUR_LOOKAHEAD}|naked|no clothes|unclothed)\b`, 'i');
 
 /**
  * Extra negative words for a video: no ripping when she takes something off, and no invented underwear when the photo
@@ -814,7 +816,8 @@ export function videoIdentity(report: ReturnType<typeof parseFrameFaces>, thresh
   if (notRun) return { status: 'unavailable', similarity: null, reason: notRun };
   if (!report) return { status: 'unavailable', similarity: null, reason: 'the face check returned no result' };
   if (!report.available) return { status: 'unavailable', similarity: null, reason: `the face check could not run (${report.error ?? 'models not loaded'})` };
-  const usable = report.frames.filter((f) => f.found && f.similarity !== null && (f.size ?? 0) >= minFace);
+  // an older node reports no face size: count the frame
+  const usable = report.frames.filter((f) => f.found && f.similarity !== null && (f.size ?? minFace) >= minFace);
   if (!usable.length) return { status: 'unchecked', similarity: null, reason: `her face wasn't found clearly in any of the ${report.frames.length} checked frames` };
   const worst = Math.min(...usable.map((f) => f.similarity!));
   if (worst >= threshold) return { status: 'verified', similarity: worst };

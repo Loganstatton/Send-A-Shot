@@ -36,6 +36,16 @@ describe('built-in workflows', () => {
     expect(auto.pose_image).toEqual([{ nodeId: '20', inputName: 'image' }]);
     expect(auto.init_image).toEqual([{ nodeId: '30', inputName: 'image' }]);
     expect(capabilities(auto)).toMatchObject({ faceReference: true, pose: true, lora: true, img2img: true });
+    expect(auto.outfit_reference_image).toEqual([{ nodeId: '60', inputName: 'image' }]);
+  });
+
+  it('an "Outfit Reference" image listed first is not taken for the face reference', () => {
+    const auto = autoDetectBindings({
+      '1': { class_type: 'LoadImage', inputs: { image: 'a.png' }, _meta: { title: 'Outfit Reference Image' } },
+      '2': { class_type: 'LoadImage', inputs: { image: 'b.png' }, _meta: { title: 'Face Reference' } },
+    });
+    expect(auto.outfit_reference_image).toEqual([{ nodeId: '1', inputName: 'image' }]);
+    expect(auto.face_reference_image).toEqual([{ nodeId: '2', inputName: 'image' }]);
   });
 
   it('detects Flux guidance and PuLID weight in the Flux production graph', () => {

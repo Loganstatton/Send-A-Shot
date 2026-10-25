@@ -408,7 +408,9 @@ export function autoDetectBindings(graph: ComfyGraph): WorkflowBindings {
     if (node.class_type !== 'LoadImage') continue;
     const tt = title(node);
     let role: ControlKey | null = null;
-    if (/face|ref|identity|sienna|ipadapter|pulid/.test(tt)) role = 'face_reference_image';
+    // outfit first: "outfit reference" would otherwise match "ref"
+    if (/outfit|garment|cloth/.test(tt)) role = 'outfit_reference_image';
+    else if (/face|ref|identity|sienna|ipadapter|pulid/.test(tt)) role = 'face_reference_image';
     else if (/pose|control|openpose|depth|canny/.test(tt)) role = 'pose_image';
     else if (/init|img2img|source|input|base/.test(tt)) role = 'init_image';
     else {

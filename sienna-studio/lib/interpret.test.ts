@@ -238,3 +238,12 @@ describe('"nude" in the rule-based reader: nudity or a colour', () => {
     expect(outfit('Sienna stark naked lying on the couch.')).toBe('stark naked');
   });
 });
+
+describe('reference photo: pose only', () => {
+  it('"same pose as in the photo" copies the pose, not the whole photo', () => {
+    expect(referenceIntent('Same pose as in the photo, wearing a red dress on the beach', true).mode).toBe('pose');
+    expect(referenceIntent('Keep the same pose as this photo but in a gym', true).mode).toBe('pose');
+    // composition asked for as well: still an edit
+    expect(referenceIntent('Same pose and same framing as the photo, only change her top to red', true).mode).not.toBe('pose');
+  });
+});

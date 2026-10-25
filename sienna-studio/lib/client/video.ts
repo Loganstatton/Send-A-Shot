@@ -73,7 +73,7 @@ export function rerunVideo(rec: GenerationRecord, newSeed: boolean): Promise<Gen
   return startVideo({
     mode: v.mode,
     sourceId: v.sourceId,
-    imageIndex: 0,
+    imageIndex: v.imageIndex ?? 0,
     seed: newSeed ? -1 : rec.seed,
     quality: v.quality,
     resolution: v.resolution,

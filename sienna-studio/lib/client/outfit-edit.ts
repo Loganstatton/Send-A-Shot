@@ -42,6 +42,7 @@ export function rerunOutfitEdit(rec: GenerationRecord, newSeed: boolean): Promis
   const e = rec.outfitEdit!;
   return startOutfitEdit({
     sourceId: e.sourceId,
+    imageIndex: e.imageIndex ?? 0,
     reference: e.reference,
     manualCrop: e.manualCrop,
     description: e.description,

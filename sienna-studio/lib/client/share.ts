@@ -8,6 +8,8 @@
 export async function shareImage(url: string, filename: string, text?: string): Promise<'shared' | 'downloaded' | 'cancelled'> {
   try {
     const res = await fetch(url);
+    // an error page would be shared as the "image": fall through to the download link instead
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
     const file = new File([blob], filename, { type: blob.type || 'image/png' });
     const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };

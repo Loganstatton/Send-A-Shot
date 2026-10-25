@@ -110,8 +110,11 @@ export const SFW_NEGATIVE = 'nsfw, nude, nudity, topless, explicit, sexual, ling
 export const KEEP_TOP_NEGATIVE = '(topless, bare breasts, exposed nipples:1.3)';
 /** Outfit words that mean she wears something on top. */
 export const TOP_GARMENT_RE = /\b(bikini|bra|bralette|top|shirt|t-shirt|tee|tank|blouse|swimsuit|monokini|one-piece|bodysuit|leotard|dress|sweater|hoodie|jacket|corset|camisole|cami|crop)\b/i;
-/** Outfit words that ask for no top — the keep-top negative is skipped. */
-export const NO_TOP_RE = /\b(topless|nude|naked|bare[- ]chest(ed)?|no (top|bra|bikini top))\b/i;
+/** "nude" followed by a garment is a colour ("nude thong", "nude-colour leggings"), not nudity. */
+export const NUDE_COLOUR_LOOKAHEAD = String.raw`(?![- ]+(?:colou?r(?:ed)?[- ]+|toned?[- ]+)?(?:thong|g-string|bra|bralette|bikini|panties|lingerie|dress|top|shirt|tee|tank|bodysuit|leotard|leggings|tights|stockings|pantyhose|heels|shoes|sandals|skirt|shorts|swimsuit|slip|underwear|briefs|lace|satin|silk|mesh)\b)`;
+/** Outfit words that ask for no top — the keep-top negative is skipped. "nude <garment>" is a colour ("nude bra"),
+ * not nudity: the top check must still run. */
+export const NO_TOP_RE = new RegExp(String.raw`\b(topless|nude${NUDE_COLOUR_LOOKAHEAD}|naked|bare[- ]chest(ed)?|no (top|bra|bikini top))\b`, 'i');
 
 /** Added when Sienna Lock is on, to discourage identity drift. */
 export const LOCK_NEGATIVE = 'different person, altered face, different face shape, different hair color, different eye color';

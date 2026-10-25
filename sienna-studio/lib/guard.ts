@@ -24,7 +24,8 @@ const MINOR_PATTERNS: RegExp[] = [
   /\byoung\s*-?\s*looking\b|\blooks?\s+young(er)?\b/i,
   /\bbarely\s+legal\b|\bjailbait\b/i,
   /\b(infant|toddler|tween|juvenile|pubescent|prepubescent)s?\b/i,
-  /\b(1[0-7]|[1-9])\s*-?\s*(years?|yrs?|yo)\b(\s*-?\s*old)?/i,
+  // an age, not a duration ("16-year-old", "16 years old", "16 yo", "16 years of age"; not "for 5 years")
+  /\b(1[0-7]|[1-9])\s*-?\s*(?:(?:years?|yrs?)\s*-?\s*old\b|yo\b|(?:years?|yrs?)\s+of\s+age\b)/i,
   /\baged?\s+(1[0-7]|[1-9])\b/i,
 ];
 
@@ -61,13 +62,16 @@ const EYE_COLORS = 'blue|green|brown|hazel|grey|gray|amber|dark|light|black|viol
 interface LockRule {
   category: string;
   re: RegExp;
+  /** A bare word that also names places, food or materials ("Indian restaurant", "blonde wood"): only applied to
+   * fields about her, not to the scene (setting, lighting, camera, framing). */
+  personOnly?: boolean;
 }
 
 // NOTE: patterns are built with string concatenation, not template literals —
 // Next's SWC minifier has mangled a trailing \b inside template literals.
 const LOCK_RULES: LockRule[] = [
   { category: 'hair colour', re: new RegExp('\\b(' + HAIR_COLORS + ')([\\s-]+(' + HAIR_COLORS + '))*[\\s-]+(haired|hair(ed)?)\\b', 'gi') },
-  { category: 'hair colour', re: /\b(blonde|blond|brunette|redhead|ginger)\b/gi },
+  { category: 'hair colour', re: /\b(blonde|blond|brunette|redhead|ginger)\b/gi, personOnly: true },
   { category: 'hair colour', re: /\b(hair\s*colou?r|dyed\s+hair|hair\s+dye)\b/gi },
   { category: 'eye colour', re: new RegExp('\\b(' + EYE_COLORS + ')([\\s-]+(' + EYE_COLORS + '))*[\\s-]+eyed?s?\\b', 'gi') },
   { category: 'eye colour', re: /\b(eye\s*colou?r|colou?red\s+contacts)\b/gi },
@@ -75,13 +79,15 @@ const LOCK_RULES: LockRule[] = [
   {
     category: 'skin tone / ethnicity',
     re: /\b(asian|african|latina|latino|hispanic|caucasian|european|indian|arab|middle\s*eastern|nordic|scandinavian|east\s*asian|south\s*asian)\b/gi,
+    personOnly: true,
   },
   { category: 'freckles', re: /\b(no|without|remove(d)?)\s+freckles\b|\bfreckle\s*-?\s*free\b|\bheavy\s+freckles\b/gi },
   { category: 'face shape', re: /\b(different|new|another|changed?)\s+(face|person|woman|girl|identity|nose|jaw(line)?|chin)\b/gi },
   { category: 'face shape', re: /\b(round|square|heart|long|diamond)\s*-?\s*shaped\s+face\b|\bface\s+shape\b/gi },
   { category: 'face shape', re: /\b(nose\s+job|rhinoplasty|lip\s+fillers?|facial\s+surgery)\b/gi },
   { category: 'age', re: /\b(older|elderly|middle\s*-?\s*aged|mature\s+woman|wrinkles|wrinkled|aged\s+up|grey\s*ing|graying)\b/gi },
-  { category: 'age', re: /\b([2-9]\d)\s*-?\s*(years?|yrs?|yo)\b(\s*-?\s*old)?/gi },
+  // an age, not a duration ("30-year-old", "30 yo"; not "for 25 years")
+  { category: 'age', re: /\b([2-9]\d)\s*-?\s*(?:(?:years?|yrs?)\s*-?\s*old\b|yo\b|(?:years?|yrs?)\s+of\s+age\b)/gi },
 ];
 
 export interface LockResult {
@@ -90,11 +96,11 @@ export interface LockResult {
 }
 
 /** Strip identity-altering phrases from a free-text field. */
-export function applyIdentityLock(text: string, extraTerms: string[] = []): LockResult {
+export function applyIdentityLock(text: string, extraTerms: string[] = [], opts: { scene?: boolean } = {}): LockResult {
   const removed: LockResult['removed'] = [];
   let out = text;
   const rules: LockRule[] = [
-    ...LOCK_RULES,
+    ...LOCK_RULES.filter((r) => !(opts.scene && r.personOnly)),
     ...extraTerms
       .map((t) => t.trim())
       .filter(Boolean)

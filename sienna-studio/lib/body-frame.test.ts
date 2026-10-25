@@ -12,6 +12,10 @@ describe('full-body framing from her joints', () => {
     // cut off at the thighs (the position-test failures)
     expect(bodyFramingOk(true, parseBodyFrame(report([0, 1, 2, 5, 8, 11])))).toBe(false);
     expect(bodyFramingOk(true, parseBodyFrame(report([1, 2, 5, 8, 9, 10, 11, 12, 13])))).toBe(true); // face turned away: neck counts
+    // cut off at the chin: the neck (shoulder midpoint) sits at the top edge with no room for a head
+    const chin = joints([1, 2, 5, 8, 10, 11, 13]);
+    chin[1] = [300, 12]; chin[8] = [280, 400]; chin[11] = [320, 400];
+    expect(bodyFramingOk(true, parseBodyFrame([JSON.stringify({ valid: true, joints: chin })])) ).toBe(false);
   });
   it('gives no verdict when the body could not be judged, or framing was not full body', () => {
     expect(bodyFramingOk(true, parseBodyFrame(report([], false)))).toBeUndefined();

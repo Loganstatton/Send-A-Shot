@@ -56,3 +56,21 @@ describe('applyIdentityLock keeps the sentence readable', () => {
     expect(applyIdentityLock('messy blonde hair in a bun').text).toBe('messy hair in a bun');
   });
 });
+
+describe('age block: an age, not a duration', () => {
+  it('still blocks under-age wording', () => {
+    for (const t of ['a 16-year-old', '16 years old', 'she is 15 yo', '17 years of age', 'aged 16']) expect(findHardBlocks(t).length).toBeGreaterThan(0);
+  });
+  it('a duration is not an age', () => {
+    for (const t of ['she has been modelling for 5 years', '2 years after the wedding', '10 yrs of experience']) expect(findHardBlocks(t)).toEqual([]);
+  });
+});
+
+describe('identity lock: scene words', () => {
+  it('place and material words stay in the scene; about her they still go', () => {
+    expect(applyIdentityLock('a cosy Indian restaurant, blonde wood table', [], { scene: true }).removed).toEqual([]);
+    expect(applyIdentityLock('blonde, Indian', []).removed.length).toBe(2);
+    // the clearly-about-her rules still apply to the scene
+    expect(applyIdentityLock('dark-skinned woman in the corner', [], { scene: true }).removed.length).toBe(1);
+  });
+});

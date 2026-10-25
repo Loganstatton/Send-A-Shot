@@ -485,6 +485,8 @@ export interface VideoInfo {
   model: 'wan2.2-i2v-14b' | 'wan2.2-animate-14b' | 'wan2.2-animate-2-14b';
   sourceId: string;
   sourceImage: StoredImage;
+  /** Which image of the source record (a batch can have several): "Make again" uses the same one. */
+  imageIndex?: number;
   quality: import('./video').VideoQuality;
   resolution: import('./video').VideoResolution;
   width: number;
@@ -547,6 +549,8 @@ export interface OutfitEditInfo {
   sourceId: string;
   /** The image that was edited (belongs to the source record). */
   sourceImage: StoredImage;
+  /** Its index in the source record, so a re-run edits the same image. */
+  imageIndex?: number;
   /** Clothing photo as uploaded (or as cropped by hand in the editor); null for a change described in words only. */
   reference: StoredImage | null;
   manualCrop: boolean;

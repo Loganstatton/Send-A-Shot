@@ -21,8 +21,10 @@ export async function regenerate(rec: GenerationRecord, newSeed: boolean): Promi
     siennaLock: rec.siennaLock,
     contentMode: rec.contentMode,
     fields: rec.fields,
-    params: { ...rec.params, seed: newSeed ? -1 : rec.seed },
-    images: { initImage: rec.initImage, poseImage: rec.poseImage, faceReferenceId: rec.faceReference?.id ?? null },
+    // the garment-only crop isn't kept on the record: re-run with the whole-person crop rather than fail
+    params: { ...rec.params, seed: newSeed ? -1 : rec.seed, ...(rec.params.outfitIsolation === 'garment' ? { outfitIsolation: 'person' as const } : {}) },
+    // the outfit photo too: without it the rerun dropped the clothing reference and drew a different outfit
+    images: { initImage: rec.initImage, poseImage: rec.poseImage, faceReferenceId: rec.faceReference?.id ?? null, outfitImage: rec.outfitReference?.image ?? null },
     parentId: rec.id,
   };
   const next = await api<GenerationRecord>('/api/generate', { method: 'POST', json: body });

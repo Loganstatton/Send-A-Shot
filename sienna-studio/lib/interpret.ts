@@ -290,7 +290,9 @@ export function referenceIntent(text: string, hasReference: boolean): Interpreta
   if (!hasReference) return { mode: 'none', denoise: null, why: '' };
   const t = text.toLowerCase();
   const pose = /\b(same|keep|copy|match|use)\b[^.]{0,30}\b(pose|position|posture|stance|body position)\b|\b(pose|position) (from|of|in) (the|this) (photo|image|picture|reference)\b/.test(t);
-  const composition = /\b(same|keep|preserve|match)\b[^.]{0,30}\b(composition|framing|angle|photo|picture|image|scene|layout|everything)\b|\b(only|just) (change|replace|swap|edit|fix)\b|\b(recreate|remake|redo|touch up|retouch)\b/.test(t);
+  // the pose phrase itself ("same pose as in the photo") says nothing about the composition: read the rest
+  const rest = t.replace(/\b(same|keep|copy|match|use)\b[^.]{0,30}\b(pose|position|posture|stance|body position)\b(\s+(as|from|of|in)(\s+in)?\s+(the|this|my)\s+(photo|image|picture|reference))?/g, ' ');
+  const composition = /\b(same|keep|preserve|match)\b[^.]{0,30}\b(composition|framing|angle|photo|picture|image|scene|layout|everything)\b|\b(only|just) (change|replace|swap|edit|fix)\b|\b(recreate|remake|redo|touch up|retouch)\b/.test(rest);
   const bigChange = /\b(replace|change|swap|different|new)\b[^.]{0,30}\b(background|setting|location|room|scene|clothes|clothing|outfit|dress)\b/.test(t);
   const garmentSwap = clothingChanges(text.split(/(?<=[.!?])\s+|\n+/).find((x) => clothingChanges(x).length) ?? '').length > 0;
   if (pose && !composition) return { mode: 'pose', denoise: null, why: 'Reference photo: her pose is copied; outfit, background and look follow your description.' };

@@ -19,6 +19,8 @@
  */
 import type { ComfyGraph } from '../types';
 import { PERSON_SEGM_FILE } from '../outfit-edit';
+import { FIGURE_NODES } from './figure-pass';
+import { DETAIL_NODES } from './detail-pass';
 
 export const KEEP_PERSON_PREFIX = 'kp_';
 /** Background redraw strength: the room is rebuilt, but keeps the earlier photo's perspective and floor line. */
@@ -43,6 +45,9 @@ export function addKeepPerson(
   image: { filename: string; subfolder?: string } | { inputName: string },
   denoise = KEEP_PERSON_DENOISE,
 ): ComfyGraph | null {
+  // The hi-res pass would resample her after the paste (not pixel for pixel) and upscale an already-upscaled photo:
+  // no keep-person with it (the caller then makes a normal correction)
+  if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null;
   const original = structuredClone(graph);
   const g: ComfyGraph = structuredClone(graph);
   // the first pass: a KSampler fed by an empty (or encoded) latent, decoded by a VAEDecode
@@ -80,13 +85,31 @@ export function addKeepPerson(
     rewire([id, 0], g[id].inputs.image as Ref, id);
     delete g[id];
   }
+  // so would the figure and close-up detail passes (they redraw parts of her after the paste): skip them too
+  for (const [last, input] of [[DETAIL_NODES.paste, 'original'], [FIGURE_NODES.composite, null]] as const) {
+    if (!g[last]) continue;
+    const src = input ? g[last].inputs[input] : g[FIGURE_NODES.mask]?.inputs.image;
+    if (isRef(src)) rewire([last, 0], src, last);
+  }
+  for (const id of Object.keys(g)) if (id.startsWith('sienna_fig_') || id.startsWith('sienna_detail_')) delete g[id];
   return g;
 }
 
-/** The graph without a keep-person redraw (the next correction may need a fresh composition). */
+/**
+ * The graph without a keep-person redraw (the next correction may need a fresh composition). The stored graph is the
+ * one from before that redraw, so the prompts and seeds it still has are brought up to date from `graph` (same node
+ * ids): a correction swaps them on the graph it holds, and they must not fall back to the earlier attempt's.
+ */
 export function stripKeepPerson(graph: ComfyGraph): ComfyGraph {
   const original = graph[`${KEEP_PERSON_PREFIX}paste`]?._meta?.original as ComfyGraph | undefined;
-  return original ? structuredClone(original) : graph;
+  if (!original) return graph;
+  const out = structuredClone(original);
+  for (const [id, node] of Object.entries(out)) {
+    const now = graph[id];
+    if (!now) continue;
+    for (const k of ['text', 'seed', 'noise_seed'] as const) if (k in node.inputs && k in now.inputs) node.inputs[k] = now.inputs[k];
+  }
+  return out;
 }
 
 /**

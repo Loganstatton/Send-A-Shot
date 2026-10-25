@@ -1,3 +1,7 @@
+import { NUDE_COLOUR_LOOKAHEAD } from './defaults';
+
+export { NUDE_COLOUR_LOOKAHEAD };
+
 /**
  * Style packs: extra LoRAs stacked after Sienna's own LoRA, each with a dial.
  * All were licence-checked on Civitai (commercial image use allowed) and
@@ -330,8 +334,6 @@ export function nudeOnlyAllowed(
   return !CLOTHING_RE.test(rest);
 }
 
-/** "nude" followed by a garment is a colour ("nude thong", "nude-colour leggings"), not nudity. */
-export const NUDE_COLOUR_LOOKAHEAD = String.raw`(?![- ]+(?:colou?r(?:ed)?[- ]+|toned?[- ]+)?(?:thong|g-string|bra|bralette|bikini|panties|lingerie|dress|top|shirt|tee|tank|bodysuit|leotard|leggings|tights|stockings|pantyhose|heels|shoes|sandals|skirt|shorts|swimsuit|slip|underwear|briefs|lace|satin|silk|mesh)\b)`;
 const BARE_CHEST_RE = new RegExp(String.raw`\b(topless|nude${NUDE_COLOUR_LOOKAHEAD}|naked|bare (breasts|chest|boobs)|nothing on|wearing nothing)\b`, 'i');
 /** Anything that covers her chest (a hand over it too). "topless" itself is not a top: \btop\b needs a word end. */
 const CHEST_COVER_RE =

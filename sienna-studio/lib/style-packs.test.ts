@@ -244,3 +244,14 @@ describe('lace teddy', () => {
     expect(packsForDescription({ outfit: 'white lace teddy' }, 'adult')).toEqual({ french_lace: 0.6 });
   });
 });
+
+describe('"nude" as a colour: top and bottom checks', () => {
+  it('a nude bra is a top, a nude thong is a bottom: the checks still run', async () => {
+    const { outfitHasTop } = await import('./exposure');
+    const { outfitHasBottom } = await import('./prompt');
+    expect(outfitHasTop('nude bra and nude thong')).toBe(true);
+    expect(outfitHasBottom('nude bra and nude thong')).toBe(true);
+    expect(outfitHasTop('topless, nude thong')).toBe(false);
+    expect(outfitHasBottom('completely nude')).toBe(false);
+  });
+});

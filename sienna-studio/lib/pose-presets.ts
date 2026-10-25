@@ -5,6 +5,7 @@
  */
 import presets from '../public/pose-presets/presets.json';
 import { rearRequest } from './identity';
+import { NUDE_COLOUR_LOOKAHEAD } from './defaults';
 
 export interface PosePreset {
   id: string;
@@ -187,7 +188,8 @@ const SWIM_RE = /\b(bikini|swimsuit|swimwear|monokini)\b/i;
 const SHORTS_RE = /\b(shorts|hot ?pants)\b/i;
 const FOOTWEAR_RE = /\b(shoes?|sandals?|heels|boots?|sneakers?|trainers|flip[- ]?flops|slides|socks)\b/i;
 
-const NUDE_RE = /\b(nude|naked|topless|bottomless|unclothed|no clothing|no clothes)\b/i;
+// "nude <garment>" is a colour: a nude thong still gets the stays-clothed negatives
+const NUDE_RE = new RegExp(String.raw`\b(nude${NUDE_COLOUR_LOOKAHEAD}|naked|topless|bottomless|unclothed|no clothing|no clothes)\b`, 'i');
 
 /** The bent-over preset's thong uses the String swimsuit add-on (thin string back) at its own default strength. */
 export function presetThongPack(presetId: string | undefined | null, outfit: string): boolean {

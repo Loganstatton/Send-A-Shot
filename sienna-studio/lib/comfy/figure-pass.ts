@@ -54,7 +54,7 @@ export const FIGURE_PRESETS = {
 } as const;
 
 export function figurePassFromEnv(v: string | undefined): (typeof FIGURE_PRESETS)[keyof typeof FIGURE_PRESETS] | undefined {
-  return v && v in FIGURE_PRESETS ? FIGURE_PRESETS[v as keyof typeof FIGURE_PRESETS] : undefined;
+  return v && Object.hasOwn(FIGURE_PRESETS, v) ? FIGURE_PRESETS[v as keyof typeof FIGURE_PRESETS] : undefined;
 }
 
 export interface FigurePassOptions {

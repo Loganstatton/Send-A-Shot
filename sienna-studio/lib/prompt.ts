@@ -1,23 +1,7 @@
 // Prompt assembly. Pure and deterministic so the UI preview matches exactly
 // what the server sends to ComfyUI.
 
-import {
-  ADULT_ONLY_NEGATIVE,
-  AGE_DRIFT_NEGATIVE,
-  AGE_DRIFT_NEGATIVE_CLEAN,
-  EYE_TRAIT,
-  CLOSE_CAMERA_REALISM,
-  FULL_BODY_CAMERA,
-  FULL_BODY_FRAMING,
-  FULL_BODY_NEGATIVE,
-  KEEP_TOP_NEGATIVE,
-  MIRROR_FULL_BODY_FRAMING,
-  LEGACY_EYE_TRAIT,
-  LOCK_NEGATIVE,
-  MIN_CHARACTER_AGE,
-  NON_STUDIO_NEGATIVE,
-  SFW_NEGATIVE,
-} from './defaults';
+import { ADULT_ONLY_NEGATIVE, AGE_DRIFT_NEGATIVE, AGE_DRIFT_NEGATIVE_CLEAN, CLOSE_CAMERA_REALISM, EYE_TRAIT, FULL_BODY_CAMERA, FULL_BODY_FRAMING, FULL_BODY_NEGATIVE, KEEP_TOP_NEGATIVE, LEGACY_EYE_TRAIT, LOCK_NEGATIVE, MIN_CHARACTER_AGE, MIRROR_FULL_BODY_FRAMING, NON_STUDIO_NEGATIVE, NUDE_COLOUR_LOOKAHEAD, SFW_NEGATIVE } from './defaults';
 import { outfitHasTop } from './exposure';
 import { hasFix, type Fix } from './fixes';
 import { kneeUpRequest, withoutThighUp } from './framing';
@@ -191,7 +175,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   // 2. Sienna Lock: strip identity-altering phrases from free-text fields.
   if (siennaLock) {
     for (const key of PROMPT_FIELD_KEYS) {
-      const res = applyIdentityLock(fields[key] ?? '', character.extraLockedTerms);
+      // scene fields: words like "Indian restaurant" or "blonde wood" describe the place, not her
+      const res = applyIdentityLock(fields[key] ?? '', character.extraLockedTerms, { scene: SCENE_FIELDS.has(key) });
       effectiveFields[key] = res.text;
       for (const r of res.removed) {
         warnings.push(`Sienna Lock removed “${r.term}” from ${PROMPT_FIELD_LABELS[key]} (${r.category} is locked).`);
@@ -303,21 +288,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
 
   // 4. Negative prompt. The Avoid box goes here (never the positive prompt); with Sienna Lock on, identity terms
   // ("freckles", "dark hair") can't be avoided.
-  let avoidItems = splitAvoid(fields.avoid ?? '');
-  if (siennaLock && avoidItems.length) {
-    // her own traits (freckles, wavy hair, eye colour) can't be avoided either
-    const traitWords = new Set((character.appearanceTraits.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !['with', 'across', 'light', 'long'].includes(w)));
-    avoidItems = avoidItems.flatMap((item) => {
-      const res = applyIdentityLock(item, character.extraLockedTerms);
-      for (const r of res.removed) warnings.push(`Sienna Lock removed “${r.term}” from Avoid (${r.category} is locked).`);
-      const kept = res.text.trim();
-      // "bare breasts" / "exposed nipples" ask for coverage, not a smaller bust — let those through
-      const coverage = /\b(bare|topless|nude|naked|exposed|nipples?|areolae?|uncovered|see-through)\b/i.test(kept);
-      const hit = coverage ? undefined : (kept.toLowerCase().match(/[a-z]{4,}/g) ?? []).find((w) => traitWords.has(w) || traitWords.has(w.replace(/s$/, '')));
-      if (hit) warnings.push(`Sienna Lock removed “${kept}” from Avoid (it is one of her traits).`);
-      return kept && !hit ? [kept] : [];
-    });
-  }
+  const avoidItems = siennaLockedAvoid(splitAvoid(fields.avoid ?? ''), siennaLock, character, warnings);
   const wantsStudio = /\bstudio\b/i.test(`${f.lighting} ${f.setting} ${f.camera}`);
   const negative = joinParts([
     character.defaultNegativePrompt,
@@ -394,9 +365,29 @@ function coverParts(outfit: string, c: boolean | readonly CoverGarment[] | undef
 }
 // ── Revealing-benchmark fixes (lib/fixes.ts), version 1 ──────────────────────────────────────────────────────────
 
+/** Avoid items under Sienna Lock: identity-altering phrases and her own traits (freckles, wavy hair) are removed. */
+function siennaLockedAvoid(avoidItems: string[], siennaLock: boolean, character: CharacterProfile, warnings: string[]): string[] {
+  if (!siennaLock || !avoidItems.length) return avoidItems;
+  // her own traits (freckles, wavy hair, eye colour) can't be avoided either
+  const traitWords = new Set((character.appearanceTraits.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((w) => !['with', 'across', 'light', 'long'].includes(w)));
+  return avoidItems.flatMap((item) => {
+    const res = applyIdentityLock(item, character.extraLockedTerms);
+    for (const r of res.removed) warnings.push(`Sienna Lock removed “${r.term}” from Avoid (${r.category} is locked).`);
+    const kept = res.text.trim();
+    // "bare breasts" / "exposed nipples" ask for coverage, not a smaller bust — let those through
+    const coverage = /\b(bare|topless|nude|naked|exposed|nipples?|areolae?|uncovered|see-through)\b/i.test(kept);
+    const hit = coverage ? undefined : (kept.toLowerCase().match(/[a-z]{4,}/g) ?? []).find((w) => traitWords.has(w) || traitWords.has(w.replace(/s$/, '')));
+    if (hit) warnings.push(`Sienna Lock removed “${kept}” from Avoid (it is one of her traits).`);
+    return kept && !hit ? [kept] : [];
+  });
+}
+
+/** Fields that describe the scene rather than her (the identity lock's bare place/material words stay in them). */
+const SCENE_FIELDS = new Set<string>(['setting', 'lighting', 'camera', 'framing']);
+
 /** An outfit that covers her lower body (the AI check's coverage rule applies to it). */
 const BOTTOM_GARMENT_RE = /\b(bikinis?|bottoms?|thong|g-string|panties|briefs|knickers|underwear|shorts|jeans|pants|trousers|skirt|leggings|swimsuit|monokini|one-piece|bodysuit|leotard|dress|romper|jumpsuit)\b/i;
-const NO_BOTTOM_RE = /\b(bottomless|nude|naked|no (bottoms|panties|underwear)|nothing on|wearing nothing)\b/i;
+const NO_BOTTOM_RE = new RegExp(String.raw`\b(bottomless|nude${NUDE_COLOUR_LOOKAHEAD}|naked|no (bottoms|panties|underwear)|nothing on|wearing nothing)\b`, 'i');
 export function outfitHasBottom(outfit: string): boolean {
   return BOTTOM_GARMENT_RE.test(outfit) && !NO_BOTTOM_RE.test(outfit);
 }
@@ -485,14 +476,8 @@ function buildV2(a: {
     f.realism,
     siennaLock && !a.faceAway ? a.traits.eyes : '',
   ]);
-  let avoidItems = splitAvoid(fields.avoid ?? '');
-  if (siennaLock && avoidItems.length) {
-    avoidItems = avoidItems.flatMap((item) => {
-      const res = applyIdentityLock(item, character.extraLockedTerms);
-      for (const r of res.removed) warnings.push(`Sienna Lock removed “${r.term}” from Avoid (${r.category} is locked).`);
-      return res.text.trim() ? [res.text.trim()] : [];
-    });
-  }
+  // the same Avoid rules as version 1: her own traits can't be avoided either
+  const avoidItems = siennaLockedAvoid(splitAvoid(fields.avoid ?? ''), siennaLock, character, warnings);
   const negative = joinParts([
     character.defaultNegativePrompt,
     V2_NEGATIVE,

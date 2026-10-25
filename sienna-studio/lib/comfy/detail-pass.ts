@@ -13,6 +13,7 @@ export const DETAIL_NODES = {
   lora: 'sienna_detail_lora',
   positive: 'sienna_detail_positive',
   negative: 'sienna_detail_negative',
+  negativeCombine: 'sienna_detail_negative_combine',
   encode: 'sienna_detail_encode',
   noiseMask: 'sienna_detail_noise_mask',
   sampler: 'sienna_detail_sampler',
@@ -41,7 +42,7 @@ export const DETAIL_DENOISE = { front: 0.62, rear: 0.5 } as const;
 export const detailDenoise = (rear: boolean) => (rear ? DETAIL_DENOISE.rear : DETAIL_DENOISE.front);
 
 export function detailPassFromEnv(v: string | undefined): { style: DetailStyle; strength?: number; denoise?: number } | undefined {
-  return v && v in DETAIL_STYLES ? { style: v as DetailStyle } : undefined;
+  return v && Object.hasOwn(DETAIL_STYLES, v) ? { style: v as DetailStyle } : undefined;
 }
 
 const NO_BOTTOMS_WORDS_RE = /\b(bottomless|no (bottoms|panties|underwear|thong))\b/gi;
@@ -81,6 +82,7 @@ export function addDetailPass(graph: ComfyGraph, o: DetailPassOptions): ComfyGra
   if (!Array.isArray(image)) return null;
   const negRef = face.inputs.negative;
   const negText = Array.isArray(negRef) ? graph[negRef[0] as string]?.inputs?.text : undefined;
+  const combineNeg = Array.isArray(negRef) && typeof negText !== 'string';
   const s = DETAIL_STYLES[o.style];
   const file = detailFile(o.style, o.rear);
   const strength = o.strength ?? s.strength;
@@ -100,6 +102,10 @@ export function addDetailPass(graph: ComfyGraph, o: DetailPassOptions): ComfyGra
       inputs: { clip: [n.lora, 1], text: typeof negText === 'string' ? `${negText}, ${DETAIL_NEGATIVE_WORDS}` : DETAIL_NEGATIVE_WORDS },
       _meta: { title: 'Detail pass: negative' },
     },
+    // the face pass's negative isn't plain text (combined conditioning): keep it and add the pass's own words
+    ...(combineNeg
+      ? { [n.negativeCombine]: { class_type: 'ConditioningCombine', inputs: { conditioning_1: negRef, conditioning_2: [n.negative, 0] }, _meta: { title: 'Detail pass: negative (combined)' } } }
+      : {}),
     [n.encode]: { class_type: 'VAEEncode', inputs: { pixels: [n.region, 0], vae: face.inputs.vae }, _meta: { title: 'Detail pass: encode' } },
     [n.noiseMask]: { class_type: 'SetLatentNoiseMask', inputs: { samples: [n.encode, 0], mask: [n.region, 1] }, _meta: { title: 'Detail pass: area only' } },
     [n.sampler]: {
@@ -107,7 +113,7 @@ export function addDetailPass(graph: ComfyGraph, o: DetailPassOptions): ComfyGra
       inputs: {
         model: [n.lora, 0],
         positive: [n.positive, 0],
-        negative: [n.negative, 0],
+        negative: combineNeg ? [n.negativeCombine, 0] : [n.negative, 0],
         latent_image: [n.noiseMask, 0],
         seed: face.inputs.seed,
         steps: Math.max(24, Number(face.inputs.steps) || 24),

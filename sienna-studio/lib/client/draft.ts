@@ -73,11 +73,15 @@ export function useDraft() {
     if (!d) return;
     missingPhotos(d).then((gone) => {
       if (!gone.length) return;
-      setDroppedPhotos(gone.length);
       setDraftState((prev) => {
-        const next = { ...(prev ?? d), images: { ...(prev ?? d).images } };
-        for (const k of gone) next.images[k] = null;
+        const cur = prev ?? d;
+        // only the photos that are still the ones checked: a slot changed while the check ran keeps its new photo
+        const stale = gone.filter((k) => cur.images[k]?.file === d.images[k]?.file);
+        if (!stale.length) return prev;
+        const next = { ...cur, images: { ...cur.images } };
+        for (const k of stale) next.images[k] = null;
         writeDraft(next);
+        setDroppedPhotos(stale.length);
         return next;
       });
     });

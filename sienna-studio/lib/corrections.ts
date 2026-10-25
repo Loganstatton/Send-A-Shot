@@ -55,7 +55,13 @@ export function pickFixes(latest: CheckIssue[], earlier: CheckIssue[][]): CheckI
   };
   latest.forEach(add);
   const covered = new Set(out.map((i) => i.aspect));
-  for (const list of [...earlier].reverse()) list.filter((i) => !covered.has(i.aspect)).forEach(add);
+  // most recent first, and an aspect only from the newest photo that had it: two attempts' different outfit fixes
+  // would otherwise both be carried and contradict each other
+  for (const list of [...earlier].reverse()) {
+    const fresh = list.filter((i) => !covered.has(i.aspect));
+    fresh.forEach(add);
+    for (const i of fresh) if (i.major) covered.add(i.aspect);
+  }
   return out;
 }
 

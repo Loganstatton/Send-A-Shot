@@ -26,12 +26,14 @@ export interface AdviceInput {
   /** The whole positive prompt as sent (Create), or the edit description (Edit Outfit). */
   positive: string;
   outfit: string;
+  /** The outfit as it appears in the prompt (colour weights added), to find where it starts; defaults to outfit. */
+  outfitText?: string;
   avoid?: string;
   /** Edit Outfit moves "no …" sentences to the negative prompt automatically. */
   negationsMoved?: boolean;
 }
 
-export function promptAdvice({ positive, outfit, avoid = '', negationsMoved = false }: AdviceInput): PromptAdvice[] {
+export function promptAdvice({ positive, outfit, outfitText, avoid = '', negationsMoved = false }: AdviceInput): PromptAdvice[] {
   const out: PromptAdvice[] = [];
   const tokens = approxTokens(positive);
   if (tokens > 225) {
@@ -42,7 +44,7 @@ export function promptAdvice({ positive, outfit, avoid = '', negationsMoved = fa
   }
   const o = outfit.trim();
   if (o) {
-    const at = positive.toLowerCase().indexOf(o.slice(0, 40).toLowerCase());
+    const at = positive.toLowerCase().indexOf((outfitText?.trim() || o).slice(0, 40).toLowerCase());
     const before = at > 0 ? approxTokens(positive.slice(0, at)) : 0;
     if (before > 60) {
       out.push({ id: 'buried', text: `The outfit starts about ${before} tokens into the prompt — after the framing and pose. Shorten those so the outfit sits near the start.` });
