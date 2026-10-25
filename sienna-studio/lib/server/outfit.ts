@@ -20,7 +20,7 @@ import {
   OutfitAnalysis,
 } from '../outfit';
 import type { StoredImage } from '../types';
-import { queueImageJob } from './jobs';
+import { cacheResult, cachedResult, queueImageJob, settledJobState } from './jobs';
 import { getComfyUrl, mimeFromBytes, storeImage } from './store';
 
 export type OutfitIsolationResult = 'person' | 'garment' | 'fallback-person';
@@ -43,14 +43,16 @@ export async function startOutfitAnalysis(
 
 export async function outfitAnalysisStatus(promptId: string): Promise<OutfitAnalysisState> {
   const backend = createBackend(promptId.startsWith('mock-') ? 'mock' : await getComfyUrl());
-  const s = await backend.jobState(promptId, []);
+  const cached = cachedResult<OutfitAnalysisState>(promptId);
+  if (cached) return cached;
+  const s = await settledJobState(backend, promptId);
   switch (s.state) {
     case 'pending':
       return { state: 'pending', position: s.position };
     case 'running':
       return { state: 'running' };
     case 'unknown':
-      return { state: 'pending' };
+      return { state: 'error', error: 'The GPU no longer has this outfit analysis (it restarted or was stopped) — run it again.' };
     case 'error':
       return { state: 'error', error: s.message };
     case 'done': {
@@ -67,7 +69,7 @@ export async function outfitAnalysisStatus(promptId: string): Promise<OutfitAnal
       if (isolation === 'fallback-person') {
         analysis.notes.unshift('Garment segmentation found nothing — this used the whole-person crop instead (garment mode will not be applied).');
       }
-      return { state: 'done', preview, isolation, ...analysis };
+      return cacheResult<OutfitAnalysisState>(promptId, { state: 'done', preview, isolation, ...analysis });
     }
   }
 }

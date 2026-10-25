@@ -49,6 +49,7 @@ import { MIN_BODY_REFS } from '../body-refs';
 import { resolveLockedLora } from '../sienna-models';
 import type { ContentMode, GenerationRecord, StoredImage } from '../types';
 import { describeMissing, GenerationError, missingClasses } from './generate';
+import { photoGpuEnabled, touchPhotoGpu } from './photo-gpu';
 import { FACE_NODE_ID, faceNode, parseFace, singlePhotoIdentity } from '../identity';
 import { preflight } from './jobs';
 import {
@@ -367,7 +368,9 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
   };
   try {
     const { promptId } = await backend.queuePrompt(graph, clientId);
-    return saveRecord({ ...record, promptId });
+    // like photos: an edit restarts the on-demand GPU's idle timer
+    if (photoGpuEnabled()) await touchPhotoGpu().catch(() => {});
+    return saveRecord({ ...record, promptId, promptAt: new Date().toISOString() });
   } catch (e) {
     if (!(e instanceof ComfyError)) throw e;
     return saveRecord({ ...record, status: 'error', error: e.message, errorDetails: e.details, completedAt: new Date().toISOString() });
@@ -381,7 +384,13 @@ const inflight = new Map<string, Promise<GenerationRecord | null>>();
 export function refreshOutfitEdit(id: string): Promise<GenerationRecord | null> {
   const existing = inflight.get(id);
   if (existing) return existing;
-  const p = doRefresh(id).finally(() => inflight.delete(id));
+  const p = doRefresh(id)
+    .then(async (rec) => {
+      // an edit just finished: the on-demand photo GPU's idle timer starts from now
+      if (photoGpuEnabled() && rec?.promptId && rec.completedAt && Date.now() - Date.parse(rec.completedAt) < 60_000) await touchPhotoGpu().catch(() => {});
+      return rec;
+    })
+    .finally(() => inflight.delete(id));
   inflight.set(id, p);
   return p;
 }

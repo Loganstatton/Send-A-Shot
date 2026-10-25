@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 export const GET = handle(async () => {
   const snap = await getConfigSnapshot();
   const files: Record<string, string> = {};
-  const refs = [snap.character.faceReference, ...snap.character.secondaryReferences].filter(Boolean);
+  // body references too: an imported profile otherwise points at files that aren't there
+  const refs = [snap.character.faceReference, ...snap.character.secondaryReferences, ...(snap.character.bodyReferences ?? []).map((b) => b.image)].filter(Boolean);
   for (const r of refs) {
     try {
       files[r!.file] = (await readImage(r!.file)).bytes.toString('base64');

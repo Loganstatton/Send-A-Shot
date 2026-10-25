@@ -35,6 +35,10 @@ export function handle<A extends unknown[]>(fn: (...args: A) => Promise<Response
       if (e instanceof HttpError || e instanceof GenerationError || e instanceof ComfyError || e instanceof MissingImageError) {
         return json({ error: e.message, details: (e as any).details }, e.status);
       }
+      // GPU errors carry their own status; a video ffmpeg can't read is the client's file, not a server fault
+      // (matched by name: importing those modules here would create an import cycle)
+      if (e?.constructor?.name === 'GpuError' && typeof e.status === 'number') return json({ error: e.message }, e.status);
+      if (e?.constructor?.name === 'FfmpegError') return json({ error: `The video couldn't be processed: ${e.message}` }, 415);
       console.error(e);
       return json({ error: e?.message || 'Internal error' }, 500);
     }

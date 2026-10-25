@@ -41,3 +41,23 @@ export async function queueImageJob(image: StoredImage, build: (uploadedName: st
     throw e;
   }
 }
+
+// ── Status of one-off analysis jobs (pose check, outfit analysis) ──
+
+/** A finished job's result, kept so repeated polls don't download and store its images again. */
+const doneCache = new Map<string, unknown>();
+export function cachedResult<T>(promptId: string): T | undefined {
+  return doneCache.get(promptId) as T | undefined;
+}
+export function cacheResult<T>(promptId: string, value: T): T {
+  doneCache.set(promptId, value);
+  if (doneCache.size > 200) doneCache.delete(doneCache.keys().next().value as string);
+  return value;
+}
+
+/** ComfyUI's state for a job, asked a second time when it reads unknown (history is read before the queue, so a job
+ * finishing in between looks unknown once). Still unknown = the GPU no longer has it (restarted or stopped). */
+export async function settledJobState(backend: import('../comfy/client').ComfyBackend, promptId: string) {
+  const s = await backend.jobState(promptId, []);
+  return s.state === 'unknown' ? backend.jobState(promptId, []) : s;
+}

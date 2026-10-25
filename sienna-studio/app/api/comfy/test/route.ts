@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic';
 
 /** Body: { url?: string } — test a URL before saving it, or the saved one. */
 export const POST = handle(async (req: Request) => {
-  const body = (await req.json().catch(() => ({}))) as { url?: string };
-  const url = (body.url ?? '').trim() || (await getComfyUrl());
+  const body = ((await req.json().catch(() => null)) ?? {}) as { url?: unknown };
+  const url = (typeof body.url === 'string' ? body.url : '').trim() || (await getComfyUrl());
   if (url.toLowerCase() !== 'mock' && !/^https?:\/\//i.test(url)) {
     return json({ ok: false, error: 'URL must start with http:// or https://' }, 400);
   }

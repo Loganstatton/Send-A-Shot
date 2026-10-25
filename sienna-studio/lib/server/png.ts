@@ -124,6 +124,13 @@ export function imageSize(buf: Buffer): { width: number; height: number } | null
   if (buf.length > 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
     const fmt = buf.toString('ascii', 12, 16);
     if (fmt === 'VP8X') return { width: 1 + buf.readUIntLE(24, 3), height: 1 + buf.readUIntLE(27, 3) };
+    // lossy: frame tag (3 bytes), start code 9d 01 2a, then 14-bit width and height
+    if (fmt === 'VP8 ' && buf[23] === 0x9d && buf[24] === 0x01 && buf[25] === 0x2a) return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff };
+    // lossless: signature 0x2f, then width-1 and height-1 in 14 bits each
+    if (fmt === 'VP8L' && buf[20] === 0x2f) {
+      const bits = buf.readUInt32LE(21);
+      return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+    }
   }
   return null;
 }

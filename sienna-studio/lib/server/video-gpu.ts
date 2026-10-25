@@ -51,6 +51,8 @@ export interface VideoGpuConfig {
 }
 
 const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+/** A budget may be 0 (spend nothing); only unset or invalid falls back to the default. */
+const budgetNum = (v: string | undefined, d: number) => (v !== undefined && v.trim() !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : d);
 
 /** What is missing to use the on-demand video GPU (empty = configured). */
 export function videoGpuMissing(): string[] {
@@ -80,7 +82,7 @@ export function videoGpuConfig(): VideoGpuConfig | null {
     jobTimeoutMin: num(e.VIDEO_GPU_JOB_TIMEOUT_MIN, 15),
     idleMin: num(e.VIDEO_GPU_IDLE_MIN, 10),
     maxSessionMin: num(e.VIDEO_GPU_MAX_SESSION_MIN, 90),
-    monthlyBudgetUsd: num(e.VIDEO_GPU_MONTHLY_BUDGET_USD, 5),
+    monthlyBudgetUsd: budgetNum(e.VIDEO_GPU_MONTHLY_BUDGET_USD, 5),
     estRate: num(e.VIDEO_GPU_EST_RATE, 0.69),
     copyMotion: e.VIDEO_GPU_COPY_MOTION === 'true',
   };
@@ -501,6 +503,9 @@ export function startVideoGpuTimer(fn: () => Promise<unknown>) {
 /** Kit downloads are allowed only for the session being started, with its own token. */
 export async function kitTokenValid(token: string): Promise<boolean> {
   const s = (await load()).session;
-  if (!s || !active(s) || !s.kitToken || token.length !== s.kitToken.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(s.kitToken), Buffer.from(token));
+  if (!s || !active(s) || !s.kitToken) return false;
+  // compare bytes (a multi-byte character makes the byte lengths differ even when the string lengths match)
+  const a = Buffer.from(s.kitToken);
+  const b = Buffer.from(token);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }

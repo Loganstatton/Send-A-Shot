@@ -17,7 +17,20 @@ const LEDGER = path.join(DATA_DIR, 'ai-spend.json');
 export function aiEnabled(): boolean {
   return !!process.env.ANTHROPIC_API_KEY && process.env.SIENNA_AI !== 'off';
 }
-const budget = () => Number(process.env.AI_MONTHLY_BUDGET_USD) || 5;
+/** AI_MONTHLY_BUDGET_USD may be 0 (no AI spending); only unset or invalid falls back to $5. */
+const budget = () => {
+  const v = process.env.AI_MONTHLY_BUDGET_USD;
+  return v !== undefined && v.trim() !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : 5;
+};
+// Calls in flight reserve their maximum cost, and ledger writes are serialised: two photos checked at once could
+// otherwise both pass the budget check on the same spend, and one write could overwrite the other's cost.
+let reserved = 0;
+let ledgerLock: Promise<unknown> = Promise.resolve();
+const withLedger = <T>(fn: () => Promise<T>): Promise<T> => {
+  const run = ledgerLock.then(fn, fn);
+  ledgerLock = run.catch(() => {});
+  return run;
+};
 
 let client: Anthropic | null = null;
 const api = () => (client ??= new Anthropic({ timeout: 90_000, maxRetries: 1 }));
@@ -31,10 +44,14 @@ async function spent(): Promise<{ month: string; usd: number }> {
     return { month, usd: 0 };
   }
 }
-async function record(usd: number) {
-  const s = await spent();
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(LEDGER, JSON.stringify({ month: s.month, usd: Math.round((s.usd + usd) * 10000) / 10000 }));
+function record(usd: number) {
+  return withLedger(async () => {
+    const s = await spent();
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    const tmp = `${LEDGER}.${process.pid}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify({ month: s.month, usd: Math.round((s.usd + usd) * 10000) / 10000 }));
+    await fs.rename(tmp, LEDGER);
+  });
 }
 export async function aiSpend() {
   const s = await spent();
@@ -54,9 +71,20 @@ async function ask<T>(
   if (!aiEnabled()) return { ok: false, reason: 'the AI is not set up (no ANTHROPIC_API_KEY)' };
   // reserve the call's maximum cost first: never start a call that could take spending past a limit
   const reserve = maxCallCost(system, content, maxTokens);
-  const used = (await spent()).usd;
-  if (used + reserve > budget()) return { ok: false, reason: `this call could cost up to $${reserve.toFixed(3)}, which could take this month's AI spending past its $${budget()} budget ($${used.toFixed(2)} used)` };
   if (capUsd !== undefined && reserve > capUsd) return { ok: false, reason: `this call could cost up to $${reserve.toFixed(3)}, more than the $${capUsd.toFixed(3)} allowed for it` };
+  // check and reserve together, so concurrent calls see each other's reservations
+  const refusal = await withLedger(async () => {
+    const used = (await spent()).usd + reserved;
+    if (used + reserve > budget()) return `this call could cost up to $${reserve.toFixed(3)}, which could take this month's AI spending past its $${budget()} budget ($${used.toFixed(2)} used or reserved)`;
+    reserved += reserve;
+    return null;
+  });
+  if (refusal) return { ok: false, reason: refusal };
+  let released = false;
+  const release = () => {
+    if (!released) reserved = Math.max(0, reserved - reserve);
+    released = true;
+  };
   try {
     const res = await api().beta.messages.parse({
       model: MODEL,
@@ -92,6 +120,8 @@ async function ask<T>(
       : `AI request failed (${(e as Error).message})`;
     console.error(`AI: ${reason}`);
     return { ok: false, reason };
+  } finally {
+    release();
   }
 }
 

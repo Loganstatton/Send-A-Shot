@@ -76,7 +76,8 @@ function normaliseConfig(doc: Partial<ConfigDoc> | null): ConfigDoc {
   const character: CharacterProfile = { ...DEFAULT_CHARACTER, ...(doc?.character ?? {}) };
   const legacy = (id: string | null) => (id && LEGACY_WORKFLOW_IDS[id]) || id;
   settings.defaultWorkflowId = legacy(settings.defaultWorkflowId);
-  const presets = (doc?.presets?.length ? doc.presets : builtinPresets()).map((p) => ({ ...p, workflowId: legacy(p.workflowId) }));
+  // built-in presets only for a config that never had any (deleting them all is kept)
+  const presets = (Array.isArray(doc?.presets) ? doc!.presets : builtinPresets()).map((p) => ({ ...p, workflowId: legacy(p.workflowId) }));
   const workflows = (doc?.workflows ?? [])
     .filter((w) => !LEGACY_WORKFLOW_IDS[w.id])
     .map((w) => ({ ...w, optionalModules: w.optionalModules ?? ['init_image', 'face_reference_image', 'pose_image'] }));
@@ -289,20 +290,41 @@ export function patchRecord(id: string, patch: Partial<GenerationRecord>): Promi
   });
 }
 
+/** Every stored file name an object refers to (any `file` field that is a safe stored-file name), at any depth. */
+export function referencedFiles(value: unknown, into = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) for (const v of value) referencedFiles(v, into);
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      if (k === 'file' && typeof v === 'string' && (SAFE_FILE_RE.test(v) || SAFE_VIDEO_RE.test(v))) into.add(v);
+      else if (k !== 'submittedGraph') referencedFiles(v, into);
+    }
+  }
+  return into;
+}
+
+/** The files a record made or brought in for itself (removed with it unless something else still uses them). */
+export function ownedFiles(rec: GenerationRecord): string[] {
+  const v = rec.video;
+  const e = rec.outfitEdit;
+  return [
+    ...rec.images.map((i) => i.file),
+    v?.result?.file, v?.lockCamera?.result?.file, v?.drive?.video.file, v?.drive?.poster.file, v?.safeFraming?.framedImage?.file,
+    e?.referenceCrop?.file, e?.redraw?.preview?.file,
+  ].filter((f): f is string => !!f && (SAFE_FILE_RE.test(f) || SAFE_VIDEO_RE.test(f)));
+}
+
 export function deleteRecord(id: string, deleteFiles = true): Promise<void> {
   return withLock(async () => {
     const list = await loadHistory();
     const rec = list.find((r) => r.id === id);
-    await saveHistory(list.filter((r) => r.id !== id));
+    const rest = list.filter((r) => r.id !== id);
+    await saveHistory(rest);
     if (rec && deleteFiles) {
-      for (const img of rec.images) await fs.rm(path.join(IMAGES_DIR, img.file), { force: true });
-      if (rec.video?.result) await fs.rm(path.join(IMAGES_DIR, rec.video.result.file), { force: true });
-      if (rec.video?.lockCamera?.result) await fs.rm(path.join(IMAGES_DIR, rec.video.lockCamera.result.file), { force: true });
-      // the driving video (and its poster) can be shared by re-runs: remove it with the last record using it
-      const drive = rec.video?.drive;
-      if (drive && !list.some((r) => r.id !== rec.id && r.video?.drive?.video.file === drive.video.file)) {
-        for (const f of [drive.video.file, drive.poster.file]) await fs.rm(path.join(IMAGES_DIR, f), { force: true });
-      }
+      // a file still used elsewhere stays: re-runs share a driving video, a photo can be a body reference, and a
+      // record's file names come partly from the client (a video's poster), so never trust them to be its own alone
+      const inUse = referencedFiles(rest);
+      referencedFiles((await loadConfig()).character, inUse);
+      for (const f of new Set(ownedFiles(rec))) if (!inUse.has(f)) await fs.rm(path.join(IMAGES_DIR, f), { force: true });
     }
   });
 }

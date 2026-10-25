@@ -417,10 +417,14 @@ async function planVideo(req: VideoRequest): Promise<VideoPlan> {
       ...(lockCamera ? { lockCamera: { status: 'on' as const } } : {}),
     };
   } else {
-    const drive = req.drive;
-    if (!drive || !SAFE_VIDEO_RE.test(drive.video.file)) throw new GenerationError('Add the video whose movement Sienna should copy.');
-    const drivePath = storedFilePath(drive.video.file);
+    const sent = req.drive;
+    if (!sent || !SAFE_VIDEO_RE.test(sent.video.file)) throw new GenerationError('Add the video whose movement Sienna should copy.');
+    const drivePath = storedFilePath(sent.video.file);
     if (!drivePath || !(await fs.stat(drivePath).catch(() => null))) throw new GenerationError('That movement video is no longer on the server — add it again.', 410);
+    // its length comes from the file, not from the request
+    const probed = await probeVideo(drivePath).catch(() => null);
+    if (!probed?.frames) throw new GenerationError('That movement video can no longer be read — add it again.', 410);
+    const drive = { ...sent, video: { ...sent.video, frames: probed.frames, seconds: Math.round((probed.frames / VIDEO_FPS) * 100) / 100 } };
     const start = Math.min(Math.max(0, drive.video.seconds - 1), Math.max(0, req.start ?? 0));
     const startFrame = Math.round(start * VIDEO_FPS);
     const wantFrames = Math.round(Math.min(MAX_MOTION_SECONDS, Math.max(1, req.seconds ?? MAX_MOTION_SECONDS)) * VIDEO_FPS);

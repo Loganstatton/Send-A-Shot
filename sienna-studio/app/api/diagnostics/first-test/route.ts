@@ -10,6 +10,6 @@ export const dynamic = 'force-dynamic';
  * Body: { workflowId?: string }
  */
 export const POST = handle(async (req: Request) => {
-  const body = (await req.json().catch(() => ({}))) as { workflowId?: string };
-  return json(await startGeneration(await firstTestRequest(body.workflowId ?? null)), 202);
+  const body = ((await req.json().catch(() => null)) ?? {}) as { workflowId?: unknown };
+  return json(await startGeneration(await firstTestRequest(typeof body.workflowId === 'string' ? body.workflowId : null)), 202);
 });

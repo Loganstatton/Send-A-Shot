@@ -1,3 +1,4 @@
+import { mimeFromBytes } from '@/lib/server/store';
 import { z } from 'zod';
 import { checkRules, NUDE_RE } from '@/lib/ai-prompts';
 import { EMPTY_FIELDS } from '@/lib/defaults';
@@ -30,7 +31,7 @@ export const POST = handle(async (req: Request) => {
   const body = await parseBody(req, schema);
   if (NUDE_RE.test(body.prompt)) return json({ error: 'Nude requests are never sent to the AI.' }, 400);
   const bytes = Buffer.from(body.image, 'base64');
-  const mime = bytes[0] === 0xff ? 'image/jpeg' : 'image/png';
+  const mime = mimeFromBytes(bytes) ?? 'image/png';
   const rules = body.outfit !== undefined ? checkRules({ ...EMPTY_FIELDS, outfit: body.outfit, framing: body.framing ?? '' }, body.fixes ?? []) : [];
   return json(await aiCheck(body.prompt, bytes, mime, body.effort, body.lean, { maxTokens: body.maxTokens, capUsd: body.capUsd }, rules));
 });

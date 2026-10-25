@@ -52,6 +52,8 @@ export interface PhotoGpuConfig {
 }
 
 const num = (v: string | undefined, d: number) => (v && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+/** A budget may be 0 (spend nothing); only unset or invalid falls back to the default. */
+const budgetNum = (v: string | undefined, d: number) => (v !== undefined && v.trim() !== '' && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : d);
 
 /** "volumeId@DATACENTER,volumeId@DATACENTER" → locations (malformed entries are skipped). */
 export function parsePhotoGpuLocations(v: string | undefined): PhotoGpuLocation[] {
@@ -102,7 +104,7 @@ export function photoGpuConfig(): PhotoGpuConfig | null {
     startupTimeoutMin: num(e.PHOTO_GPU_STARTUP_TIMEOUT_MIN, 7),
     idleMin: num(e.PHOTO_GPU_IDLE_MIN, 10),
     maxSessionMin: num(e.PHOTO_GPU_MAX_SESSION_MIN, 240),
-    monthlyBudgetUsd: num(e.PHOTO_GPU_MONTHLY_BUDGET_USD, 15),
+    monthlyBudgetUsd: budgetNum(e.PHOTO_GPU_MONTHLY_BUDGET_USD, 15),
     estRate: num(e.PHOTO_GPU_EST_RATE, 0.89),
   };
 }

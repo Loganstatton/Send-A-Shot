@@ -5,7 +5,7 @@ import { FramingLevel, skeletonExtent } from '../framing';
 import { buildPoseCheckGraph, firstBody, POSE_DETECT_NODE, POSE_RETARGET_NODE, POSE_RETARGET_PREVIEW, POSE_SKELETON_PREVIEW } from '../pose-check';
 import { poseProportions } from '../pose-proportions';
 import type { StoredImage } from '../types';
-import { queueImageJob } from './jobs';
+import { cacheResult, cachedResult, queueImageJob, settledJobState } from './jobs';
 import { experimentsEnabled, getComfyUrl, mimeFromBytes, storeImage } from './store';
 
 export type PoseCheckState =
@@ -36,14 +36,16 @@ export async function startPoseCheck(
 
 export async function poseCheckStatus(promptId: string): Promise<PoseCheckState> {
   const backend = createBackend(promptId.startsWith('mock-') ? 'mock' : await getComfyUrl());
-  const s = await backend.jobState(promptId, []);
+  const cached = cachedResult<PoseCheckState>(promptId);
+  if (cached) return cached;
+  const s = await settledJobState(backend, promptId);
   switch (s.state) {
     case 'pending':
       return { state: 'pending', position: s.position };
     case 'running':
       return { state: 'running' };
     case 'unknown':
-      return { state: 'pending' };
+      return { state: 'error', error: 'The GPU no longer has this pose check (it restarted or was stopped) — run it again.' };
     case 'error':
       return { state: 'error', error: s.message };
     case 'done': {
@@ -69,7 +71,7 @@ export async function poseCheckStatus(promptId: string): Promise<PoseCheckState>
       } catch {
         /* none */
       }
-      return {
+      return cacheResult<PoseCheckState>(promptId, {
         state: 'done',
         skeleton: await save(POSE_SKELETON_PREVIEW, 'Pose skeleton'),
         retargeted: await save(POSE_RETARGET_PREVIEW, 'Retargeted pose skeleton'),
@@ -78,7 +80,7 @@ export async function poseCheckStatus(promptId: string): Promise<PoseCheckState>
         factors,
         proportionsSource: poseProportions().source,
         people,
-      };
+      });
     }
   }
 }
