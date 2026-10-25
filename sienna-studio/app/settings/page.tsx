@@ -117,7 +117,9 @@ export default function SettingsPage() {
           onClick={() => {
             if (!confirm('Clear the Create screen draft on this device?')) return;
             try {
+              // the advanced screen's draft and Simple Mode's (description + reference photo)
               localStorage.removeItem('sienna.draft.v1');
+              localStorage.removeItem('sienna.simple.draft');
             } catch {}
             toast('Draft cleared');
           }}

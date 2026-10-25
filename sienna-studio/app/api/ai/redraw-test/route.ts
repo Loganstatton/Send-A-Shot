@@ -59,6 +59,7 @@ export const POST = handle(async (req: Request) => {
     await new Promise((r) => setTimeout(r, 3000));
     const st = await backend.jobState(promptId, outputs);
     if (st.state === 'done') {
+      if (!st.images[0]) return json({ error: 'The redraw finished without saving an image.' }, 502);
       const { bytes } = await backend.fetchImage(st.images[0]);
       const face = parseFace(st.texts?.[FACE_NODE_ID]);
       touchPhotoGpu();

@@ -4,6 +4,18 @@ import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button, Card, TextInput } from '@/components/ui';
 
+/** Only a path on this site: browsers treat a backslash as "/", so "/\evil.com" would leave it; resolving against our own
+ * origin catches every form of that. */
+function safeNext(next: string | null): string {
+  if (!next || !next.startsWith('/')) return '/';
+  try {
+    const u = new URL(next, window.location.origin);
+    return u.origin === window.location.origin ? `${u.pathname}${u.search}${u.hash}` : '/';
+  } catch {
+    return '/';
+  }
+}
+
 function LoginForm() {
   const params = useSearchParams();
   const [password, setPassword] = useState('');
@@ -14,14 +26,17 @@ function LoginForm() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-    setBusy(false);
-    if (res.ok) {
-      const next = params.get('next') || '/';
-      window.location.href = next.startsWith('/') && !next.startsWith('//') ? next : '/';
-    } else {
-      setError((await res.json().catch(() => null))?.error ?? 'Sign-in failed');
+    let res: Response;
+    try {
+      res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+    } catch {
+      setBusy(false);
+      setError('Could not reach the studio. Check your connection and try again.');
+      return;
     }
+    setBusy(false);
+    if (res.ok) window.location.href = safeNext(params.get('next'));
+    else setError((await res.json().catch(() => null))?.error ?? 'Sign-in failed');
   }
 
   return (

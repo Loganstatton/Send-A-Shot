@@ -52,26 +52,34 @@ export function OutfitReference({
     onGarmentImage?.(null);
   }, [image?.id, onGarmentImage]);
 
+  // the photo on screen now: an analysis started for an earlier one is dropped when it finishes
+  const currentImage = useRef(image?.id);
+  currentImage.current = image?.id;
+
   async function analyze() {
     if (!image) return;
+    const stale = () => cancelled.current || currentImage.current !== image.id;
+    const show = (s: Status) => {
+      if (!stale()) setStatus(s);
+    };
     setBusy(true);
     setStatus({ state: 'pending' });
     onGarmentImage?.(null);
     try {
-      const first = await runJob<Status>('/api/outfit/analyze', { image }, setStatus, () => cancelled.current);
-      if (isolation === 'garment' && first?.state === 'done') {
+      const first = await runJob<Status>('/api/outfit/analyze', { image }, show, stale);
+      if (isolation === 'garment' && first?.state === 'done' && !stale()) {
         // Second pass: segment the named garment pieces and caption the garment-only crop.
         setStatus({ state: 'running' });
         const second = await runJob<Status>(
           '/api/outfit/analyze',
           { image, isolation: 'garment', phrases: garmentPhrases(first.attributes.type) },
-          setStatus,
-          () => cancelled.current,
+          show,
+          stale,
         );
-        if (second?.state === 'done') onGarmentImage?.(second.isolation === 'garment' ? second.preview : null);
+        if (second?.state === 'done' && !stale()) onGarmentImage?.(second.isolation === 'garment' ? second.preview : null);
       }
     } catch (e: any) {
-      setStatus({ state: 'error', error: e.message });
+      show({ state: 'error', error: e.message });
     } finally {
       setBusy(false);
     }

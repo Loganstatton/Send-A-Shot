@@ -84,8 +84,10 @@ function VideoStudio() {
     [history],
   );
   const photo = photos.find((r) => r.id === photoId) ?? null;
+  // also when ?photo= names one that can't be animated (not finished yet, a video, or past the list): the first
+  // finished photo rather than an empty page
   useEffect(() => {
-    if (!photoId && photos.length) setPhotoId(photos[0].id);
+    if (photos.length && !photos.some((r) => r.id === photoId)) setPhotoId(photos[0].id);
   }, [photos, photoId]);
 
   const preset: MotionPreset | null = MOTION_PRESETS.find((p) => p.id === presetId && p.text === motion) ?? null;

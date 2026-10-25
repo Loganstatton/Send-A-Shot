@@ -204,7 +204,12 @@ export function SimpleCreate() {
             <JobCard job={job} onDismiss={() => setJobs((p) => p.filter((j) => j.id !== job.id))} />
             {job.status !== 'queued' && job.status !== 'running' && (
               <div className="flex gap-2 px-1">
-                <Button className="flex-1" onClick={() => generate(job.simple?.prompt ?? prompt, reference)} disabled={busy}>
+                <Button
+                  className="flex-1"
+                  // the photo this job used (or none), not whatever is the reference now
+                  onClick={() => (job.simple ? generate(job.simple.prompt, job.initImage ?? job.poseImage ?? null) : generate(prompt, reference))}
+                  disabled={busy}
+                >
                   ↻ Regenerate
                 </Button>
                 {job.images[0] && (
@@ -230,6 +235,8 @@ export function SimpleCreate() {
         open={advanced}
         onToggle={(e) => {
           const open = (e.target as HTMLDetailsElement).open;
+          // also fires when a ?from= / ?init= link opens it: remember only a change the user made
+          if (open === advanced) return;
           setAdvanced(open);
           save(ADV_KEY, open);
         }}
@@ -241,7 +248,7 @@ export function SimpleCreate() {
         </summary>
         {advanced && (
           <div className="px-1 pb-2">
-            <CreateScreen />
+            <CreateScreen embedded />
           </div>
         )}
       </details>

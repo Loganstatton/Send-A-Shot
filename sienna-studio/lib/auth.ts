@@ -40,6 +40,22 @@ export async function verifySessionToken(token: string | undefined): Promise<boo
   return safeEqual(sig, await hmac(`${exp}:${process.env.APP_PASSWORD}`));
 }
 
+/** A device that has signed in before: a long-lived signed cookie that lets it past the global wrong-password cap
+ * (an attacker can trip that cap, but can't get this cookie without the password). */
+export const DEVICE_COOKIE = 'sienna_device';
+export const DEVICE_DAYS = 365;
+export async function createDeviceToken(): Promise<string> {
+  const exp = Date.now() + DEVICE_DAYS * 86400_000;
+  return `${exp}.${await hmac(`device:${exp}:${process.env.APP_PASSWORD}`)}`;
+}
+export async function verifyDeviceToken(token: string | undefined): Promise<boolean> {
+  if (!token) return false;
+  const [expStr, sig] = token.split('.');
+  const exp = Number(expStr);
+  if (!exp || exp < Date.now() || !sig) return false;
+  return safeEqual(sig, await hmac(`device:${exp}:${process.env.APP_PASSWORD}`));
+}
+
 export async function checkPassword(input: string): Promise<boolean> {
   const expected = process.env.APP_PASSWORD ?? '';
   // Compare HMACs so timing doesn't leak the password length.

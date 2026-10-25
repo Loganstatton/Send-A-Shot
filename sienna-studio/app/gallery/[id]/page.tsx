@@ -73,8 +73,9 @@ export default function GenerationDetail() {
         router.push(`/gallery/${next.id}`);
         return;
       }
-      await regenerate(rec!, newSeed);
-      router.push('/');
+      // its own page shows the progress (the Create screen only lists jobs started there)
+      const next = await regenerate(rec!, newSeed);
+      router.push(`/gallery/${next.id}`);
     } catch (e: any) {
       toast(e.message, 'error');
     } finally {
@@ -325,8 +326,12 @@ export default function GenerationDetail() {
         className="mt-6 w-full"
         onClick={async () => {
           if (!confirm(rec.video ? 'Delete this video?' : 'Delete this generation and its images?')) return;
-          await api(`/api/history/${rec.id}`, { method: 'DELETE' });
-          router.replace('/gallery');
+          try {
+            await api(`/api/history/${rec.id}`, { method: 'DELETE' });
+            router.replace('/gallery');
+          } catch (e: any) {
+            toast(e.message, 'error');
+          }
         }}
       >
         Delete

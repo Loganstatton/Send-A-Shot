@@ -302,8 +302,12 @@ export default function WorkflowEditor() {
         className="mt-2 w-full"
         onClick={async () => {
           if (!confirm(wf.builtIn ? 'Reset this built-in workflow to its original mapping?' : 'Delete this workflow?')) return;
-          await api(`/api/workflows/${wf.id}`, { method: 'DELETE' });
-          router.push('/library');
+          try {
+            await api(`/api/workflows/${wf.id}`, { method: 'DELETE' });
+            router.push('/library');
+          } catch (e: any) {
+            toast(e.message, 'error');
+          }
         }}
       >
         {wf.builtIn ? 'Reset to original' : 'Delete workflow'}

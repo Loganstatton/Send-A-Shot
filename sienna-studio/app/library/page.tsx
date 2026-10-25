@@ -44,8 +44,12 @@ function PresetsTab() {
 
   async function remove(p: Preset) {
     if (!confirm(`Delete preset “${p.name}”?`)) return;
-    await api(`/api/presets/${p.id}`, { method: 'DELETE' });
-    presets.reload();
+    try {
+      await api(`/api/presets/${p.id}`, { method: 'DELETE' });
+      presets.reload();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
   }
 
   const wfOptions = (workflows.data ?? []).map((w) => ({ value: w.id, label: w.name }));
@@ -95,9 +99,13 @@ function PresetsTab() {
         className="w-full"
         onClick={async () => {
           if (!confirm('Restore the built-in presets to their original contents? Custom presets are kept.')) return;
-          await api('/api/presets/reset', { method: 'POST' });
-          presets.reload();
-          toast('Built-in presets restored');
+          try {
+            await api('/api/presets/reset', { method: 'POST' });
+            presets.reload();
+            toast('Built-in presets restored');
+          } catch (e: any) {
+            toast(e.message, 'error');
+          }
         }}
       >
         Restore built-in presets
@@ -135,9 +143,13 @@ function WorkflowsTab() {
   }
 
   async function setDefault(id: string) {
-    await api('/api/settings', { method: 'PUT', json: { defaultWorkflowId: id } });
-    settings.reload();
-    toast('Default workflow set');
+    try {
+      await api('/api/settings', { method: 'PUT', json: { defaultWorkflowId: id } });
+      settings.reload();
+      toast('Default workflow set');
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
   }
 
   return (

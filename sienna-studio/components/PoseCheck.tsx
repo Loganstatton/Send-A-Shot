@@ -54,17 +54,26 @@ export function PoseCheck({
     onExtent(null);
   }, [key, onExtent]);
 
+  // the settings on screen now: a check started for earlier ones is dropped when it finishes
+  const currentKey = useRef(key);
+  currentKey.current = key;
+
   async function check() {
+    const started = key;
+    const stale = () => cancelled.current || currentKey.current !== started;
+    const show = (st: Status) => {
+      if (!stale()) setStatus(st);
+    };
     setBusy(true);
     setStatus({ state: 'pending' });
     try {
-      const s = await runJob<Status>('/api/pose/analyze', { image, width, height, fit, retarget }, setStatus, () => cancelled.current, {
+      const s = await runJob<Status>('/api/pose/analyze', { image, width, height, fit, retarget }, show, stale, {
         pollMs: 1500,
         timeoutMs: 5 * 60 * 1000,
       });
-      onExtent(s?.state === 'done' ? s.extent : null);
+      if (!stale()) onExtent(s?.state === 'done' ? s.extent : null);
     } catch (e: any) {
-      setStatus({ state: 'error', error: e.message });
+      show({ state: 'error', error: e.message });
     } finally {
       setBusy(false);
     }

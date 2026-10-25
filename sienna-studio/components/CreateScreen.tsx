@@ -6,7 +6,7 @@ import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 're
 import { api, fileUrl, useApi } from '@/lib/client/api';
 import { Draft, useDraft } from '@/lib/client/draft';
 import { promptAdvice } from '@/lib/prompt-advice';
-import { JOBS_KEY } from '@/lib/client/jobs';
+import { JOBS_KEY, requestFromRecord } from '@/lib/client/jobs';
 import { capabilities } from '@/lib/comfy/adapter';
 import { DEFAULT_PARAMS, EMPTY_FIELDS, SIZE_PRESETS } from '@/lib/defaults';
 import { applyIdentityLock, findHardBlocks } from '@/lib/guard';
@@ -71,7 +71,8 @@ function SubPanel({ title, children }: { title: string; children: ReactNode }) {
 }
 
 
-export function CreateScreen() {
+/** `embedded`: shown inside Simple Mode's Advanced section, which has its own photo GPU card. */
+export function CreateScreen({ embedded = false }: { embedded?: boolean } = {}) {
   const router = useRouter();
   const search = useSearchParams();
   const { draft, setDraft, isNew, droppedPhotos } = useDraft();
@@ -109,25 +110,18 @@ export function CreateScreen() {
     const from = search.get('from');
     const init = search.get('init');
     if (!from && !init) return;
+    // ?init= picks an img2img workflow: wait for the list (or its error) before looking
+    if (init && !workflowsQ.data && !workflowsQ.error) return;
     handledQuery.current = true;
     api<GenerationRecord>(`/api/history/${from || init}`)
       .then((rec) => {
         if (from) {
+          const req = requestFromRecord(rec, rec.seed);
           setDraft((d) => ({
             ...d,
-            presetId: rec.presetId,
-            workflowId: rec.workflowId,
-            siennaLock: rec.siennaLock,
-            contentMode: rec.contentMode,
-            fields: { ...EMPTY_FIELDS, ...rec.fields },
-            params: { ...DEFAULT_PARAMS, ...rec.params, seed: rec.seed },
-            images: {
-              initImage: rec.initImage,
-              poseImage: rec.poseImage,
-              faceReferenceId: rec.faceReference?.id ?? null,
-              outfitImage: rec.outfitReference?.image ?? null,
-            },
-            parentId: rec.id,
+            ...req,
+            fields: { ...EMPTY_FIELDS, ...req.fields },
+            params: { ...DEFAULT_PARAMS, ...req.params },
           }));
           toast('Loaded settings from gallery — edit and generate.');
         } else if (rec.images[0]) {
@@ -144,7 +138,7 @@ export function CreateScreen() {
         router.replace('/');
       })
       .catch((e) => toast(e.message, 'error'));
-  }, [draft, search, setDraft, router, workflows]);
+  }, [draft, search, setDraft, router, workflows, workflowsQ.data, workflowsQ.error]);
 
   // Apply the content mode / lock defaults the first time settings arrive.
   const appliedDefaults = useRef(false);
@@ -345,7 +339,7 @@ export function CreateScreen() {
           </Link>
         }
       />
-      <PhotoGpuCard />
+      {!embedded && <PhotoGpuCard />}
 
       {jobs.length > 0 && (
         <div className="space-y-3">

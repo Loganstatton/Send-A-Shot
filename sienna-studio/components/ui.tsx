@@ -145,6 +145,13 @@ export function Select({
       )}
       <select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} className={cx(inputBase, 'appearance-none disabled:opacity-50')}>
         {placeholder !== undefined && <option value="">{placeholder}</option>}
+        {/* nothing chosen yet: without this the browser shows the first option as if it were picked, and picking it
+            changes nothing */}
+        {placeholder === undefined && value === '' && !hasValue && (
+          <option value="" disabled>
+            Choose…
+          </option>
+        )}
         {!hasValue && value && <option value={value}>{value} (not on server)</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>

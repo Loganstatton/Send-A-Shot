@@ -30,6 +30,8 @@ export function CharacterEditor({
   if (!c) return null;
   const set = <K extends keyof CharacterProfile>(k: K, v: CharacterProfile[K]) => setC({ ...c, [k]: v });
   const loras = options.data?.options.lora_name ?? [];
+  // the server asks for the confirmation whenever there is any reference image, not only the main one
+  const hasRefs = !!c.faceReference || c.secondaryReferences.length > 0;
 
   async function save() {
     if (!c) return;
@@ -223,12 +225,12 @@ export function CharacterEditor({
           variant="primary"
           className="h-12 w-full shadow-lg"
           loading={saving}
-          disabled={c.age < MIN_CHARACTER_AGE || (sections.includes('refs') && !!c.faceReference && !c.fictionalAttestation)}
+          disabled={c.age < MIN_CHARACTER_AGE || (sections.includes('refs') && hasRefs && !c.fictionalAttestation)}
           onClick={save}
         >
           {saveLabel}
         </Button>
-        {sections.includes('refs') && c.faceReference && !c.fictionalAttestation && (
+        {sections.includes('refs') && hasRefs && !c.fictionalAttestation && (
           <p className="mt-1 text-center text-xs text-amber-300">Confirm the reference images are of the fictional character to save.</p>
         )}
       </div>

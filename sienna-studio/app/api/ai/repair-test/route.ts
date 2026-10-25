@@ -58,6 +58,7 @@ export const POST = handle(async (req: Request) => {
     const st = await backend.jobState(promptId, outputs);
     if (st.state === 'done') {
       const img = st.images[0];
+      if (!img) return json({ error: 'The repair finished without saving an image.' }, 502);
       const { bytes } = await backend.fetchImage(img);
       const face = parseFace(st.texts?.[FACE_NODE_ID]);
       touchPhotoGpu();
