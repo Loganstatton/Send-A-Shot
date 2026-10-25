@@ -229,3 +229,18 @@ describe('24 Oct packs (fuller bust, laced lingerie, realistic breasts)', () => 
     expect(resolvePackConflicts({ realistic_nudes: 0.4, breast_detail: 0.6 }).packs).toEqual({ realistic_nudes: 0.4 });
   });
 });
+
+describe('"nude" as a colour', () => {
+  it('a nude-colour garment is not a bare chest', () => {
+    expect(toplessAllowed('adult', { outfit: 'nude thong' })).toBe(false);
+    expect(toplessAllowed('adult', { outfit: 'nude-colour leggings' })).toBe(false);
+    expect(toplessAllowed('adult', { outfit: 'nude, tiny thong' })).toBe(true);
+    expect(toplessAllowed('adult', { outfit: 'completely nude on her bed' })).toBe(true);
+  });
+});
+
+describe('lace teddy', () => {
+  it('still gets French lace (Laced lingerie draws bra-and-panty sets, not teddies)', () => {
+    expect(packsForDescription({ outfit: 'white lace teddy' }, 'adult')).toEqual({ french_lace: 0.6 });
+  });
+});

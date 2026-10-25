@@ -215,3 +215,12 @@ describe('nude requests (rule-based reader: nudity never goes to the AI)', () =>
     expect(interpretPrompt('Sienna in a nude bodycon dress, standing in the kitchen.', { adultAllowed: true }).fields.outfit).toContain('nude bodycon dress');
   });
 });
+
+describe('"nude" as a colour in the rule-based reader', () => {
+  it('a leading "nude <garment>" stays one outfit item', () => {
+    const a = interpretPrompt('Nude lace bodysuit, standing in the kitchen.', { adultAllowed: true });
+    expect(a.fields.outfit).not.toMatch(/^nude,/i);
+    expect(`${a.fields.outfit} ${a.fields.pose}`).toContain('Nude lace bodysuit');
+    expect(interpretPrompt('Sienna nude thong, kneeling on the bed.', { adultAllowed: true }).fields.outfit).not.toBe('nude');
+  });
+});

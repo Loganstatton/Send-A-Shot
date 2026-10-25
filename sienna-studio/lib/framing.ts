@@ -132,3 +132,8 @@ export function detectFramingConflicts(fields: PromptFields, poseExtent?: Framin
   }
   return issues;
 }
+
+/** The saved photo's height: the hi-res pass scales it (ImageScaleBy, 1-2×), and the face/knee framing checks measure in it. */
+export function outputHeight(params: { height: number; hires?: boolean; hiresScale?: number }): number {
+  return params.hires ? Math.round(params.height * Math.min(2, Math.max(1, params.hiresScale ?? 1.5))) : params.height;
+}

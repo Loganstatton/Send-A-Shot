@@ -61,3 +61,11 @@ describe('close-up detail pass', () => {
     expect(parseDetailPass({})).toBeUndefined();
   });
 });
+
+describe('bareBelow and nude colours', () => {
+  it('"no thong" is bare; a nude-colour garment never is', () => {
+    expect(bareBelow('oversized tee, no thong', false)).toBe(true);
+    expect(bareBelow('nude thong', false)).toBe(false);
+    expect(bareBelow('nude-colour leggings, white crop top', false)).toBe(false);
+  });
+});

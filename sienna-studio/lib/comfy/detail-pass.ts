@@ -44,7 +44,7 @@ export function detailPassFromEnv(v: string | undefined): { style: DetailStyle; 
   return v && v in DETAIL_STYLES ? { style: v as DetailStyle } : undefined;
 }
 
-const NO_BOTTOMS_WORDS_RE = /\b(bottomless|no (bottoms|panties|underwear))\b/gi;
+const NO_BOTTOMS_WORDS_RE = /\b(bottomless|no (bottoms|panties|underwear|thong))\b/gi;
 const BOTTOM_GARMENT_RE = /\b(thong|g-string|panties|knickers|briefs|underwear|bottoms?|shorts|skirt|pants|trousers|jeans|leggings|tights|pantyhose|bodysuit|leotard|swimsuit|monokini|one-piece|dress|gown|towel|sheet|blanket)\b/i;
 
 /** Nothing on below the waist: fully nude (nudeOnlyAllowed, passed in), or "bottomless" / "no panties" with no other

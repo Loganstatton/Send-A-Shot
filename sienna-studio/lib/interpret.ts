@@ -11,7 +11,7 @@
  *  - "Sienna" becomes "she", because the character token is added by the prompt builder.
  * Everything else — outfit, pose, scene, camera — is the user's own words, so presets and defaults can't override it.
  */
-import { packsForDescription, STYLE_PACKS, TINY_STRING_OUTFIT } from './style-packs';
+import { NUDE_COLOUR_LOOKAHEAD, packsForDescription, STYLE_PACKS, TINY_STRING_OUTFIT } from './style-packs';
 import { PROMPT_FIELD_KEYS, type ContentMode, type PromptFields } from './types';
 
 export type ReferenceMode = 'none' | 'edit' | 'pose' | 'edit+pose';
@@ -106,7 +106,7 @@ const NEGATION_RE = /\b(?:no|without|avoid|avoiding|never|not|don't|do not|doesn
 const KEEP_NEGATION_RE = /^(too|very|overly|so|that|just|only|exactly|quite)\b/i;
 
 /** A leading or trailing "(completely) nude / naked" in a clause that says more (pose, place …). */
-const NUDE_PART_RE = /^\s*(?:(?:completely|fully|totally|entirely)\s+)?(?:nude|naked)\b(?!-)[\s,;]*|[\s,;]+(?:(?:completely|fully|totally|entirely)\s+)?(?:nude|naked)\s*$/i;
+const NUDE_PART_RE = new RegExp(String.raw`^\s*(?:(?:completely|fully|totally|entirely)\s+)?(?:nude|naked)\b(?!-)${NUDE_COLOUR_LOOKAHEAD}[\s,;]*|[\s,;]+(?:(?:completely|fully|totally|entirely)\s+)?(?:nude|naked)\s*$`, 'i');
 
 const ADULT_RE = /\b(nude|naked|nudity|topless|bottomless|lingerie|see-through|sheer|bare (breasts|chest|butt|bottom)|nipples?|implied nud\w*|g-string|thong)\b/i;
 const OUTDOOR_RE = /\b(beach|ocean|sea|lake|forest|park|street|city|outdoors?|outside|garden|backyard|mountain|desert|pool|balcony|sun|sunlight|sunset|sunrise|golden hour|daylight)\b/i;

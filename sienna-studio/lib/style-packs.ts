@@ -330,7 +330,9 @@ export function nudeOnlyAllowed(
   return !CLOTHING_RE.test(rest);
 }
 
-const BARE_CHEST_RE = /\b(topless|nude|naked|bare (breasts|chest|boobs)|nothing on|wearing nothing)\b/i;
+/** "nude" followed by a garment is a colour ("nude thong", "nude-colour leggings"), not nudity. */
+export const NUDE_COLOUR_LOOKAHEAD = String.raw`(?![- ]+(?:colou?r(?:ed)?[- ]+|toned?[- ]+)?(?:thong|g-string|bra|bralette|bikini|panties|lingerie|dress|top|shirt|tee|tank|bodysuit|leotard|leggings|tights|stockings|pantyhose|heels|shoes|sandals|skirt|shorts|swimsuit|slip|underwear|briefs|lace|satin|silk|mesh)\b)`;
+const BARE_CHEST_RE = new RegExp(String.raw`\b(topless|nude${NUDE_COLOUR_LOOKAHEAD}|naked|bare (breasts|chest|boobs)|nothing on|wearing nothing)\b`, 'i');
 /** Anything that covers her chest (a hand over it too). "topless" itself is not a top: \btop\b needs a word end. */
 const CHEST_COVER_RE =
   /\b(bras?|bralette|bikini|top|shirt|t-shirt|tee|tank|blouse|dress|gown|nightgown|nightie|slip|bodysuit|leotard|swimsuit|monokini|one-piece|sweater|jumper|hoodie|jacket|coat|blazer|cardigan|robe|kimono|towel|corset|bustier|camisole|cami|crop|lingerie|teddy|babydoll|pasties|tape|sheet|blanket|cover(s|ed|ing)?|hands? over|arms? over|hiding)\b/i;
@@ -373,7 +375,7 @@ const AUTO_PACKS: [string, RegExp][] = [
   ['string_swimsuit', /\bstring\s+(thong\s+)?(bikini|swimsuit)\b|\bstring thong bottoms?\b/i],
   ['micro_bikini', /\bmicro[- ]?(triangle\s+)?bikini\b/i],
   ['lace_bodysuit', /\b(lace\s+)?(high-cut\s+)?(bodysuit|leotard)\b/i],
-  ['french_lace', /\bfrench lace\b/i],
+  ['french_lace', /\bfrench lace\b|\blace\s+teddy\b/i],
   // lingerie sets: the laced pack (24 Oct: 2/2 passed) took over from French lace, which stays for "french lace"
   ['laced_lingerie', /\blingerie\b|\blace\s+(bra|bralette|panties|underwear)\b|\bbra and pant(y|ies)\b/i],
   ['belly_cutout_dress', /\b(belly\s+)?cut-?out dress\b|\bbelly cut-?out\b/i],

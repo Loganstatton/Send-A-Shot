@@ -51,7 +51,7 @@ import { resolveLockedLora } from '../sienna-models';
 import { ensurePhotoGpu, photoGpuEnabled, photoGpuReady, tickPhotoGpu, touchPhotoGpu } from './photo-gpu';
 import { activeStylePacks, nudeOnlyAllowed, toplessAllowed, packCoverage, resolvePackConflicts, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withoutRearUnsafePacks, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import { fixesFromEnv, hasFix } from '../fixes';
-import { kneeUpRequest } from '../framing';
+import { kneeUpRequest, outputHeight } from '../framing';
 import type { ComfyGraph, ContentMode, ControlKey, GenerateRequest, GenerationRecord, OutfitMode, StoredImage, WorkflowBindings } from '../types';
 import {
   adultContentAllowed,
@@ -673,8 +673,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // pasted in; before the photo checks so they see the final image. A test request sets its own; otherwise
   // SIENNA_FIGURE=medium turns it on for rear and three-quarter-rear photos (front views are never changed) ──
   let figurePass: GenerationRecord['figurePass'];
-  // she wears bottoms unless the outfit says otherwise (topless still has bottoms)
-  const NO_BOTTOMS_RE = /\b(nude|naked|bottomless|nothing on|wearing nothing|no (bottoms|panties|underwear|thong))\b/i;
+  // she wears bottoms unless the outfit says otherwise (topless still has bottoms). bareBelow, not a "nude" keyword:
+  // "nude thong" or "nude-colour leggings" are bottoms, and the redraw must not draw her bare crotch under them
   // the live setting is verified on standing photos only: bent over, sitting, kneeling or lying, the reshaping (built
   // around an upright body) did nothing and the redraw region fell across her back and hair (offline, 23 Oct)
   const standingPose = !NOT_STANDING_RE.test(req.fields.pose) && (!req.params.posePreset || /^(standing|looking_back|arms_crossed|hand_in_hair|mirror_selfie)/.test(req.params.posePreset));
@@ -684,7 +684,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     let reason: string | null = !inView ? 'front view: her butt is not in the photo, so nothing to redraw'
       : !(faceRefine?.status === 'on' && refineId && graph[refineId]) ? 'needs the face pass (its sampler settings are reused)'
       : !loraChainEnd || graph[loraChainEnd]?.class_type !== 'LoraLoader' ? "Sienna's LoRA node not found" : null;
-    const withFigure = reason ? null : addFigurePass(graph, { file: fp.file, strength: fp.strength, denoise: fp.denoise, ...(fp.style ? { style: fp.style } : {}), ...(fp.enlarge ? { enlarge: fp.enlarge } : {}), covered: !NO_BOTTOMS_RE.test(req.fields.outfit), baseLoraId: loraChainEnd!, faceRefineId: refineId! });
+    const withFigure = reason ? null : addFigurePass(graph, { file: fp.file, strength: fp.strength, denoise: fp.denoise, ...(fp.style ? { style: fp.style } : {}), ...(fp.enlarge ? { enlarge: fp.enlarge } : {}), covered: !bareBelow(req.fields.outfit, nudeOk), baseLoraId: loraChainEnd!, faceRefineId: refineId! });
     if (!reason && !withFigure) reason = 'the face pass has no prompt to copy';
     if (withFigure) {
       const missing = await missingClasses(backend, withFigure, Object.values(FIGURE_NODES));
@@ -779,7 +779,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       siennaLock: req.siennaLock,
       contentMode,
       fields: req.fields,
-      params: { ...p, loraName: lora?.name ?? '' },
+      // the hi-res pass the detail pass turned on is recorded, so checks that measure the photo know its real size
+      params: { ...p, ...(quality.hires && !p.hires ? { hires: true } : {}), loraName: lora?.name ?? '' },
       seed,
       positivePrompt: positive,
       ...(promptVersion === 2 ? { promptVersion } : {}),
@@ -1003,7 +1004,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
         const bodyFraming = checks.body ? bodyFramingOk(fullBodyFraming(rec.fields).add, bodyFrame) : undefined;
         const poseCheck = checks.body && POSE_PRESET_PROMPTS[rec.params.posePreset ?? '']?.check === 'hinge' ? hingeCheck(bodyFrame) : undefined;
         // "head to knees": her head and knees in the picture (reported, not redone)
-        const knees = checks.body && bodyFraming === undefined && kneeUpRequest(rec.fields.framing) ? kneeFramingOk(bodyFrame, rec.params.height) : undefined;
+        const knees = checks.body && bodyFraming === undefined && kneeUpRequest(rec.fields.framing) ? kneeFramingOk(bodyFrame, outputHeight(rec.params)) : undefined;
         const notes: string[] = [];
         if (top && !top.available) notes.push(`Top check didn't run on the GPU (${top.error ?? 'detector not installed'}).`);
         if (face && !face.available) notes.push(`Face check didn't run on the GPU (${face.error ?? 'models not installed'}).`);
@@ -1176,7 +1177,7 @@ function identityFields(face: FaceReport, rec: GenerationRecord) {
     identity: v.status,
     ...(v.status === 'verified' || v.status === 'likely' ? { faceOk: true } : v.status === 'mismatch' ? { faceOk: false } : {}),
     ...(v.reason ? { identityReason: v.reason } : {}),
-    framingOk: framingOk(fullBodyFraming(rec.fields).add, face.size, rec.params.height),
+    framingOk: framingOk(fullBodyFraming(rec.fields).add, face.size, outputHeight(rec.params)),
   };
 }
 
