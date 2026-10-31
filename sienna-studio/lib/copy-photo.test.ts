@@ -27,6 +27,7 @@ describe('copyRequestText', () => {
 describe('cleanCaption', () => {
   it('drops openers, tokens and hair colour', () => {
     expect(cleanCaption('</s><s>The image shows a blonde woman sitting in a hot tub.<pad>')).toBe('a woman sitting in a hot tub.');
+    expect(cleanCaption('A woman in a hot tub. On the right side of the image, there is a menu bar with options such as "Made with Edits". The sky is blue.')).toBe('A woman in a hot tub. The sky is blue.');
   });
 });
 

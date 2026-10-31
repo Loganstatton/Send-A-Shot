@@ -115,7 +115,9 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   // the outfit itself, as a picture (only for a photo with nothing exposed: a nude photo has no garment to copy)
   let garment: StoredImage | null = null;
   let garmentNote = '';
-  if (!nudePhoto && process.env.SIENNA_COPY_GARMENT !== 'off') {
+  // opt-in: in the first live test (31 Oct) the crop's grey background crept into the sky as a grey band and the cups
+  // still came out as triangles
+  if (!nudePhoto && process.env.SIENNA_COPY_GARMENT === 'on') {
     try {
       garment = await garmentCrop(req.images.poseImage, it.fields.outfit);
       garmentNote = garment ? 'The outfit was also cut out of your photo and used as a picture reference for its exact shape.' : 'No garment could be cut out of the photo: the outfit follows the description only.';

@@ -75,6 +75,10 @@ export function copyRequestText(description: string, userText: string): string {
 /** Florence-2's caption, cleaned for the reader: its "The image shows" openers and the person's hair colour go. */
 export function cleanCaption(caption: string): string {
   return caption
+    // sentences about an app's on-screen buttons, menus or text (Florence-2 read "Made with Edits" and the username)
+    .split(/(?<=[.!?])\s+/)
+    .filter((x) => !/\b(menu|button|icon|text|caption|username|watermark|logo|app|screen|interface|options?)\b|"[^"]+"/i.test(x))
+    .join(' ')
     .replace(/<\/?s>|<pad>/g, '')
     .replace(/\b(?:the|this) (?:image|photo|picture) (?:shows|is of|depicts|features)\s+/gi, '')
     .replace(/\b(?:blonde?|brunette|red-haired|redhead(?:ed)?|black-haired|brown-haired|grey-haired|gray-haired)\s+/gi, '')
