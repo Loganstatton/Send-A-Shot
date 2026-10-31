@@ -118,7 +118,7 @@ async function ask<T>(
     const reason =
       e instanceof Anthropic.AuthenticationError ? 'the ANTHROPIC_API_KEY was rejected'
       : e instanceof Anthropic.RateLimitError ? 'the AI is rate limited'
-      : e instanceof Anthropic.APIError ? `AI API error ${e.status}`
+      : e instanceof Anthropic.APIError ? `AI API error ${e.status}${(e as any).error?.error?.message ? `: ${String((e as any).error.error.message).slice(0, 200)}` : ''}`
       : `AI request failed (${(e as Error).message})`;
     console.error(`AI: ${reason}`);
     return { ok: false, reason };
