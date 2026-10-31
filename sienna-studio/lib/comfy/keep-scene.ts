@@ -21,6 +21,7 @@ export const KEEP_SCENE_PREFIX = 'ks_';
  * figure, and none of the other person's edges left behind. */
 export const KEEP_SCENE_GROW = 0.035;
 export const UI_MASK_CLASS = 'SiennaUiMask';
+export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
 export const UNION_CN_FILE = 'xinsir_union_promax.safetensors';
 export const UNION_CN_URL = 'https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors';
@@ -45,7 +46,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; garment?: { phrases: string[]; controlnet: string } },
+  opts: { width: number; height?: number; uiMask?: boolean; softSeam?: boolean; garment?: { phrases: string[]; controlnet: string } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -69,10 +70,10 @@ export function addKeepScene(
   g[`${p}noise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [encodeId, 0], mask: redraw }, _meta: { title: 'Keep scene: redraw only her' } };
   g[`${p}keep`] = { class_type: 'InvertMask', inputs: { mask: redraw } };
   // a soft seam: the redraw fades into the photo over a few pixels instead of a hard edge (blocky patches, 31 Oct)
-  g[`${p}soft`] = { class_type: 'ImpactGaussianBlurMask', inputs: { mask: [`${p}keep`, 0], kernel_size: 15, sigma: 5 } };
+  if (opts.softSeam !== false) g[`${p}soft`] = { class_type: SOFT_SEAM_CLASS, inputs: { mask: [`${p}keep`, 0], kernel_size: 15, sigma: 5 } };
   g[`${p}paste`] = {
     class_type: 'ImageCompositeMasked',
-    inputs: { destination: [decodeId, 0], source: scene, x: 0, y: 0, resize_source: false, mask: [`${p}soft`, 0] },
+    inputs: { destination: [decodeId, 0], source: scene, x: 0, y: 0, resize_source: false, mask: [opts.softSeam !== false ? `${p}soft` : `${p}keep`, 0] },
     _meta: { title: 'Keep scene: the photo, pixel for pixel, around her' },
   };
   g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: [`${p}noise`, 0], denoise: 1 } };

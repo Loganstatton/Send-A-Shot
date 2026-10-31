@@ -41,7 +41,7 @@ import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, PO
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addKeepScene, GARMENT_LINES_CLASSES, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
+import { addKeepScene, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -660,10 +660,11 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // ── Copy Photo, keep-scene: the uploaded photo stays the picture; only the person (and app overlays) is redrawn ──
   if (p.keepScene && wanted.init_image) {
     let ui = false;
+    let softSeam = false;
     try {
-      ui = !!(await backend.nodeInfo(UI_MASK_CLASS));
+      [ui, softSeam] = (await Promise.all([backend.nodeInfo(UI_MASK_CLASS), backend.nodeInfo(SOFT_SEAM_CLASS)])).map(Boolean);
     } catch {
-      /* can't ask: leave the overlays */
+      /* can't ask: leave the overlays, hard seam */
     }
     // the garment's outline needs the union ControlNet file and the Florence-2 / canny nodes on the GPU server
     let garment: { phrases: string[]; controlnet: string } | undefined;
@@ -680,7 +681,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         /* can't ask: no outline */
       }
     }
-    const kept = addKeepScene(graph, { width: outW, height: outH, uiMask: ui, garment });
+    const kept = addKeepScene(graph, { width: outW, height: outH, uiMask: ui, softSeam, garment });
     if (kept) graph = kept;
     else warnings.push('Copy Photo: this workflow can’t keep the photo as the background — the whole picture was redrawn.');
     if (kept && !ui) warnings.push('Copy Photo: the GPU server has no app-overlay remover yet (SiennaUiMask) — screenshot icons and text may stay.');
