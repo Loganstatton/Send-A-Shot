@@ -29,7 +29,7 @@ describe('addKeepScene', () => {
     expect(g[`${P}noise`].inputs.samples).toEqual(['32', 0]);
     expect(g[`${P}person`].inputs.image).toEqual(['31', 0]);
     expect(g[`${P}union`].inputs.source).toEqual([`${P}ui`, 0]);
-    expect(g[`${P}paste`].inputs).toMatchObject({ destination: ['41', 0], source: ['31', 0], mask: [`${P}keep`, 0] });
+    expect(g[`${P}paste`].inputs).toMatchObject({ destination: ['41', 0], source: ['31', 0], mask: [`${P}soft`, 0] });
     // everything that read the decoded picture now reads the pasted one
     for (const [id, n] of Object.entries(g)) if (id !== `${P}paste`) for (const v of Object.values(n.inputs)) expect(v).not.toEqual(['41', 0]);
   });

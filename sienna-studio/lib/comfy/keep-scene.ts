@@ -68,9 +68,11 @@ export function addKeepScene(
   }
   g[`${p}noise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [encodeId, 0], mask: redraw }, _meta: { title: 'Keep scene: redraw only her' } };
   g[`${p}keep`] = { class_type: 'InvertMask', inputs: { mask: redraw } };
+  // a soft seam: the redraw fades into the photo over a few pixels instead of a hard edge (blocky patches, 31 Oct)
+  g[`${p}soft`] = { class_type: 'ImpactGaussianBlurMask', inputs: { mask: [`${p}keep`, 0], kernel_size: 15, sigma: 5 } };
   g[`${p}paste`] = {
     class_type: 'ImageCompositeMasked',
-    inputs: { destination: [decodeId, 0], source: scene, x: 0, y: 0, resize_source: false, mask: [`${p}keep`, 0] },
+    inputs: { destination: [decodeId, 0], source: scene, x: 0, y: 0, resize_source: false, mask: [`${p}soft`, 0] },
     _meta: { title: 'Keep scene: the photo, pixel for pixel, around her' },
   };
   g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: [`${p}noise`, 0], denoise: 1 } };

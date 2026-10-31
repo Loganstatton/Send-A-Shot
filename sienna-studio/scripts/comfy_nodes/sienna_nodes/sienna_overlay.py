@@ -149,11 +149,16 @@ def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
         if not (cy < top * h or cx > right * w or cy > bottom * h):
             continue
         parts += 1
+        if cx > right * w:
+            # the button column: its icons and counts only, so little of the scene is repainted (whole rectangles
+            # left blocky patches in foamy water, 31 Oct)
+            mask |= cv2.dilate(((lab == i) & strokes).astype(np.uint8), np.ones((9, 9), np.uint8), iterations=2).astype(bool)
+            continue
         x0, y0, bw, bh = (int(v) for v in stats[i, :4])
         # the whole element, not only its white strokes: the coloured profile picture left of a username, the dark
         # pill behind "Made with Edits", icon fills (31 Oct: the avatar and a dark smudge stayed in the copies)
         pad_y = max(4, int(0.3 * bh))
-        left = int(UI_AVATAR * w) if cy > bottom * h or cy < top * h else 4
+        left = int(UI_AVATAR * w)
         mask[max(0, y0 - pad_y):min(h, y0 + bh + pad_y), max(0, x0 - left):min(w, x0 + bw + 6)] = True
     share = float(mask.mean())
     report = {"ui_share": round(share, 4), "parts": parts}
