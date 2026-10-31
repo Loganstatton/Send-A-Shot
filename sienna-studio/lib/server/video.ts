@@ -179,7 +179,9 @@ export async function videoAvailability(comfyUrl?: string): Promise<VideoAvailab
       );
       if (absent.length) missing.push(`${describeMissing(absent.sort())} — update ComfyUI / run comfyui-bootstrap.sh --with-wan-video`);
       for (const [cls, input, file] of v2 ? MOTION2_FILES : VIDEO_FILES[mode]) {
-        const choices = await backend.inputChoices(cls, input);
+        // the list is cached for minutes: a file that arrived since then is only seen by asking again
+        let choices = await backend.inputChoices(cls, input);
+        if (!choices.includes(file)) choices = await backend.inputChoices(cls, input, true);
         if (!choices.includes(file)) missing.push(`model file ${file}`);
       }
     } catch (e: any) {
@@ -601,7 +603,9 @@ async function queueForVideoGpu(p: VideoPlan, gpu: VideoGpuConfig): Promise<Gene
   return saved;
 }
 
-/** Ready = the video nodes (incl. Lock Camera and the face check) and the Animate Image model files are there. */
+/** Ready = the video nodes (incl. Lock Camera and the face check) and the Animate Image model files are there, and
+ * with Copy Motion on, its nodes and models too (its ~24 GB arrive after Animate Image's: checking only those marked
+ * the GPU ready mid-download and the first Copy Motion video failed with "missing model file"). Lists are read fresh. */
 async function probeVideoGpu(url: string): Promise<{ ready: boolean; phase?: string }> {
   const backend = createBackend(url);
   try {
@@ -611,11 +615,15 @@ async function probeVideoGpu(url: string): Promise<{ ready: boolean; phase?: str
     return { ready: false, phase: 'booting the GPU' };
   }
   try {
-    for (const c of [...VIDEO_NODE_CLASSES.animate, ...LOCK_CAMERA_NODE_CLASSES, 'SiennaFaceCheck']) {
-      if (!(await backend.nodeInfo(c))) return { ready: false, phase: 'downloading models and installing the video nodes' };
+    const motion = !!videoGpuConfig()?.copyMotion;
+    const v2 = motion && motionEngine() === 'animate2';
+    const nodes = [...VIDEO_NODE_CLASSES.animate, ...LOCK_CAMERA_NODE_CLASSES, 'SiennaFaceCheck', ...(motion ? (v2 ? MOTION2_NODE_CLASSES : VIDEO_NODE_CLASSES.motion) : [])];
+    const files = [...VIDEO_FILES.animate, ...(motion ? (v2 ? MOTION2_FILES : VIDEO_FILES.motion) : [])];
+    for (const c of new Set(nodes)) {
+      if (!(await backend.nodeInfo(c, true))) return { ready: false, phase: 'downloading models and installing the video nodes' };
     }
-    for (const [cls, input, file] of VIDEO_FILES.animate) {
-      if (!(await backend.inputChoices(cls, input)).includes(file)) return { ready: false, phase: 'downloading models and installing the video nodes' };
+    for (const [cls, input, file] of files) {
+      if (!(await backend.inputChoices(cls, input, true)).includes(file)) return { ready: false, phase: 'downloading models and installing the video nodes' };
     }
     return { ready: true };
   } catch {

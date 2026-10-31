@@ -56,10 +56,11 @@ export interface SystemInfo {
 export interface ComfyBackend {
   readonly kind: 'comfyui' | 'mock';
   systemInfo(): Promise<SystemInfo>;
-  /** Choices for one input of a node class, e.g. ("LoraLoader", "lora_name"). */
-  inputChoices(nodeClass: string, inputName: string): Promise<string[]>;
+  /** Choices for one input of a node class, e.g. ("LoraLoader", "lora_name"). `fresh` skips the cached list (a model
+   * that finished downloading a moment ago). */
+  inputChoices(nodeClass: string, inputName: string, fresh?: boolean): Promise<string[]>;
   /** /object_info entry for a node class, or null if the class is not installed. */
-  nodeInfo(nodeClass: string): Promise<NodeInfo | null>;
+  nodeInfo(nodeClass: string, fresh?: boolean): Promise<NodeInfo | null>;
   /** Upload into ComfyUI's input folder; images go to input/sienna/, videos to input/ (LoadVideo lists only that). */
   uploadImage(bytes: Buffer, filename: string, mime: string, subfolder?: string): Promise<string>;
   queuePrompt(graph: ComfyGraph, clientId: string): Promise<{ promptId: string }>;
@@ -191,9 +192,9 @@ export class RealComfy implements ComfyBackend {
     };
   }
 
-  async nodeInfo(nodeClass: string): Promise<NodeInfo | null> {
+  async nodeInfo(nodeClass: string, fresh = false): Promise<NodeInfo | null> {
     const cached = this.objectInfoCache.get(nodeClass);
-    if (cached && Date.now() - cached.at < (cached.data ? OBJECT_INFO_TTL : OBJECT_INFO_MISS_TTL)) return cached.data;
+    if (!fresh && cached && Date.now() - cached.at < (cached.data ? OBJECT_INFO_TTL : OBJECT_INFO_MISS_TTL)) return cached.data;
     // ComfyUI returns {} for classes that aren't installed.
     const all = await this.json<Record<string, NodeInfo>>(`/object_info/${encodeURIComponent(nodeClass)}`);
     const info = all[nodeClass] ?? null;
@@ -201,8 +202,8 @@ export class RealComfy implements ComfyBackend {
     return info;
   }
 
-  async inputChoices(nodeClass: string, inputName: string): Promise<string[]> {
-    const info = await this.nodeInfo(nodeClass);
+  async inputChoices(nodeClass: string, inputName: string, fresh = false): Promise<string[]> {
+    const info = await this.nodeInfo(nodeClass, fresh);
     if (!info) return [];
     const spec = info.input?.required?.[inputName] ?? info.input?.optional?.[inputName];
     return comboOptions(spec);
