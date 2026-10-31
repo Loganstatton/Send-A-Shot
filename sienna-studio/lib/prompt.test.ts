@@ -292,3 +292,12 @@ describe('copy mode (Copy Photo)', () => {
     expect(r.positive).toContain('long dark-brown wavy hair');
   });
 });
+
+describe('copy mode bust', () => {
+  it('drops the profile bust when the photo describes one, and its weight otherwise', () => {
+    const run = (bodyPresentation: string) => buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true }).positive;
+    expect(run('very large natural breasts set wide apart')).not.toContain('large round natural breasts');
+    expect(run('damp skin')).toContain('large round natural breasts');
+    expect(run('damp skin')).not.toContain('(large round natural breasts:1.2)');
+  });
+});

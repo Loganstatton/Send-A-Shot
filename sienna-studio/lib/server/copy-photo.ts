@@ -1,6 +1,6 @@
 import 'server-only';
 import { NUDE_RE } from '../ai-prompts';
-import { buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
+import { bustPhrases, COPY_BODY_PACKS, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
 import { buildGarmentIsolationGraph, GARMENT_ISOLATE_NODE, OUTFIT_PREVIEW_NODE } from '../outfit';
 import { parseExposure } from '../exposure';
 import { interpretPrompt } from '../interpret';
@@ -125,6 +125,14 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
       aiRan = true;
     }
   }
+  // her figure as the photo shows it: the description's bust phrases, never a body-reshaping pack
+  const bust = bustPhrases(description).filter((b) => !it.fields.bodyPresentation.toLowerCase().includes(b.toLowerCase()));
+  if (bust.length) it.fields.bodyPresentation = [it.fields.bodyPresentation, ...bust].filter(Boolean).join(', ');
+  if (/\b(gap|space|apart|no cleavage)\b/i.test(bust.join(' '))) {
+    for (const k of ['outfit', 'bodyPresentation'] as const) it.fields[k] = it.fields[k].replace(/,?\s*deep cleavage\b/gi, '');
+    it.fields.avoid = [it.fields.avoid, 'deep cleavage, pushed-up breasts, breasts pressed together'].filter(Boolean).join(', ');
+  }
+  for (const id of COPY_BODY_PACKS) delete it.packs[id];
   const how =
     by === 'ai' ? 'described by the AI'
     : aiFailed ? `described by the GPU only, a much rougher description, because the AI couldn’t read it (${aiFailed})`

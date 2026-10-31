@@ -90,11 +90,11 @@ export function cleanCaption(caption: string): string {
 export const DESCRIBE_SYSTEM = `You write the description an image model uses to recreate a photo with a different woman: Sienna, a fictional adult character whose face, hair colour, skin tone and body come from her own model. Everything else must match the original photo as closely as words allow, so the owner's followers see the same shot.
 
 Describe precisely, most important first:
-- Clothing (only what is visible in the photo; never guess at garments out of frame or under the water): each garment's type and exact cut and size (for example "tiny string triangle bikini top whose small cups cover only the centre of each breast, wide gap between the cups, thin strings tied behind the neck"), how much skin it leaves showing (cleavage, side, underneath), colour, fabric, pattern or plain, wet or dry, how it sits.
+- Clothing (only what is visible in the photo; never guess at garments out of frame or under the water): each garment's type and exact cut and size (for example "tiny string triangle bikini top whose small cups cover only the centre of each breast, thin strings tied behind the neck"), how much skin it leaves showing (cleavage, side, underneath), colour, fabric, pattern or plain, wet or dry, how it sits.
 - For a bikini top or bra, the exact shape of each cup, because "small triangle" draws an ordinary triangle top: its proportions (tall and very narrow like a sliver, or as wide as it is tall), how wide it is compared with the breast (a narrow strip about a quarter of the breast's width, half, all of it), where its top and bottom edges sit (from the ring high on the chest down to the band under the breast, or only the lower half), which part of the breast it covers and which parts are bare (the inner and outer curves, the underside), how it hangs or is pulled (tight to the skin, hanging loose, pulled to the side), and say "not a regular triangle top" when it isn't one. The same care for bottoms: cut, width and rise.
 - Accessories and props: sunglasses, jewellery, hats, anything held or nearby.
 - Hair style exactly (high messy top-knot bun, slicked back into a low bun, wet ponytail, down and wavy, wet strands on the shoulders) — never the hair colour.
-- Bust size in general words only (small, medium, large, very large breasts), so the recreation's figure is similar; nothing more about her body.
+- Bust in general words only, so the recreation's figure is similar: size (small, medium, large, very large breasts), how they sit (set wide apart with a visible gap of bare skin between them / close together with a cleavage line / pushed together), and how they hang (natural and soft, slightly low, high and round). Say "no cleavage" when there is space between them. Nothing more about her body.
 - Pose: body position, where her arms and hands are, head tilt, which way she faces.
 - Expression, exactly: mouth (talking mid-sentence, lips parted, closed, smiling or not), eyes (open, closed, looking at the lens or away), mood (neutral, relaxed, serious).
 - Camera: framing, judged by where the bottom edge of the photo cuts her body ("chest up" when it cuts just below her breasts or at the water line there, "waist up" only when her navel shows, "full body" only with her feet), how close, the angle, selfie at arm's length or filmed by someone else, where she is in the frame, how much of the frame the background takes.
@@ -129,3 +129,16 @@ export function copyGarmentPhrases(outfit: string): string[] {
 /** The garment crop guides the outfit (IP-Adapter, style transfer) at this strength: the tested 0.6–0.8 range's low end,
  * so her own look stays first. */
 export const COPY_GARMENT_STRENGTH = 0.6;
+
+/** Packs that reshape her body: Copy Photo leaves them off — the photo's figure comes from its description (31 Oct:
+ * the reader added Fuller Bust 0.8 and her bust came out far larger than the photo's). */
+export const COPY_BODY_PACKS: ReadonlySet<string> = new Set(['fuller_bust', 'breast_detail']);
+
+/** The description's phrases about her bust ("very large natural breasts set wide apart, no cleavage"), which the
+ * reader tends to drop or turn into a pack: they go into her body presentation as written. */
+export function bustPhrases(description: string): string[] {
+  return description
+    .split(/[,;.]/)
+    .map((p) => p.trim())
+    .filter((p) => /\b(breasts?|bust|cleavage)\b/i.test(p) && !/\b(bikini|cups?|top|bra|strings?|fabric|ring|straps?)\b/i.test(p));
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
+import { bustPhrases, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
 
 describe('copyUserText', () => {
   it('drops the copy instruction itself', () => {
@@ -51,5 +51,14 @@ describe('copyGarmentPhrases', () => {
     expect(copyGarmentPhrases('white tank top and denim shorts')).toEqual(['top', 'shorts']);
     expect(copyGarmentPhrases('red slip dress')).toEqual(['dress']);
     expect(copyGarmentPhrases('sunglasses, small stud earring')).toEqual([]);
+  });
+});
+
+describe('bustPhrases', () => {
+  it('keeps what the description says about her bust, not about the bikini', () => {
+    expect(bustPhrases('purple string bikini top, small cups covering the centre of each breast, very large natural breasts set wide apart with a gap between them, no cleavage, hot tub')).toEqual([
+      'very large natural breasts set wide apart with a gap between them',
+      'no cleavage',
+    ]);
   });
 });

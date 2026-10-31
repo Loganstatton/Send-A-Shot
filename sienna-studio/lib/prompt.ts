@@ -123,16 +123,16 @@ const CLOSE_FRAMING_NEGATIVE: Record<Exclude<CloseFraming, null>, string> = {
  * keeps only its colour; when it names a bust size, the profile's goes. Her face, hair colour and skin stay hers.
  */
 const HAIRSTYLE_RE = /\b(bun|top-?knot|ponytail|pony tail|braids?|updo|up-do|pulled back|slicked back|tied up|tied back|pigtails|claw clip|chignon|bob|pixie)\b/i;
-const BUST_SIZE_RE = /\b(?:small|medium|large|very large|huge|big|full|heavy|ample|modest)\s+(?:round\s+|natural\s+)?(?:breasts|bust|chest)\b/i;
+const BUST_SIZE_RE = /\b(?:small|medium|large|huge|big|full|heavy|ample|modest)\s+(?:(?:round|natural|soft|perky)\s+)*(?:breasts|bust|chest)\b|\bbreasts (?:set|sitting) (?:wide|close)/i;
 export function copyTraits(traits: string, request: string): string {
   const style = HAIRSTYLE_RE.test(request);
   const bust = BUST_SIZE_RE.test(request);
-  if (!style && !bust) return traits;
   return traits
     .split(',')
     .map((p) => p.trim())
     .filter((p) => p && !(bust && /\b(breasts|bust|chest)\b/i.test(p)))
     .map((p) => (style && /\bhair\b/i.test(p) ? p.replace(/\b(long|short|wavy|curly|straight|loose)\s+/gi, '') : p))
+    .map((p) => (/\b(breasts|bust)\b/i.test(p) ? p.replace(/^\((.*):[\d.]+\)$/, '$1') : p))
     .join(', ');
 }
 
