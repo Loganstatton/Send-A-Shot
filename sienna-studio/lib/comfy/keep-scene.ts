@@ -14,12 +14,19 @@
  */
 import type { ComfyGraph } from '../types';
 import { PERSON_SEGM_FILE } from '../outfit-edit';
+import { FLORENCE_MODEL } from '../outfit';
 
 export const KEEP_SCENE_PREFIX = 'ks_';
 /** How far past her outline the redraw reaches, as a share of the picture's width: room for Sienna's own hair and
  * figure, and none of the other person's edges left behind. */
 export const KEEP_SCENE_GROW = 0.035;
 export const UI_MASK_CLASS = 'SiennaUiMask';
+/** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
+export const UNION_CN_FILE = 'xinsir_union_promax.safetensors';
+export const UNION_CN_URL = 'https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors';
+export const GARMENT_LINES_CLASSES = ['Florence2Run', 'DownloadAndLoadFlorence2Model', 'Canny', 'SetUnionControlNetType', 'EmptyImage'];
+/** How hard the garment's outline steers the redraw, and for how much of it (the end is left free for detail). */
+export const GARMENT_LINES = { strength: 0.75, end: 0.65 } as const;
 
 type Ref = [string, number];
 const isRef = (v: unknown): v is Ref => Array.isArray(v) && typeof v[0] === 'string' && typeof v[1] === 'number';
@@ -36,7 +43,10 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  * The graph with the keep-scene redraw wired in, or null when its first pass doesn't start from the init image
  * (VAEEncode of a resized LoadImage) — the caller then makes a normal copy.
  */
-export function addKeepScene(graph: ComfyGraph, opts: { width: number; uiMask?: boolean }): ComfyGraph | null {
+export function addKeepScene(
+  graph: ComfyGraph,
+  opts: { width: number; height?: number; uiMask?: boolean; garment?: { phrases: string[]; controlnet: string } },
+): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
   const samplerId = Object.keys(g).find((id) => g[id].class_type === 'KSampler' && isRef(g[id].inputs.latent_image) && g[(g[id].inputs.latent_image as Ref)[0]]?.class_type === 'VAEEncode');
@@ -64,6 +74,42 @@ export function addKeepScene(graph: ComfyGraph, opts: { width: number; uiMask?: 
     _meta: { title: 'Keep scene: the photo, pixel for pixel, around her' },
   };
   g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: [`${p}noise`, 0], denoise: 1 } };
+  // The garment's own outline from the photo (only the garment: Florence-2 segments the named pieces), so the cups and
+  // straps follow the original instead of the model's default triangle top (31 Oct). Union ControlNet, canny mode.
+  const gp = opts.garment?.phrases.filter(Boolean).slice(0, 3) ?? [];
+  if (opts.garment && gp.length && opts.height && isRef(g[samplerId].inputs.positive) && isRef(g[samplerId].inputs.negative)) {
+    g[`${p}fl`] = { class_type: 'DownloadAndLoadFlorence2Model', inputs: { model: FLORENCE_MODEL, precision: 'fp16' } };
+    let garment: Ref | null = null;
+    gp.forEach((phrase, i) => {
+      g[`${p}seg${i}`] = {
+        class_type: 'Florence2Run',
+        inputs: { image: scene, florence2_model: [`${p}fl`, 0], text_input: phrase, task: 'referring_expression_segmentation', fill_mask: true, keep_model_loaded: i < gp.length - 1, max_new_tokens: 1024, num_beams: 3, do_sample: false, seed: 1 },
+        _meta: { title: `Keep scene: find the ${phrase}` },
+      };
+      if (!garment) garment = [`${p}seg${i}`, 1];
+      else {
+        g[`${p}segadd${i}`] = { class_type: 'MaskComposite', inputs: { destination: garment, source: [`${p}seg${i}`, 1], x: 0, y: 0, operation: 'add' } };
+        garment = [`${p}segadd${i}`, 0];
+      }
+    });
+    g[`${p}gmask`] = { class_type: 'GrowMask', inputs: { mask: garment!, expand: 6, tapered_corners: true } };
+    g[`${p}canny`] = { class_type: 'Canny', inputs: { image: scene, low_threshold: 0.15, high_threshold: 0.4 } };
+    g[`${p}black`] = { class_type: 'EmptyImage', inputs: { width: opts.width, height: opts.height, batch_size: 1, color: 0 } };
+    g[`${p}lines`] = {
+      class_type: 'ImageCompositeMasked',
+      inputs: { destination: [`${p}black`, 0], source: [`${p}canny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] },
+      _meta: { title: 'Keep scene: the garment’s outline only' },
+    };
+    g[`${p}cn`] = { class_type: 'ControlNetLoader', inputs: { control_net_name: opts.garment.controlnet } };
+    g[`${p}cntype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'canny/lineart/anime_lineart/mlsd' } };
+    g[`${p}cnapply`] = {
+      class_type: 'ControlNetApplyAdvanced',
+      inputs: { positive: g[samplerId].inputs.positive, negative: g[samplerId].inputs.negative, control_net: [`${p}cntype`, 0], image: [`${p}lines`, 0], strength: GARMENT_LINES.strength, start_percent: 0, end_percent: GARMENT_LINES.end },
+      _meta: { title: 'Keep scene: follow the garment’s outline' },
+    };
+    g[samplerId].inputs.positive = [`${p}cnapply`, 0];
+    g[samplerId].inputs.negative = [`${p}cnapply`, 1];
+  }
   for (const [id, node] of Object.entries(g)) {
     if (id === `${p}paste`) continue;
     for (const [k, v] of Object.entries(node.inputs)) if (isRef(v) && v[0] === decodeId && v[1] === 0) node.inputs[k] = [`${p}paste`, 0];

@@ -41,7 +41,7 @@ import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, PO
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addKeepScene, UI_MASK_CLASS } from '../comfy/keep-scene';
+import { addKeepScene, GARMENT_LINES_CLASSES, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -261,6 +261,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     coverStomach: req.params.coverStomach ?? coverFromEnv(process.env.SIENNA_COVER_STOMACH),
     fixes,
     closeFrame: !!req.simple?.copy || process.env.SIENNA_CLOSE_FRAMING === 'true',
+    copy: !!req.simple?.copy,
   });
   if (built.blocked.length) {
     throw new GenerationError(
@@ -664,7 +665,21 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     } catch {
       /* can't ask: leave the overlays */
     }
-    const kept = addKeepScene(graph, { width: outW, uiMask: ui });
+    // the garment's outline needs the union ControlNet file and the Florence-2 / canny nodes on the GPU server
+    let garment: { phrases: string[]; controlnet: string } | undefined;
+    if (p.keepSceneGarment?.length) {
+      try {
+        const [cns, missing] = await Promise.all([
+          backend.inputChoices('ControlNetLoader', 'control_net_name'),
+          missingClasses(backend, Object.fromEntries(GARMENT_LINES_CLASSES.map((c) => [c, { class_type: c, inputs: {} }])), GARMENT_LINES_CLASSES),
+        ]);
+        if (cns.includes(UNION_CN_FILE) && !missing.length) garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE };
+        else warnings.push(`Copy Photo: the garment’s outline wasn’t used — the GPU server is missing ${cns.includes(UNION_CN_FILE) ? describeMissing(missing) : UNION_CN_FILE}.`);
+      } catch {
+        /* can't ask: no outline */
+      }
+    }
+    const kept = addKeepScene(graph, { width: outW, height: outH, uiMask: ui, garment });
     if (kept) graph = kept;
     else warnings.push('Copy Photo: this workflow can’t keep the photo as the background — the whole picture was redrawn.');
     if (kept && !ui) warnings.push('Copy Photo: the GPU server has no app-overlay remover yet (SiennaUiMask) — screenshot icons and text may stay.');

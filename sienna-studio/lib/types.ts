@@ -182,6 +182,8 @@ export interface GenerationParams {
   /** Copy Photo: the init image (the uploaded photo) is kept as the picture and only the person in it (and a
    * screenshot's app overlays) is redrawn as Sienna (comfy/keep-scene). */
   keepScene?: boolean;
+  /** Copy Photo, keep-scene: garment pieces whose outline in the photo guides the redraw (Florence-2 phrases). */
+  keepSceneGarment?: string[];
   hiresScale?: number;
   hiresDenoise?: number;
   /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */

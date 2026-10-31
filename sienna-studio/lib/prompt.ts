@@ -16,6 +16,8 @@ export interface BuildPromptInput {
   /** Close-framing wording (closeFraming/inFrame): on for Copy Photo, everywhere with SIENNA_CLOSE_FRAMING=true,
    * until a GPU comparison shows it doesn't cost her likeness on ordinary close-ups. */
   closeFrame?: boolean;
+  /** Copy Photo: the photo's hairstyle, bust size and expression win over her profile's defaults (copyTraits). */
+  copy?: boolean;
   character: CharacterProfile;
   siennaLock: boolean;
   contentMode: ContentMode;
@@ -115,6 +117,25 @@ const CLOSE_FRAMING_NEGATIVE: Record<Exclude<CloseFraming, null>, string> = {
   'waist-up': 'full body, wide shot, legs, thighs, knees, feet',
 };
 
+/**
+ * Copy Photo: "copy everything in the photo, with Sienna" (31 Oct). Her profile says long wavy hair and her usual bust,
+ * which beat the photo's high bun and figure in the copies. When the request describes a hairstyle, the profile's hair
+ * keeps only its colour; when it names a bust size, the profile's goes. Her face, hair colour and skin stay hers.
+ */
+const HAIRSTYLE_RE = /\b(bun|top-?knot|ponytail|pony tail|braids?|updo|up-do|pulled back|slicked back|tied up|tied back|pigtails|claw clip|chignon|bob|pixie)\b/i;
+const BUST_SIZE_RE = /\b(?:small|medium|large|very large|huge|big|full|heavy|ample|modest)\s+(?:round\s+|natural\s+)?(?:breasts|bust|chest)\b/i;
+export function copyTraits(traits: string, request: string): string {
+  const style = HAIRSTYLE_RE.test(request);
+  const bust = BUST_SIZE_RE.test(request);
+  if (!style && !bust) return traits;
+  return traits
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p && !(bust && /\b(breasts|bust|chest)\b/i.test(p)))
+    .map((p) => (style && /\bhair\b/i.test(p) ? p.replace(/\b(long|short|wavy|curly|straight|loose)\s+/gi, '') : p))
+    .join(', ');
+}
+
 /** With "barefoot": the model still added sandals from habit. */
 const BAREFOOT_NEGATIVE = 'shoes, sandals, flip-flops, footwear';
 const FULL_BODY_RE = /\b(full[\s-]?body|head[\s-]?to[\s-]?toe|full[\s-]?length|entire\s+body)\b/i;
@@ -208,7 +229,7 @@ const OUTDOOR_SCENE_RE = /\b(beach|ocean|sea|lake|river|forest|woods|park|street
 const LIGHT_WORDS_RE = /\b(lighting|light|lit|sunlight|sunlit|daylight|lamp|lamplight|candlelight|neon|golden hour|sunset|sunrise|backlit|flash)\b/i;
 const NON_PHONE_CAMERA_RE = /\b(dslr|mirrorless|film camera|35mm film|medium format|professional (camera|photographer|photo ?shoot)|studio (photo|shoot|portrait)|canon|nikon|sony a\d|leica|hasselblad)\b/i;
 
-export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1, coverStomach = false, fixes = [], closeFrame = false }: BuildPromptInput): BuiltPrompt {
+export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1, coverStomach = false, fixes = [], closeFrame = false, copy = false }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
 
@@ -321,11 +342,12 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     poseGuide ?? '',
     poseGuide === undefined ? '' : f.pose,
     f.bodyPresentation,
-    f.expression,
+    // the photo's expression over her usual smile (the LoRA and the face pass pull towards it)
+    copy && f.expression.trim() ? `(${f.expression.trim()}:1.2)` : f.expression,
     f.setting,
     f.lighting,
     f.extra,
-    ...(frame ? identityFor(inFrame(traits.rest, frame)) : identity),
+    ...(frame || copy ? identityFor(inFrame(copy ? copyTraits(traits.rest, [f.outfit, f.pose, f.bodyPresentation, f.expression, f.extra].join(' ')) : traits.rest, frame)) : identity),
     camera,
     realism,
     siennaLock && !faceAway ? traits.eyes : '',

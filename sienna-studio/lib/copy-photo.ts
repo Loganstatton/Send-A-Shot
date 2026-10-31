@@ -93,13 +93,15 @@ Describe precisely, most important first:
 - Clothing (only what is visible in the photo; never guess at garments out of frame or under the water): each garment's type and exact cut and size (for example "tiny string triangle bikini top whose small cups cover only the centre of each breast, wide gap between the cups, thin strings tied behind the neck"), how much skin it leaves showing (cleavage, side, underneath), colour, fabric, pattern or plain, wet or dry, how it sits.
 - For a bikini top or bra, the exact shape of each cup, because "small triangle" draws an ordinary triangle top: its proportions (tall and very narrow like a sliver, or as wide as it is tall), how wide it is compared with the breast (a narrow strip about a quarter of the breast's width, half, all of it), where its top and bottom edges sit (from the ring high on the chest down to the band under the breast, or only the lower half), which part of the breast it covers and which parts are bare (the inner and outer curves, the underside), how it hangs or is pulled (tight to the skin, hanging loose, pulled to the side), and say "not a regular triangle top" when it isn't one. The same care for bottoms: cut, width and rise.
 - Accessories and props: sunglasses, jewellery, hats, anything held or nearby.
-- Hair style only (high bun, wet ponytail, down and wavy) — never the hair colour.
-- Pose: body position, where her arms and hands are, head tilt, which way she faces, expression and mouth (talking, smiling, lips parted, eyes closed).
+- Hair style exactly (high messy top-knot bun, slicked back into a low bun, wet ponytail, down and wavy, wet strands on the shoulders) — never the hair colour.
+- Bust size in general words only (small, medium, large, very large breasts), so the recreation's figure is similar; nothing more about her body.
+- Pose: body position, where her arms and hands are, head tilt, which way she faces.
+- Expression, exactly: mouth (talking mid-sentence, lips parted, closed, smiling or not), eyes (open, closed, looking at the lens or away), mood (neutral, relaxed, serious).
 - Camera: framing, judged by where the bottom edge of the photo cuts her body ("chest up" when it cuts just below her breasts or at the water line there, "waist up" only when her navel shows, "full body" only with her feet), how close, the angle, selfie at arm's length or filmed by someone else, where she is in the frame, how much of the frame the background takes.
 - Setting: the visible objects, plants, water, buildings and surfaces with their colours and positions (behind her, left, right), the sky, time of day, weather, the light's direction and quality.
 - Photo look: candid phone photo, video still, sharpness, grain.
 
-Never describe her face features, hair colour, skin colour, ethnicity, age, body size or breast size, tattoos or anything else that identifies the person. Ignore everything an app put on top of the photo — icons, like and comment counts, usernames, captions, buttons, progress bars, watermarks — and never mention them.
+Never describe her face features, hair colour, skin colour, ethnicity, age, tattoos, piercings or anything else that identifies the person, and nothing about her body beyond the general bust size. Ignore everything an app put on top of the photo — icons, like and comment counts, usernames, captions, buttons, progress bars, watermarks — and never mention them.
 
 Write one paragraph of short comma-separated phrases, 90 to 180 words, no full sentences about the photo itself ("the photo shows"), no names. If there is no person in the photo, describe the scene and set person_found to false.`;
 

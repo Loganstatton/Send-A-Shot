@@ -154,6 +154,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
       ...(aiRan ? { autoPosePreset: false } : {}),
       ...(garment ? { outfitIsolation: 'garment' as const, outfitStrength: COPY_GARMENT_STRENGTH, outfitMode: 'design' as const } : {}),
       ...scene,
+      ...(keepScene ? { keepSceneGarment: copyGarmentPhrases(it.fields.outfit) } : {}),
     },
     images: { ...req.images, ...sceneImages, ...(garment ? { outfitImage: req.images.poseImage, outfitGarmentImage: garment } : {}) },
     simple: {

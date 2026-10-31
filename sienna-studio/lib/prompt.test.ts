@@ -278,3 +278,17 @@ describe('close framing (Copy Photo)', () => {
     expect(run({ framing: 'knee-up shot' }).positive).toContain('curvy hips');
   });
 });
+
+describe('copy mode (Copy Photo)', () => {
+  it('takes the photo’s hairstyle and bust size over her profile defaults, keeping her hair colour', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'hair pulled back into a high messy top-knot bun, very large breasts', expression: 'neutral, lips parted mid-sentence' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
+    expect(r.positive).toContain('dark-brown hair with lighter caramel ends');
+    expect(r.positive).not.toContain('long dark-brown wavy hair');
+    expect(r.positive).not.toContain('(large round natural breasts:1.2)');
+    expect(r.positive).toContain('(neutral, lips parted mid-sentence:1.2)');
+  });
+  it('changes nothing about her outside copy mode', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'hair in a bun' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult' });
+    expect(r.positive).toContain('long dark-brown wavy hair');
+  });
+});

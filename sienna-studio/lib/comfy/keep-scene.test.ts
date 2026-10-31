@@ -33,6 +33,15 @@ describe('addKeepScene', () => {
     // everything that read the decoded picture now reads the pasted one
     for (const [id, n] of Object.entries(g)) if (id !== `${P}paste`) for (const v of Object.values(n.inputs)) expect(v).not.toEqual(['41', 0]);
   });
+  it('traces the garment’s outline with the union ControlNet when asked', () => {
+    const g = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors' } })!;
+    expect(g['40'].inputs.positive).toEqual([`${P}cnapply`, 0]);
+    expect(g['40'].inputs.negative).toEqual([`${P}cnapply`, 1]);
+    expect(g[`${P}cnapply`].inputs.positive).toEqual(['22', 0]);
+    expect(g[`${P}seg0`].inputs).toMatchObject({ text_input: 'bikini top', image: ['31', 0] });
+    expect(g[`${P}lines`].inputs.mask).toEqual([`${P}gmask`, 0]);
+    expect(g[`${P}cntype`].inputs.type).toBe('canny/lineart/anime_lineart/mlsd');
+  });
   it('is skipped without an init image or with the hi-res pass', () => {
     expect(addKeepScene(structuredClone(sdxl) as ComfyGraph, { width: 776 })).toBeNull();
     const g = graph();
