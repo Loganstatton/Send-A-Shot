@@ -76,13 +76,15 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   let by: 'ai' | 'gpu-caption' | undefined;
   let nudePhoto = true;
   let error: string | undefined;
+  let aiFailed: string | undefined;
   try {
     const g = await gate(req);
     nudePhoto = !g.exposure?.available || g.exposure.exposed;
     if (aiEnabled() && !nudePhoto && !NUDE_RE.test(copy.userText)) {
       const { bytes, mime } = await readImage(req.images.poseImage.file);
       const d = await aiDescribePhoto(bytes, mime);
-      if (d) [description, by] = [d.description, 'ai'];
+      if ('description' in d) [description, by] = [d.description, 'ai'];
+      else aiFailed = d.failed;
     }
     if (!description && g.caption) [description, by] = [g.caption, 'gpu-caption'];
   } catch (e: any) {
@@ -111,7 +113,10 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
       aiRan = true;
     }
   }
-  const how = by === 'ai' ? 'described by the AI' : 'described by the GPU (no AI for photos with nudity)';
+  const how =
+    by === 'ai' ? 'described by the AI'
+    : aiFailed ? `described by the GPU only, a much rougher description, because the AI couldn’t read it (${aiFailed})`
+    : 'described by the GPU (no AI for photos with nudity)';
   // the outfit itself, as a picture (only for a photo with nothing exposed: a nude photo has no garment to copy)
   let garment: StoredImage | null = null;
   let garmentNote = '';

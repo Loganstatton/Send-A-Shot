@@ -145,7 +145,7 @@ const DescribeSchema = z.object({ description: z.string(), person_found: z.boole
  * Copy Photo: the uploaded photo described for the recreation (outfit cut and coverage, pose, framing, setting,
  * light). Only for photos NudeNet found nothing exposed in; null on any failure (the caller uses the GPU caption).
  */
-export async function aiDescribePhoto(image: Buffer, mime: string): Promise<{ description: string; usd: number } | null> {
+export async function aiDescribePhoto(image: Buffer, mime: string): Promise<{ description: string; usd: number } | { failed: string }> {
   const media = (['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
   const a = await ask<z.infer<typeof DescribeSchema>>(
     DESCRIBE_SYSTEM,
@@ -159,10 +159,10 @@ export async function aiDescribePhoto(image: Buffer, mime: string): Promise<{ de
   );
   if (!a.ok) {
     console.warn(`AI: photo not described (${a.reason})`);
-    return null;
+    return { failed: a.reason };
   }
   const d = a.value.description.trim();
-  return d.length >= 20 ? { description: d, usd: a.usd } : null;
+  return d.length >= 20 ? { description: d, usd: a.usd } : { failed: 'the AI gave no description' };
 }
 
 export type CheckOutcome = { status: 'pass' | 'fail'; graded: Graded; usd: number } | { status: 'unavailable'; reason: string };
