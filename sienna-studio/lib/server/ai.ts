@@ -5,6 +5,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { aiCost, maxCallCost, CHECK_SYSTEM, CHECK_SYSTEM_LEAN, CheckSchema, checkUser, gradeCheck, readerSystem, readerUser, ReadSchema, type CheckResult, type Graded, type ReadResult } from '../ai-prompts';
 import { DATA_DIR } from './store';
+import { z } from 'zod/v4';
+import { DESCRIBE_SYSTEM, describeUser } from '../copy-photo';
 
 /**
  * Simple Mode's AI reader and checker (Claude). On only when ANTHROPIC_API_KEY is set; every failure — no key,
@@ -135,6 +137,32 @@ export async function aiRead(
 ): Promise<ReadResult | null> {
   const a = await ask<ReadResult>(readerSystem(adultAllowed, guides), [{ type: 'text', text: readerUser(description, reference) }], ReadSchema, 'low', limits.maxTokens ?? 4000, limits.capUsd);
   return a.ok ? a.value : null;
+}
+
+const DescribeSchema = z.object({ description: z.string(), person_found: z.boolean() });
+
+/**
+ * Copy Photo: the uploaded photo described for the recreation (outfit cut and coverage, pose, framing, setting,
+ * light). Only for photos NudeNet found nothing exposed in; null on any failure (the caller uses the GPU caption).
+ */
+export async function aiDescribePhoto(image: Buffer, mime: string): Promise<{ description: string; usd: number } | null> {
+  const media = (['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
+  const a = await ask<z.infer<typeof DescribeSchema>>(
+    DESCRIBE_SYSTEM,
+    [
+      { type: 'image', source: { type: 'base64', media_type: media, data: image.toString('base64') } },
+      { type: 'text', text: describeUser },
+    ],
+    DescribeSchema,
+    'low',
+    2000,
+  );
+  if (!a.ok) {
+    console.warn(`AI: photo not described (${a.reason})`);
+    return null;
+  }
+  const d = a.value.description.trim();
+  return d.length >= 20 ? { description: d, usd: a.usd } : null;
 }
 
 export type CheckOutcome = { status: 'pass' | 'fail'; graded: Graded; usd: number } | { status: 'unavailable'; reason: string };

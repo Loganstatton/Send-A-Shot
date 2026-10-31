@@ -612,6 +612,9 @@ export interface SimpleRequestInfo {
   reference: 'none' | 'edit' | 'pose' | 'edit+pose';
   /** The AI reader filled the fields (read) / the AI checker reviews the finished photo (check). */
   ai?: { read: boolean; check: boolean; keepPerson?: boolean; lean?: boolean };
+  /** Copy Photo: an outside photo read into words first (pending until the photo GPU has read it). `text` is what was
+   * generated and checked: the owner's words (minus the copy instruction) and the photo's description. */
+  copy?: { status: 'pending' | 'done'; userText: string; description?: string; by?: 'ai' | 'gpu-caption'; text?: string; error?: string };
 }
 
 /** Full settings export. */

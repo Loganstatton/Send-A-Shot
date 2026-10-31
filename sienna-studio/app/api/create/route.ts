@@ -1,7 +1,9 @@
 import { applyClothingChanges, interpretPrompt, packNote } from '@/lib/interpret';
-import { cleanRead, NUDE_RE, type ReadResult } from '@/lib/ai-prompts';
-import { offeredGuides, posePreset, presetFitsCamera } from '@/lib/pose-presets';
-import { packFitsOutfit, packsForDescription, packStrength, resolvePackConflicts, STYLE_PACKS, stylePacksFor, TINY_STRING_OUTFIT } from '@/lib/style-packs';
+import { NUDE_RE, type ReadResult } from '@/lib/ai-prompts';
+import { COPY_WHY, copyPhotoEnabled, copyUserText } from '@/lib/copy-photo';
+import { offeredGuides } from '@/lib/pose-presets';
+import { packsForDescription } from '@/lib/style-packs';
+import { applyAiReading } from '@/lib/server/reading';
 import { aiEnabled, aiRead } from '@/lib/server/ai';
 import { simpleCreateSchema } from '@/lib/schemas';
 import { startGeneration } from '@/lib/server/generate';
@@ -75,18 +77,23 @@ export const POST = handle(async (req: Request) => {
   }
   // A photo from outside the studio only lends its pose: editing it in place kept the other woman's blonde hair and
   // even the app's on-screen icons and username (live, 18 Oct), and it must never turn someone else into the result.
+  // Copy Photo: unless only the pose was asked for, the photo is also read into words (outfit, framing, setting) on
+  // the photo GPU before the photo is made, and that description is generated with the photo's pose.
+  const copy = !!ref && !source && (it.reference.mode === 'edit' || it.reference.mode === 'edit+pose') && copyPhotoEnabled();
   if (ref && !source && (it.reference.mode === 'edit' || it.reference.mode === 'edit+pose')) {
     it.notes = it.notes.filter((n) => n !== it.reference.why);
-    it.reference = { mode: 'pose', denoise: null, why: 'Reference photo from outside the studio: only her pose is copied — face, hair, body and the picture itself are all Sienna’s.' };
+    it.reference = { mode: 'pose', denoise: null, why: copy ? COPY_WHY : 'Reference photo from outside the studio: only her pose is copied — face, hair, body and the picture itself are all Sienna’s.' };
     it.notes.push(it.reference.why);
   }
+  const copyText = copy ? copyUserText(body.prompt) : '';
   // The AI reader (when ANTHROPIC_API_KEY is set): Claude files the description into short SDXL phrases, picks packs
   // and a pose preset. Never for nudity, never for edits of a studio photo (those merge the original's fields); any
   // failure keeps the rule-based reading above.
   const aiAllowed = aiEnabled() && !NUDE_RE.test(body.prompt);
   let aiPose: string | null = null;
   let aiRan = false;
-  if (aiAllowed && !source) {
+  // (Copy Photo: the reader runs later, on the photo's description)
+  if (aiAllowed && !source && !copy) {
     const adultOk = adultContentAllowed();
     // pose guides (skeletons for the described position, hands, legs and camera height): the tested ones always, all
     // of them on request (testing) or with SIENNA_POSE_GUIDE=true
@@ -94,26 +101,9 @@ export const POST = handle(async (req: Request) => {
     // testing: a reading made once (/api/ai/read-test) is reused, so compared versions start from the same fields
     const r = (body.test?.reading as ReadResult | undefined) ?? (await aiRead(body.prompt, it.reference.mode, adultOk, guides));
     if (r) {
-      const c = cleanRead(r, stylePacksFor(adultOk ? 'adult' : 'sfw').map((p) => p.id), guides);
-      it.fields = Object.fromEntries(PROMPT_FIELD_KEYS.map((k) => [k, (c[k as keyof typeof c] as string) ?? ''])) as unknown as PromptFields;
-      // an outfit pack only when it fits the whole requested outfit (it must never replace a garment that was named)
-      // conflicting packs never stack (the reader picked micro bikini + string swimsuit for a micro string bikini: D3)
-      const picked = resolvePackConflicts(Object.fromEntries(c.packs.filter((id) => packFitsOutfit(id, c.outfit)).map((id) => [id, packStrength(id, body.prompt)])));
-      it.packs = picked.packs;
-      if (it.packs.string_swimsuit === STYLE_PACKS.find((p) => p.id === 'string_swimsuit')?.max && !it.fields.outfit.includes(TINY_STRING_OUTFIT))
-        it.fields.outfit = [it.fields.outfit, TINY_STRING_OUTFIT].filter(Boolean).join(', ');
-      if (Object.keys(it.packs).some((id) => STYLE_PACKS.find((p) => p.id === id)?.section === 'adult')) it.contentMode = 'adult';
       // no preset with a reference pose photo, or with a camera angle the preset's viewpoint would override
-      const pre = posePreset(c.posePreset);
-      aiPose = (ref && (it.reference.mode === 'pose' || it.reference.mode === 'edit+pose')) || !pre || !presetFitsCamera(pre, `${c.camera} ${c.framing} ${c.pose}`) ? null : pre.id;
+      aiPose = applyAiReading(it, r, body.prompt, adultOk, guides, !!ref && (it.reference.mode === 'pose' || it.reference.mode === 'edit+pose'));
       aiRan = true;
-      it.notes = [
-        `Read by AI: ${c.understood}`,
-        ...c.hard.map((h) => `May be hard for the image model: ${h}`),
-        ...(Object.keys(it.packs).length ? [packNote(it.packs)] : []),
-        ...(it.contentMode === 'adult' ? ['Adult mode.'] : []),
-        ...(it.reference.mode !== 'none' ? [it.reference.why] : []),
-      ];
     }
   }
   if (body.test?.contentMode === 'adult' && adultContentAllowed()) it.contentMode = 'adult';
@@ -165,7 +155,8 @@ export const POST = handle(async (req: Request) => {
         // testing switches, until each has passed a GPU test
         keepPerson: body.keepPerson ?? process.env.SIENNA_KEEP_PERSON === 'true',
         lean: body.leanCheck ?? process.env.SIENNA_AI_CHECK === 'lean',
-      } },
+      },
+      ...(copy ? { copy: { status: 'pending' as const, userText: copyText } } : {}) },
   };
   return json(await startGeneration(request), 202);
 });

@@ -36,6 +36,7 @@ import { poseProportions } from '../pose-proportions';
 import { OUTFIT_MAX_STRENGTH, OUTFIT_MODES_OFFERED, OUTFIT_WEIGHT_TYPE, REVEALING_OUTFIT_RE } from '../outfit';
 import { buildPrompt, COVER_GARMENTS, fullBodyFraming, withoutAbs, type CoverGarment } from '../prompt';
 import { checkRules } from '../ai-prompts';
+import { COPY_READING_NOTE } from '../copy-photo';
 import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
@@ -833,11 +834,15 @@ async function loraFiles(backend: ComfyBackend): Promise<string[] | null> {
 }
 
 export async function startGeneration(req: GenerateRequest): Promise<GenerationRecord> {
-  if (photoGpuEnabled() && !(await photoGpuReady())) return queueForPhotoGpu(req);
+  // Copy Photo reads the photo on the GPU first (up to a minute or two): always through the waiting record, so the
+  // request returns at once and the reading happens in the background
+  const copying = req.simple?.copy?.status === 'pending';
+  if (photoGpuEnabled() && (copying || !(await photoGpuReady()))) return queueForPhotoGpu(req);
   return submitGeneration(req, { id: newId('g'), createdAt: new Date().toISOString() });
 }
 
 async function submitGeneration(req: GenerateRequest, keep: { id: string; createdAt: string }): Promise<GenerationRecord> {
+  if (req.simple?.copy?.status === 'pending') req = await (await import('./copy-photo')).readCopyPhoto(req);
   const prep = await prepareGeneration(req);
   const clientId = newId('sienna-');
   const base = { ...prep.record, ...keep, clientId, photoGpu: undefined };
@@ -881,7 +886,7 @@ async function queueForPhotoGpu(req: GenerateRequest): Promise<GenerationRecord>
     initImage: req.images.initImage,
     poseImage: req.images.poseImage,
     images: [],
-    warnings: [STARTING_NOTE],
+    warnings: [req.simple?.copy?.status === 'pending' && (await photoGpuReady()) ? COPY_READING_NOTE : STARTING_NOTE],
     favorite: false,
     review: {},
     notes: '',
@@ -925,12 +930,14 @@ export async function photoGpuHousekeeping(): Promise<void> {
     for (const r of waiting) if (r.photoGpu!.waitingFor !== session.phase) await patchRecord(r.id, { photoGpu: { ...r.photoGpu!, waitingFor: session.phase } });
     return;
   }
-  if (submitting) return submitting;
+  // already submitting (a Copy Photo reading takes a minute or two): status polls don't wait for it
+  if (submitting) return;
   submitting = (async () => {
     for (const r of waiting) {
       const fresh = await getRecord(r.id);
       if (!fresh || !photoWaiting(fresh) || !fresh.photoGpu?.request) continue;
       try {
+        if (fresh.photoGpu.request.simple?.copy?.status === 'pending') await patchRecord(fresh.id, { photoGpu: { ...fresh.photoGpu, waitingFor: 'reading your photo' } });
         const done = await submitGeneration(fresh.photoGpu.request, { id: fresh.id, createdAt: fresh.createdAt });
         // submitGeneration saved the full record under the same id; drop the stored request
         if (done.photoGpu) await patchRecord(done.id, { photoGpu: undefined });
@@ -1081,7 +1088,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           if (!latest.exposed && rec.simple?.ai?.check && aiEnabled() && state.images[0]) {
             try {
               const { bytes, mime } = await backend.fetchImage(state.images[0]);
-              const v = await aiCheck(rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime, undefined, rec.simple.ai?.lean, {}, checkRules(rec.fields, rec.params.fixes ?? fixesFromEnv(process.env.SIENNA_FIXES)));
+              const v = await aiCheck(rec.simple.copy?.text ?? rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime, undefined, rec.simple.ai?.lean, {}, checkRules(rec.fields, rec.params.fixes ?? fixesFromEnv(process.env.SIENNA_FIXES)));
               latest.aiStatus = v.status;
               if (v.status === 'unavailable') latest.aiReason = v.reason;
               else {
