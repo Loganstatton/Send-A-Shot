@@ -40,7 +40,10 @@ fail=0; for p in $pids; do wait $p || fail=1; done
 log "installing Sienna nodes"
 curl -fsSL --retry 5 "$SIENNA_KIT/comfyui-bootstrap.sh" -o /tmp/comfyui-bootstrap.sh || { log "SETUP_FAILED kit download"; exit 1; }
 mkdir -p /tmp/sn && curl -fsSL --retry 5 "$SIENNA_KIT/sienna_nodes.tgz" | tar xz -C /tmp/sn || { log "SETUP_FAILED kit download"; exit 1; }
-FLAGS="--with-wan-i2v"; [ "\${SIENNA_COPY_MOTION:-0}" = 1 ] && FLAGS="$FLAGS --with-wan-animate2"
+FLAGS="--with-wan-i2v"
+if [ "\${SIENNA_COPY_MOTION:-0}" = 1 ]; then
+  case "\${SIENNA_MOTION_ENGINE:-scail2}" in animate2) FLAGS="$FLAGS --with-wan-animate2" ;; animate1) FLAGS="$FLAGS --with-wan-animate" ;; *) FLAGS="$FLAGS --with-scail2" ;; esac
+fi
 SIENNA_NODES_DIR=/tmp/sn/sienna_nodes bash /tmp/comfyui-bootstrap.sh $FLAGS; log "BOOTSTRAP_RC=$?"
 rm -rf "$C/custom_nodes/sienna_autostop" && cp -r /tmp/sn/sienna_autostop "$C/custom_nodes/sienna_autostop"
 log "restarting ComfyUI"

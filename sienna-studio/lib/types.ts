@@ -482,7 +482,7 @@ export interface StoredVideo {
 /** How a Video Studio result was made. The source photo's record is never modified. */
 export interface VideoInfo {
   mode: import('./video').VideoMode;
-  model: 'wan2.2-i2v-14b' | 'wan2.2-animate-14b' | 'wan2.2-animate-2-14b';
+  model: 'wan2.2-i2v-14b' | 'wan2.2-animate-14b' | 'wan2.2-animate-2-14b' | 'scail-2-14b';
   sourceId: string;
   sourceImage: StoredImage;
   /** Which image of the source record (a batch can have several): "Make again" uses the same one. */
@@ -501,6 +501,8 @@ export interface VideoInfo {
   scene?: string;
   /** Copy Motion: 'away' = rear-view prompt (back to the camera for the whole clip). */
   facing?: import('./video').Facing;
+  /** SCAIL-2 Copy Motion: her photo's setting ('photo') or the clip's room ('clip'). */
+  background?: import('./video').MotionBackground;
   chunks?: number;
   estimateMinutes: number;
   /** Whether the frame face check was in the graph, or why not. */

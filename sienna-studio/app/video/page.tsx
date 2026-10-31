@@ -17,6 +17,9 @@ import {
   MOTION_PRESETS,
   MotionPreset,
   motion2Chunks,
+  scail2Chunks,
+  scail2Size,
+  type MotionBackground,
   motionChunks,
   VIDEO_FPS,
   VideoMode,
@@ -69,6 +72,8 @@ function VideoStudio() {
   const [framingChoice, setFramingChoice] = useState<boolean | null>(null);
   // Lock Camera: off (natural camera) unless the user picks it
   const [lockCamera, setLockCamera] = useState(false);
+  // Copy Motion with SCAIL-2: her photo's setting (default) or the clip's room
+  const [background, setBackground] = useState<MotionBackground>('photo');
   // both
   const [resolution, setResolution] = useState<VideoResolution>('480p');
   const [seed, setSeed] = useState('');
@@ -104,11 +109,12 @@ function VideoStudio() {
   useEffect(() => {
     if (length > maxLength) setLength(maxLength);
   }, [maxLength, length]);
-  const chunks = (avail?.motionEngine === 'animate1' ? motionChunks : motion2Chunks)(Math.round(length * VIDEO_FPS));
+  const scail = avail?.motionEngine === 'scail2';
+  const chunks = (scail ? scail2Chunks : avail?.motionEngine === 'animate1' ? motionChunks : motion2Chunks)(Math.round(length * VIDEO_FPS));
   const minutes =
     mode === 'animate'
       ? estimateMinutes({ mode, quality, ...size, frames: seconds * VIDEO_FPS + 1 })
-      : estimateMinutes({ mode, quality: 'fast', ...size, frames: chunks.frames, chunks: chunks.chunks });
+      : estimateMinutes({ mode, quality: 'fast', ...(scail ? scail2Size(size.width, size.height) : size), frames: chunks.frames, chunks: chunks.chunks, engine: avail?.motionEngine });
 
   async function pickVideo(f: File | undefined) {
     if (!f) return;
@@ -134,7 +140,7 @@ function VideoStudio() {
       const rec = await startVideo(
         mode === 'animate'
           ? { mode, sourceId: photo.id, seed: seedNum, quality, resolution, motion, camera, seconds, framing: framingUsable && framing ? movement : null, lockCamera: lockUsable && lockCamera }
-          : { mode, sourceId: photo.id, seed: seedNum, quality: 'fast', resolution, drive: drive!, start, seconds: length, scene, framing: framingUsable && framing ? movement : null, lockCamera: lockUsable && lockCamera },
+          : { mode, sourceId: photo.id, seed: seedNum, quality: 'fast', resolution, drive: drive!, start, seconds: length, scene, framing: framingUsable && framing ? movement : null, lockCamera: lockUsable && lockCamera, ...(scail ? { background } : {}) },
       );
       toast(rec.status === 'error' ? 'Video failed — see details' : 'Video queued');
       router.push(`/gallery/${rec.id}`);
@@ -378,13 +384,29 @@ function VideoStudio() {
               gravity and momentum matter.
             </p>
             <TextArea
-              label="Scene (optional)"
+              label={scail ? 'What happens (optional)' : 'Scene (optional)'}
               rows={2}
               value={scene}
               maxLength={MAX_MOTION_TEXT}
               onChange={(e) => setScene(e.target.value)}
-              placeholder="e.g. she dances in a sunlit living room"
+              placeholder={scail ? 'e.g. she pulls her bra out from under her top and tosses it aside' : 'e.g. she dances in a sunlit living room'}
             />
+            {scail && (
+              <>
+                <p className="text-xs text-ink-400">
+                  Name anything she handles: SCAIL-2 draws the objects in the video (a bra, a phone, a jacket) when the description mentions them.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Chip active={background === 'photo'} onClick={() => setBackground('photo')} className="w-full">
+                    Her photo’s setting
+                  </Chip>
+                  <Chip active={background === 'clip'} onClick={() => setBackground('clip')} className="w-full">
+                    The video’s room
+                  </Chip>
+                </div>
+                {background === 'clip' && <p className="text-xs text-ink-400">She replaces the person in the video, in that video’s room and light.</p>}
+              </>
+            )}
           </Card>
         )}
 

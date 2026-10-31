@@ -13,7 +13,7 @@ export interface VideoAvailability {
   modes: Record<VideoMode, { available: boolean; missing: string[] }>;
   faceCheck: boolean;
   adultAllowed: boolean;
-  motionEngine: 'animate2' | 'animate1';
+  motionEngine: 'scail2' | 'animate2' | 'animate1';
   safeFraming: { available: boolean; missing: string[] };
   lockCamera: { available: boolean; missing: string[] };
   experiments: boolean;
@@ -58,6 +58,7 @@ export interface VideoBody {
   scene?: string;
   framing?: MovementKind | null;
   facing?: 'camera' | 'away';
+  background?: 'photo' | 'clip';
   lockCamera?: boolean;
 }
 
@@ -81,6 +82,7 @@ export function rerunVideo(rec: GenerationRecord, newSeed: boolean): Promise<Gen
     ...(v.mode === 'motion' && v.drive ? { drive: { video: v.drive.video, poster: v.drive.poster }, start: v.drive.start, seconds: v.drive.seconds, scene: v.scene ?? '' } : {}),
     framing: v.safeFraming?.movement ?? null,
     ...(v.facing ? { facing: v.facing } : {}),
+    ...(v.background ? { background: v.background } : {}),
     lockCamera: !!v.lockCamera,
   });
 }

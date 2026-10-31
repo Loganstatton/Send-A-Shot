@@ -378,7 +378,8 @@ export function ensureVideoGpu(): Promise<VideoGpuSession> {
           minRAMPerGPU: c.minRamGb,
           // only ComfyUI is exposed: no Jupyter, no SSH
           ports: ['8188/http'],
-          env: { SIENNA_IDLE_MINUTES: String(c.idleMin + 3), SIENNA_COPY_MOTION: c.copyMotion ? '1' : '0' },
+          // which Copy Motion engine's models to fetch (same default as motionEngine(): SCAIL-2)
+          env: { SIENNA_IDLE_MINUTES: String(c.idleMin + 3), SIENNA_COPY_MOTION: c.copyMotion ? '1' : '0', SIENNA_MOTION_ENGINE: process.env.SIENNA_MOTION_ENGINE || 'scail2' },
           dockerEntrypoint: ['bash', '-c'],
           dockerStartCmd: [podStartCommand(c, kitUrl)],
         });

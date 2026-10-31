@@ -159,8 +159,13 @@ if (vAvail.status === 200 && vAvail.body.enabled) {
   assert(junk.status === 415, 'non-video upload rejected');
 
   const mo = await call('/api/video', { method: 'POST', body: JSON.stringify({ mode: 'motion', sourceId: rec.id, seed: 12, quality: 'fast', resolution: '480p', drive: up, start: 0.5, seconds: 2, scene: 'in a sunny kitchen' }) });
-  assert(mo.status === 202 && mo.body.video?.frames === 32 && mo.body.submittedGraph?.v_drive_part?.inputs?.batch_index === 8, 'Copy Motion queued (0.5 s → 2.5 s of the clip)');
-  assert(mo.body.submittedGraph?.v_anim_0?.inputs?.background_video === undefined, 'Copy Motion uses move mode (the person in the video never appears)');
+  // SCAIL-2 (default engine) needs 4k+1 frames: 2 s = 32 → 29
+  const scail = vAvail.body.motionEngine === 'scail2';
+  assert(mo.status === 202 && mo.body.video?.frames === (scail ? 29 : 32) && mo.body.submittedGraph?.v_drive_part?.inputs?.batch_index === 8, `Copy Motion queued (0.5 s into the clip, ${vAvail.body.motionEngine})`);
+  assert(
+    scail ? mo.body.submittedGraph?.v_anim_0?.inputs?.replacement_mode === false && mo.body.video?.background === 'photo' : mo.body.submittedGraph?.v_anim_0?.inputs?.background_video === undefined,
+    'Copy Motion keeps her own photo’s setting by default (the person in the video never appears)',
+  );
   const moDone = await poll(mo.body);
   await checkVideo(moDone, 'Copy Motion');
 

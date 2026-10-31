@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildScail2Graph, scail2Chunks, scail2Prompt, scail2Size, SCAIL2_FILES, SCAIL2_NODE_CLASSES, estimateMinutes as estimate } from './video';
 import type { ComfyGraph } from './types';
 import {
   ANIMATE2_CHUNK,
@@ -263,8 +264,13 @@ const SCHEMAS: Record<string, string[]> = {
   SamplerCustom: ['model', 'add_noise', 'noise_seed', 'cfg', 'positive', 'negative', 'sampler', 'sigmas', 'latent_image'],
   BasicScheduler: ['model', 'scheduler', 'steps', 'denoise'],
   KSamplerSelect: ['sampler_name'],
+  // SCAIL-2 (read from a running ComfyUI 0.35 /object_info, 31 Oct)
+  WanSCAILToVideo: ['positive', 'negative', 'vae', 'width', 'height', 'length', 'batch_size', 'pose_strength', 'pose_start', 'pose_end', 'video_frame_offset', 'previous_frame_count', 'pose_video', 'pose_video_mask', 'replacement_mode', 'reference_image', 'reference_image_mask', 'clip_vision_output', 'previous_frames'],
+  SCAIL2ColoredMask: ['driving_track_data', 'object_indices', 'sort_by', 'replacement_mode', 'ref_track_data'],
+  SAM3_VideoTrack: ['images', 'model', 'detection_threshold', 'max_objects', 'detect_interval', 'initial_mask', 'conditioning'],
+  CheckpointLoaderSimple: ['ckpt_name'],
 };
-const REQUIRED_OPTIONAL = new Set(['positive_pose', 'clip_vision_output_pose', 'clip_vision_output', 'start_image', 'ref_pad_image', 'reference_image', 'face_video', 'pose_video', 'background_video', 'character_mask', 'continue_motion', 'audio', 'bit_depth', 'color_space', 'codec', 'format.codec']);
+const REQUIRED_OPTIONAL = new Set(['pose_video_mask', 'reference_image_mask', 'previous_frames', 'ref_track_data', 'initial_mask', 'positive_pose', 'clip_vision_output_pose', 'clip_vision_output', 'start_image', 'ref_pad_image', 'reference_image', 'face_video', 'pose_video', 'background_video', 'character_mask', 'continue_motion', 'audio', 'bit_depth', 'color_space', 'codec', 'format.codec']);
 
 describe('node inputs match ComfyUI', () => {
   const graphs = {
@@ -272,6 +278,7 @@ describe('node inputs match ComfyUI', () => {
     animateQuality: buildAnimateGraph({ imageName: 'a.png', width: 480, height: 704, frames: 81, positive: 'p', negative: 'n', seed: 1, quality: 'quality', face }),
     motion3: buildMotionGraph({ imageName: 'a.png', videoName: 'm.mp4', width: 480, height: 704, startFrame: 0, frames: 200, chunks: 3, positive: 'p', negative: 'n', seed: 1, face }),
     motion2x3: buildMotion2Graph({ imageName: 'a.png', videoName: 'm.mp4', width: 480, height: 832, startFrame: 16, frames: 230, chunks: 3, positive: 'p', motionText: 'm', negative: 'n', seed: 1, face }),
+    scail2x3: buildScail2Graph({ imageName: 'a.png', videoName: 'm.mp4', width: 544, height: 768, startFrame: 0, ...scail2Chunks(233), positive: 'p', negative: 'n', seed: 1, face, background: 'photo' }),
   };
   for (const [name, g] of Object.entries(graphs)) {
     it(`${name}: every input exists and every required input is set`, () => {
@@ -559,5 +566,57 @@ describe('Undress and nude-source prompts', () => {
       'with her back to the camera the whole time, she hinges forward at the hips with a long straight back, hips staying high above her knees, knees only slightly bent and both feet planted, picks up a seashell from the sand and stands straight back up, real-time speed, natural balance, hair falls forward and swings back, fixed camera, her whole body stays in frame',
     );
     expect(MOTION_PRESETS.filter((p) => p.adult).map((p) => p.id)).toEqual(['top_off']);
+  });
+});
+
+
+describe('Copy Motion v3 (SCAIL-2)', () => {
+  const base = { imageName: 'sienna/p.png', videoName: 'mot_ab.mp4', width: 544, height: 768, startFrame: 16, positive: 'p', negative: 'n', seed: 9, face };
+  it('parts are 81 frames stepping 76, lengths 4k+1, and a sliver of a last part is dropped', () => {
+    expect(scail2Chunks(64)).toEqual({ chunks: 1, frames: 61, lengths: [61] });
+    expect(scail2Chunks(81)).toEqual({ chunks: 1, frames: 81, lengths: [81] });
+    expect(scail2Chunks(129)).toEqual({ chunks: 2, frames: 129, lengths: [81, 53] });
+    expect(scail2Chunks(128)).toEqual({ chunks: 2, frames: 125, lengths: [81, 49] });
+    expect(scail2Chunks(84)).toEqual({ chunks: 1, frames: 81, lengths: [81] }); // 83 would leave a 7-frame part: stop at 81
+    expect(scail2Chunks(1000).frames).toBe(233); // 14.5 s at most (3 parts)
+    for (const f of [20, 77, 150, 200, 233]) {
+      const c = scail2Chunks(f);
+      expect(c.lengths.every((l) => (l - 1) % 4 === 0 && l > 5)).toBe(true);
+      expect(c.lengths.reduce((a, b) => a + b, 0) - 5 * (c.chunks - 1)).toBe(c.frames);
+    }
+  });
+  it('graph: the chosen part, cleaned and sized; each later part continues from the decoded one before', () => {
+    const parts = scail2Chunks(129);
+    const g = buildScail2Graph({ ...base, frames: parts.frames, chunks: parts.chunks, lengths: parts.lengths, background: 'photo' });
+    expect(g.v_drive_part.inputs).toMatchObject({ batch_index: 16, length: 129 });
+    expect(g.v_scaled.inputs).toMatchObject({ image: ['v_drive_clean', 0], width: 544, height: 768 });
+    expect(g.v_part_1.inputs).toMatchObject({ batch_index: 76, length: 53 });
+    expect(g.v_anim_0.inputs).toMatchObject({ replacement_mode: false, video_frame_offset: 0, length: 81, pose_video_mask: ['v_mask_0', 0], reference_image_mask: ['v_mask_0', 1] });
+    expect(g.v_anim_0.inputs.previous_frames).toBeUndefined();
+    expect(g.v_anim_1.inputs).toMatchObject({ video_frame_offset: ['v_anim_0', 3], previous_frames: ['v_dec_0', 0], previous_frame_count: 5 });
+    expect(g.v_new_1.inputs).toMatchObject({ image: ['v_dec_1', 0], batch_index: 5 }); // anchor frames dropped
+    expect(g.v_frames.inputs).toMatchObject({ image: ['v_join_1', 0], length: 129 });
+    expect(g.v_mask_0.inputs).toMatchObject({ replacement_mode: false, ref_track_data: ['v_track_ref', 0] });
+    expect(g.v_dpo.inputs.lora_name).toBe(WAN_FILES.scail2Dpo);
+    const clip = buildScail2Graph({ ...base, frames: 81, chunks: 1, lengths: [81], background: 'clip' });
+    expect(clip.v_anim_0.inputs.replacement_mode).toBe(true);
+    expect(clip.v_mask_0.inputs.replacement_mode).toBe(true);
+    // every class and file is in the lists the availability check uses
+    for (const node of Object.values(g)) if (!/^Sienna(FaceCheck|LockCamera)$/.test(node.class_type)) expect(SCAIL2_NODE_CLASSES).toContain(node.class_type);
+    expect(SCAIL2_FILES.map((f) => f[2])).toEqual(expect.arrayContaining([WAN_FILES.scail2, WAN_FILES.scail2Dpo, WAN_FILES.sam31, WAN_FILES.animateFast]));
+  });
+  it('prompt: look, setting and the action; weights stripped; rear view keeps her back to the camera', () => {
+    const p = scail2Prompt('Sienna, (green eyes:1.2), freckles', 'white striped crop top', 'she pulls her bra out from under her top and tosses it', 'photo');
+    expect(p).toBe('Sienna, green eyes, freckles, wearing white striped crop top, in the same setting as in her photo. she pulls her bra out from under her top and tosses it. Realistic phone video, natural skin texture, natural motion.');
+    expect(scail2Prompt('Sienna', '', '', 'clip')).toContain('in the room from the video');
+    const rear = scail2Prompt('Sienna, green eyes, freckles', '', 'walking away', 'photo', true);
+    expect(rear).toContain('Her back stays toward the camera');
+    expect(rear).not.toMatch(/green eyes|freckles/);
+  });
+  it('sizes in multiples of 32 and its own time estimate', () => {
+    expect(scail2Size(528, 768)).toEqual({ width: 544, height: 768 });
+    const m = estimate({ mode: 'motion', quality: 'fast', width: 544, height: 768, frames: 129, chunks: 2, engine: 'scail2' });
+    expect(m).toBeGreaterThan(6);
+    expect(m).toBeLessThan(10);
   });
 });

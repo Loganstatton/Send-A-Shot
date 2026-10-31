@@ -29,6 +29,13 @@ import {
   CameraMove,
   MOTION2_FILES,
   MOTION2_NODE_CLASSES,
+  buildScail2Graph,
+  scail2Chunks,
+  scail2Prompt,
+  scail2Size,
+  SCAIL2_FILES,
+  SCAIL2_NODE_CLASSES,
+  type MotionBackground,
   motion2Chunks,
   motion2Prompt,
   motion2RearPrompt,
@@ -105,9 +112,18 @@ export function videoEnabled(): boolean {
   return process.env.SIENNA_VIDEO === 'true';
 }
 
-/** Copy Motion model: Wan2.2-Animate-2 by default; SIENNA_MOTION_ENGINE=animate1 selects Wan2.2 Animate v1 (DWPose). */
+/** Copy Motion model: SCAIL-2 by default (31 Oct: it draws what the person handles and holds her face better);
+ * SIENNA_MOTION_ENGINE=animate2 / animate1 selects Wan2.2-Animate-2 / Wan2.2 Animate v1 (DWPose). */
 export function motionEngine(): MotionEngine {
-  return process.env.SIENNA_MOTION_ENGINE === 'animate1' ? 'animate1' : 'animate2';
+  const e = process.env.SIENNA_MOTION_ENGINE;
+  return e === 'animate1' || e === 'animate2' ? e : 'scail2';
+}
+
+/** Node classes and model files Copy Motion needs on the GPU server, per engine. */
+export function motionRequirements(engine: MotionEngine): { nodes: string[]; files: [string, string, string][] } {
+  if (engine === 'scail2') return { nodes: SCAIL2_NODE_CLASSES, files: SCAIL2_FILES };
+  if (engine === 'animate2') return { nodes: MOTION2_NODE_CLASSES, files: MOTION2_FILES };
+  return { nodes: VIDEO_NODE_CLASSES.motion, files: VIDEO_FILES.motion };
 }
 
 const MOTION2_TEXT = 'a woman performing the movement from the reference video naturally, background stationary';
@@ -117,6 +133,7 @@ export const VIDEO_WORKFLOWS: Record<VideoMode, { id: string; name: string; mode
   motion: { id: 'video-wan22-animate', name: 'Copy Motion · Wan2.2 Animate 14B', model: 'wan2.2-animate-14b' },
 };
 const MOTION2_WORKFLOW = { id: 'video-wan22-animate2', name: 'Copy Motion · Wan2.2-Animate-2 14B', model: 'wan2.2-animate-2-14b' as const };
+const SCAIL2_WORKFLOW = { id: 'video-scail2', name: 'Copy Motion · SCAIL-2 14B', model: 'scail-2-14b' as const };
 
 export interface VideoAvailability {
   enabled: boolean;
@@ -171,14 +188,14 @@ export async function videoAvailability(comfyUrl?: string): Promise<VideoAvailab
     const missing: string[] = [];
     try {
       const absent: string[] = [];
-      const v2 = mode === 'motion' && motionEngine() === 'animate2';
+      const need = mode === 'motion' ? motionRequirements(motionEngine()) : { nodes: VIDEO_NODE_CLASSES[mode], files: VIDEO_FILES[mode] };
       await Promise.all(
-        (v2 ? MOTION2_NODE_CLASSES : VIDEO_NODE_CLASSES[mode]).map(async (c) => {
+        need.nodes.map(async (c) => {
           if (!(await backend.nodeInfo(c))) absent.push(c);
         }),
       );
       if (absent.length) missing.push(`${describeMissing(absent.sort())} — update ComfyUI / run comfyui-bootstrap.sh --with-wan-video`);
-      for (const [cls, input, file] of v2 ? MOTION2_FILES : VIDEO_FILES[mode]) {
+      for (const [cls, input, file] of need.files) {
         // the list is cached for minutes: a file that arrived since then is only seen by asking again
         let choices = await backend.inputChoices(cls, input);
         if (!choices.includes(file)) choices = await backend.inputChoices(cls, input, true);
@@ -294,6 +311,8 @@ export interface VideoRequest {
   scene?: string;
   /** Copy Motion: 'away' = she is filmed from behind and must keep her back to the camera (rear-view prompt). */
   facing?: Facing;
+  /** Copy Motion with SCAIL-2: 'photo' (default) keeps her photo's setting; 'clip' puts her in the clip's room. */
+  background?: MotionBackground;
   /** Lock Camera: also make a stabilized copy (background held still). Off by default; the natural video is always kept. */
   lockCamera?: boolean;
 }
@@ -361,9 +380,13 @@ async function planVideo(req: VideoRequest): Promise<VideoPlan> {
       );
   }
 
-  const { width, height } = videoSize(sourceImage.width ?? source.params.width, sourceImage.height ?? source.params.height, req.resolution);
+  const engine = motionEngine();
+  const scail = req.mode === 'motion' && engine === 'scail2';
+  const base = videoSize(sourceImage.width ?? source.params.width, sourceImage.height ?? source.params.height, req.resolution);
+  // SCAIL-2 works in multiples of 32
+  const { width, height } = scail ? scail2Size(base.width, base.height) : base;
   const movement = req.framing && req.framing !== 'still' && MOVEMENT_MARGINS[req.framing] ? req.framing : null;
-  if (movement && req.mode === 'motion' && motionEngine() !== 'animate2') throw new GenerationError('Safe framing needs Copy Motion’s Wan Animate 2 engine.', 422);
+  if (movement && req.mode === 'motion' && engine !== 'animate2') throw new GenerationError('Safe framing needs Copy Motion’s Wan Animate 2 engine.', 422);
   const negative = [
     WAN_NEGATIVE,
     ADULT_ONLY_NEGATIVE,
@@ -383,8 +406,7 @@ async function planVideo(req: VideoRequest): Promise<VideoPlan> {
         seed: seed % 2 ** 32,
       }
     : null;
-  const engine = motionEngine();
-  const wf = req.mode === 'motion' && engine === 'animate2' ? MOTION2_WORKFLOW : VIDEO_WORKFLOWS[req.mode];
+  const wf = scail ? SCAIL2_WORKFLOW : req.mode === 'motion' && engine === 'animate2' ? MOTION2_WORKFLOW : VIDEO_WORKFLOWS[req.mode];
   let lockCamera = req.lockCamera === true;
   if (lockCamera && !lockCameraAllowed(req.mode, req.camera)) {
     lockCamera = false;
@@ -432,7 +454,9 @@ async function planVideo(req: VideoRequest): Promise<VideoPlan> {
     const startFrame = Math.round(start * VIDEO_FPS);
     const wantFrames = Math.round(Math.min(MAX_MOTION_SECONDS, Math.max(1, req.seconds ?? MAX_MOTION_SECONDS)) * VIDEO_FPS);
     const v2 = engine === 'animate2';
-    const chunks = (v2 ? motion2Chunks : motionChunks)(Math.min(wantFrames, drive.video.frames - startFrame));
+    const available = Math.min(wantFrames, drive.video.frames - startFrame);
+    const scailParts = scail ? scail2Chunks(available) : null;
+    const chunks = scailParts ?? (v2 ? motion2Chunks : motionChunks)(available);
     const frames = chunks.frames;
     const seconds = Math.round((frames / VIDEO_FPS) * 10) / 10;
     if (req.quality !== 'fast') warnings.push(`Copy Motion has one speed setting (its 6-step model); “${req.quality}” only applies to Animate Image.`);
@@ -442,13 +466,21 @@ async function planVideo(req: VideoRequest): Promise<VideoPlan> {
     // Rear view: front-only traits (face, eyes, freckles, chest) made Wan Animate 2 turn her round to show them, so the
     // text describes her from behind and asks for her back to stay toward the camera. Identity still comes from the photo.
     const away = req.facing === 'away';
-    if (away && !v2) warnings.push('The rear-view option applies to Copy Motion with Wan Animate 2; this server uses Animate v1, so it has no effect.');
-    positive = v2 ? (away ? motion2RearPrompt : motion2Prompt)(character.appearanceTraits, outfit, lock.text) : motionPrompt(lock.text);
+    if (away && engine === 'animate1') warnings.push('The rear-view option applies to Copy Motion with SCAIL-2 or Wan Animate 2; this server uses Animate v1, so it has no effect.');
+    const background: MotionBackground = scail && req.background === 'clip' ? 'clip' : 'photo';
+    if (req.background === 'clip' && !scail) warnings.push('“Use the video’s room” needs the SCAIL-2 engine; this server keeps the photo’s setting.');
+    positive = scail
+      ? scail2Prompt(character.appearanceTraits, outfit, lock.text, background, away)
+      : v2
+        ? (away ? motion2RearPrompt : motion2Prompt)(character.appearanceTraits, outfit, lock.text)
+        : motionPrompt(lock.text);
     const motionText = away ? MOTION2_REAR_TEXT : MOTION2_TEXT;
     build = (imageName, videoName, face) =>
-      v2
-        ? buildMotion2Graph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, motionText, negative, seed, face, frame, lockCamera })
-        : buildMotionGraph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, negative, seed, face, lockCamera });
+      scailParts
+        ? buildScail2Graph({ imageName, videoName, width, height, startFrame, frames, chunks: scailParts.chunks, lengths: scailParts.lengths, positive, negative, seed, face, lockCamera, background })
+        : v2
+          ? buildMotion2Graph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, motionText, negative, seed, face, frame, lockCamera })
+          : buildMotionGraph({ imageName, videoName, width, height, startFrame, frames, chunks: chunks.chunks, positive, negative, seed, face, lockCamera });
     info = {
       mode: 'motion',
       model: wf.model,
@@ -464,8 +496,9 @@ async function planVideo(req: VideoRequest): Promise<VideoPlan> {
       drive: { video: drive.video, poster: drive.poster, start, seconds },
       scene: lock.text,
       ...(req.facing === 'away' ? { facing: 'away' as const } : {}),
+      ...(scail ? { background } : {}),
       chunks: chunks.chunks,
-      estimateMinutes: estimateMinutes({ mode: 'motion', quality: 'fast', width, height, frames, chunks: chunks.chunks }),
+      estimateMinutes: estimateMinutes({ mode: 'motion', quality: 'fast', width, height, frames, chunks: chunks.chunks, engine }),
       faceCheck: { status: 'on' },
       ...(movement ? { safeFraming: { movement, status: 'on' as const } } : {}),
       ...(lockCamera ? { lockCamera: { status: 'on' as const } } : {}),
@@ -615,10 +648,9 @@ async function probeVideoGpu(url: string): Promise<{ ready: boolean; phase?: str
     return { ready: false, phase: 'booting the GPU' };
   }
   try {
-    const motion = !!videoGpuConfig()?.copyMotion;
-    const v2 = motion && motionEngine() === 'animate2';
-    const nodes = [...VIDEO_NODE_CLASSES.animate, ...LOCK_CAMERA_NODE_CLASSES, 'SiennaFaceCheck', ...(motion ? (v2 ? MOTION2_NODE_CLASSES : VIDEO_NODE_CLASSES.motion) : [])];
-    const files = [...VIDEO_FILES.animate, ...(motion ? (v2 ? MOTION2_FILES : VIDEO_FILES.motion) : [])];
+    const motion = videoGpuConfig()?.copyMotion ? motionRequirements(motionEngine()) : null;
+    const nodes = [...VIDEO_NODE_CLASSES.animate, ...LOCK_CAMERA_NODE_CLASSES, 'SiennaFaceCheck', ...(motion?.nodes ?? [])];
+    const files = [...VIDEO_FILES.animate, ...(motion?.files ?? [])];
     for (const c of new Set(nodes)) {
       if (!(await backend.nodeInfo(c, true))) return { ready: false, phase: 'downloading models and installing the video nodes' };
     }

@@ -115,7 +115,9 @@ if (arg('--wan-video')) {
     'WanAnimate_relight_lora_fp16.safetensors',
   );
   MODELS.vae_name.push('wan_2.1_vae.safetensors', 'Wan2_1_VAE_bf16.safetensors');
-  MODELS.unet_name.push('wan_animate_2_int8_convrot.safetensors');
+  MODELS.unet_name.push('wan_animate_2_int8_convrot.safetensors', 'wan2.1_14B_SCAIL_2_int8_convrot.safetensors');
+  MODELS.lora_name.push('wan2.1_SCAIL_2_DPO_lora_bf16.safetensors');
+  MODELS.ckpt_name.push('sam3.1_multiplex_fp16.safetensors');
   const clipNames = [...(SPECS.CLIPLoader?.clip_name?.[0] ?? []), 'umt5_xxl_fp8_e4m3fn_scaled.safetensors'];
   Object.assign(SPECS, {
     CLIPLoader: { clip_name: combo(clipNames), type: combo(['wan', 'qwen_image', 'sdxl']), device: combo(['default', 'cpu']) },
@@ -139,6 +141,10 @@ if (arg('--wan-video')) {
     GetVideoComponents: { video: ['VIDEO'] },
     WanAnimate2ToVideo: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], vae: ['VAE'], width: ['INT'], height: ['INT'], length: ['INT'], batch_size: ['INT'], video_frame_offset: ['INT'] },
     WanAnimate2Cache: { model: ['MODEL'], device: combo(['cpu', 'gpu']), dtype: combo(['default', 'int8', 'int4']) },
+    // SCAIL-2 Copy Motion (default engine): SAM 3.1 person tracks, coloured masks, the SCAIL-2 conditioning node
+    SAM3_VideoTrack: { images: ['IMAGE'], model: ['MODEL'], detection_threshold: ['FLOAT'], max_objects: ['INT'], detect_interval: ['INT'] },
+    SCAIL2ColoredMask: { driving_track_data: ['SAM3_TRACK_DATA'], object_indices: ['STRING'], sort_by: combo(['none', 'left_to_right', 'area']), replacement_mode: ['BOOLEAN'] },
+    WanSCAILToVideo: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], vae: ['VAE'], width: ['INT'], height: ['INT'], length: ['INT'], batch_size: ['INT'], pose_strength: ['FLOAT'], pose_start: ['FLOAT'], pose_end: ['FLOAT'], video_frame_offset: ['INT'], previous_frame_count: ['INT'] },
     // safe framing (video): Sienna node + core SDXL inpaint pieces
     SiennaSafeFrame: { image: ['IMAGE'], margins: ['STRING'], target_area: ['INT'], max_pad: ['FLOAT'], min_aspect: ['FLOAT'], feather: ['INT'] },
     // Lock Camera (video): FAKE_LOCK=applied|steady|rejected|unavailable picks the report (default applied)

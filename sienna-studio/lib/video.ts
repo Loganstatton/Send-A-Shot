@@ -37,6 +37,10 @@ export const WAN_FILES = {
   /** Copy Motion v2 (Wan2.2-Animate-2-14B, Comfy-Org/Wan-Animate-2): no pose extraction, its own VAE file name. */
   animate2: 'wan_animate_2_int8_convrot.safetensors',
   vae2: 'Wan2_1_VAE_bf16.safetensors',
+  /** Copy Motion v3 (SCAIL-2, Comfy-Org/SCAIL-2): its model, its DPO LoRA (hands, lips, eyes) and SAM 3.1 for the masks. */
+  scail2: 'wan2.1_14B_SCAIL_2_int8_convrot.safetensors',
+  scail2Dpo: 'wan2.1_SCAIL_2_DPO_lora_bf16.safetensors',
+  sam31: 'sam3.1_multiplex_fp16.safetensors',
   /** DWPose models (comfyui_controlnet_aux downloads them on first use). */
   bbox: 'yolox_l.onnx',
   pose: 'dw-ll_ucoco_384_bs5.torchscript.pt',
@@ -56,8 +60,10 @@ export type VideoMode = 'animate' | 'motion';
 export type VideoQuality = 'fast' | 'quality' | 'hybrid';
 export type VideoResolution = '480p' | '720p';
 export type CameraMove = 'still' | 'push_in' | 'orbit' | 'handheld';
-/** Copy Motion model: Wan2.2-Animate-2 (end-to-end, default) or Wan2.2 Animate v1 (DWPose skeleton). */
-export type MotionEngine = 'animate2' | 'animate1';
+/** Copy Motion model: SCAIL-2 (default since 31 Oct), Wan2.2-Animate-2, or Wan2.2 Animate v1 (DWPose skeleton). */
+export type MotionEngine = 'scail2' | 'animate2' | 'animate1';
+/** SCAIL-2: 'photo' = she stays in her photo's setting (animation mode); 'clip' = she replaces the person in the clip's room. */
+export type MotionBackground = 'photo' | 'clip';
 
 export const VIDEO_MODE_LABELS: Record<VideoMode, string> = { animate: 'Animate Image', motion: 'Copy Motion' };
 
@@ -243,13 +249,15 @@ export function videoSize(srcW: number, srcH: number, res: VideoResolution): { w
 }
 
 /** Rough GPU minutes on an RTX 4090 (from the template notes, scaled by pixels and frames). Shown in the UI. */
-export function estimateMinutes(opts: { mode: VideoMode; quality: VideoQuality; width: number; height: number; frames: number; chunks?: number }): number {
+export function estimateMinutes(opts: { mode: VideoMode; quality: VideoQuality; width: number; height: number; frames: number; chunks?: number; engine?: MotionEngine }): number {
   const px = (opts.width * opts.height) / (640 * 640);
   if (opts.mode === 'animate') {
     // 640×640, 81 frames; hybrid measured at ≈ 1.75× fast in the motion test (A40: 165 s vs 100 s)
     const base = opts.quality === 'quality' ? 9 : opts.quality === 'hybrid' ? 2.6 : 1.5;
     return Math.max(0.5, Math.round(base * px * (opts.frames / 81) * 10) / 10);
   }
+  // SCAIL-2 (31 Oct, A40): 129 frames at 544×768 in two parts took 7.6–7.9 min including model loading
+  if (opts.engine === 'scail2') return Math.max(1, Math.round((3.6 * px * (opts.chunks ?? 1) + 0.5) * 10) / 10);
   // Animate: 6 steps per chunk, plus DWPose on the driving frames
   return Math.max(1, Math.round((1.8 * px * (opts.chunks ?? 1) + opts.frames / 200) * 10) / 10);
 }
@@ -664,6 +672,159 @@ export function buildMotion2Graph(i: Motion2GraphInput): ComfyGraph {
   addOutputs(g, ['v_frames', 0], i.frames, false, i.face, i.lockCamera);
   return g;
 }
+
+// ── Copy Motion v3: SCAIL-2 ─────────────────────────────────────────────────────
+/**
+ * Follows ComfyUI's "video_wan21_scail2_character_replacement_int8" template. SCAIL-2 reads the raw driving frames (no
+ * skeleton) plus coloured person masks from SAM 3.1, and draws what the person handles too: in the 31 Oct comparison on
+ * a clip of a woman pulling her bra out from under her top, it drew the bra in Sienna's hands and the toss; Wan Animate 2
+ * copied only the hand movements. Face match 0.63–0.66 (median) against 0.56. Two modes:
+ *   photo (animation mode) — she stays in her photo's setting; the default
+ *   clip  (replacement mode) — she replaces the person in the clip's own room and light
+ * int8 model + DPO LoRA + lightx2v LoRA (0.8), 6 steps, euler, cfg 1, shift 5. 81-frame parts; each later part continues
+ * from the last 5 frames of the one before (the model was trained on that 76-frame step).
+ */
+export const SCAIL2_CHUNK = 81;
+export const SCAIL2_ANCHOR = 5;
+export const SCAIL2_STEPS = { steps: 6, cfg: 1, shift: 5, sampler: 'euler', scheduler: 'simple', fastLora: 0.8 };
+
+/** Parts and frame count for SCAIL-2: lengths must be 4k+1 and a last part needs more than its 5 anchor frames. */
+export function scail2Chunks(frames: number): { chunks: number; frames: number; lengths: number[] } {
+  const step = SCAIL2_CHUNK - SCAIL2_ANCHOR;
+  let f = Math.max(5, Math.floor(frames));
+  f = Math.min(f, SCAIL2_CHUNK + (MAX_ANIMATE_CHUNKS - 1) * step);
+  f -= (f - 1) % 4; // 4k+1
+  let chunks = f <= SCAIL2_CHUNK ? 1 : 1 + Math.ceil((f - SCAIL2_CHUNK) / step);
+  if (chunks > 1 && f - step * (chunks - 1) < SCAIL2_ANCHOR + 4) {
+    chunks -= 1; // a sliver of a last part: stop at the end of the one before
+    f = SCAIL2_CHUNK + (chunks - 1) * step;
+  }
+  const lengths = Array.from({ length: chunks }, (_, c) => Math.min(SCAIL2_CHUNK, f - step * c));
+  return { chunks, frames: f, lengths };
+}
+
+/** SCAIL-2 sizes are multiples of 32. */
+export function scail2Size(width: number, height: number): { width: number; height: number } {
+  const r32 = (v: number) => Math.max(256, Math.round(v / 32) * 32);
+  return { width: r32(width), height: r32(height) };
+}
+
+/** SCAIL-2's prompt: who she is and what she wears, where she is, and the action (it uses the action and objects). */
+export function scail2Prompt(character: string, outfit: string, scene: string, background: MotionBackground, away = false): string {
+  const clean = (t: string) => t.replace(/\(([^()]*?)(?::\s*[\d.]+)?\)/g, '$1').replace(/\s+/g, ' ').trim().replace(/[.,\s]+$/, '');
+  const who = [(away ? rearViewTraits(character) : clean(character)) || 'a woman', clean(outfit) ? `wearing ${clean(outfit)}` : ''].filter(Boolean).join(', ');
+  const where = background === 'clip' ? 'in the room from the video' : 'in the same setting as in her photo';
+  const rear = away ? ' Her back stays toward the camera the whole time.' : '';
+  return `${who}, ${where}. ${clean(scene) ? clean(scene) + '. ' : ''}${rear}Realistic phone video, natural skin texture, natural motion.`.replace(/\s+/g, ' ').trim();
+}
+
+export interface Scail2GraphInput extends MotionGraphInput {
+  background: MotionBackground;
+  /** chunk lengths from scail2Chunks (sum minus the anchors = frames) */
+  lengths: number[];
+}
+
+export function buildScail2Graph(i: Scail2GraphInput): ComfyGraph {
+  const W = i.width, H = i.height;
+  const replace = i.background === 'clip';
+  const step = SCAIL2_CHUNK - SCAIL2_ANCHOR;
+  const g: ComfyGraph = {
+    v_image: n('LoadImage', { image: i.imageName }, 'Sienna photo'),
+    v_ref: n('ImageScale', { image: ['v_image', 0], upscale_method: 'lanczos', width: W, height: H, crop: 'center' }, 'Sienna photo, output size'),
+    v_drive: n('LoadVideo', { file: i.videoName }, 'Driving video'),
+    v_drive_frames: n('GetVideoComponents', { video: ['v_drive', 0] }),
+    v_drive_part: n('ImageFromBatch', { image: ['v_drive_frames', 0], batch_index: Math.max(0, Math.floor(i.startFrame)), length: i.frames }, 'Chosen part'),
+    v_drive_clean: n('SiennaCleanOverlays', { images: ['v_drive_part', 0] }, 'Clean screen-recording overlays'),
+    v_scaled: n('ImageScale', { image: ['v_drive_clean', 0], upscale_method: 'area', width: W, height: H, crop: 'center' }),
+    v_sam: n('CheckpointLoaderSimple', { ckpt_name: WAN_FILES.sam31 }, 'SAM 3.1 (person masks)'),
+    v_sam_text: n('CLIPTextEncode', { clip: ['v_sam', 1], text: 'woman' }),
+    v_track_ref: n('SAM3_VideoTrack', { images: ['v_ref', 0], model: ['v_sam', 0], detection_threshold: 0.5, max_objects: 1, detect_interval: 1, conditioning: ['v_sam_text', 0] }),
+    v_unet: n('UNETLoader', { unet_name: WAN_FILES.scail2, weight_dtype: 'default' }),
+    v_dpo: n('LoraLoaderModelOnly', { model: ['v_unet', 0], lora_name: WAN_FILES.scail2Dpo, strength_model: 1 }),
+    v_fast: n('LoraLoaderModelOnly', { model: ['v_dpo', 0], lora_name: WAN_FILES.animateFast, strength_model: SCAIL2_STEPS.fastLora }),
+    v_shift: n('ModelSamplingSD3', { model: ['v_fast', 0], shift: SCAIL2_STEPS.shift }),
+    v_sigmas: n('BasicScheduler', { model: ['v_fast', 0], scheduler: SCAIL2_STEPS.scheduler, steps: SCAIL2_STEPS.steps, denoise: 1 }),
+    v_sampler: n('KSamplerSelect', { sampler_name: SCAIL2_STEPS.sampler }),
+    v_clip: n('CLIPLoader', { clip_name: WAN_FILES.textEncoder, type: 'wan', device: 'default' }),
+    v_pos: n('CLIPTextEncode', { clip: ['v_clip', 0], text: i.positive }, 'Character, setting and action'),
+    v_neg: n('CLIPTextEncode', { clip: ['v_clip', 0], text: i.negative }, 'Negative'),
+    v_vae: n('VAELoader', { vae_name: WAN_FILES.vae2 }),
+    v_clipvision: n('CLIPVisionLoader', { clip_name: WAN_FILES.clipVision }),
+    v_cv_ref: n('CLIPVisionEncode', { clip_vision: ['v_clipvision', 0], image: ['v_ref', 0], crop: 'none' }),
+  };
+  let images: [string, number] | null = null;
+  let prev: string | null = null;
+  i.lengths.forEach((length, c) => {
+    g[`v_part_${c}`] = n('ImageFromBatch', { image: ['v_scaled', 0], batch_index: step * c, length });
+    g[`v_track_${c}`] = n('SAM3_VideoTrack', { images: [`v_part_${c}`, 0], model: ['v_sam', 0], detection_threshold: 0.5, max_objects: 1, detect_interval: 1, conditioning: ['v_sam_text', 0] });
+    g[`v_mask_${c}`] = n('SCAIL2ColoredMask', { driving_track_data: [`v_track_${c}`, 0], object_indices: '', sort_by: 'area', replacement_mode: replace, ref_track_data: ['v_track_ref', 0] });
+    const a = `v_anim_${c}`;
+    g[a] = n(
+      'WanSCAILToVideo',
+      {
+        positive: ['v_pos', 0],
+        negative: ['v_neg', 0],
+        vae: ['v_vae', 0],
+        width: W,
+        height: H,
+        length,
+        batch_size: 1,
+        pose_strength: 1,
+        pose_start: 0,
+        pose_end: 1,
+        video_frame_offset: prev ? [prev, 3] : 0,
+        previous_frame_count: SCAIL2_ANCHOR,
+        pose_video: [`v_part_${c}`, 0],
+        pose_video_mask: [`v_mask_${c}`, 0],
+        replacement_mode: replace,
+        reference_image: ['v_ref', 0],
+        reference_image_mask: [`v_mask_${c}`, 1],
+        clip_vision_output: ['v_cv_ref', 0],
+        ...(prev ? { previous_frames: [`v_dec_${c - 1}`, 0] } : {}),
+      },
+      c ? `Continue (part ${c + 1})` : 'Animate (part 1)',
+    );
+    g[`v_ks_${c}`] = n('SamplerCustom', {
+      model: ['v_shift', 0],
+      add_noise: true,
+      noise_seed: i.seed,
+      cfg: SCAIL2_STEPS.cfg,
+      positive: [a, 0],
+      negative: [a, 1],
+      sampler: ['v_sampler', 0],
+      sigmas: ['v_sigmas', 0],
+      latent_image: [a, 2],
+    });
+    g[`v_dec_${c}`] = n('VAEDecode', { samples: [`v_ks_${c}`, 1], vae: ['v_vae', 0] });
+    // a later part starts with the 5 anchor frames it continued from: drop them
+    const out: [string, number] = c ? [`v_new_${c}`, 0] : [`v_dec_${c}`, 0];
+    if (c) g[`v_new_${c}`] = n('ImageFromBatch', { image: [`v_dec_${c}`, 0], batch_index: SCAIL2_ANCHOR, length: 4096 });
+    if (images) {
+      g[`v_join_${c}`] = n('ImageBatch', { image1: images, image2: out });
+      images = [`v_join_${c}`, 0];
+    } else images = out;
+    prev = a;
+  });
+  g.v_frames = n('ImageFromBatch', { image: images!, batch_index: 0, length: i.frames });
+  addOutputs(g, ['v_frames', 0], i.frames, false, i.face, i.lockCamera);
+  return g;
+}
+
+export const SCAIL2_NODE_CLASSES = [
+  'LoadImage', 'ImageScale', 'LoadVideo', 'GetVideoComponents', 'ImageFromBatch', 'CheckpointLoaderSimple', 'CLIPTextEncode', 'SAM3_VideoTrack',
+  'SCAIL2ColoredMask', 'UNETLoader', 'LoraLoaderModelOnly', 'ModelSamplingSD3', 'BasicScheduler', 'KSamplerSelect', 'CLIPLoader', 'VAELoader',
+  'CLIPVisionLoader', 'CLIPVisionEncode', 'WanSCAILToVideo', 'SamplerCustom', 'VAEDecode', 'ImageBatch', 'CreateVideo', 'SaveVideo', 'SaveImage',
+  'SiennaCleanOverlays',
+];
+export const SCAIL2_FILES: [string, string, string][] = [
+  ['UNETLoader', 'unet_name', WAN_FILES.scail2],
+  ['LoraLoaderModelOnly', 'lora_name', WAN_FILES.scail2Dpo],
+  ['LoraLoaderModelOnly', 'lora_name', WAN_FILES.animateFast],
+  ['CheckpointLoaderSimple', 'ckpt_name', WAN_FILES.sam31],
+  ['CLIPLoader', 'clip_name', WAN_FILES.textEncoder],
+  ['VAELoader', 'vae_name', WAN_FILES.vae2],
+  ['CLIPVisionLoader', 'clip_name', WAN_FILES.clipVision],
+];
 
 /** Text for Wan Animate 2's main prompt: looks only (character + background), no motion words. */
 /** Which way she faces the camera in Copy Motion. 'away' = rear view (see motion2RearPrompt). */

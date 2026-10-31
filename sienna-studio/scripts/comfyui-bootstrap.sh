@@ -50,7 +50,8 @@
 #   --with-wan-video   also install Video Studio: Wan2.2 image-to-video + Wan2.2 Animate (~62 GB)
 #   --with-wan-i2v     also install only Animate Image (Wan2.2 image-to-video 14B fp8 + 4-step LoRAs, text encoder, VAE, ~36 GB)
 #   --with-wan-animate also install only Copy Motion v1 (Wan2.2 Animate 14B fp8 + DWPose, ~27 GB)
-#   --with-wan-animate2 also install Copy Motion's default model, Wan2.2-Animate-2 14B int8 (Comfy-Org/Wan-Animate-2, ~24 GB)
+#   --with-wan-animate2 also install Copy Motion's earlier model, Wan2.2-Animate-2 14B int8 (Comfy-Org/Wan-Animate-2, ~24 GB)
+#   --with-scail2      also install Copy Motion's default model, SCAIL-2 14B int8 + its DPO LoRA + SAM 3.1 (Comfy-Org, ~28 GB)
 #   --with-style-packs also download the Create screen's style packs from Civitai (~2.5 GB):
 #                      Micro bikini (143602), Real-photo look (1368634), Natural skin (248951),
 #                      and in the adult-fashion section French lace lingerie (2903117),
@@ -82,6 +83,7 @@ QWEN=0
 WAN=0
 WAN1=0
 WAN2=0
+SCAIL2=0
 PACKS=0
 for arg in "$@"; do
   case "$arg" in
@@ -93,6 +95,7 @@ for arg in "$@"; do
     --with-wan-i2v) WAN=1 ;;
     --with-wan-animate) WAN1=1 ;;
     --with-wan-animate2) WAN2=1 ;;
+    --with-scail2) SCAIL2=1 ;;
     --with-style-packs) PACKS=1 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -386,6 +389,23 @@ if (( WAN2 )); then
   fetch_model "$WA2/vae/Wan2_1_VAE_bf16.safetensors" "$COMFYUI_DIR/models/vae/Wan2_1_VAE_bf16.safetensors" 200000000
 fi
 
+# ── Copy Motion: SCAIL-2 (optional, default Copy Motion engine since 31 Oct) ──────
+if (( SCAIL2 )); then
+  log "SCAIL-2 and SAM 3.1 licenses (shown, not enforced: SCAIL-2's code is Apache-2.0; read the model cards)"
+  printf '  %-36s %s\n' "zai-org/SCAIL-2" "$(license_of zai-org/SCAIL-2 || echo unreachable)"
+  printf '  %-36s %s\n' "facebook/sam3.1" "$(license_of facebook/sam3.1 || echo unreachable)"
+  grep -rqs '"WanSCAILToVideo"' "$COMFYUI_DIR/comfy_extras" || echo "  ! WanSCAILToVideo not found — update ComfyUI (needs a June 2026+ build)"
+  SC="$HF/Comfy-Org/SCAIL-2/resolve/main"
+  fetch_model "$SC/diffusion_models/wan2.1_14B_SCAIL_2_int8_convrot.safetensors" "$COMFYUI_DIR/models/diffusion_models/wan2.1_14B_SCAIL_2_int8_convrot.safetensors" 15000000000
+  fetch_model "$SC/loras/wan2.1_SCAIL_2_DPO_lora_bf16.safetensors" "$COMFYUI_DIR/models/loras/wan2.1_SCAIL_2_DPO_lora_bf16.safetensors" 1000000000
+  fetch_model "$HF/Comfy-Org/sam3.1/resolve/main/checkpoints/sam3.1_multiplex_fp16.safetensors" "$COMFYUI_DIR/models/checkpoints/sam3.1_multiplex_fp16.safetensors" 1500000000
+  WA2="$HF/Comfy-Org/Wan-Animate-2/resolve/main"
+  fetch_model "$WA2/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" "$COMFYUI_DIR/models/loras/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors" 600000000
+  fetch_model "$WA2/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" "$COMFYUI_DIR/models/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors" 6000000000
+  fetch_model "$WA2/clip_vision/clip_vision_h.safetensors" "$COMFYUI_DIR/models/clip_vision/clip_vision_h.safetensors" 1000000000
+  fetch_model "$WA2/vae/Wan2_1_VAE_bf16.safetensors" "$COMFYUI_DIR/models/vae/Wan2_1_VAE_bf16.safetensors" 200000000
+fi
+
 # Video Studio's safe framing measures her outline with the segmenter.
 if (( WAN || WAN1 || WAN2 )) && (( ! QWEN )); then
   log "Segmenter for safe framing (MediaPipe)"
@@ -396,7 +416,7 @@ fi
 # ── Sienna custom nodes (pose retargeting, garment-only isolation, chin crop, top check) ──
 # Shipped in this repo (scripts/comfy_nodes/sienna_nodes). Copied when the script runs from
 # a checkout, or when SIENNA_NODES_DIR points at an uploaded copy.
-if (( OUTFIT || POSE || QWEN || PACKS || WAN || WAN1 || WAN2 )); then
+if (( OUTFIT || POSE || QWEN || PACKS || WAN || WAN1 || WAN2 || SCAIL2 )); then
   log "sienna_nodes"
   src="${SIENNA_NODES_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/comfy_nodes/sienna_nodes}"
   if [[ -f "$src/__init__.py" ]]; then
