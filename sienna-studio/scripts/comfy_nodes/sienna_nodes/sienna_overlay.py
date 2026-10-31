@@ -157,7 +157,7 @@ def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
         x0, y0, bw, bh = (int(v) for v in stats[i, :4])
         # the whole element, not only its white strokes: the coloured profile picture left of a username, the dark
         # pill behind "Made with Edits", icon fills (31 Oct: the avatar and a dark smudge stayed in the copies)
-        pad_y = max(4, int(0.3 * bh))
+        pad_y = max(8, int(0.6 * bh))
         left = int(UI_AVATAR * w)
         mask[max(0, y0 - pad_y):min(h, y0 + bh + pad_y), max(0, x0 - left):min(w, x0 + bw + 6)] = True
     share = float(mask.mean())

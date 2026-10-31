@@ -19,7 +19,7 @@ import { FLORENCE_MODEL } from '../outfit';
 export const KEEP_SCENE_PREFIX = 'ks_';
 /** How far past her outline the redraw reaches, as a share of the picture's width: room for Sienna's own hair and
  * figure, and none of the other person's edges left behind. */
-export const KEEP_SCENE_GROW = 0.035;
+export const KEEP_SCENE_GROW = 0.022;
 export const UI_MASK_CLASS = 'SiennaUiMask';
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
