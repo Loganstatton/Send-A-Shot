@@ -670,7 +670,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     if (p.keepSceneGarment?.length) {
       try {
         const [cns, missing] = await Promise.all([
-          backend.inputChoices('ControlNetLoader', 'control_net_name'),
+          // fresh: the file can arrive on the GPU's drive after the list was cached
+          backend.inputChoices('ControlNetLoader', 'control_net_name', true),
           missingClasses(backend, Object.fromEntries(GARMENT_LINES_CLASSES.map((c) => [c, { class_type: c, inputs: {} }])), GARMENT_LINES_CLASSES),
         ]);
         if (cns.includes(UNION_CN_FILE) && !missing.length) garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE };
