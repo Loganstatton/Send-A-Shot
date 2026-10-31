@@ -128,7 +128,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   // her figure as the photo shows it: the description's bust phrases, never a body-reshaping pack
   const bust = bustPhrases(description).filter((b) => !it.fields.bodyPresentation.toLowerCase().includes(b.toLowerCase()));
   if (bust.length) it.fields.bodyPresentation = [it.fields.bodyPresentation, ...bust].filter(Boolean).join(', ');
-  if (/\b(gap|space|apart|no cleavage)\b/i.test(bust.join(' '))) {
+  if (/\b(gap|space|apart|no cleavage)\b/i.test(bust.join(' ')) && !/\bpressed (together|close)\b/i.test(bust.join(' '))) {
     for (const k of ['outfit', 'bodyPresentation'] as const) it.fields[k] = it.fields[k].replace(/,?\s*deep cleavage\b/gi, '');
     it.fields.avoid = [it.fields.avoid, 'deep cleavage, pushed-up breasts, breasts pressed together'].filter(Boolean).join(', ');
   }
