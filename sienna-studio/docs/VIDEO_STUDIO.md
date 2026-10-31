@@ -1,6 +1,7 @@
 # Video Studio (Wan2.2)
 
-Status: **dev branch `video-studio`, off unless `SIENNA_VIDEO=true`. Not deployed; not yet run on a real GPU.**
+Status: **live** (`SIENNA_VIDEO=true`, on-demand RunPod video GPU). Copy Motion is on with `VIDEO_GPU_COPY_MOTION=true`
+(adds ~24 GB to every video GPU start).
 
 ## What it does
 
@@ -90,3 +91,19 @@ Sienna's reference, bar 0.74; "usable" = face ≥ 64 px):
   can't fix the head-tilted-back frames (0.23). Smoothing the correction over neighbouring frames lowered identity.
 - Verdict: neither reaches the bar throughout the clip. Next step: a Wan-native Sienna identity LoRA (ai-toolkit
   `train_lora_wan22_14b_24gb`, her approved 29-image v2 dataset), so identity comes from the video model itself.
+
+## Live Copy Motion check (2026-10-31, on-demand A40, $0.39)
+
+First run through the live app with Copy Motion switched on. The GPU was marked ready once Animate Image's models
+were there, before Copy Motion's arrived, and the model lists were cached for 5 minutes, so the video failed with
+"missing model file" (fixed: readiness waits for Copy Motion's files when it is on; lists are read fresh).
+
+Second run: face-verified photo (black tank top, jeans, pool, 0.797) + `street_dance_drive.mp4` 1–5 s, 528×768, 4 s.
+GPU ready 5 min after the request, video 5 min later ($0.10 for that session).
+- Motion: the dance comes through (arm punches, turn, lean, hair swing); mean joint error 0.19 torso lengths, 65% of
+  joints within 0.2. Her photo ends at mid-thigh, so the dancer's steps are mostly out of frame — use a full-body
+  photo for dances.
+- Outfit and setting kept (torso colour ΔE 5.6 vs the photo).
+- Identity: median 0.54, 10th percentile 0.19, 0 of 62 frames ≥ 0.74; the app marked it Needs Review. Same picture as
+  the October tests: it reads as Sienna in calm frontal frames and drifts when she turns or copies the dancer's
+  expressions.
