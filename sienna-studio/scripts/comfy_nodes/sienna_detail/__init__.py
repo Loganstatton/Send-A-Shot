@@ -15,7 +15,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sienna_detail import DETECT_THRESHOLD, cut, detector, detector_error, paste, plan  # noqa: E402
+from sienna_detail import DETECT_THRESHOLD, NOT_FOUND_SIDE, cut, detector, detector_error, paste, plan  # noqa: E402
 
 
 def _np(images, i=0):
@@ -54,7 +54,7 @@ class SiennaDetailRegion:
         img = _np(image)
         det = detector()
         if det is None:
-            info = {"found": False, "skipped": f"detector unavailable: {detector_error()}", "size": 64}
+            info = {"found": False, "skipped": f"detector unavailable: {detector_error()}", "size": NOT_FOUND_SIDE}
         else:
             fd, path = tempfile.mkstemp(suffix=".png")
             os.close(fd)
@@ -68,7 +68,8 @@ class SiennaDetailRegion:
 
 
 class SiennaDetailPaste:
-    """Pastes the redrawn close-up back into the photo (soft oval, colours matched); unchanged if nothing was found."""
+    """Clones the redrawn close-up back into the photo (seamless, feathered paste as the fallback); unchanged if nothing
+    was found. The region was found on the first photo of a batch, so only that one is changed."""
 
     @classmethod
     def INPUT_TYPES(cls):
@@ -82,10 +83,11 @@ class SiennaDetailPaste:
 
     def run(self, original, redrawn, info):
         meta = json.loads(info)
-        outs, report = [], {}
-        for i in range(original.shape[0]):
-            out, report = paste(_np(original, i), _np(redrawn, min(i, redrawn.shape[0] - 1)), meta)
-            outs.append(out)
+        # the region and its redraw belong to photo 0: pasting them into the others would put a patch on a different pose
+        first, report = paste(_np(original, 0), _np(redrawn, 0), meta)
+        outs = [first] + [_np(original, i) for i in range(1, original.shape[0])]
+        if original.shape[0] > 1:
+            report["batch_note"] = f"only the first of {original.shape[0]} photos was touched up"
         import torch
 
         text = json.dumps(report)

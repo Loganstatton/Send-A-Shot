@@ -452,6 +452,10 @@ def test_exposure_detector_looks_again_at_a_covered_chest():
     f3 = Fake(covered + [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.8, "box": [1, 1, 5, 5]}], [])
     ex.ChestCropDetector(f3).detect(path)
     assert len(f3.calls) == 1
+    # a faint exposed hit (below the threshold) still gets the close look
+    f4 = Fake(covered + [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.2, "box": [1, 1, 5, 5]}], [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.7, "box": [10, 20, 30, 30]}])
+    out4 = ex.ChestCropDetector(f4).detect(path)
+    assert len(f4.calls) == 2 and ex.summarize(out4)["exposed"] is True
 
 
 def test_face_reference_and_check():

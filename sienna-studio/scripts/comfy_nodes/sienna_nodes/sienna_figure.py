@@ -321,7 +321,8 @@ def _enlarge_bent(img: np.ndarray, kp: Sequence[Point], person: Optional[np.ndar
 
 
 def _lab(img: np.ndarray) -> np.ndarray:
-    return cv2.cvtColor((np.clip(img[..., :3], 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+    # rounded, not truncated: truncating darkened every matched pixel by about a level each way
+    return cv2.cvtColor(np.round(np.clip(img[..., :3], 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
 
 
 def match_colors(src: np.ndarray, red: np.ndarray, mask: np.ndarray, src_classes: Optional[List[np.ndarray]],
@@ -336,22 +337,22 @@ def match_colors(src: np.ndarray, red: np.ndarray, mask: np.ndarray, src_classes
     groups = [("all", m, m)]
     if src_classes and red_classes:
         groups = [(name, m & (src_classes[c] > 0.5), m & (red_classes[c] > 0.5)) for name, c in (("skin", BODY_SKIN), ("clothes", CLOTHES))]
+    matched = np.zeros(m.shape, bool)
     for name, ms, mr in groups:
         if ms.sum() < 200 or mr.sum() < 200:
             continue
+        matched |= mr
         mu_s, sd_s = a[ms].mean(0), a[ms].std(0) + 1e-3
         mu_r, sd_r = b[mr].mean(0), b[mr].std(0) + 1e-3
         scale = np.clip(sd_s / sd_r, 0.6, 1.6)
         shifted = (b[mr] - mu_r) * scale + mu_s
         out[mr] = b[mr] + strength * (shifted - b[mr])
         info[name] = [round(float(x), 1) for x in (mu_s - mu_r)]
-    rgb = cv2.cvtColor(np.clip(out, 0, 255).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32) / 255.0
-    # pixels with no class match keep the redrawn colours exactly
+    rgb = cv2.cvtColor(np.round(np.clip(out, 0, 255)).astype(np.uint8), cv2.COLOR_LAB2RGB).astype(np.float32) / 255.0
+    # pixels of groups that weren't matched (none, or too small) keep the redrawn colours exactly, not an 8-bit LAB
+    # round trip of them
     res = red[..., :3].copy()
-    changed = np.zeros(m.shape, bool)
-    for _, _, mr in groups:
-        changed |= mr
-    res[changed] = rgb[changed]
+    res[matched] = rgb[matched]
     return res.astype(np.float32), info
 
 

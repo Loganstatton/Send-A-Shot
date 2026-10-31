@@ -2,8 +2,8 @@
 Close-up detail pass for nude photos (24 Oct). The Real Pussy LoRAs only show their detail in close-ups: on a
 full-body photo the area is ~60-90 px across and the LoRA changed nothing visible (fig20). So NudeNet finds the exposed
 genital area, a square around it is cut out and enlarged to SDXL size, redrawn there with the LoRA (the app's graph:
-VAEEncode → SetLatentNoiseMask → KSampler → VAEDecode), then scaled back and pasted in with a feathered oval, colours
-matched to the original. Only an area NudeNet already sees as exposed is touched: covered or clothed photos come back
+VAEEncode → SetLatentNoiseMask → KSampler → VAEDecode), then scaled back and seamless-cloned into an oval round the
+area (a feathered, colour-matched paste is the fallback; the report's "blend" says which ran). Only an area NudeNet already sees as exposed is touched: covered or clothed photos come back
 unchanged (and the app adds the pass to nude / bottomless requests only).
 On fig20 and earlier nude photos the detector found the area at 0.31-0.64 in front views (legs apart) and kneeling rear
 views, and nothing when her legs were closed, so 0.3 is the default threshold; nothing found → photo unchanged.
@@ -152,7 +152,12 @@ def seamless(orig: np.ndarray, back: np.ndarray, box_in_crop: Tuple[float, float
         out = cv2.seamlessClone(to8(back), to8(orig), to8(hard), centre, cv2.NORMAL_CLONE)
     except cv2.error:
         return None
-    return out.astype(np.float32) / 255
+    # only the cloned oval (and a pixel round it) comes from the 8-bit result: the rest of the square keeps its
+    # original values, so no faint square edge from re-quantising it
+    take = cv2.dilate(hard.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    res = orig.astype(np.float32).copy()
+    res[take] = out[take].astype(np.float32) / 255
+    return res
 
 
 def detector():

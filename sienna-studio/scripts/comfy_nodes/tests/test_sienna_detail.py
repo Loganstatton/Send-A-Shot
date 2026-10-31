@@ -64,6 +64,20 @@ def test_paste_falls_back_to_feathered_when_the_oval_is_too_small_to_clone():
     assert rep["blend"] == "feathered" and "color_shift" in rep
 
 
+def test_seamless_keeps_the_square_outside_the_oval_exactly():
+    rng = np.random.default_rng(1)
+    orig = rng.random((200, 200, 3)).astype(np.float32)
+    back = rng.random((200, 200, 3)).astype(np.float32)
+    out = sd.seamless(orig, back, (80, 80, 40, 40))
+    assert out is not None
+    hard, _ = sd.oval_masks(200, (80, 80, 40, 40), grow=sd.CLONE_GROW)
+    far = np.ones((200, 200), bool)
+    ys, xs = np.where(hard > 0)
+    far[max(0, ys.min() - 2):ys.max() + 3, max(0, xs.min() - 2):xs.max() + 3] = False
+    assert np.array_equal(out[far], orig[far])  # not re-quantised to 8 bits
+    assert not np.allclose(out[hard > 0], orig[hard > 0])
+
+
 def test_nothing_found_leaves_the_photo_unchanged():
     img = np.full((832, 1216, 3), 0.5, np.float32)
     info = sd.plan([{"class": "BUTTOCKS_EXPOSED", "score": 0.8, "box": [1, 1, 50, 50]}], 1216, 832)

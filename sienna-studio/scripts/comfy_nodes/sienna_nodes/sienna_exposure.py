@@ -48,8 +48,9 @@ def chest_crop_box(detections: List[Dict], width: int, height: int, min_score: f
 class ChestCropDetector:
     """NudeNet, plus a second look at a covered chest in a close crop; crop hits come back in photo coordinates, marked crop."""
 
-    def __init__(self, det):
+    def __init__(self, det, threshold: float = DEFAULT_THRESHOLD):
         self.det = det
+        self.threshold = threshold
 
     def detect(self, path: str) -> List[Dict]:
         import os
@@ -58,7 +59,9 @@ class ChestCropDetector:
         import cv2
 
         dets = list(self.det.detect(path))
-        if any(d.get("class") == "FEMALE_BREAST_EXPOSED" for d in dets):
+        # only a hit that already counts skips the second look: a faint one (0.2 on sheer mesh) is exactly what the
+        # close crop is for
+        if any(d.get("class") == "FEMALE_BREAST_EXPOSED" and float(d.get("score", 0)) >= self.threshold for d in dets):
             return dets
         img = cv2.imread(path)
         box = None if img is None else chest_crop_box(dets, img.shape[1], img.shape[0])

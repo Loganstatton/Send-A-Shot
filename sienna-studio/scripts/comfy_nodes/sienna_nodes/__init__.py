@@ -38,10 +38,16 @@ from . import sienna_figure
 
 
 def _mask_np(mask, i, shape):
+    """Mask i of a batch as float32 (h, w), resized to the image's `shape` when a detector returned another size."""
     if mask is None:
         return None
     m = mask[min(i, mask.shape[0] - 1)] if mask.dim() == 3 else mask
-    return m.detach().cpu().numpy().astype(np.float32)
+    m = m.detach().cpu().numpy().astype(np.float32)
+    if shape is not None and m.shape[:2] != tuple(shape[:2]):
+        import cv2
+
+        m = cv2.resize(m, (int(shape[1]), int(shape[0])), interpolation=cv2.INTER_LINEAR)
+    return m
 
 
 class SiennaPoseRetarget:
@@ -463,6 +469,17 @@ class SiennaLockCamera:
         return {"ui": {"text": [text]}, "result": (result, text)}
 
 
+def _with_rest(first, batch):
+    """The figure pass works on the first photo of a batch: that result followed by the other photos as they were
+    (returning only the first silently dropped the rest)."""
+    if batch.shape[0] <= 1:
+        return first
+    rest = batch[1:, ..., : first.shape[-1]].to(first.dtype)
+    if rest.shape[1:3] != first.shape[1:3]:
+        return first  # can't stack different sizes; the report's batch_note says what happened
+    return torch.cat([first, rest], 0)
+
+
 class SiennaFigureMask:
     """Figure pass (test only): the hip/butt region to resample with the figure LoRA; face, hair, hands and the arms
     beside her hips stay out. Empty mask (nothing redrawn) when her hips or outline aren't found."""
@@ -500,9 +517,11 @@ class SiennaFigureMask:
             hard, soft = res["hard"], res["soft"]
             if "image" in res and res["image"].shape[:2] == shape:
                 out = res["image"]  # reshaped (enlarge > 0) or the photo as made
+        if image.shape[0] > 1:
+            info["batch_note"] = f"only the first of {image.shape[0]} photos was measured; the others pass through"
         text = json.dumps(info)
         t = lambda a: torch.from_numpy(np.ascontiguousarray(a, np.float32))[None, ...]
-        return {"ui": {"text": [text]}, "result": (t(hard), t(soft), text, t(out))}
+        return {"ui": {"text": [text]}, "result": (t(hard), t(soft), text, _with_rest(t(out), image))}
 
 
 class SiennaFigureComposite:
@@ -545,8 +564,10 @@ class SiennaFigureComposite:
             else:
                 out, info = res["image"], {**info, "completed": True}
         sienna_figure.log(f"composite node: completed={info.get('completed')} {info.get('fallback', '')}")
+        if original.shape[0] > 1:
+            info["batch_note"] = f"only the first of {original.shape[0]} photos was changed; the others pass through"
         text = json.dumps(info)
-        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...], text)}
+        return {"ui": {"text": [text]}, "result": (_with_rest(torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...], original), text)}
 
 
 NODE_CLASS_MAPPINGS = {
