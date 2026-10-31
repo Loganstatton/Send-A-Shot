@@ -259,6 +259,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     // ("tee,tank,buttonup", or true = all); unset or false = off, the rollback. A benchmark request can force it.
     coverStomach: req.params.coverStomach ?? coverFromEnv(process.env.SIENNA_COVER_STOMACH),
     fixes,
+    closeFrame: !!req.simple?.copy || process.env.SIENNA_CLOSE_FRAMING === 'true',
   });
   if (built.blocked.length) {
     throw new GenerationError(

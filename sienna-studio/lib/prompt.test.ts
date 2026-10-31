@@ -256,3 +256,25 @@ describe('colourDriftNegative', () => {
     expect(colourDriftNegative('completely nude')).toBe('');
   });
 });
+
+describe('close framing (Copy Photo)', () => {
+  const run = (fields: Partial<typeof EMPTY_FIELDS>, closeFrame = true) =>
+    buildPrompt({ fields: { ...EMPTY_FIELDS, ...fields }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', closeFrame });
+  it('keeps only what is in frame for a chest-up shot', () => {
+    const r = run({ framing: 'chest up', outfit: 'purple string triangle bikini top, small cups, string thong bottoms' });
+    expect(r.positive.startsWith('(close shot from the chest up, cropped below the chest:1.3), chest up')).toBe(true);
+    expect(r.positive).not.toMatch(/curvy hips|defined abs|thong bottoms/);
+    expect(r.positive).toContain('(large round natural breasts:1.2)');
+    expect(r.positive).toContain('purple');
+    expect(r.negative).toContain('full body, wide shot, legs, thighs');
+  });
+  it('keeps the waist for a waist-up shot, not the hips', () => {
+    const r = run({ framing: 'waist up' });
+    expect(r.positive).toContain('slim toned waist');
+    expect(r.positive).not.toContain('curvy hips');
+  });
+  it('changes nothing when off, or for wide shots', () => {
+    expect(run({ framing: 'chest up' }, false).positive).toContain('curvy hips');
+    expect(run({ framing: 'knee-up shot' }).positive).toContain('curvy hips');
+  });
+});

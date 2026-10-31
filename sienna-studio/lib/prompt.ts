@@ -4,7 +4,7 @@
 import { ADULT_ONLY_NEGATIVE, AGE_DRIFT_NEGATIVE, AGE_DRIFT_NEGATIVE_CLEAN, CLOSE_CAMERA_REALISM, EYE_TRAIT, FULL_BODY_CAMERA, FULL_BODY_FRAMING, FULL_BODY_NEGATIVE, KEEP_TOP_NEGATIVE, LEGACY_EYE_TRAIT, LOCK_NEGATIVE, MIN_CHARACTER_AGE, MIRROR_FULL_BODY_FRAMING, NON_STUDIO_NEGATIVE, NUDE_COLOUR_LOOKAHEAD, SFW_NEGATIVE } from './defaults';
 import { outfitHasTop } from './exposure';
 import { hasFix, type Fix } from './fixes';
-import { kneeUpRequest, withoutThighUp } from './framing';
+import { framingLevels, kneeUpRequest, withoutThighUp } from './framing';
 import { rearRequest } from './identity';
 import { applyIdentityLock, findHardBlocks, GuardHit, tidy } from './guard';
 import { splitAvoid } from './outfit-edit';
@@ -13,6 +13,9 @@ import { PROMPT_FIELD_KEYS, PROMPT_FIELD_LABELS } from './types';
 
 export interface BuildPromptInput {
   fields: PromptFields;
+  /** Close-framing wording (closeFraming/inFrame): on for Copy Photo, everywhere with SIENNA_CLOSE_FRAMING=true,
+   * until a GPU comparison shows it doesn't cost her likeness on ordinary close-ups. */
+  closeFrame?: boolean;
   character: CharacterProfile;
   siennaLock: boolean;
   contentMode: ContentMode;
@@ -70,6 +73,47 @@ export function splitEyeTraits(traits: string): { rest: string; eyes: string } {
     eyes: eyes.toLowerCase() === LEGACY_EYE_TRAIT ? EYE_TRAIT : eyes,
   };
 }
+
+/**
+ * A close shot ("chest up", "waist up", "close-up"): the parts of her below the frame leave the prompt. Copy Photo of
+ * chest-up hot-tub clips (31 Oct) came out down to the thighs: the profile's "slim toned waist with defined abs, curvy
+ * hips" and an added "string thong bottoms" asked SDXL to show them, whatever the framing said.
+ */
+export type CloseFraming = 'close-up' | 'chest-up' | 'waist-up' | null;
+export function closeFraming(f: Pick<PromptFields, 'framing' | 'camera'>): CloseFraming {
+  const levels = framingLevels(`${f.framing} ${f.camera}`);
+  if (!levels.length || levels.some((l) => l === 'full body' || l === 'knee-up' || l === 'thigh-up')) return null;
+  return levels.includes('close-up') ? 'close-up' : levels.includes('chest-up') ? 'chest-up' : levels.includes('waist-up') ? 'waist-up' : null;
+}
+const BELOW_CHEST_RE = /\b(waist|abs|stomach|belly|midriff|hips?|legs?|thighs?|butt|buttocks|glutes?|booty|bottom|feet)\b/i;
+const BELOW_WAIST_RE = /\b(hips?|legs?|thighs?|butt|buttocks|glutes?|booty|feet)\b/i;
+const FRAME_BOTTOM_RE = /\b(bottoms?|thong|g-string|panties|knickers|briefs|shorts|skirt|pants|trousers|jeans|leggings|shoes|sandals|heels|sneakers|boots)\b/i;
+/** The comma-separated phrases that stay in frame (a phrase naming only a lower part goes). */
+export function inFrame(text: string, frame: CloseFraming, garments = false): string {
+  if (!frame) return text;
+  const below = frame === 'waist-up' ? BELOW_WAIST_RE : BELOW_CHEST_RE;
+  return text
+    .split(',')
+    .filter((p) => {
+      const t = p.trim();
+      if (!t) return false;
+      // a phrase that also names something in frame stays ("bikini top and thong bottoms" is one garment set)
+      if (garments) return !(FRAME_BOTTOM_RE.test(t) && !/\b(top|bra|cups?|bikini|swimsuit|dress|shirt|tee|tank|blouse|sweater|hoodie|jacket|coat)\b/i.test(t));
+      return !below.test(t) || /\b(breasts?|chest|bust|shoulders?|face|hair|neck)\b/i.test(t);
+    })
+    .map((p) => p.trim())
+    .join(', ');
+}
+const CLOSE_FRAMING_WORDS: Record<Exclude<CloseFraming, null>, string> = {
+  'close-up': '(close-up shot, head and shoulders only:1.3)',
+  'chest-up': '(close shot from the chest up, cropped below the chest:1.3)',
+  'waist-up': '(medium shot from the waist up:1.2)',
+};
+const CLOSE_FRAMING_NEGATIVE: Record<Exclude<CloseFraming, null>, string> = {
+  'close-up': 'full body, wide shot, legs, thighs, hips, knees, feet',
+  'chest-up': 'full body, wide shot, legs, thighs, hips, knees, feet, navel',
+  'waist-up': 'full body, wide shot, legs, thighs, knees, feet',
+};
 
 /** With "barefoot": the model still added sandals from habit. */
 const BAREFOOT_NEGATIVE = 'shoes, sandals, flip-flops, footwear';
@@ -164,7 +208,7 @@ const OUTDOOR_SCENE_RE = /\b(beach|ocean|sea|lake|river|forest|woods|park|street
 const LIGHT_WORDS_RE = /\b(lighting|light|lit|sunlight|sunlit|daylight|lamp|lamplight|candlelight|neon|golden hour|sunset|sunrise|backlit|flash)\b/i;
 const NON_PHONE_CAMERA_RE = /\b(dslr|mirrorless|film camera|35mm film|medium format|professional (camera|photographer|photo ?shoot)|studio (photo|shoot|portrait)|canon|nikon|sony a\d|leica|hasselblad)\b/i;
 
-export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1, coverStomach = false, fixes = [] }: BuildPromptInput): BuiltPrompt {
+export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1, coverStomach = false, fixes = [], closeFrame = false }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
 
@@ -196,9 +240,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   const token = character.triggerToken.trim();
   const tokenPhrase = !token || /\bwoman$/i.test(token) ? token : `${token} woman`;
   const traits = splitEyeTraits(character.appearanceTraits);
-  const identity = siennaLock
-    ? [tokenPhrase, `${age}-year-old adult woman`, traits.rest]
-    : [`adult woman`];
+  const identityFor = (rest: string) => (siennaLock ? [tokenPhrase, `${age}-year-old adult woman`, rest] : [`adult woman`]);
+  const identity = identityFor(traits.rest);
 
   const fullBody = fullBodyFraming(f);
   if (fullBody.conflict) warnings.push('Request mixes full-body and close-up/half-body framing — no full-body framing was added.');
@@ -255,7 +298,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   const rear = rearRequest(poseText, null, false);
   const faceAway = rear && !LOOKING_BACK_RE.test(`${poseText} ${f.expression}`);
 
-  const outfitText = tidy(emphasizeColours(f.outfit));
+  const frame = closeFrame && !fullBodyMode ? closeFraming(f) : null;
+  const outfitText = tidy(emphasizeColours(inFrame(f.outfit, frame, true)));
   if (version === 2) {
     return buildV2({ f, fields, character, siennaLock, contentMode, cleanup, poseGuide, warnings, blocked, effectiveFields, tokenPhrase, age, traits, fullBodyMode, barefoot, rear, faceAway, outfitText, framing: f.framing, coverStomach });
   }
@@ -266,6 +310,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     rear ? REAR_VIEW : '',
     faceAway ? FACE_AWAY : '',
     addedFraming,
+    frame ? CLOSE_FRAMING_WORDS[frame] : '',
     framing,
     poseGuide === undefined ? f.pose : '',
     // outfit colours get a little extra weight: in the audit "red bikini" came out beige/green. 1.1 keeps her face
@@ -280,7 +325,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     f.setting,
     f.lighting,
     f.extra,
-    ...identity,
+    ...(frame ? identityFor(inFrame(traits.rest, frame)) : identity),
     camera,
     realism,
     siennaLock && !faceAway ? traits.eyes : '',
@@ -298,6 +343,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     contentMode === 'sfw' ? SFW_NEGATIVE : '',
     siennaLock ? (cleanup ? AGE_DRIFT_NEGATIVE_CLEAN : AGE_DRIFT_NEGATIVE) : '',
     fullBodyMode === 'normal' ? FULL_BODY_NEGATIVE : '',
+    frame ? CLOSE_FRAMING_NEGATIVE[frame] : '',
     barefoot ? BAREFOOT_NEGATIVE : '',
     outfitHasTop(f.outfit) ? KEEP_TOP_NEGATIVE : '',
     cover.negative,

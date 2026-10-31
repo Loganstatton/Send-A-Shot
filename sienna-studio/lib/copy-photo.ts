@@ -86,11 +86,11 @@ export function cleanCaption(caption: string): string {
 export const DESCRIBE_SYSTEM = `You write the description an image model uses to recreate a photo with a different woman: Sienna, a fictional adult character whose face, hair colour, skin tone and body come from her own model. Everything else must match the original photo as closely as words allow, so the owner's followers see the same shot.
 
 Describe precisely, most important first:
-- Clothing: each garment's type and exact cut and size (for example "tiny string triangle bikini top whose small cups cover only the centre of each breast, wide gap between the cups, thin strings tied behind the neck"), how much skin it leaves showing (cleavage, side, underneath), colour, fabric, pattern or plain, wet or dry, how it sits.
+- Clothing (only what is visible in the photo; never guess at garments out of frame or under the water): each garment's type and exact cut and size (for example "tiny string triangle bikini top whose small cups cover only the centre of each breast, wide gap between the cups, thin strings tied behind the neck"), how much skin it leaves showing (cleavage, side, underneath), colour, fabric, pattern or plain, wet or dry, how it sits.
 - Accessories and props: sunglasses, jewellery, hats, anything held or nearby.
 - Hair style only (high bun, wet ponytail, down and wavy) — never the hair colour.
 - Pose: body position, where her arms and hands are, head tilt, which way she faces, expression and mouth (talking, smiling, lips parted, eyes closed).
-- Camera: framing (close-up from the chest up, waist up, full body), how close, the angle, selfie at arm's length or filmed by someone else, where she is in the frame, how much of the frame the background takes.
+- Camera: framing, judged by where the bottom edge of the photo cuts her body ("chest up" when it cuts just below her breasts or at the water line there, "waist up" only when her navel shows, "full body" only with her feet), how close, the angle, selfie at arm's length or filmed by someone else, where she is in the frame, how much of the frame the background takes.
 - Setting: the visible objects, plants, water, buildings and surfaces with their colours and positions (behind her, left, right), the sky, time of day, weather, the light's direction and quality.
 - Photo look: candid phone photo, video still, sharpness, grain.
 
