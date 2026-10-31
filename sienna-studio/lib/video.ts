@@ -593,7 +593,9 @@ export function buildMotion2Graph(i: Motion2GraphInput): ComfyGraph {
     v_drive: n('LoadVideo', { file: i.videoName }, 'Driving video'),
     v_drive_frames: n('GetVideoComponents', { video: ['v_drive', 0] }),
     v_drive_part: n('ImageFromBatch', { image: ['v_drive_frames', 0], batch_index: Math.max(0, Math.floor(i.startFrame)), length: i.frames }, 'Chosen part'),
-    v_scaled: n('ImageScale', { image: ['v_drive_part', 0], upscale_method: 'area', width: W, height: H, crop: 'center' }),
+    // a phone screen recording's overlays (caption text, icons, comment bar) come off before the model reads the clip
+    v_drive_clean: n('SiennaCleanOverlays', { images: ['v_drive_part', 0] }, 'Clean screen-recording overlays'),
+    v_scaled: n('ImageScale', { image: ['v_drive_clean', 0], upscale_method: 'area', width: W, height: H, crop: 'center' }),
     v_drive_first: n('ImageFromBatch', { image: ['v_scaled', 0], batch_index: 0, length: 1 }),
     v_clipvision: n('CLIPVisionLoader', { clip_name: WAN_FILES.clipVision }),
     v_cv_ref: n('CLIPVisionEncode', { clip_vision: ['v_clipvision', 0], image: ['v_ref', 0], crop: 'none' }),
@@ -723,7 +725,7 @@ export function motion2Prompt(character: string, outfit: string, scene: string):
 export const MOTION2_NODE_CLASSES = [
   'LoadImage', 'ImageScale', 'LoadVideo', 'GetVideoComponents', 'ImageFromBatch', 'CLIPVisionLoader', 'CLIPVisionEncode', 'CLIPLoader', 'CLIPTextEncode',
   'VAELoader', 'UNETLoader', 'LoraLoaderModelOnly', 'WanAnimate2Cache', 'ModelSamplingSD3', 'BasicScheduler', 'KSamplerSelect', 'WanAnimate2ToVideo',
-  'SamplerCustom', 'TrimVideoLatent', 'VAEDecode', 'ImageBatch', 'CreateVideo', 'SaveVideo', 'SaveImage',
+  'SamplerCustom', 'TrimVideoLatent', 'VAEDecode', 'ImageBatch', 'CreateVideo', 'SaveVideo', 'SaveImage', 'SiennaCleanOverlays',
 ];
 export const MOTION2_FILES: [string, string, string][] = [
   ['UNETLoader', 'unet_name', WAN_FILES.animate2],

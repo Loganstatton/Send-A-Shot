@@ -256,6 +256,7 @@ const SCHEMAS: Record<string, string[]> = {
   SaveVideo: ['video', 'filename_prefix', 'format', 'codec', 'format.codec'],
   DWPreprocessor: ['image', 'detect_hand', 'detect_body', 'detect_face', 'resolution', 'bbox_detector', 'pose_estimator', 'scale_stick_for_xinsr_cn'],
   SiennaFaceCheck: ['images', 'reference', 'threshold', 'min_face'],
+  SiennaCleanOverlays: ['images'], // scripts/comfy_nodes/sienna_nodes/__init__.py
   // Wan Animate 2 (comfy_extras/nodes_wan.py, nodes_custom_sampler.py)
   WanAnimate2ToVideo: ['positive', 'negative', 'vae', 'width', 'height', 'length', 'batch_size', 'reference_image', 'pose_video', 'clip_vision_output', 'positive_pose', 'clip_vision_output_pose', 'continue_motion', 'video_frame_offset', 'pose_strength', 'pose_start_percent', 'pose_end_percent', 'reference_image_strength'],
   WanAnimate2Cache: ['model', 'device', 'dtype'],
@@ -308,6 +309,9 @@ describe('Copy Motion v2 (Wan Animate 2)', () => {
     expect(g.v_shift.inputs.shift).toBe(5);
     expect(g.v_ks_0.inputs).toMatchObject({ cfg: 1, add_noise: true, noise_seed: 9, sigmas: ['v_sigmas', 0], sampler: ['v_sampler', 0] });
     expect(g.v_anim_0.inputs).toMatchObject({ length: ANIMATE2_CHUNK, video_frame_offset: 0, pose_video: ['v_scaled', 0], positive_pose: ['v_pose_text', 0], reference_image: ['v_ref', 0] });
+    // screen-recording overlays come off the chosen part before it is scaled
+    expect(g.v_drive_clean).toMatchObject({ class_type: 'SiennaCleanOverlays', inputs: { images: ['v_drive_part', 0] } });
+    expect(g.v_scaled.inputs.image).toEqual(['v_drive_clean', 0]);
     expect(g.v_drive_part.inputs).toMatchObject({ batch_index: 16, length: 65 });
     expect(g.v_frames.inputs.length).toBe(65);
   });

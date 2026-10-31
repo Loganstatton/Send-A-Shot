@@ -143,6 +143,7 @@ if (arg('--wan-video')) {
     SiennaSafeFrame: { image: ['IMAGE'], margins: ['STRING'], target_area: ['INT'], max_pad: ['FLOAT'], min_aspect: ['FLOAT'], feather: ['INT'] },
     // Lock Camera (video): FAKE_LOCK=applied|steady|rejected|unavailable picks the report (default applied)
     SiennaLockCamera: { images: ['IMAGE'] },
+    SiennaCleanOverlays: { images: ['IMAGE'] },
     InpaintModelConditioning: { positive: ['CONDITIONING'], negative: ['CONDITIONING'], vae: ['VAE'], pixels: ['IMAGE'], mask: ['MASK'], noise_mask: ['BOOLEAN'] },
     InvertMask: { mask: ['MASK'] },
     ImageCompositeMasked: { destination: ['IMAGE'], source: ['IMAGE'], x: ['INT'], y: ['INT'], resize_source: ['BOOLEAN'] },

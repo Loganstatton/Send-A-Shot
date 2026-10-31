@@ -458,6 +458,30 @@ def test_exposure_detector_looks_again_at_a_covered_chest():
     assert len(f4.calls) == 2 and ex.summarize(out4)["exposed"] is True
 
 
+def test_overlay_clean_erases_still_text_and_crops_bars_only():
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'sienna_nodes'))
+    import sienna_overlay as so
+    rng = np.random.default_rng(3)
+    T, H, W = 24, 200, 120
+    frames = np.empty((T, H, W, 3), np.float32)
+    for t in range(T):  # moving content (a person-like blob sliding across) on a plain still wall
+        frames[t] = 0.55
+        x = 20 + 3 * t
+        frames[t, 60:160, x:x + 30] = rng.uniform(0.2, 0.8, (100, 30, 1))
+    frames[:, 90:100, 10:110] = 0.0                  # outlined caption text: dark box with white strokes inside
+    frames[:, 92:98, 12:108:4] = 1.0
+    frames[:, 185:, :] = 0.05                         # app comment bar at the bottom
+    mask, (top, bottom), rep = so.overlay_plan(frames)
+    assert mask[92:98, 12:108].mean() > 0.9 and bottom <= 186 and top == 0
+    assert not mask[20:50, :].any()                   # the plain wall is left alone
+    out, rep = so.clean_frames(frames)
+    assert rep["changed"] and out.shape[1] == bottom and out[:, 92:98, 50:60].max() < 0.95
+    # ordinary footage (nothing still and white on an edge, no bars) comes back unchanged
+    plain = rng.uniform(0.2, 0.8, (T, H, W, 3)).astype(np.float32)
+    same, rep2 = so.clean_frames(plain)
+    assert rep2["changed"] is False and same is plain
+
+
 def test_face_reference_and_check():
     a = np.array([1, 0, 0], np.float32); b = np.array([0.8, 0.6, 0], np.float32)
     ref = sf.reference_embedding([a, b])

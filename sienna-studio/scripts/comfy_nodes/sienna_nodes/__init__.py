@@ -12,6 +12,7 @@ Sienna Studio custom ComfyUI nodes (installed by scripts/comfyui-bootstrap.sh).
   SiennaFaceCheck        image(s) + reference embedding → how close the face is to Sienna (OpenCV SFace; JSON)
   SiennaSafeFrame        photo + movement margins → photo with the missing room around her added + outpaint mask (video)
   SiennaLockCamera       video frames → frames with the camera's drift removed (background held still) + JSON report (video)
+  SiennaCleanOverlays    driving video frames → app overlays (caption text, icons, bars) erased / cropped + JSON report
   SiennaFigureMask       photo + person mask + DWPose → hip/butt region to redraw (figure pass, test only)
   SiennaFigureComposite  original + redrawn photo + region → colours matched back per class, pasted in (figure pass)
 
@@ -35,6 +36,7 @@ from .sienna_redraw import GROW_MODES, erase, garment_region, overlay, segment_c
 from .sienna_garment import garment_composite
 from .sienna_pose import DEFAULT_PROPORTIONS, retarget_openpose
 from . import sienna_figure
+from . import sienna_overlay
 
 
 def _mask_np(mask, i, shape):
@@ -433,6 +435,30 @@ class SiennaSafeFrame:
                 "result": (torch.from_numpy(padded[None]).float(), torch.from_numpy(mask[None]).float(), vw, vh, text)}
 
 
+class SiennaCleanOverlays:
+    """Copy Motion: a screen recording's app overlays (caption text, like/comment icons, comment bar) erased from the
+    driving frames before the model reads them; ordinary footage passes through unchanged (sienna_overlay.py)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"images": ("IMAGE",)}}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("images", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, images):
+        frames = images.detach().cpu().numpy().astype(np.float32)
+        try:
+            out, report = sienna_overlay.clean_frames(frames)
+        except Exception as e:  # never block the video over a clean-up step
+            out, report = frames, {"changed": False, "error": f"{type(e).__name__}: {e}"}
+        text = json.dumps(report)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32)), text)}
+
+
 class SiennaLockCamera:
     """Lock Camera for videos: removes the camera's drift so the background stays where it is in the first frame
     (sienna_stabilize.py). Her body is found with the segmenter and left out of the tracking; frames are only moved
@@ -583,6 +609,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFaceCheck": SiennaFaceCheck,
     "SiennaSafeFrame": SiennaSafeFrame,
     "SiennaLockCamera": SiennaLockCamera,
+    "SiennaCleanOverlays": SiennaCleanOverlays,
     "SiennaFigureMask": SiennaFigureMask,
     "SiennaFigureComposite": SiennaFigureComposite,
 }
@@ -599,6 +626,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaFaceCheck": "Sienna Face Check",
     "SiennaSafeFrame": "Sienna Safe Frame (video)",
     "SiennaLockCamera": "Sienna Lock Camera (video)",
+    "SiennaCleanOverlays": "Sienna Clean Overlays (video)",
     "SiennaFigureMask": "Sienna Figure Mask (test)",
     "SiennaFigureComposite": "Sienna Figure Composite (test)",
 }
