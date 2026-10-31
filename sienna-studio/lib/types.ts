@@ -179,6 +179,9 @@ export interface GenerationParams {
   poseRetarget?: number;
   /** Optional high-resolution refinement pass (upscale + low-denoise re-render). */
   hires?: boolean;
+  /** Copy Photo: the init image (the uploaded photo) is kept as the picture and only the person in it (and a
+   * screenshot's app overlays) is redrawn as Sienna (comfy/keep-scene). */
+  keepScene?: boolean;
   hiresScale?: number;
   hiresDenoise?: number;
   /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */

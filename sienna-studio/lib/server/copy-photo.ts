@@ -10,6 +10,7 @@ import type { GenerateRequest, StoredImage } from '../types';
 import { aiDescribePhoto, aiEnabled, aiRead } from './ai';
 import { queueImageJob, settledJobState } from './jobs';
 import { applyAiReading } from './reading';
+import { sceneSize } from '../comfy/keep-scene';
 import { GARMENT_PACK_IDS } from '../style-packs';
 import { adultContentAllowed, getComfyUrl, getSettings, mimeFromBytes, readImage, storeImage } from './store';
 
@@ -72,6 +73,12 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   const copy = req.simple?.copy;
   if (!copy || copy.status !== 'pending' || !req.images.poseImage || !req.simple) return req;
   const simple = req.simple;
+  // keep-scene (default): the photo itself is the picture, at its own shape; only the person is redrawn
+  const ref = req.images.poseImage;
+  const keepScene = process.env.SIENNA_COPY_SCENE !== 'off';
+  const scene = keepScene ? { ...sceneSize(ref.width ?? 0, ref.height ?? 0), keepScene: true, denoise: 1, hires: false } : {};
+  const sceneImages = keepScene ? { initImage: ref } : {};
+  const sceneNote = keepScene ? ['The photo itself is kept as the picture; only the person in it (and any app buttons or text on a screenshot) is redrawn, as Sienna.'] : [];
   let description = '';
   let by: 'ai' | 'gpu-caption' | undefined;
   let nudePhoto = true;
@@ -92,7 +99,12 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     console.warn(`[copy-photo] ${req.images.poseImage.file}: ${e?.message ?? e}`);
   }
   if (!description) {
-    return { ...req, simple: { ...simple, notes: [...simple.notes, error ?? 'Nothing could be read from the photo: only its pose was copied.'], copy: { ...copy, status: 'done', error: error ?? 'nothing read' } } };
+    return {
+      ...req,
+      params: { ...req.params, ...scene },
+      images: { ...req.images, ...sceneImages },
+      simple: { ...simple, notes: [...simple.notes, ...sceneNote, error ?? 'Nothing could be read from the photo: only its pose was copied.'], copy: { ...copy, status: 'done', error: error ?? 'nothing read' } },
+    };
   }
 
   const text = copyRequestText(description, copy.userText);
@@ -141,11 +153,12 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
       posePreset: null,
       ...(aiRan ? { autoPosePreset: false } : {}),
       ...(garment ? { outfitIsolation: 'garment' as const, outfitStrength: COPY_GARMENT_STRENGTH, outfitMode: 'design' as const } : {}),
+      ...scene,
     },
-    images: { ...req.images, ...(garment ? { outfitImage: req.images.poseImage, outfitGarmentImage: garment } : {}) },
+    images: { ...req.images, ...sceneImages, ...(garment ? { outfitImage: req.images.poseImage, outfitGarmentImage: garment } : {}) },
     simple: {
       ...simple,
-      notes: [...it.notes, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : [])],
+      notes: [...it.notes, ...sceneNote, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : [])],
       ai: { ...(simple.ai ?? { read: false, check: false }), read: aiRan, check: !!simple.ai?.check && aiOk },
       copy: { ...copy, status: 'done', description, by, text },
     },

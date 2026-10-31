@@ -41,6 +41,7 @@ import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, PO
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
+import { addKeepScene, UI_MASK_CLASS } from '../comfy/keep-scene';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -653,6 +654,20 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       graph[refineId].inputs.model = [applyId, 0];
       faceRefine = { ...faceRefine, faceReferenceOnly: true };
     }
+  }
+
+  // ── Copy Photo, keep-scene: the uploaded photo stays the picture; only the person (and app overlays) is redrawn ──
+  if (p.keepScene && wanted.init_image) {
+    let ui = false;
+    try {
+      ui = !!(await backend.nodeInfo(UI_MASK_CLASS));
+    } catch {
+      /* can't ask: leave the overlays */
+    }
+    const kept = addKeepScene(graph, { width: outW, uiMask: ui });
+    if (kept) graph = kept;
+    else warnings.push('Copy Photo: this workflow can’t keep the photo as the background — the whole picture was redrawn.');
+    if (kept && !ui) warnings.push('Copy Photo: the GPU server has no app-overlay remover yet (SiennaUiMask) — screenshot icons and text may stay.');
   }
 
   // ── Hand touch-up: after the face pass, before the top check (which reads the final image) ──

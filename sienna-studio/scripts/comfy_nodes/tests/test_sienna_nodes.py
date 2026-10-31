@@ -721,3 +721,32 @@ if __name__ == "__main__":
             except Exception as e:  # noqa: BLE001
                 fails += 1; print("FAIL", name, repr(e))
     sys.exit(1 if fails else 0)
+
+
+def test_ui_mask_finds_thin_white_overlays_at_the_edges_only():
+    import cv2
+    import sienna_overlay as so
+
+    rng = np.random.default_rng(1)
+    img = (0.3 + 0.2 * rng.random((400, 240, 3))).astype(np.float32)
+    img[150:260, 60:180] = 0.97  # a broad white area in the middle (a white tub): not an overlay
+    canvas = (img * 255).astype(np.uint8)
+    cv2.putText(canvas, "user.name", (10, 370), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)  # bottom caption
+    cv2.circle(canvas, (215, 200), 10, (255, 255, 255), 2)  # an icon in the right-hand column
+    cv2.putText(canvas, "middle", (70, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)  # mid-picture text: scene
+    img = canvas.astype(np.float32) / 255
+    mask, rep = so.ui_mask(img)
+    assert mask[355:375, 15:100].mean() > 0.3
+    assert mask[190:210, 205:225].mean() > 0.3
+    assert not mask[160:250, 70:170].any()
+    assert not mask[100:125, 70:150].any()
+    assert rep["parts"] >= 2
+
+
+def test_ui_mask_leaves_a_plain_photo_alone():
+    import sienna_overlay as so
+
+    rng = np.random.default_rng(2)
+    img = (0.2 + 0.5 * rng.random((300, 200, 3))).astype(np.float32)
+    mask, rep = so.ui_mask(img)
+    assert not mask.any()

@@ -459,6 +459,30 @@ class SiennaCleanOverlays:
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32)), text)}
 
 
+class SiennaUiMask:
+    """Copy Photo: the app overlays of a screenshot (buttons, counts, username, caption) as a mask to repaint from
+    the scene round them; a photo without overlays gives an empty mask (sienna_overlay.ui_mask)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"image": ("IMAGE",)}}
+
+    RETURN_TYPES = ("MASK", "STRING")
+    RETURN_NAMES = ("mask", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image):
+        img = image[0].detach().cpu().numpy().astype(np.float32)
+        try:
+            mask, report = sienna_overlay.ui_mask(img)
+        except Exception as e:  # never block the photo over a clean-up step
+            mask, report = np.zeros(img.shape[:2], bool), {"error": f"{type(e).__name__}: {e}"}
+        text = json.dumps(report)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(mask.astype(np.float32))[None], text)}
+
+
 class SiennaLockCamera:
     """Lock Camera for videos: removes the camera's drift so the background stays where it is in the first frame
     (sienna_stabilize.py). Her body is found with the segmenter and left out of the tracking; frames are only moved
@@ -610,6 +634,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaSafeFrame": SiennaSafeFrame,
     "SiennaLockCamera": SiennaLockCamera,
     "SiennaCleanOverlays": SiennaCleanOverlays,
+    "SiennaUiMask": SiennaUiMask,
     "SiennaFigureMask": SiennaFigureMask,
     "SiennaFigureComposite": SiennaFigureComposite,
 }
@@ -627,6 +652,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "SiennaSafeFrame": "Sienna Safe Frame (video)",
     "SiennaLockCamera": "Sienna Lock Camera (video)",
     "SiennaCleanOverlays": "Sienna Clean Overlays (video)",
+    "SiennaUiMask": "Sienna App Overlay Mask (photo)",
     "SiennaFigureMask": "Sienna Figure Mask (test)",
     "SiennaFigureComposite": "Sienna Figure Composite (test)",
 }

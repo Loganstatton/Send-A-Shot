@@ -109,3 +109,49 @@ def clean_frames(frames: np.ndarray) -> Tuple[np.ndarray, Dict]:
             f8 = cv2.inpaint(f8, m.astype(np.uint8), 7, cv2.INPAINT_TELEA)
         out.append(f8[top:bottom].astype(np.float32) / 255)
     return np.stack(out), {**report, "changed": True, "windowed": len(set(map(id, masks))) > 1}
+
+
+# ── Single photos (Copy Photo, 31 Oct) ───────────────────────────────────────────────────────────────────────────────
+# A screenshot of a post has no "still" to go by. App overlays are drawn in pure white, in thin strokes (text, icon
+# outlines), round the edges of the screen: the right-hand column of buttons, the username and caption along the
+# bottom, the top bar. Real scenes have little thin pure white there; a white tub or foam is broad or off-white.
+UI_WHITE = 0.9        # overlay text and icons are pure white
+UI_STROKE = 9         # strokes thinner than this (pixels) count; broad white areas don't
+UI_ZONE = (0.08, 0.80, 0.72)  # top band, right column start, bottom band start (shares of height / width)
+UI_MAX_PART = 0.02    # one overlay element covers less than this share of the picture
+UI_MAX_MASK = 0.15
+
+
+def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
+    """img: (H, W, 3) float 0..1 → (mask HxW bool of app overlays to repaint, report)."""
+    import cv2
+
+    h, w = img.shape[:2]
+    rgb = img[..., :3]
+    white = (rgb.min(-1) > UI_WHITE) & ((rgb.max(-1) - rgb.min(-1)) < 0.1)
+    w8 = white.astype(np.uint8)
+    broad = cv2.morphologyEx(w8, cv2.MORPH_OPEN, np.ones((UI_STROKE, UI_STROKE), np.uint8)).astype(bool)
+    g = rgb.mean(-1).astype(np.float32)
+    edge = cv2.dilate((cv2.morphologyEx(g, cv2.MORPH_GRADIENT, np.ones((3, 3), np.uint8)) > 0.25).astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+    strokes = white & ~broad & edge
+    # letters and icon parts sit close together: join them into elements
+    joined = cv2.dilate(strokes.astype(np.uint8), np.ones((9, 9), np.uint8))
+    n, lab, stats, cent = cv2.connectedComponentsWithStats(joined, 8)
+    top, right, bottom = UI_ZONE
+    keep = np.zeros((h, w), bool)
+    parts = 0
+    for i in range(1, n):
+        cx, cy = cent[i]
+        area = stats[i, cv2.CC_STAT_AREA]
+        if area > UI_MAX_PART * h * w or area < 30:
+            continue
+        if cy < top * h or cx > right * w or cy > bottom * h:
+            keep |= lab == i
+            parts += 1
+    mask = cv2.dilate((keep & cv2.dilate(strokes.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)).astype(np.uint8), np.ones((7, 7), np.uint8), iterations=2).astype(bool)
+    share = float(mask.mean())
+    report = {"ui_share": round(share, 4), "parts": parts}
+    if share > UI_MAX_MASK:
+        report["skipped"] = "too much of the picture looked like app overlays; left as it was"
+        return np.zeros((h, w), bool), report
+    return mask, report
