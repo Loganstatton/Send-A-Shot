@@ -100,3 +100,26 @@ Never describe her face features, hair colour, skin colour, ethnicity, age, body
 Write one paragraph of short comma-separated phrases, 90 to 180 words, no full sentences about the photo itself ("the photo shows"), no names. If there is no person in the photo, describe the scene and set person_found to false.`;
 
 export const describeUser = 'Describe this photo for the recreation.';
+
+/** The garment piece names Florence-2 segments for the garment-only crop (max 3), read from the described outfit. */
+const GARMENT_PHRASES: [RegExp, string][] = [
+  [/\bbikini\b|\btriangle (?:bikini )?top\b|\bstring top\b/i, 'bikini top'],
+  [/\b(?:bra|bralette)\b/i, 'bra'],
+  [/\b(?:swimsuit|one-piece|monokini|bodysuit|leotard)\b/i, 'swimsuit'],
+  [/\b(?:dress|gown)\b/i, 'dress'],
+  [/\b(?:crop top|tank top|camisole|cami|t-shirt|tee|shirt|blouse|top)\b/i, 'top'],
+  [/\b(?:sweater|hoodie|cardigan|jacket)\b/i, 'jacket'],
+  [/\b(?:skirt)\b/i, 'skirt'],
+  [/\b(?:shorts)\b/i, 'shorts'],
+  [/\b(?:jeans|pants|trousers|leggings)\b/i, 'pants'],
+];
+export function copyGarmentPhrases(outfit: string): string[] {
+  const out: string[] = [];
+  for (const [re, phrase] of GARMENT_PHRASES) {
+    if (re.test(outfit) && !out.includes(phrase) && !(phrase === 'top' && (out.includes('bikini top') || out.includes('bra')))) out.push(phrase);
+  }
+  return out.slice(0, 3);
+}
+/** The garment crop guides the outfit (IP-Adapter, style transfer) at this strength: the tested 0.6–0.8 range's low end,
+ * so her own look stays first. */
+export const COPY_GARMENT_STRENGTH = 0.6;

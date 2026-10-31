@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
+import { buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
 
 describe('copyUserText', () => {
   it('drops the copy instruction itself', () => {
@@ -41,5 +41,14 @@ describe('buildCopyGateGraph', () => {
   it('is on unless switched off', () => {
     expect(copyPhotoEnabled(undefined)).toBe(true);
     expect(copyPhotoEnabled('off')).toBe(false);
+  });
+});
+
+describe('copyGarmentPhrases', () => {
+  it('names the pieces to cut out', () => {
+    expect(copyGarmentPhrases('tiny purple string triangle bikini top, thin halter strings')).toEqual(['bikini top']);
+    expect(copyGarmentPhrases('white tank top and denim shorts')).toEqual(['top', 'shorts']);
+    expect(copyGarmentPhrases('red slip dress')).toEqual(['dress']);
+    expect(copyGarmentPhrases('sunglasses, small stud earring')).toEqual([]);
   });
 });

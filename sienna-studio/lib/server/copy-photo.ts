@@ -1,15 +1,17 @@
 import 'server-only';
 import { NUDE_RE } from '../ai-prompts';
-import { buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_WHY, copyRequestText } from '../copy-photo';
+import { buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
+import { buildGarmentIsolationGraph, GARMENT_ISOLATE_NODE, OUTFIT_PREVIEW_NODE } from '../outfit';
 import { parseExposure } from '../exposure';
 import { interpretPrompt } from '../interpret';
 import { offeredGuides } from '../pose-presets';
 import { createBackend } from '../comfy/client';
-import type { GenerateRequest } from '../types';
+import type { GenerateRequest, StoredImage } from '../types';
 import { aiDescribePhoto, aiEnabled, aiRead } from './ai';
 import { queueImageJob, settledJobState } from './jobs';
 import { applyAiReading } from './reading';
-import { adultContentAllowed, getComfyUrl, getSettings, readImage } from './store';
+import { GARMENT_PACK_IDS } from '../style-packs';
+import { adultContentAllowed, getComfyUrl, getSettings, mimeFromBytes, readImage, storeImage } from './store';
 
 const GATE_TIMEOUT_MS = 4 * 60_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -29,6 +31,36 @@ async function gate(req: GenerateRequest) {
     await sleep(2000);
   }
   throw new Error('it took too long');
+}
+
+/** Runs a small graph on the photo and waits for it (the photo GPU is up: this runs just before the photo is made). */
+async function runJob(ref: StoredImage, build: (name: string) => import('../types').ComfyGraph, what: string, prefix: string) {
+  const { promptId } = await queueImageJob(ref, build, what, prefix);
+  const backend = createBackend(await getComfyUrl());
+  const until = Date.now() + GATE_TIMEOUT_MS;
+  while (Date.now() < until) {
+    const s = await settledJobState(backend, promptId);
+    if (s.state === 'done') return { s, backend };
+    if (s.state === 'error' || s.state === 'unknown') throw new Error(s.state === 'error' ? s.message : 'the GPU lost the job');
+    await sleep(2000);
+  }
+  throw new Error('it took too long');
+}
+
+/**
+ * The garment cut out of the photo (Florence-2 segments the named pieces; face, hair and body are replaced by a flat
+ * silhouette), for the outfit IP-Adapter: words drew an ordinary triangle top where the photo had tall, narrow sliver
+ * cups (31 Oct). Null when no garment was found (a nude photo, or nothing segmented): never the whole person.
+ */
+async function garmentCrop(ref: StoredImage, outfit: string): Promise<StoredImage | null> {
+  const phrases = copyGarmentPhrases(outfit);
+  if (!phrases.length) return null;
+  const { s, backend } = await runJob(ref, (name) => buildGarmentIsolationGraph(name, phrases), 'Cutting out the outfit', 'copygarment-');
+  if (s.texts?.[GARMENT_ISOLATE_NODE]?.[0] !== 'garment') return null;
+  const img = s.images.find((i) => i.nodeId === OUTFIT_PREVIEW_NODE);
+  if (!img) return null;
+  const { bytes, mime } = await backend.fetchImage(img);
+  return storeImage(bytes, mimeFromBytes(bytes) ?? mime, 'up', 'Copy Photo: garment cut out of the photo');
 }
 
 /**
@@ -80,14 +112,33 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     }
   }
   const how = by === 'ai' ? 'described by the AI' : 'described by the GPU (no AI for photos with nudity)';
+  // the outfit itself, as a picture (only for a photo with nothing exposed: a nude photo has no garment to copy)
+  let garment: StoredImage | null = null;
+  let garmentNote = '';
+  if (!nudePhoto && process.env.SIENNA_COPY_GARMENT !== 'off') {
+    try {
+      garment = await garmentCrop(req.images.poseImage, it.fields.outfit);
+      garmentNote = garment ? 'The outfit was also cut out of your photo and used as a picture reference for its exact shape.' : 'No garment could be cut out of the photo: the outfit follows the description only.';
+    } catch (e: any) {
+      garmentNote = `The outfit couldn’t be cut out of the photo (${e?.message ?? e}): it follows the description only.`;
+    }
+  }
   return {
     ...req,
     fields: it.fields,
     contentMode: req.contentMode === 'adult' || it.contentMode === 'adult' ? 'adult' : it.contentMode,
-    params: { ...req.params, stylePacks: it.packs, posePreset: null, ...(aiRan ? { autoPosePreset: false } : {}) },
+    params: {
+      ...req.params,
+      // an outfit pack draws its own garment over the photo's (String Swimsuit drew ordinary triangle cups)
+      stylePacks: garment ? Object.fromEntries(Object.entries(it.packs).filter(([id]) => !GARMENT_PACK_IDS.has(id))) : it.packs,
+      posePreset: null,
+      ...(aiRan ? { autoPosePreset: false } : {}),
+      ...(garment ? { outfitIsolation: 'garment' as const, outfitStrength: COPY_GARMENT_STRENGTH, outfitMode: 'design' as const } : {}),
+    },
+    images: { ...req.images, ...(garment ? { outfitImage: req.images.poseImage, outfitGarmentImage: garment } : {}) },
     simple: {
       ...simple,
-      notes: [...it.notes, `Your photo, ${how}: ${description}`],
+      notes: [...it.notes, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : [])],
       ai: { ...(simple.ai ?? { read: false, check: false }), read: aiRan, check: !!simple.ai?.check && aiOk },
       copy: { ...copy, status: 'done', description, by, text },
     },

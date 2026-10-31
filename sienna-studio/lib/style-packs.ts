@@ -414,6 +414,9 @@ const PACK_REPLACES: Record<string, RegExp[]> = {
 };
 
 /** The pack fits the requested outfit: it doesn't replace a garment the request names. Packs that draw no outfit always fit. */
+/** Packs that draw a garment of their own (Copy Photo leaves them off when it has the photo's garment as a picture). */
+export const GARMENT_PACK_IDS: ReadonlySet<string> = new Set(Object.keys(PACK_REPLACES));
+
 export function packFitsOutfit(id: string, outfit: string): boolean {
   const rules = PACK_REPLACES[id];
   if (!rules || !outfit.trim()) return true;
