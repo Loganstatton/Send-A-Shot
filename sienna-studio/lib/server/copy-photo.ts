@@ -15,6 +15,7 @@ import { GARMENT_PACK_IDS } from '../style-packs';
 import { adultContentAllowed, getComfyUrl, getSettings, mimeFromBytes, readImage, storeImage } from './store';
 
 const GATE_TIMEOUT_MS = 4 * 60_000;
+const COPY_POSE_STRENGTH = 0.85;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The photo GPU's look at the photo: NudeNet's verdict and Florence-2's caption (null when the job failed). */
@@ -76,7 +77,9 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   // keep-scene (default): the photo itself is the picture, at its own shape; only the person is redrawn
   const ref = req.images.poseImage;
   const keepScene = process.env.SIENNA_COPY_SCENE !== 'off';
-  const scene = keepScene ? { ...sceneSize(ref.width ?? 0, ref.height ?? 0), keepScene: true, denoise: 1, hires: false } : {};
+  // the pose guide held harder than a normal request's 0.65: her hands went elsewhere (behind her back, under her breast)
+  // where the photo's pulled the bikini string at her hip (1 Nov)
+  const scene = keepScene ? { ...sceneSize(ref.width ?? 0, ref.height ?? 0), keepScene: true, denoise: 1, hires: false, controlStrength: COPY_POSE_STRENGTH } : {};
   const sceneImages = keepScene ? { initImage: ref } : {};
   const sceneNote = keepScene ? ['The photo itself is kept as the picture; only the person in it (and any app buttons or text on a screenshot) is redrawn, as Sienna.'] : [];
   let description = '';
