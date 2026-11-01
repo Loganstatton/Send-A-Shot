@@ -179,7 +179,9 @@ function copyStrapColours(outfit: string): string {
   if (own.length !== 1) return '';
   return STRAP_COLOURS.filter((c) => c !== own[0] && c !== 'gold' && c !== 'silver').map((c) => `${c} straps`).join(', ');
 }
-const COPY_SHEER_RE = /\b(sheer|mesh|see-through|transparent|lace|fishnet)\b/i;
+// lace, mesh and fishnet are patterns that can be copied over covered skin; a sheer or see-through top can't be: the
+// top check rejects any nipple showing through it, so all three boat tries were thrown away (1 Nov)
+const COPY_SHEER_RE = /\b(mesh|lace|fishnet)\b/i;
 const COPY_COVER_POSITIVE = '(each cup fully covering the nipple and areola:1.3)';
 const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulders, hair worn down';
 function weighHairstyle(text: string): string {

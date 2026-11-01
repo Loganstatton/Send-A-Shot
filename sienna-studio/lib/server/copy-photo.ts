@@ -153,6 +153,13 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     if (bust.length) it.fields.bodyPresentation = [it.fields.bodyPresentation, ...bust].filter(Boolean).join(', ');
   }
   for (const id of COPY_BODY_PACKS) delete it.packs[id];
+  // a see-through top is copied as an opaque one: the top check rejects any nipple showing through, so every try of a
+  // sheer copy was thrown away (boat photo, 1 Nov)
+  let sheerNote = '';
+  if (/\b(sheer|see-through|transparent)\b/i.test(it.fields.outfit)) {
+    it.fields.outfit = it.fields.outfit.replace(/,?\s*\b(?:slightly |semi-?|very |thin,? )?(?:sheer|see-through|transparent)\b(?:\s+white)?/gi, (m) => (/white/i.test(m) ? ' white' : '')).replace(/\s{2,}/g, ' ').trim();
+    sheerNote = 'The photo’s top is see-through; the copy’s is opaque, as see-through tops showing nipples aren’t allowed.';
+  }
   // what earlier copies kept getting wrong, avoided here too (never something this photo shows)
   const learned = process.env.SIENNA_COPY_LESSONS === 'off' ? [] : lessonsFor(await readLessons(), `${description} ${copy.userText}`);
   if (learned.length) it.fields.avoid = [it.fields.avoid, ...learned.map((l) => l.phrase)].filter(Boolean).join(', ');
@@ -216,7 +223,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     images: { ...req.images, ...sceneImages, ...(garment ? { outfitImage: req.images.poseImage, outfitGarmentImage: garment } : {}) },
     simple: {
       ...simple,
-      notes: [...it.notes, ...sceneNote, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : []), ...(eyewearNote ? [eyewearNote] : []), ...(learnedNote ? [learnedNote] : [])],
+      notes: [...it.notes, ...sceneNote, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : []), ...(eyewearNote ? [eyewearNote] : []), ...(learnedNote ? [learnedNote] : []), ...(sheerNote ? [sheerNote] : [])],
       ai: { ...(simple.ai ?? { read: false, check: false }), read: aiRan, check: !!simple.ai?.check && aiOk },
       copy: { ...copy, status: 'done', description, by, text: checked },
     },
