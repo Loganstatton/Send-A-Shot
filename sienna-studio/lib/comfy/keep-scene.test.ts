@@ -139,3 +139,15 @@ describe('addKeepScene gap fill', () => {
     expect(addKeepScene(graph(), { width: 776 })![`${P}gapfill`]).toBeUndefined();
   });
 });
+
+describe('addKeepScene detail pass', () => {
+  it('redraws only her, lightly at 1.5x, and the rest of the graph reads the result', () => {
+    const g = addKeepScene(graph(), { width: 776, height: 1296, detail: true, softSeam: true })!;
+    expect(g[`${P}detup`].inputs).toMatchObject({ width: 1168, height: 1944 });
+    expect(g[`${P}detks`].inputs.denoise).toBe(0.3);
+    expect(g[`${P}detmask`].inputs.mask).toEqual([`${P}new`, 0]);
+    expect(g[`${P}detdown`].inputs).toMatchObject({ width: 776, height: 1296 });
+    const readers = Object.entries(g).filter(([id, n]) => !id.startsWith(P) && Object.values(n.inputs).some((v) => JSON.stringify(v) === JSON.stringify([`${P}detfix`, 0])));
+    expect(readers.length).toBeGreaterThan(0);
+  });
+});

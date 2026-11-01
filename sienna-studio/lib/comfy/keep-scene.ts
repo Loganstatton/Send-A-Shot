@@ -25,6 +25,8 @@ export const KEEP_SCENE_TIGHT = 0.008;
 /** Second pass over painted-out overlays: enough for the water's texture, too little for new shapes. */
 export const UI_TOUCH_DENOISE = 0.5;
 export const GAP_FILL_CLASS = 'SiennaFillGaps';
+/** The detail pass: her body only, at 1.5x, lightly (0.3 keeps the shapes, the cups and her face; it adds texture). */
+export const DETAIL = { scale: 1.5, denoise: 0.3, steps: 20 } as const;
 // 0.5 left the inpainted gap's smear visible (a bright patch beside her face, a blurred tub edge by her hip, 1 Nov)
 export const GAP_TOUCH_DENOISE = 0.7;
 export const GAP_SCENE_POSITIVE = 'empty background, the scene only, photo texture';
@@ -87,7 +89,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } },
+  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; detail?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -282,6 +284,28 @@ export function addKeepScene(
     }
     g[samplerId].inputs.positive = cond;
     g[samplerId].inputs.negative = [cond[0], 1];
+  }
+  // Detail pass: her body redrawn lightly at 1.5x and scaled back, for real skin texture and detail (the owner,
+  // 1 Nov: the copies' body looked airbrushed). Same conditioning as the redraw (her prompt, pose and outline guides);
+  // only where she is (feathered), so the scene stays the photo's.
+  if (opts.detail && opts.height && isRef(g[decodeId].inputs.vae)) {
+    const k = g[samplerId].inputs;
+    const r8 = (n: number) => Math.round(n / 8) * 8;
+    const [w, h] = [opts.width, opts.height];
+    g[`${p}detup`] = { class_type: 'ImageScale', inputs: { image: finalImage, upscale_method: 'lanczos', width: r8(w * DETAIL.scale), height: r8(h * DETAIL.scale), crop: 'disabled' } };
+    g[`${p}detenc`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}detup`, 0], vae: g[decodeId].inputs.vae } };
+    g[`${p}detmask`] = { class_type: 'GrowMask', inputs: { mask: [`${p}new`, 0], expand: 6, tapered_corners: true } };
+    g[`${p}detnoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}detenc`, 0], mask: [`${p}detmask`, 0] } };
+    g[`${p}detks`] = {
+      class_type: 'KSampler',
+      inputs: { model: k.model, positive: k.positive, negative: k.negative, latent_image: [`${p}detnoise`, 0], seed: k.seed, steps: DETAIL.steps, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: DETAIL.denoise },
+      _meta: { title: 'Keep scene: detail pass on her (1.5x)' },
+    };
+    g[`${p}detdec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}detks`, 0], vae: g[decodeId].inputs.vae } };
+    g[`${p}detdown`] = { class_type: 'ImageScale', inputs: { image: [`${p}detdec`, 0], upscale_method: 'lanczos', width: w, height: h, crop: 'disabled' } };
+    g[`${p}detsoft`] = { class_type: SOFT_SEAM_CLASS, inputs: { mask: [`${p}detmask`, 0], kernel_size: 15, sigma: 5 } };
+    g[`${p}detfix`] = { class_type: 'ImageCompositeMasked', inputs: { destination: finalImage, source: [`${p}detdown`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}detsoft`, 0] } };
+    finalImage = [`${p}detfix`, 0];
   }
   for (const [id, node] of Object.entries(g)) {
     // the paste and the person-finder read the raw redraw; the overlay touch-up reads the paste
