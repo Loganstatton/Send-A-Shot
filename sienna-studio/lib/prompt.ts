@@ -436,6 +436,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy ? 'deep tan, bronzed skin, dark tanned skin, oiled skin, greasy shine' : '',
     copy ? copyNearColours(f.outfit) : '',
     copy ? 'cold blue colour cast, washed-out colours' : '',
+    // a hand on the tub rim came out with long black claw nails (1 Nov): natural nails unless the photo shows polish
+    copy && !/\b(nail polish|manicure|painted nails|long nails)\b/i.test(`${f.outfit} ${f.bodyPresentation} ${f.pose}`) ? 'long black nails, dark nail polish, claw nails, stiletto nails' : '',
     // nothing invented in her hands (a sprig of leaves appeared in one, 1 Nov) unless the photo shows her holding something
     copy && copyNoSmile(f.expression) ? 'smiling, smile, grin, showing teeth' : '',
     // topless in the photo: no top invented (a bra strap appeared across a bare back, 1 Nov)
