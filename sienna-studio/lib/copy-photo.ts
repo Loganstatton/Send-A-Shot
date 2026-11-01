@@ -93,6 +93,8 @@ Describe precisely, most important first:
 - Clothing (only what is visible in the photo; never guess at garments out of frame or under the water): each garment's type and exact cut and size (for example "tiny string triangle bikini top whose small cups cover only the centre of each breast, thin strings tied behind the neck"), how much skin it leaves showing (cleavage, side, underneath), colour, fabric, pattern or plain, wet or dry, how it sits.
 - For a bikini top or bra, the exact shape of each cup, because "small triangle" draws an ordinary triangle top: its proportions (tall and very narrow like a sliver, or as wide as it is tall), how wide it is compared with the breast (a narrow strip about a quarter of the breast's width, half, all of it), where its top and bottom edges sit (from the ring high on the chest down to the band under the breast, or only the lower half), which part of the breast it covers and which parts are bare (the inner and outer curves, the underside), how it hangs or is pulled (tight to the skin, hanging loose, pulled to the side), and say "not a regular triangle top" when it isn't one. The same care for bottoms: cut, width and rise.
 - Where each cup sits on the breast (toward the cleavage, centred, toward the outer side) and whether the breast hangs below the under-bust string (the lower curve showing beneath it).
+- Straps and strings exactly: where each one runs from and to (two thin strings from the top of each cup up to the back of the neck; one from each cup's side round the back), how many there are, and say "crossing" only when strings visibly cross each other, never for two strings meeting at the neck.
+- Bottoms exactly: the front panel's size and shape, how low it sits below the navel, the angle of the side strings (straight across the hips or pulled up at an angle toward her hands) and where they meet her hips.
 - The cups of a top always cover the nipples and areolae, however small or narrow they are: describe the cup's shape around that, never as leaving a nipple uncovered.
 - Accessories and props: sunglasses, jewellery, hats, anything held or nearby.
 - Hair style exactly (high messy top-knot bun, slicked back into a low bun, wet ponytail, down and wavy, wet strands on the shoulders) — never the hair colour.
@@ -114,7 +116,10 @@ export const describeUser = 'Describe this photo for the recreation.';
 /** The garment piece names Florence-2 segments for the garment-only crop (max 3), read from the described outfit. */
 const GARMENT_PHRASES: [RegExp, string][] = [
   [/\bbikini\b|\btriangle (?:bikini )?top\b|\bstring top\b/i, 'bikini top'],
+  // the bottoms too: only the top was traced and the copy drew its own higher, larger bottoms (boat photo, 1 Nov)
+  [/\b(?:bikini|string|micro|tie-side|thong|g-string)\b[^,]*\b(?:bottoms?|thong|g-string|briefs)\b|\bthong\b|\bg-string\b/i, 'bikini bottom'],
   [/\b(?:bra|bralette)\b/i, 'bra'],
+  [/\b(?:panties|knickers|underwear briefs)\b/i, 'panties'],
   [/\b(?:swimsuit|one-piece|monokini|bodysuit|leotard)\b/i, 'swimsuit'],
   [/\b(?:dress|gown)\b/i, 'dress'],
   [/\b(?:crop top|tank top|camisole|cami|t-shirt|tee|shirt|blouse|top)\b/i, 'top'],

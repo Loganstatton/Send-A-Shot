@@ -98,3 +98,11 @@ describe('dropStudEarrings', () => {
     expect(dropStudEarrings('large gold hoop earrings').dropped).toBe(false);
   });
 });
+
+describe('copyGarmentPhrases bottoms', () => {
+  it('traces the bikini bottoms too', () => {
+    expect(copyGarmentPhrases('white tiny triangle bikini top, white tiny string micro bikini bottom with very small front panel')).toEqual(['bikini top', 'bikini bottom']);
+    expect(copyGarmentPhrases('hot pink low-rise tie-side bikini bottoms, hot pink bikini top')).toContain('bikini bottom');
+    expect(copyGarmentPhrases('black lace bra and matching panties')).toEqual(['bra', 'panties']);
+  });
+});
