@@ -170,9 +170,10 @@ export function addKeepScene(
       g[`${p}fdet`] = { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: OUTFIT_FACE_MODEL } };
       g[`${p}face`] = { class_type: 'BboxDetectorCombined_v2', inputs: { bbox_detector: [`${p}fdet`, 0], image: scene, threshold: 0.3, dilation: Math.round(opts.width * 0.08) } };
       g[`${p}body`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}person`, 0], source: [`${p}face`, 0], x: 0, y: 0, operation: 'subtract' }, _meta: { title: 'Keep scene: her body without the head' } };
-      // blurred first: the soft edges of fine detail (a tattoo on her side, skin texture) were drawn onto Sienna as brown
-      // lines (1 Nov); her outline and the bust's curves survive the blur
-      g[`${p}bodyblur`] = { class_type: 'ImageBlur', inputs: { image: scene, blur_radius: 6, sigma: 3 } };
+      // blurred a little first: the soft edges of fine detail (a tattoo on her side, skin texture) were drawn onto Sienna
+      // as brown lines (1 Nov); a stronger blur (sigma 3) also lost the bikini cups' edges and every try drew the cups
+      // see-through or as bare strings, so it stays light
+      g[`${p}bodyblur`] = { class_type: 'ImageBlur', inputs: { image: scene, blur_radius: 3, sigma: 1.5 } };
       g[`${p}softcanny`] = { class_type: 'Canny', inputs: { image: [`${p}bodyblur`, 0], low_threshold: 0.08, high_threshold: 0.25 } };
       g[`${p}bodylines`] = {
         class_type: 'ImageCompositeMasked',

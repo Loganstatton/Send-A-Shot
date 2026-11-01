@@ -179,6 +179,7 @@ function copyStrapColours(outfit: string): string {
   if (own.length !== 1) return '';
   return STRAP_COLOURS.filter((c) => c !== own[0] && c !== 'gold' && c !== 'silver').map((c) => `${c} straps`).join(', ');
 }
+const COPY_SHEER_RE = /\b(sheer|mesh|see-through|transparent|lace|fishnet)\b/i;
 const COPY_COVER_POSITIVE = '(each cup fully covering the nipple and areola:1.3)';
 const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulders, hair worn down';
 function weighHairstyle(text: string): string {
@@ -394,6 +395,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy ? weighHairstyle(f.bodyPresentation) : f.bodyPresentation,
     // narrow copied cups left her nipples at the cup edges (1 Nov): in copy mode a top always covers them
     copy && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
+    // a wet micro bikini was drawn see-through on every try (1 Nov): opaque unless the photo's garment is sheer
+    copy && outfitHasTop(f.outfit) && !COPY_SHEER_RE.test(f.outfit) ? '(solid opaque fabric cups:1.2)' : '',
     copy ? 'her natural light-tan skin' : '',
     // face accessories: the face pass redraws her face and dropped the photo's sunglasses (1 Nov)
     copy ? copyEyewear(`${f.outfit}, ${f.bodyPresentation}`) : '',
@@ -432,6 +435,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
     copy && copyHairstyle(`${f.bodyPresentation}, ${f.extra}`)?.up ? COPY_UPDO_NEGATIVE : '',
     copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
+    copy && outfitHasTop(f.outfit) && !COPY_SHEER_RE.test(f.outfit) ? '(see-through fabric, sheer cups, transparent wet fabric, nipples showing through:1.3)' : '',
     // her own skin tone, not the photo's warm light: copies came out deeply bronzed and oily (1 Nov)
     copy ? 'deep tan, bronzed skin, dark tanned skin, oiled skin, greasy shine' : '',
     copy ? copyNearColours(f.outfit) : '',
