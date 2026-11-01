@@ -74,4 +74,12 @@ describe('bustWords', () => {
     expect(bustWords({ size: 'large', gap: 'touching all the way down' })).toEqual({ positive: 'large natural breasts, breasts close together with a cleavage line', avoid: '' });
     expect(bustWords({ size: 'not visible', gap: 'not visible' })).toEqual({ positive: '', avoid: '' });
   });
+  it('asks for a low-sitting bust only when the photo has one', () => {
+    const low = bustWords({ size: 'large', gap: 'gap of bare skin between them lower down', height: 'sitting low and natural' });
+    expect(low.positive).toContain('breasts sitting low on the chest');
+    expect(low.positive).not.toMatch(/flat|:1\.[4-9]/);
+    expect(low.avoid).toContain('perky breasts sitting high on the chest');
+    expect(bustWords({ size: 'large', gap: 'touching all the way down', height: 'sitting low and natural' }).avoid).toContain('high round breasts');
+    expect(bustWords({ size: 'large', gap: 'touching all the way down', height: 'high and round' }).positive).not.toContain('sitting low');
+  });
 });

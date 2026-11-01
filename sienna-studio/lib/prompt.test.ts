@@ -354,3 +354,11 @@ describe('copy mode topless', () => {
     expect(r.negative).toContain('strap across her back');
   });
 });
+
+describe('copy mode bust height', () => {
+  it('keeps the low-bust avoid words under Sienna Lock', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, outfit: 'purple bikini top', avoid: 'perky breasts sitting high on the chest, high round breasts' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
+    expect(r.negative).toContain('perky breasts sitting high on the chest');
+    expect(r.negative).toContain('high round breasts');
+  });
+});

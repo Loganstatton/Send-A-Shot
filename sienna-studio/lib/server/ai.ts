@@ -145,8 +145,10 @@ const DescribeSchema = z.object({
   // fixed answers about her figure: prose said "pressed close with a deep cleavage line" for a bust with a clear gap
   bust_size: z.enum(['small', 'medium', 'large', 'very large', 'not visible']),
   bust_gap: z.enum(['gap of bare skin between them lower down', 'touching all the way down', 'not visible']),
+  // her copies' breasts sat higher, rounder and with a longer cleavage than the photo's (1 Nov)
+  bust_height: z.enum(['sitting low and natural', 'average', 'high and round', 'not visible']),
 });
-export type BustAnswer = { size: z.infer<typeof DescribeSchema>['bust_size']; gap: z.infer<typeof DescribeSchema>['bust_gap'] };
+export type BustAnswer = { size: z.infer<typeof DescribeSchema>['bust_size']; gap: z.infer<typeof DescribeSchema>['bust_gap']; height?: z.infer<typeof DescribeSchema>['bust_height'] };
 
 /**
  * Copy Photo: the uploaded photo described for the recreation (outfit cut and coverage, pose, framing, setting,
@@ -169,7 +171,7 @@ export async function aiDescribePhoto(image: Buffer, mime: string): Promise<{ de
     return { failed: a.reason };
   }
   const d = a.value.description.trim();
-  return d.length >= 20 ? { description: d, bust: { size: a.value.bust_size, gap: a.value.bust_gap }, usd: a.usd } : { failed: 'the AI gave no description' };
+  return d.length >= 20 ? { description: d, bust: { size: a.value.bust_size, gap: a.value.bust_gap, height: a.value.bust_height }, usd: a.usd } : { failed: 'the AI gave no description' };
 }
 
 export type CheckOutcome = { status: 'pass' | 'fail'; graded: Graded; usd: number } | { status: 'unavailable'; reason: string };

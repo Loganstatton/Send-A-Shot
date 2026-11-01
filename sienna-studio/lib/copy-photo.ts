@@ -104,7 +104,7 @@ Describe precisely, most important first:
 
 Never describe her face features, hair colour, skin colour, ethnicity, age, tattoos, piercings or anything else that identifies the person, and nothing about her body beyond the general bust size. Ignore everything an app put on top of the photo — icons, like and comment counts, usernames, captions, buttons, progress bars, watermarks — and never mention them.
 
-Also answer bust_size and bust_gap. For bust_gap, look at the lower half of the bust: if any bare skin shows between the two breasts there, even where they touch higher up, the answer is "gap of bare skin between them lower down"; "touching all the way down" only when no skin shows between them anywhere.
+Also answer bust_size, bust_gap and bust_height. For bust_gap, look at the lower half of the bust: if any bare skin shows between the two breasts there, even where they touch higher up, the answer is "gap of bare skin between them lower down"; "touching all the way down" only when no skin shows between them anywhere. For bust_height, look at where the tops of the breasts and the top of the cleavage start on the chest: "sitting low and natural" when the upper chest below the collarbones is flat for a good stretch before the breasts begin and they hang softly with their fullness low; "high and round" when they start just below the collarbones, round and lifted (push-up look); "average" in between.
 
 Write one paragraph of short comma-separated phrases, 90 to 180 words, no full sentences about the photo itself ("the photo shows"), no names. If there is no person in the photo, describe the scene and set person_found to false.`;
 
@@ -148,13 +148,18 @@ export function bustPhrases(description: string): string[] {
 
 /** The fixed bust answers as prompt words (positive, avoid). A gap gets weight and its opposite goes to Avoid: the
  * Sienna LoRA's own figure leans to a pushed-together bust. */
-export function bustWords(b: { size: string; gap: string }): { positive: string; avoid: string } {
+export function bustWords(b: { size: string; gap: string; height?: string }): { positive: string; avoid: string } {
   const size = b.size && b.size !== 'not visible' ? `${b.size} natural breasts` : '';
+  // where they sit: her LoRA draws them high and round with a cleavage starting near the collarbones (1 Nov). Weighted
+  // gently: a 1.4 "short cleavage" push pulled the nipples out of narrow cups on every try (1 Nov)
+  const low = b.height?.startsWith('sitting low');
+  const lowPositive = low ? '(breasts sitting low on the chest, fullness in the lower half, natural teardrop shape:1.2)' : '';
+  const lowAvoid = low ? 'perky breasts sitting high on the chest, high round breasts, cleavage starting near the collarbones' : '';
   if (b.gap.startsWith('gap')) {
     return {
-      positive: [size, '(breasts set apart with a visible gap of bare skin between them:1.3)', 'natural soft breasts hanging slightly apart'].filter(Boolean).join(', '),
-      avoid: 'deep cleavage, pushed-up breasts, breasts pressed together, push-up bra effect',
+      positive: [size, '(breasts set apart with a visible gap of bare skin between them:1.3)', 'natural soft breasts hanging slightly apart', lowPositive].filter(Boolean).join(', '),
+      avoid: ['deep cleavage, pushed-up breasts, breasts pressed together, push-up bra effect', lowAvoid].filter(Boolean).join(', '),
     };
   }
-  return { positive: [size, b.gap.startsWith('touching') ? 'breasts close together with a cleavage line' : ''].filter(Boolean).join(', '), avoid: '' };
+  return { positive: [size, b.gap.startsWith('touching') ? 'breasts close together with a cleavage line' : '', lowPositive].filter(Boolean).join(', '), avoid: lowAvoid };
 }
