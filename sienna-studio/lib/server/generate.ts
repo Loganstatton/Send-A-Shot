@@ -694,7 +694,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
     // the scene continued where the photo's wider person was (SiennaFillGaps on the GPU server; SIENNA_COPY_GAPFILL=off)
     const gapFill = process.env.SIENNA_COPY_GAPFILL !== 'off' && !!(await backend.nodeInfo(GAP_FILL_CLASS, true).catch(() => null));
-    const kept = addKeepScene(graph, { width: outW, height: outH, uiMask: ui, uiPaint, softSeam, gapFill, garment });
+    const kept = addKeepScene(graph, { width: outW, height: outH, uiMask: ui, uiPaint, softSeam, gapFill, gapScene: [req.fields.setting, req.fields.lighting].filter(Boolean).join(', '), garment });
     if (kept) graph = kept;
     else warnings.push('Copy Photo: this workflow can’t keep the photo as the background — the whole picture was redrawn.');
     if (kept && !ui) warnings.push('Copy Photo: the GPU server has no app-overlay remover yet (SiennaUiMask) — screenshot icons and text may stay.');

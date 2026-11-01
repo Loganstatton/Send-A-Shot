@@ -125,10 +125,13 @@ describe('addCopyColours with the garment outline', () => {
 
 describe('addKeepScene gap fill', () => {
   it('fills where the photo’s person was but Sienna isn’t, then the overlay pass reads that', () => {
-    const g = addKeepScene(graph(), { width: 776, uiMask: true, uiPaint: true, gapFill: true })!;
+    const g = addKeepScene(graph(), { width: 776, uiMask: true, uiPaint: true, gapFill: true, gapScene: 'pool, trees' })!;
     expect(g[`${P}gap`].inputs).toMatchObject({ destination: [`${P}oldgrow`, 0], source: [`${P}newgrow`, 0], operation: 'subtract' });
     expect(g[`${P}gapfill`].inputs.image).toEqual([`${P}paste`, 0]);
     expect(g[`${P}gapfill`].inputs.avoid).toEqual([`${P}new`, 0]);
+    expect(g[`${P}gapks`].inputs.positive).toEqual([`${P}gappos`, 0]);
+    expect(String(g[`${P}gapneg`].inputs.text)).toContain('thumb');
+    expect(g[`${P}gappos`].inputs.clip).toBeTruthy();
     expect(g[`${P}uienc`].inputs.pixels).toEqual([`${P}gapfix`, 0]);
     expect(g[`${P}uifix`].inputs.destination).toEqual([`${P}gapfix`, 0]);
   });

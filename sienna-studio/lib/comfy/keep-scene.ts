@@ -27,6 +27,18 @@ export const UI_TOUCH_DENOISE = 0.5;
 export const GAP_FILL_CLASS = 'SiennaFillGaps';
 // 0.5 left the inpainted gap's smear visible (a bright patch beside her face, a blurred tub edge by her hip, 1 Nov)
 export const GAP_TOUCH_DENOISE = 0.7;
+export const GAP_SCENE_POSITIVE = 'empty background, the scene only, photo texture';
+export const GAP_SCENE_NEGATIVE = 'person, woman, body, skin, hand, hands, fingers, thumb, fingernail, arm, leg, face, hair, clothing, bikini, strings';
+/** The CLIP feeding the prompt behind a conditioning ref (through ControlNet applies), or null. */
+function clipOf(g: ComfyGraph, ref: unknown): Ref | null {
+  for (let i = 0; i < 12 && isRef(ref); i++) {
+    const n = g[ref[0]];
+    if (!n) return null;
+    if (n.class_type === 'CLIPTextEncode') return isRef(n.inputs.clip) ? (n.inputs.clip as Ref) : null;
+    ref = n.inputs.positive ?? n.inputs.conditioning ?? n.inputs.conditioning_1;
+  }
+  return null;
+}
 export const UI_MASK_CLASS = 'SiennaUiMask';
 /** Depth preprocessors (comfyui_controlnet_aux), best first, with their inputs. */
 export type DepthNode = 'DepthAnythingV2Preprocessor' | 'DepthAnythingPreprocessor' | 'MiDaS-DepthMapPreprocessor';
@@ -75,7 +87,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } },
+  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -143,9 +155,19 @@ export function addKeepScene(
     g[`${p}gapfill`] = { class_type: GAP_FILL_CLASS, inputs: { image: finalImage, gap: [`${p}gapgrow`, 0], avoid: [`${p}new`, 0] }, _meta: { title: 'Keep scene: the scene continued where the other person was' } };
     g[`${p}gapenc`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}gapfill`, 0], vae: g[decodeId].inputs.vae } };
     g[`${p}gapnoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}gapenc`, 0], mask: [`${p}gapgrow`, 0] } };
+    // the scene only, never her: with her prompt (and the pose guide) this pass drew loose thumbs and fingers where the
+    // photo's hand had been, on every try of the pink copy (1 Nov)
+    let gapPos = k.positive;
+    let gapNeg = k.negative;
+    const clip = clipOf(g, k.positive);
+    if (clip) {
+      g[`${p}gappos`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: [opts.gapScene, GAP_SCENE_POSITIVE].filter(Boolean).join(', ') } };
+      g[`${p}gapneg`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: GAP_SCENE_NEGATIVE } };
+      [gapPos, gapNeg] = [[`${p}gappos`, 0], [`${p}gapneg`, 0]];
+    }
     g[`${p}gapks`] = {
       class_type: 'KSampler',
-      inputs: { model: k.model, positive: k.positive, negative: k.negative, latent_image: [`${p}gapnoise`, 0], seed: k.seed, steps: 20, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: GAP_TOUCH_DENOISE },
+      inputs: { model: k.model, positive: gapPos, negative: gapNeg, latent_image: [`${p}gapnoise`, 0], seed: k.seed, steps: 20, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: GAP_TOUCH_DENOISE },
       _meta: { title: 'Keep scene: texture in the filled gap' },
     };
     g[`${p}gapdec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}gapks`, 0], vae: g[decodeId].inputs.vae } };
