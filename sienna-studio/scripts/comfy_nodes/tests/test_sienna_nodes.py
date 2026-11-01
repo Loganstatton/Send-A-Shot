@@ -750,3 +750,17 @@ def test_ui_mask_leaves_a_plain_photo_alone():
     img = (0.2 + 0.5 * rng.random((300, 200, 3))).astype(np.float32)
     mask, rep = so.ui_mask(img)
     assert not mask.any()
+
+
+def test_paint_out_removes_overlay_strokes():
+    import cv2
+    import sienna_overlay as so
+
+    img = np.full((300, 200, 3), 0.4, np.float32)
+    canvas = (img * 255).astype(np.uint8)
+    cv2.putText(canvas, "user", (10, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    img = canvas.astype(np.float32) / 255
+    mask, _ = so.ui_mask(img)
+    out = so.paint_out(img, mask)
+    assert out[265:290, 5:80].max() < 0.6
+    assert abs(out[50, 100].mean() - 0.4) < 0.01

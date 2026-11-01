@@ -48,7 +48,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; softSeam?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean } },
+  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -64,10 +64,19 @@ export function addKeepScene(
   g[`${p}person`] = { class_type: 'SegmDetectorCombined_v2', inputs: { segm_detector: [`${p}segm`, 1], image: scene, threshold: 0.3, dilation: 0 }, _meta: { title: 'Keep scene: the person' } };
   g[`${p}grow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}person`, 0], expand: Math.round(opts.width * KEEP_SCENE_GROW), tapered_corners: true }, _meta: { title: 'Keep scene: room for Sienna' } };
   let redraw: Ref = [`${p}grow`, 0];
+  // the photo as pasted back round her: with uiPaint, the overlays already painted out from the pixels round them (the
+  // image model wrote fake letters where it redrew them, 1 Nov), so only she is redrawn
+  let backdrop: Ref = scene;
+  const redrawUi = opts.uiMask && !opts.uiPaint;
   if (opts.uiMask) {
     g[`${p}ui`] = { class_type: UI_MASK_CLASS, inputs: { image: scene }, _meta: { title: 'Keep scene: app overlays' } };
-    g[`${p}union`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}grow`, 0], source: [`${p}ui`, 0], x: 0, y: 0, operation: 'add' } };
-    redraw = [`${p}union`, 0];
+    if (opts.uiPaint) {
+      backdrop = [`${p}ui`, 2];
+      g[encodeId].inputs.pixels = backdrop;
+    } else {
+      g[`${p}union`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}grow`, 0], source: [`${p}ui`, 0], x: 0, y: 0, operation: 'add' } };
+      redraw = [`${p}union`, 0];
+    }
   }
   g[`${p}noise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [encodeId, 0], mask: redraw }, _meta: { title: 'Keep scene: redraw only her' } };
   // What stays redrawn: where the new Sienna actually is (found again in the result), where the other person was, and
@@ -79,7 +88,7 @@ export function addKeepScene(
   g[`${p}oldgrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}person`, 0], expand: tight, tapered_corners: true } };
   g[`${p}both`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}newgrow`, 0], source: [`${p}oldgrow`, 0], x: 0, y: 0, operation: 'add' } };
   let kept: Ref = [`${p}both`, 0];
-  if (opts.uiMask) {
+  if (redrawUi) {
     g[`${p}bothui`] = { class_type: 'MaskComposite', inputs: { destination: kept, source: [`${p}ui`, 0], x: 0, y: 0, operation: 'add' } };
     kept = [`${p}bothui`, 0];
   }
@@ -90,7 +99,7 @@ export function addKeepScene(
   if (opts.softSeam !== false) g[`${p}soft`] = { class_type: SOFT_SEAM_CLASS, inputs: { mask: [`${p}keep`, 0], kernel_size: 15, sigma: 5 } };
   g[`${p}paste`] = {
     class_type: 'ImageCompositeMasked',
-    inputs: { destination: [decodeId, 0], source: scene, x: 0, y: 0, resize_source: false, mask: [opts.softSeam !== false ? `${p}soft` : `${p}keep`, 0] },
+    inputs: { destination: [decodeId, 0], source: backdrop, x: 0, y: 0, resize_source: false, mask: [opts.softSeam !== false ? `${p}soft` : `${p}keep`, 0] },
     _meta: { title: 'Keep scene: the photo, pixel for pixel, around her' },
   };
   g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: [`${p}noise`, 0], denoise: 1 } };

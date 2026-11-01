@@ -460,15 +460,16 @@ class SiennaCleanOverlays:
 
 
 class SiennaUiMask:
-    """Copy Photo: the app overlays of a screenshot (buttons, counts, username, caption) as a mask to repaint from
-    the scene round them; a photo without overlays gives an empty mask (sienna_overlay.ui_mask)."""
+    """Copy Photo: the app overlays of a screenshot (buttons, counts, username, caption) as a mask, and the photo with
+    them painted out from the pixels round them (the image model wrote fake letters where it redrew them, 1 Nov); a
+    photo without overlays gives an empty mask and the photo unchanged (sienna_overlay.ui_mask)."""
 
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {"image": ("IMAGE",)}}
 
-    RETURN_TYPES = ("MASK", "STRING")
-    RETURN_NAMES = ("mask", "report")
+    RETURN_TYPES = ("MASK", "STRING", "IMAGE")
+    RETURN_NAMES = ("mask", "report", "cleaned")
     FUNCTION = "run"
     OUTPUT_NODE = True
     CATEGORY = "sienna"
@@ -477,11 +478,11 @@ class SiennaUiMask:
         img = image[0].detach().cpu().numpy().astype(np.float32)
         try:
             mask, report = sienna_overlay.ui_mask(img)
+            cleaned = sienna_overlay.paint_out(img, mask)
         except Exception as e:  # never block the photo over a clean-up step
-            mask, report = np.zeros(img.shape[:2], bool), {"error": f"{type(e).__name__}: {e}"}
+            mask, report, cleaned = np.zeros(img.shape[:2], bool), {"error": f"{type(e).__name__}: {e}"}, img
         text = json.dumps(report)
-        return {"ui": {"text": [text]}, "result": (torch.from_numpy(mask.astype(np.float32))[None], text)}
-
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(mask.astype(np.float32))[None], text, torch.from_numpy(np.ascontiguousarray(cleaned, np.float32))[None])}
 
 class SiennaLockCamera:
     """Lock Camera for videos: removes the camera's drift so the background stays where it is in the first frame

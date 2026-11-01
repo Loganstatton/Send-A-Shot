@@ -37,6 +37,14 @@ describe('addKeepScene', () => {
     // everything that read the decoded picture now reads the pasted one
     for (const [id, n] of Object.entries(g)) if (id !== `${P}paste` && id !== `${P}new`) for (const v of Object.values(n.inputs)) expect(v).not.toEqual(['41', 0]);
   });
+  it('paints the overlays out instead of redrawing them when the node can', () => {
+    const g = addKeepScene(graph(), { width: 776, uiMask: true, uiPaint: true })!;
+    expect(g['32'].inputs.pixels).toEqual([`${P}ui`, 2]);
+    expect(g[`${P}paste`].inputs.source).toEqual([`${P}ui`, 2]);
+    expect(g[`${P}noise`].inputs.mask).toEqual([`${P}grow`, 0]);
+    expect(g[`${P}union`]).toBeUndefined();
+    expect(g[`${P}within`].inputs.destination).toEqual([`${P}both`, 0]);
+  });
   it('traces the garment’s outline with the union ControlNet when asked', () => {
     const g = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors' } })!;
     expect(g['40'].inputs.positive).toEqual([`${P}cnapply`, 0]);

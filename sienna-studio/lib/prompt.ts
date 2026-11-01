@@ -144,6 +144,7 @@ export function copyHairstyle(text: string): { phrase: string; up: boolean } | n
   return phrase ? { phrase, up: UPDO_RE.test(phrase) } : null;
 }
 
+const COPY_COVER_POSITIVE = '(each cup fully covering the nipple and areola:1.3)';
 const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulders, hair worn down';
 function weighHairstyle(text: string): string {
   const h = copyHairstyle(text);
@@ -356,6 +357,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     poseGuide ?? '',
     poseGuide === undefined ? '' : f.pose,
     copy ? weighHairstyle(f.bodyPresentation) : f.bodyPresentation,
+    // narrow copied cups left her nipples at the cup edges (1 Nov): in copy mode a top always covers them
+    copy && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
     // the photo's expression over her usual smile (the LoRA and the face pass pull towards it)
     copy && f.expression.trim() ? `(${f.expression.trim()}:1.2)` : f.expression,
     f.setting,
@@ -387,6 +390,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     colourDriftNegative(f.outfit),
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
     copy && copyHairstyle(`${f.bodyPresentation}, ${f.extra}`)?.up ? COPY_UPDO_NEGATIVE : '',
+    copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
     avoidItems.join(', '),
   ]);
 

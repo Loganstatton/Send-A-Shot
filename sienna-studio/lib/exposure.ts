@@ -34,6 +34,8 @@ export function nextRetry(attempts: ExposureAttempt[], maxAttempts: number): Ret
   return null;
 }
 export const EXPOSURE_THRESHOLD = 0.45;
+/** Copy Photo's narrow copied cups: a nipple at the cup edge scored under 0.45 and passed (1 Nov). */
+export const COPY_EXPOSURE_THRESHOLD = 0.25;
 
 export interface ExposureReport {
   available: boolean;
@@ -97,10 +99,10 @@ export function outfitHasTop(outfit: string): boolean {
 }
 
 /** The check node, reading the image that goes into `saveNodeId`. Null if that node has no image input. */
-export function exposureNode(graph: ComfyGraph, saveNodeId: string): ComfyGraph[string] | null {
+export function exposureNode(graph: ComfyGraph, saveNodeId: string, threshold = EXPOSURE_THRESHOLD): ComfyGraph[string] | null {
   const images = graph[saveNodeId]?.inputs?.images;
   if (!Array.isArray(images)) return null;
-  return { class_type: EXPOSURE_NODE_CLASS, inputs: { images, threshold: EXPOSURE_THRESHOLD }, _meta: { title: 'Top check (exposure)' } };
+  return { class_type: EXPOSURE_NODE_CLASS, inputs: { images, threshold }, _meta: { title: 'Top check (exposure)' } };
 }
 
 /** The node's JSON text output, or null if it didn't report. */

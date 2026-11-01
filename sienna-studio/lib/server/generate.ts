@@ -44,7 +44,7 @@ import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addKeepScene, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
-import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, COPY_EXPOSURE_THRESHOLD, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { addFigurePass, FIGURE_NODES, figurePassFromEnv, parseFigurePass } from '../comfy/figure-pass';
 import { addDetailPass, bareBelow, DETAIL_NODES, detailDenoise, DETAIL_STYLES, detailFile, detailPassFromEnv, parseDetailPass } from '../comfy/detail-pass';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, kneeFramingOk, parseBodyFrame } from '../body-frame';
@@ -661,8 +661,12 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   if (p.keepScene && wanted.init_image) {
     let ui = false;
     let softSeam = false;
+    let uiPaint = false;
     try {
-      [ui, softSeam] = (await Promise.all([backend.nodeInfo(UI_MASK_CLASS), backend.nodeInfo(SOFT_SEAM_CLASS)])).map(Boolean);
+      const [uiInfo, seamInfo] = await Promise.all([backend.nodeInfo(UI_MASK_CLASS), backend.nodeInfo(SOFT_SEAM_CLASS)]);
+      [ui, softSeam] = [!!uiInfo, !!seamInfo];
+      // the newer overlay node also paints them out (its third output)
+      uiPaint = Array.isArray((uiInfo as any)?.output) && (uiInfo as any).output.length >= 3;
     } catch {
       /* can't ask: leave the overlays, hard seam */
     }
@@ -681,7 +685,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         /* can't ask: no outline */
       }
     }
-    const kept = addKeepScene(graph, { width: outW, height: outH, uiMask: ui, softSeam, garment });
+    const kept = addKeepScene(graph, { width: outW, height: outH, uiMask: ui, uiPaint, softSeam, garment });
     if (kept) graph = kept;
     else warnings.push('Copy Photo: this workflow can’t keep the photo as the background — the whole picture was redrawn.');
     if (kept && !ui) warnings.push('Copy Photo: the GPU server has no app-overlay remover yet (SiennaUiMask) — screenshot icons and text may stay.');
@@ -768,7 +772,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   {
     const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
     const wanted: [string, ComfyGraph[string] | null][] = [];
-    if (saveId && outfitHasTop(req.fields.outfit)) wanted.push([EXPOSURE_NODE_ID, exposureNode(graph, saveId)]);
+    if (saveId && outfitHasTop(req.fields.outfit)) wanted.push([EXPOSURE_NODE_ID, exposureNode(graph, saveId, req.simple?.copy ? COPY_EXPOSURE_THRESHOLD : undefined)]);
     if (saveId && req.siennaLock && p.faceCheck !== false) wanted.push([FACE_NODE_ID, faceNode(graph, saveId)]);
     const added: string[] = [];
     const missingAll: string[] = [];

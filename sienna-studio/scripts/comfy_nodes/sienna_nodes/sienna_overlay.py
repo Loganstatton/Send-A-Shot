@@ -166,3 +166,19 @@ def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
         report["skipped"] = "too much of the picture looked like app overlays; left as it was"
         return np.zeros((h, w), bool), report
     return mask, report
+
+
+def paint_out(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """img (H, W, 3) float 0..1 with the masked overlays filled from the pixels round them (Telea), then softened so the
+    fill carries no hard strokes."""
+    import cv2
+
+    if not mask.any():
+        return img
+    f8 = np.clip(np.round(img[..., :3] * 255), 0, 255).astype(np.uint8)
+    m8 = mask.astype(np.uint8)
+    out = cv2.inpaint(f8, m8, 9, cv2.INPAINT_TELEA)
+    soft = cv2.GaussianBlur(out, (0, 0), 3)
+    m3 = cv2.GaussianBlur(m8.astype(np.float32), (0, 0), 2)[..., None]
+    out = (out * (1 - m3) + soft * m3).astype(np.float32) / 255
+    return out
