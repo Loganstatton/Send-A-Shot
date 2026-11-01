@@ -378,6 +378,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy ? weighHairstyle(f.bodyPresentation) : f.bodyPresentation,
     // narrow copied cups left her nipples at the cup edges (1 Nov): in copy mode a top always covers them
     copy && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
+    copy ? 'her natural light-tan skin' : '',
     // face accessories: the face pass redraws her face and dropped the photo's sunglasses (1 Nov)
     copy ? copyEyewear(`${f.outfit}, ${f.bodyPresentation}`) : '',
     // a hand at her waist came out as one big thumb (1 Nov)
@@ -415,6 +416,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
     copy && copyHairstyle(`${f.bodyPresentation}, ${f.extra}`)?.up ? COPY_UPDO_NEGATIVE : '',
     copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
+    // her own skin tone, not the photo's warm light: copies came out deeply bronzed and oily (1 Nov)
+    copy ? 'deep tan, bronzed skin, dark tanned skin, oiled skin, greasy shine' : '',
     // nothing invented in her hands (a sprig of leaves appeared in one, 1 Nov) unless the photo shows her holding something
     copy && copyNoSmile(f.expression) ? 'smiling, smile, grin, showing teeth' : '',
     // topless in the photo: no top invented (a bra strap appeared across a bare back, 1 Nov)
