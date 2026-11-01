@@ -41,8 +41,15 @@ export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 export const UNION_CN_FILE = 'xinsir_union_promax.safetensors';
 export const UNION_CN_URL = 'https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors';
 export const GARMENT_LINES_CLASSES = ['Florence2Run', 'DownloadAndLoadFlorence2Model', 'Canny', 'SetUnionControlNetType', 'EmptyImage', 'BboxDetectorCombined_v2'];
-/** How hard the garment's outline steers the redraw, and for how much of it (the end is left free for detail). */
-export const GARMENT_LINES = { strength: 0.75, end: 0.65 } as const;
+/** How hard the garment's and figure's outline steers the redraw, and for how much of it (the end is left free for
+ * detail). 0.75 / 0.65 let her bust drift off the photo's: the cleavage moved sideways, one breast bigger than the
+ * other (1 Nov). SIENNA_COPY_LINES="strength,end" overrides it. */
+export const GARMENT_LINES = { strength: 0.9, end: 0.8 } as const;
+export function garmentLines(env: string | undefined = process.env.SIENNA_COPY_LINES): { strength: number; end: number } {
+  const [s, e] = (env ?? '').split(',').map((v) => Number(v.trim()));
+  const ok = (v: number, max: number) => Number.isFinite(v) && v > 0 && v <= max;
+  return { strength: ok(s, 2) ? s : GARMENT_LINES.strength, end: ok(e, 1) ? e : GARMENT_LINES.end };
+}
 
 type Ref = [string, number];
 const isRef = (v: unknown): v is Ref => Array.isArray(v) && typeof v[0] === 'string' && typeof v[1] === 'number';
@@ -176,9 +183,10 @@ export function addKeepScene(
     };
     g[`${p}cn`] = { class_type: 'ControlNetLoader', inputs: { control_net_name: opts.garment.controlnet } };
     g[`${p}cntype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'canny/lineart/anime_lineart/mlsd' } };
+    const lineSet = garmentLines();
     g[`${p}cnapply`] = {
       class_type: 'ControlNetApplyAdvanced',
-      inputs: { positive: g[samplerId].inputs.positive, negative: g[samplerId].inputs.negative, control_net: [`${p}cntype`, 0], image: [`${p}lines`, 0], strength: GARMENT_LINES.strength, start_percent: 0, end_percent: GARMENT_LINES.end },
+      inputs: { positive: g[samplerId].inputs.positive, negative: g[samplerId].inputs.negative, control_net: [`${p}cntype`, 0], image: [`${p}lines`, 0], strength: lineSet.strength, start_percent: 0, end_percent: lineSet.end },
       _meta: { title: 'Keep scene: follow the garment’s outline' },
     };
     let cond: Ref = [`${p}cnapply`, 0];

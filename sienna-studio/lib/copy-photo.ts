@@ -152,16 +152,19 @@ export function bustWords(b: { size: string; gap: string; height?: string }): { 
   const size = b.size && b.size !== 'not visible' ? `${b.size} natural breasts` : '';
   // where they sit: her LoRA draws them high and round with a cleavage starting near the collarbones (1 Nov). Weighted
   // gently: a 1.4 "short cleavage" push pulled the nipples out of narrow cups on every try (1 Nov)
+  // both the same size: one came out much smaller than the other where the photo's matched (1 Nov)
+  const even = size ? '(both breasts the same size and shape:1.1)' : '';
+  const evenAvoid = size ? 'uneven breasts, one breast smaller than the other' : '';
   const low = b.height?.startsWith('sitting low');
   const lowPositive = low ? '(breasts sitting low on the chest, fullness in the lower half, natural teardrop shape:1.2)' : '';
   const lowAvoid = low ? 'perky breasts sitting high on the chest, high round breasts, cleavage starting near the collarbones' : '';
   if (b.gap.startsWith('gap')) {
     return {
-      positive: [size, '(breasts set apart with a visible gap of bare skin between them:1.3)', 'natural soft breasts hanging slightly apart', lowPositive].filter(Boolean).join(', '),
-      avoid: ['deep cleavage, pushed-up breasts, breasts pressed together, push-up bra effect', lowAvoid].filter(Boolean).join(', '),
+      positive: [size, even, '(breasts set apart with a visible gap of bare skin between them:1.3)', 'natural soft breasts hanging slightly apart', lowPositive].filter(Boolean).join(', '),
+      avoid: ['deep cleavage, pushed-up breasts, breasts pressed together, push-up bra effect', lowAvoid, evenAvoid].filter(Boolean).join(', '),
     };
   }
-  return { positive: [size, b.gap.startsWith('touching') ? 'breasts close together with a cleavage line' : '', lowPositive].filter(Boolean).join(', '), avoid: lowAvoid };
+  return { positive: [size, even, b.gap.startsWith('touching') ? 'breasts close together with a cleavage line' : '', lowPositive].filter(Boolean).join(', '), avoid: [lowAvoid, evenAvoid].filter(Boolean).join(', ') };
 }
 
 /** Eyewear in a copied photo: phrases naming sunglasses or glasses. Copies leave them off by default, so her face

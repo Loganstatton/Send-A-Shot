@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
+import { garmentLines } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -81,5 +82,13 @@ describe('addKeepScene', () => {
     delete g.x;
     g['40'].inputs.latent_image = ['33', 0];
     expect(addKeepScene(g, { width: 776 })).toBeNull();
+  });
+});
+
+describe('garmentLines', () => {
+  it('defaults to the stronger outline and reads an override', () => {
+    expect(garmentLines(undefined)).toEqual({ strength: 0.9, end: 0.8 });
+    expect(garmentLines('0.75,0.65')).toEqual({ strength: 0.75, end: 0.65 });
+    expect(garmentLines('junk')).toEqual({ strength: 0.9, end: 0.8 });
   });
 });

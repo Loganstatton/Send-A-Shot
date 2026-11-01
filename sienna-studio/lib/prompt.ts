@@ -498,7 +498,7 @@ function siennaLockedAvoid(avoidItems: string[], siennaLock: boolean, character:
     // and the shape words ("breasts pressed together", "pushed-up breasts", "deep cleavage") are about how they sit, not
     // their size: Copy Photo uses them to copy a photo's bust (1 Nov: the lock dropped them and the copy stayed pushed up),
     // and so is where they sit ("perky breasts sitting high on the chest": her copies sat higher than the photo's, 1 Nov)
-    const coverage = /\b(bare|topless|nude|naked|exposed|nipples?|areolae?|uncovered|see-through|pressed together|pushed[- ]up|push-up|cleavage|perky|sitting high|high on the chest|high[- ]set|high round)\b/i.test(kept);
+    const coverage = /\b(bare|topless|nude|naked|exposed|nipples?|areolae?|uncovered|see-through|pressed together|pushed[- ]up|push-up|cleavage|perky|sitting high|high on the chest|high[- ]set|high round|uneven|smaller than the other)\b/i.test(kept);
     const hit = coverage ? undefined : (kept.toLowerCase().match(/[a-z]{4,}/g) ?? []).find((w) => traitWords.has(w) || traitWords.has(w.replace(/s$/, '')));
     if (hit) warnings.push(`Sienna Lock removed “${kept}” from Avoid (it is one of her traits).`);
     return kept && !hit ? [kept] : [];
