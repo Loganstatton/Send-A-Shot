@@ -811,7 +811,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         status: 'on',
         checks: { top: added.includes(EXPOSURE_NODE_ID), face: added.includes(FACE_NODE_ID), body },
         // with the AI check two more tries: face-check redos alone used up all 4 in the first live test (21 Oct)
-        maxAttempts: p.singleAttempt ? 1 : req.simple?.ai?.check ? AI_MAX_ATTEMPTS : EXPOSURE_MAX_ATTEMPTS,
+        // Copy Photo: at most 3 tries (5 took up to an hour, 1 Nov); a nipple is still always redone within them
+        maxAttempts: p.singleAttempt ? 1 : req.simple?.copy ? Math.min(COPY_MAX_ATTEMPTS, AI_MAX_ATTEMPTS) : req.simple?.ai?.check ? AI_MAX_ATTEMPTS : EXPOSURE_MAX_ATTEMPTS,
         ...(built.outfitText ? { anchor: built.outfitText } : {}),
         attempts: [],
       };
@@ -903,6 +904,7 @@ async function submitGeneration(req: GenerateRequest, keep: { id: string; create
 
 // ── On-demand photo GPU (PHOTO_GPU=runpod) ────────────────────────────────────
 
+const COPY_MAX_ATTEMPTS = 3;
 const STARTING_NOTE = 'Starting the photo GPU (usually 1–3 min; it switches off by itself after a while without photos).';
 
 /** The photo GPU is off: keep the request in a waiting record, start the GPU, submit when it is ready. */
@@ -1266,7 +1268,13 @@ function identityFields(face: FaceReport, rec: GenerationRecord) {
   const policy: FacePolicy = experimentsEnabled() ? 'pose-aware' : 'strict';
   const rearPack = (rec.stylePacks ?? []).some((p) => STYLE_PACKS.find((sp) => sp.id === p.id)?.rearPose);
   const rear = rearRequest(`${rec.fields.pose} ${rec.fields.framing} ${rec.fields.extra}`, rec.params.posePreset, rearPack);
-  const v = faceVerdict(face, rear, policy, { referencePhoto: !!(rec.initImage || (rec.poseImage && !rec.poseImage.label?.startsWith('Pose preset'))) });
+  // Copy Photo redraws the whole person from noise (keep-scene), so the photo's own face can't carry over: the usual
+  // rule for reference photos (only a confirmed match counts) would just redo near-misses
+  const copied = !!rec.params.keepScene;
+  const v = faceVerdict(face, rear, policy, {
+    referencePhoto: !copied && !!(rec.initImage || (rec.poseImage && !rec.poseImage.label?.startsWith('Pose preset'))),
+    eyewear: /\b(sunglasses|shades|aviators)\b/i.test(`${rec.fields.outfit} ${rec.fields.bodyPresentation}`),
+  });
   return {
     similarity: face.similarity,
     identity: v.status,

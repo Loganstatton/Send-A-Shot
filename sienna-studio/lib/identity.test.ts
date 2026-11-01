@@ -266,3 +266,10 @@ describe('bent-over preset counts as a rear view', () => {
     expect(rearRequest('', 'bent_over_rear', false)).toBe(true);
   });
 });
+
+describe('faceVerdict with sunglasses', () => {
+  it('is inconclusive, not a mismatch, when sunglasses hide her eyes', () => {
+    expect(faceVerdict({ found: true, similarity: 0.3, size: 200 } as any, false, 'strict', { eyewear: true }).status).toBe('inconclusive');
+    expect(faceVerdict({ found: true, similarity: 0.8, size: 200 } as any, false, 'strict', { eyewear: true }).status).toBe('verified');
+  });
+});

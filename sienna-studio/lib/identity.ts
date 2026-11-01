@@ -95,7 +95,7 @@ export function faceVerdict(
   face: FaceReport,
   rear: boolean,
   policy: FacePolicy = 'strict',
-  opts: { referencePhoto?: boolean } = {},
+  opts: { referencePhoto?: boolean; eyewear?: boolean } = {},
 ): { status: IdentityStatus; reason: string } {
   const sim = face.similarity;
   if (face.found === false || sim === null) {
@@ -106,6 +106,9 @@ export function faceVerdict(
     return policy === 'strict' ? { status: 'unchecked', reason } : { status: 'inconclusive', reason };
   }
   if (sim >= FACE_THRESHOLD) return { status: 'verified', reason: '' };
+  // sunglasses hide her eyes: the face check can't confirm her, and a new seed won't change that (Copy Photo of a
+  // sunglasses photo was redone four times for nothing, 1 Nov). Not retried; it goes to Needs Review.
+  if (opts.eyewear) return { status: 'inconclusive', reason: 'her sunglasses hide her eyes, so the face check could not confirm her' };
   if (policy === 'strict' && rear) return { status: 'inconclusive', reason: 'her face is turned away (a rear view was asked for)' };
   if (policy === 'strict' && !rear && sim >= FACE_LIKELY) {
     if (opts.referencePhoto) return { status: 'mismatch', reason: "didn't look enough like Sienna (a reference photo shaped this one, so only a confirmed match counts)" };
