@@ -198,6 +198,18 @@ export function brokenAnatomy(a: ExposureAttempt<unknown>): boolean {
   return !!a.aiFixes?.some((i) => i.aspect === 'anatomy' && i.major) || !!a.aiChecklist?.some((c) => c.category === 'anatomy' && c.status === 'major');
 }
 
+/** A broken body that can never be kept over one without it: an extra, missing or duplicated limb, hand or head. A
+ * badly drawn hand is serious but not this: it lost to a copy that was wrong almost everywhere else (head turned away,
+ * a one-piece instead of the bikini, 10 serious misses) and that copy was kept (1 Nov). */
+const SEVERE_ANATOMY_RE = /\b(extra|third|additional|duplicat\w*|missing|second (hand|arm|leg|head|face)|three (hands|arms|legs)|growing out|detached|floating)\b/i;
+export function severeAnatomy(a: ExposureAttempt<unknown>): boolean {
+  const texts = [
+    ...(a.aiFixes ?? []).filter((i) => i.aspect === 'anatomy' && i.major).map((i) => `${i.problem ?? ''} ${i.avoid ?? ''}`),
+    ...(a.aiChecklist ?? []).filter((c) => c.category === 'anatomy' && c.status === 'major').map((c) => `${(c as any).observed ?? ''}`),
+  ];
+  return texts.some((t) => SEVERE_ANATOMY_RE.test(t));
+}
+
 /**
  * A correction may keep her pixel for pixel and redraw only the background when everything about her is right:
  * the only serious misses are the room and/or the light, nothing about her face, clothes, body, camera or extras,
@@ -256,8 +268,8 @@ export function regressions<Ref>(a: ExposureAttempt<Ref>, attempts: ExposureAtte
 /**
  * The attempt to keep: the last one if it passed; else among covered ones the one closest to the whole request;
  * else the least exposed.
- *  1. broken anatomy (an extra hand, arm or leg) is critical: never kept over a photo without it (21 Oct: a kept
- *     photo had a third hand);
+ *  1. severe broken anatomy (an extra or missing hand, arm or leg) is critical: never kept over a photo without it
+ *     (21 Oct: a kept photo had a third hand); a badly drawn hand counts heavily (40) but doesn't outrank everything;
  *  2. a different woman is critical too, just below anatomy (the face check, or hair the checker says isn't hers);
  *  3. the GPU body checks (pose held, full body);
  *  4. what a correction broke that an earlier photo had right counts against it;
@@ -276,7 +288,7 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
       return cats.size ? (cats.size - seriousCategories(a).length) / cats.size : a.aiOk === true ? 1 : a.aiOk === false ? 0.5 : 0.6;
     };
     const rank = (a: ExposureAttempt<Ref>) =>
-      (brokenAnatomy(a) ? 0 : 10000) + (wrongIdentity(a) ? 0 : 5000) + (a.poseOk === false ? 0 : 2000) + (a.framingOk === false ? 0 : 1000)
+      (severeAnatomy(a) ? 0 : 10000) - (brokenAnatomy(a) ? 40 : 0) + (wrongIdentity(a) ? 0 : 5000) + (a.poseOk === false ? 0 : 2000) + (a.framingOk === false ? 0 : 1000)
       - regressions(a, attempts).length * 15 + fit(a) * 60 + clean(a) * 20 + idRank(a) / 4 + (a.similarity ?? -1);
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }

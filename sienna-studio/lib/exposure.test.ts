@@ -173,3 +173,18 @@ describe('aiSawExposure', () => {
     expect(aiSawExposure(undefined)).toBe(false);
   });
 });
+
+describe('pickAttempt with a badly drawn hand', () => {
+  it('keeps a close photo with an odd hand over one wrong almost everywhere', () => {
+    const mk = (over: object) => ({ seed: 1, exposed: false, score: 0, images: [], identity: 'mismatch', faceOk: false, aiOk: false, ...over }) as any;
+    const handOnly = mk({ aiChecklist: [{ category: 'clothing', status: 'met' }, { category: 'position', status: 'met' }, { category: 'anatomy', status: 'major', observed: 'the hand at her hip is a blob with no separate fingers' }], aiFixes: [{ aspect: 'anatomy', major: true, problem: 'blob hand', avoid: 'merged fingers' }] });
+    const wrong = mk({ aiChecklist: [{ category: 'clothing', status: 'major' }, { category: 'position', status: 'major' }, { category: 'realism', status: 'major' }, { category: 'anatomy', status: 'met' }] });
+    expect(pickAttempt([handOnly, wrong])).toBe(handOnly);
+  });
+  it('never keeps an extra hand over a photo without one', () => {
+    const mk = (over: object) => ({ seed: 1, exposed: false, score: 0, images: [], identity: 'mismatch', faceOk: false, aiOk: false, ...over }) as any;
+    const extra = mk({ aiChecklist: [{ category: 'clothing', status: 'met' }, { category: 'anatomy', status: 'major', observed: 'a third hand on her waist' }], aiFixes: [{ aspect: 'anatomy', major: true, problem: 'extra hand', avoid: 'third hand' }] });
+    const wrong = mk({ aiChecklist: [{ category: 'clothing', status: 'major' }, { category: 'position', status: 'major' }] });
+    expect(pickAttempt([extra, wrong])).toBe(wrong);
+  });
+});
