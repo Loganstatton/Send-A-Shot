@@ -30,8 +30,12 @@ describe('addKeepScene', () => {
     expect(g[`${P}person`].inputs.image).toEqual(['31', 0]);
     expect(g[`${P}union`].inputs.source).toEqual([`${P}ui`, 0]);
     expect(g[`${P}paste`].inputs).toMatchObject({ destination: ['41', 0], source: ['31', 0], mask: [`${P}soft`, 0] });
+    // what stays redrawn: the new person and the old one (and the overlays), never more than the redraw
+    expect(g[`${P}new`].inputs.image).toEqual(['41', 0]);
+    expect(g[`${P}within`].inputs).toMatchObject({ destination: [`${P}bothui`, 0], source: [`${P}union`, 0], operation: 'multiply' });
+    expect(g[`${P}keep`].inputs.mask).toEqual([`${P}within`, 0]);
     // everything that read the decoded picture now reads the pasted one
-    for (const [id, n] of Object.entries(g)) if (id !== `${P}paste`) for (const v of Object.values(n.inputs)) expect(v).not.toEqual(['41', 0]);
+    for (const [id, n] of Object.entries(g)) if (id !== `${P}paste` && id !== `${P}new`) for (const v of Object.values(n.inputs)) expect(v).not.toEqual(['41', 0]);
   });
   it('traces the garment’s outline with the union ControlNet when asked', () => {
     const g = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors' } })!;

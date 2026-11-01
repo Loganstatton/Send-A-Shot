@@ -20,6 +20,8 @@ export const KEEP_SCENE_PREFIX = 'ks_';
 /** How far past her outline the redraw reaches, as a share of the picture's width: room for Sienna's own hair and
  * figure, and none of the other person's edges left behind. */
 export const KEEP_SCENE_GROW = 0.022;
+/** After the redraw, only this far past her (new and old outline) stays redrawn; the rest of the margin is the photo. */
+export const KEEP_SCENE_TIGHT = 0.008;
 export const UI_MASK_CLASS = 'SiennaUiMask';
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
@@ -68,7 +70,22 @@ export function addKeepScene(
     redraw = [`${p}union`, 0];
   }
   g[`${p}noise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [encodeId, 0], mask: redraw }, _meta: { title: 'Keep scene: redraw only her' } };
-  g[`${p}keep`] = { class_type: 'InvertMask', inputs: { mask: redraw } };
+  // What stays redrawn: where the new Sienna actually is (found again in the result), where the other person was, and
+  // the overlays. The rest of the margin goes back to the photo, so nothing can be invented round her (a cushion under
+  // her arm, a plant beside her, 1 Nov). Both person masks grown a little for her edges and the old outline.
+  const tight = Math.max(4, Math.round(opts.width * KEEP_SCENE_TIGHT));
+  g[`${p}new`] = { class_type: 'SegmDetectorCombined_v2', inputs: { segm_detector: [`${p}segm`, 1], image: [decodeId, 0], threshold: 0.3, dilation: 0 }, _meta: { title: 'Keep scene: Sienna in the result' } };
+  g[`${p}newgrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}new`, 0], expand: tight, tapered_corners: true } };
+  g[`${p}oldgrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}person`, 0], expand: tight, tapered_corners: true } };
+  g[`${p}both`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}newgrow`, 0], source: [`${p}oldgrow`, 0], x: 0, y: 0, operation: 'add' } };
+  let kept: Ref = [`${p}both`, 0];
+  if (opts.uiMask) {
+    g[`${p}bothui`] = { class_type: 'MaskComposite', inputs: { destination: kept, source: [`${p}ui`, 0], x: 0, y: 0, operation: 'add' } };
+    kept = [`${p}bothui`, 0];
+  }
+  // never more than was redrawn
+  g[`${p}within`] = { class_type: 'MaskComposite', inputs: { destination: kept, source: redraw, x: 0, y: 0, operation: 'multiply' } };
+  g[`${p}keep`] = { class_type: 'InvertMask', inputs: { mask: [`${p}within`, 0] } };
   // a soft seam: the redraw fades into the photo over a few pixels instead of a hard edge (blocky patches, 31 Oct)
   if (opts.softSeam !== false) g[`${p}soft`] = { class_type: SOFT_SEAM_CLASS, inputs: { mask: [`${p}keep`, 0], kernel_size: 15, sigma: 5 } };
   g[`${p}paste`] = {
@@ -129,7 +146,8 @@ export function addKeepScene(
     g[samplerId].inputs.negative = [`${p}cnapply`, 1];
   }
   for (const [id, node] of Object.entries(g)) {
-    if (id === `${p}paste`) continue;
+    // the paste and the person-finder read the raw redraw
+    if (id === `${p}paste` || id === `${p}new`) continue;
     for (const [k, v] of Object.entries(node.inputs)) if (isRef(v) && v[0] === decodeId && v[1] === 0) node.inputs[k] = [`${p}paste`, 0];
   }
   return g;
