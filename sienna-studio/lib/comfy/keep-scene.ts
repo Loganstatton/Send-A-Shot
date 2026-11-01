@@ -47,6 +47,8 @@ export const GARMENT_LINES_CLASSES = ['Florence2Run', 'DownloadAndLoadFlorence2M
 blue): the outline is let go at 65%, when the shapes are set and the colours are not. SIENNA_COPY_LINES="strength,end"
 overrides it. */
 export const GARMENT_LINES = { strength: 0.9, end: 0.65 } as const;
+/** The figure's outline (bust, waist, legs) as its own, lighter guide. */
+export const BODY_LINES = { strength: 0.55, end: 0.65 } as const;
 export function garmentLines(env: string | undefined = process.env.SIENNA_COPY_LINES): { strength: number; end: number } {
   const [s, e] = (env ?? '').split(',').map((v) => Number(v.trim()));
   const ok = (v: number, max: number) => Number.isFinite(v) && v > 0 && v <= max;
@@ -190,9 +192,13 @@ export function addKeepScene(
       };
       lines = [`${p}bodylines`, 0];
     }
+    // garment and figure are separate guides: in one image at 0.9 the photo's wider thighs and hips put their outline
+    // on Sienna's slimmer legs and it was drawn as yellow strings down her thigh and round her hip (1 Nov); the figure
+    // guides more lightly (BODY_LINES), the garment keeps its full strength
+    const bodyLines: Ref | null = opts.garment.body ? lines : null;
     g[`${p}lines`] = {
       class_type: 'ImageCompositeMasked',
-      inputs: { destination: lines, source: [`${p}canny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] },
+      inputs: { destination: [`${p}black`, 0], source: [`${p}canny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] },
       _meta: { title: 'Keep scene: the garment’s outline' },
     };
     g[`${p}cn`] = { class_type: 'ControlNetLoader', inputs: { control_net_name: opts.garment.controlnet } };
@@ -204,6 +210,16 @@ export function addKeepScene(
       _meta: { title: 'Keep scene: follow the garment’s outline' },
     };
     let cond: Ref = [`${p}cnapply`, 0];
+    if (bodyLines) {
+      // the figure without the garment area (the garment guide has it)
+      g[`${p}bodyonly`] = { class_type: 'ImageCompositeMasked', inputs: { destination: bodyLines, source: [`${p}black`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] } };
+      g[`${p}cnbody`] = {
+        class_type: 'ControlNetApplyAdvanced',
+        inputs: { positive: cond, negative: [cond[0], 1], control_net: [`${p}cntype`, 0], image: [`${p}bodyonly`, 0], strength: BODY_LINES.strength, start_percent: 0, end_percent: BODY_LINES.end },
+        _meta: { title: 'Keep scene: follow her figure’s outline (lightly)' },
+      };
+      cond = [`${p}cnbody`, 0];
+    }
     if (opts.garment.body && opts.garment.depth) {
       g[`${p}depth`] = { class_type: opts.garment.depth, inputs: { image: scene, ...DEPTH_INPUTS[opts.garment.depth] }, _meta: { title: 'Keep scene: depth of the photo' } };
       g[`${p}depthblack`] = { class_type: 'EmptyImage', inputs: { width: opts.width, height: opts.height, batch_size: 1, color: 0 } };
@@ -215,7 +231,7 @@ export function addKeepScene(
       g[`${p}cndtype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'depth' } };
       g[`${p}cndapply`] = {
         class_type: 'ControlNetApplyAdvanced',
-        inputs: { positive: [`${p}cnapply`, 0], negative: [`${p}cnapply`, 1], control_net: [`${p}cndtype`, 0], image: [`${p}bodydepth`, 0], strength: BODY_DEPTH.strength, start_percent: 0, end_percent: BODY_DEPTH.end },
+        inputs: { positive: cond, negative: [cond[0], 1], control_net: [`${p}cndtype`, 0], image: [`${p}bodydepth`, 0], strength: BODY_DEPTH.strength, start_percent: 0, end_percent: BODY_DEPTH.end },
         _meta: { title: 'Keep scene: follow her figure’s depth' },
       };
       cond = [`${p}cndapply`, 0];
