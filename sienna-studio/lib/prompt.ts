@@ -163,6 +163,9 @@ function copyStrapColours(outfit: string): string {
   if (own.length !== 1) return '';
   return STRAP_COLOURS.filter((c) => c !== own[0] && c !== 'gold' && c !== 'silver').map((c) => `${c} straps`).join(', ');
 }
+const COPY_GAP_RE = /\bgap of bare skin\b|\bset apart\b/i;
+const COPY_SHORT_CLEAVAGE = '(short cleavage, breasts touching only at the very top and separating below:1.4)';
+const COPY_LONG_CLEAVAGE_NEGATIVE = '(long deep cleavage line, breasts pressed together all the way down, push-up:1.4)';
 const COPY_COVER_POSITIVE = '(each cup fully covering the nipple and areola:1.3)';
 const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulders, hair worn down';
 function weighHairstyle(text: string): string {
@@ -378,6 +381,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy ? weighHairstyle(f.bodyPresentation) : f.bodyPresentation,
     // narrow copied cups left her nipples at the cup edges (1 Nov): in copy mode a top always covers them
     copy && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
+    // a short cleavage: her LoRA's own figure draws a long one, pressed together top to bottom (1 Nov)
+    copy && COPY_GAP_RE.test(f.bodyPresentation) ? COPY_SHORT_CLEAVAGE : '',
     // face accessories: the face pass redraws her face and dropped the photo's sunglasses (1 Nov)
     copy ? copyEyewear(`${f.outfit}, ${f.bodyPresentation}`) : '',
     // the photo's expression over her usual smile (the LoRA and the face pass pull towards it)
@@ -415,6 +420,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
     // nothing invented in her hands (a sprig of leaves appeared in one, 1 Nov) unless the photo shows her holding something
     copy && copyNoSmile(f.expression) ? 'smiling, smile, grin, showing teeth' : '',
+    copy && COPY_GAP_RE.test(f.bodyPresentation) ? COPY_LONG_CLEAVAGE_NEGATIVE : '',
     // accessories the photo doesn't have (a yellow hair tie appeared on her arm, 1 Nov)
     copy ? COPY_EXTRA_ACCESSORIES.filter(([re]) => !re.test(`${f.outfit} ${f.bodyPresentation} ${f.pose}`)).map(([, w]) => w).join(', ') : '',
     // straps and strings in another colour than the garment (a black strap on an all-white bikini, 1 Nov)
