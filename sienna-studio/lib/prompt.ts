@@ -400,6 +400,10 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     // a wet micro bikini was drawn see-through on every try (1 Nov): opaque unless the photo's garment is sheer
     copy && outfitHasTop(f.outfit) && !COPY_SHEER_RE.test(f.outfit) ? '(solid opaque fabric cups:1.2)' : '',
     copy ? 'her natural light-tan skin' : '',
+    // a real body, not an airbrushed one: the owner marked the copy's smooth, perfectly round bust and body (1 Nov)
+    copy ? '(realistic natural body with real skin texture and fine pores, natural soft breast shape with weight, natural shading and creases:1.15)' : '',
+    // fingers pinching a string, not fists round it (boat copy, 1 Nov)
+    copy && /\b(hold\w*|pull\w*|tug\w*|pinch\w*|lift\w*|hook\w*)\b[^,]*\b(strings?|straps?|ties?|bottoms?|waistband)\b/i.test(f.pose) ? '(thumb and index finger delicately pinching the thin string:1.2)' : '',
     // face accessories: the face pass redraws her face and dropped the photo's sunglasses (1 Nov)
     copy ? copyEyewear(`${f.outfit}, ${f.bodyPresentation}`) : '',
     // a hand at her waist came out as one big thumb (1 Nov)
@@ -446,6 +450,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy ? 'deep tan, bronzed skin, dark tanned skin, oiled skin, greasy shine' : '',
     copy ? copyNearColours(f.outfit) : '',
     copy ? 'cold blue colour cast, washed-out colours' : '',
+    copy ? 'airbrushed body, smooth plastic skin, perfectly round spherical breasts, implant-looking breasts, CGI body, doll skin, clenched fists' : '',
     // a hand on the tub rim came out with long black claw nails (1 Nov): natural nails unless the photo shows polish
     copy && !/\b(nail polish|manicure|painted nails|long nails)\b/i.test(`${f.outfit} ${f.bodyPresentation} ${f.pose}`) ? 'long black nails, dark nail polish, claw nails, stiletto nails' : '',
     // nothing invented in her hands (a sprig of leaves appeared in one, 1 Nov) unless the photo shows her holding something

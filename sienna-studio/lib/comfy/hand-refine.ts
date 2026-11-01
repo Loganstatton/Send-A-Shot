@@ -13,7 +13,7 @@ export const HAND_PROMPT = 'a realistic hand with five fingers, natural relaxed 
 export const HAND_REFINE_DENOISE = 0.5; // 0.35 left stubby, merged fingers; 0.6 broke a good hand (A/B, 21 Oct)
 
 /** The graph with the hand pass added, or null if there is no face-refinement node or SaveImage to hook into. */
-export function addHandRefine(graph: ComfyGraph, faceRefineId: string, opts: { denoise?: number } = {}): ComfyGraph | null {
+export function addHandRefine(graph: ComfyGraph, faceRefineId: string, opts: { denoise?: number; prompt?: string } = {}): ComfyGraph | null {
   const face = graph[faceRefineId];
   const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
   if (!face || face.class_type !== 'FaceDetailer' || !saveId) return null;
@@ -40,11 +40,19 @@ export function addHandRefine(graph: ComfyGraph, faceRefineId: string, opts: { d
         bbox_crop_factor: 2.5,
         sam_detection_hint: 'none',
         drop_size: 24,
-        wildcard: HAND_PROMPT,
+        wildcard: opts.prompt ?? HAND_PROMPT,
         cycle: 1,
       },
       _meta: { title: 'Hand Refinement' },
     },
     [saveId]: { ...graph[saveId], inputs: { ...graph[saveId].inputs, images: [HAND_REFINE_ID, 0] } },
   };
+}
+
+/** Copy Photo: hands holding a thin string or strap pinch it between thumb and fingers; the relaxed-fingers prompt
+ * turned them into clumsy fists round the bikini strings (boat copy, 1 Nov). */
+const HOLDS_STRING_RE = /\b(hold\w*|pull\w*|tug\w*|pinch\w*|lift\w*|hook\w*)\b[^,]*\b(strings?|straps?|ties?|bottoms?|waistband)\b/i;
+export const HAND_PINCH_PROMPT = 'a realistic hand with five fingers, thumb and index finger delicately pinching a thin string, other fingers relaxed and slightly curled, detailed fingernails, natural skin';
+export function copyHandPrompt(pose: string): string | undefined {
+  return HOLDS_STRING_RE.test(pose) ? HAND_PINCH_PROMPT : undefined;
 }

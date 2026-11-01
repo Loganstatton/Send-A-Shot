@@ -19,6 +19,8 @@ import { adultContentAllowed, getComfyUrl, getSettings, mimeFromBytes, readImage
 const GATE_TIMEOUT_MS = 4 * 60_000;
 // 0.85 kept her hand on the bikini string but threw her head back (the photo's sunglasses confuse the head points): 0.75
 const COPY_POSE_STRENGTH = 0.75;
+// the Natural skin pack's tested strength (above 0.4 her face starts to change)
+const COPY_SKIN_PACK = 0.3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The photo GPU's look at the photo: NudeNet's verdict and Florence-2's caption (null when the job failed). */
@@ -203,7 +205,8 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     params: {
       ...req.params,
       // an outfit pack draws its own garment over the photo's (String Swimsuit drew ordinary triangle cups)
-      stylePacks: garment ? Object.fromEntries(Object.entries(it.packs).filter(([id]) => !GARMENT_PACK_IDS.has(id))) : it.packs,
+      // Natural skin (matte, pores) on every copy: the copies' skin and body looked airbrushed (1 Nov)
+      stylePacks: { ...(garment ? Object.fromEntries(Object.entries(it.packs).filter(([id]) => !GARMENT_PACK_IDS.has(id))) : it.packs), ...(it.packs.natural_skin === undefined ? { natural_skin: COPY_SKIN_PACK } : {}) },
       posePreset: null,
       ...(aiRan ? { autoPosePreset: false } : {}),
       ...(garment ? { outfitIsolation: 'garment' as const, outfitStrength: COPY_GARMENT_STRENGTH, outfitMode: 'design' as const } : {}),

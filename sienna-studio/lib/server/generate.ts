@@ -42,7 +42,7 @@ import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addCopyColours, addKeepScene, COPY_COLOURS_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
-import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
+import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { recordLessons } from './copy-lessons';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, aiSawExposure, COPY_EXPOSURE_THRESHOLD, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -712,7 +712,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     } catch {
       // can't ask: let /prompt report it
     }
-    const withHands = reason ? null : addHandRefine(graph, refineId, { denoise: p.handRefineDenoise });
+    const withHands = reason ? null : addHandRefine(graph, refineId, { denoise: p.handRefineDenoise, prompt: p.keepScene ? copyHandPrompt(req.fields.pose) : undefined });
     if (withHands) {
       graph = withHands;
       handRefine = { status: 'on', denoise: p.handRefineDenoise ?? HAND_REFINE_DENOISE };
