@@ -180,3 +180,12 @@ export function dropEyewear(text: string): string {
     .trim();
 }
 export const copyKeepsEyewear = () => process.env.SIENNA_COPY_EYEWEAR === 'keep';
+
+/** Small stud earrings in a copied photo: "small stud earring" drew gold hoops in the copy (1 Nov), so studs, barely
+ * visible anyway, are left off and every earring is avoided; bigger earrings (hoops, drops) are copied as described. */
+const STUD_RE = /\b(stud|small|tiny)\b[^,]*\bearrings?\b|\bearrings?\b[^,]*\bstuds?\b/i;
+export function dropStudEarrings(text: string): { text: string; dropped: boolean } {
+  const parts = text.split(',');
+  const kept = parts.filter((p) => !STUD_RE.test(p));
+  return { text: kept.join(',').replace(/^\s*,\s*|\s*,\s*$/g, '').trim(), dropped: kept.length < parts.length };
+}

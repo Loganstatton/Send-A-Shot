@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bustPhrases, bustWords, dropEyewear, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
+import { bustPhrases, bustWords, dropEyewear, dropStudEarrings, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
 
 describe('copyUserText', () => {
   it('drops the copy instruction itself', () => {
@@ -89,5 +89,12 @@ describe('dropEyewear', () => {
     expect(dropEyewear('tiny yellow string bikini, dark tortoiseshell sunglasses, small stud earring')).toBe('tiny yellow string bikini, small stud earring');
     expect(dropEyewear('sunglasses')).toBe('');
     expect(dropEyewear('white bikini')).toBe('white bikini');
+  });
+});
+
+describe('dropStudEarrings', () => {
+  it('drops small studs, keeps hoops', () => {
+    expect(dropStudEarrings('high bun, small stud earring, damp skin')).toEqual({ text: 'high bun, damp skin', dropped: true });
+    expect(dropStudEarrings('large gold hoop earrings').dropped).toBe(false);
   });
 });
