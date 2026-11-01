@@ -153,6 +153,10 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     if (bust.length) it.fields.bodyPresentation = [it.fields.bodyPresentation, ...bust].filter(Boolean).join(', ');
   }
   for (const id of COPY_BODY_PACKS) delete it.packs[id];
+  // a cup is always centred over the nipple: "cups set slightly toward the outer sides" left the nipples bare on every
+  // try of the boat copy (1 Nov)
+  for (const k of ['outfit', 'bodyPresentation'] as const)
+    it.fields[k] = it.fields[k].replace(/,?\s*[^,]*\bcups?\b[^,]*\b(?:toward|towards|to|on)\s+the\s+(?:outer|inner)\s+(?:sides?|edges?)\b[^,]*/gi, '').replace(/^,\s*/, '').trim();
   // a see-through top is copied as an opaque one: the top check rejects any nipple showing through, so every try of a
   // sheer copy was thrown away (boat photo, 1 Nov)
   let sheerNote = '';
