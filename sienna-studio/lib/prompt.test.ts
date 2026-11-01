@@ -285,7 +285,7 @@ describe('copy mode (Copy Photo)', () => {
     expect(r.positive).toContain('dark-brown hair with lighter caramel ends');
     expect(r.positive).not.toContain('long dark-brown wavy hair');
     expect(r.positive).not.toContain('(large round natural breasts:1.2)');
-    expect(r.positive).toContain('(neutral, lips parted mid-sentence:1.4)');
+    expect(r.positive).toContain('(neutral, lips parted mid-sentence:1.25)');
   });
   it('changes nothing about her outside copy mode', () => {
     const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'hair in a bun' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult' });
@@ -335,7 +335,7 @@ describe('copy mode details', () => {
   const run = (f: Partial<typeof EMPTY_FIELDS>) => buildPrompt({ fields: { ...EMPTY_FIELDS, ...f }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
   it('keeps a neutral talking face from smiling', () => {
     const r = run({ expression: 'neutral, lips parted mid-sentence' });
-    expect(r.positive).toContain('(neutral, lips parted mid-sentence:1.4)');
+    expect(r.positive).toContain('(neutral, lips parted mid-sentence:1.25)');
     expect(r.negative).toContain('smiling');
     expect(run({ expression: 'relaxed smile' }).negative).not.toContain('grin');
   });

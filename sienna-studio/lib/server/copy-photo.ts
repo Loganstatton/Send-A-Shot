@@ -15,7 +15,8 @@ import { GARMENT_PACK_IDS } from '../style-packs';
 import { adultContentAllowed, getComfyUrl, getSettings, mimeFromBytes, readImage, storeImage } from './store';
 
 const GATE_TIMEOUT_MS = 4 * 60_000;
-const COPY_POSE_STRENGTH = 0.85;
+// 0.85 kept her hand on the bikini string but threw her head back (the photo's sunglasses confuse the head points): 0.75
+const COPY_POSE_STRENGTH = 0.75;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The photo GPU's look at the photo: NudeNet's verdict and Florence-2's caption (null when the job failed). */

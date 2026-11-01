@@ -404,7 +404,9 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy && /\bhands?\b/i.test(f.pose) ? 'natural hands with separate fingers and knuckles' : '',
     // the photo's expression over her usual smile (the LoRA and the face pass pull towards it)
     // a neutral or talking face loses to her LoRA's smile at 1.2 (1 Nov): 1.4, and the smile goes to the negative
-    copy && f.expression.trim() ? `(${f.expression.trim()}:${copyNoSmile(f.expression) ? 1.4 : 1.2})` : f.expression,
+    // 1.4 gave a wide-open mouth and her head thrown back, looking away (1 Nov): 1.25
+    copy && f.expression.trim() ? `(${f.expression.trim()}:${copyNoSmile(f.expression) ? 1.25 : 1.2})` : f.expression,
+    copy && /\b(at the (lens|camera)|toward the (lens|camera)|to the lens|into the camera)\b/i.test(`${f.pose} ${f.expression}`) ? '(face turned toward the camera, looking into the lens:1.2)' : '',
     f.setting,
     f.lighting,
     f.extra,
@@ -446,6 +448,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy && !/\b(nail polish|manicure|painted nails|long nails)\b/i.test(`${f.outfit} ${f.bodyPresentation} ${f.pose}`) ? 'long black nails, dark nail polish, claw nails, stiletto nails' : '',
     // nothing invented in her hands (a sprig of leaves appeared in one, 1 Nov) unless the photo shows her holding something
     copy && copyNoSmile(f.expression) ? 'smiling, smile, grin, showing teeth' : '',
+    copy && /\b(parted|mid-?sentence|talking|speaking)\b/i.test(f.expression) ? 'mouth wide open, head thrown back, looking up at the sky' : '',
     // topless in the photo: no top invented (a bra strap appeared across a bare back, 1 Nov)
     copy && /\btopless\b/i.test(`${f.outfit} ${f.bodyPresentation}`) ? 'bra, bra strap, strap across her back, bikini top' : '',
     // accessories the photo doesn't have (a yellow hair tie appeared on her arm, 1 Nov)
