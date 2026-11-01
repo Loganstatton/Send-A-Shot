@@ -22,6 +22,10 @@ MIN_PIXELS = 200
 # back inside her normal range (a bronzed copy measured L 54, a blue-cast one b 118)
 SIENNA_SKIN_AB = (145.0, 150.0)
 SIENNA_SKIN_L = (100.0, 165.0)
+# Lightness moves at most this far (8-bit LAB): a +35 lift of the skin the segmenter found left the patches it missed
+# (her face, a strip of her stomach) as dark smudges, and a -34 drop turned a yellow bikini mustard (1 Nov). Hue is
+# what drifts (purple drawn blue, skin bronzed or grey-blue); lightness is the scene's light.
+MAX_L_SHIFT = 10.0
 
 
 def _lab(img: np.ndarray) -> np.ndarray:
@@ -36,7 +40,7 @@ def _robust(px: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
 def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo_classes: Optional[List[np.ndarray]],
                  image_classes: Optional[List[np.ndarray]], clothes: float = 1.0, skin: float = 0.8,
-                 feather: int = 5, photo_region: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Dict]:
+                 feather: int = 12, photo_region: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Dict]:
     """`image` with its clothes and body-skin colours inside `region` moved onto `photo`'s (float32 RGB 0..1, same
     size). The photo's colours are read only inside `photo_region` (its person): the segmenter called foamy water
     "clothes" and turned a yellow bikini pale blue-white (1 Nov). Statistics are robust (median and spread of the
@@ -73,6 +77,9 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
             mu_s, sd_s = _robust(a[ms])
             scale = np.clip(sd_s / sd_r, 0.6, 1.6)
             scale[0] = 1.0  # lightness spread stays the copy's: its folds and shading
+        shift = mu_s - mu_r
+        shift[0] = float(np.clip(shift[0], -MAX_L_SHIFT, MAX_L_SHIFT))
+        mu_s = mu_r + shift
         lab[mr] = (b[mr] - mu_r) * scale + mu_s
         weight[mr] = strength
         info[name] = {"shift_lab": [round(float(x), 1) for x in (mu_s - mu_r)], "pixels": int(mr.sum()), "strength": strength}
