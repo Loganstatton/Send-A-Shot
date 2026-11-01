@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { garmentLines } from './keep-scene';
+import { addCopyColours, garmentLines } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -90,5 +90,23 @@ describe('garmentLines', () => {
     expect(garmentLines(undefined)).toEqual({ strength: 0.9, end: 0.65 });
     expect(garmentLines('0.75,0.65')).toEqual({ strength: 0.75, end: 0.65 });
     expect(garmentLines('junk')).toEqual({ strength: 0.9, end: 0.65 });
+  });
+});
+
+describe('addCopyColours', () => {
+  it('is the last change before SaveImage, reading the photo inside its person', () => {
+    const kept = addKeepScene(graph(), { width: 776 })!;
+    const saveId = Object.keys(kept).find((id) => kept[id].class_type === 'SaveImage')!;
+    const before = kept[saveId].inputs.images;
+    const g = addCopyColours(kept)!;
+    expect(g[`${P}colours`].class_type).toBe('SiennaCopyColours');
+    expect(g[`${P}colours`].inputs.image).toEqual(before);
+    expect(g[`${P}colours`].inputs.photo).toEqual(kept[`${P}person`].inputs.image);
+    expect(g[`${P}colours`].inputs.region).toEqual([`${P}newgrow`, 0]);
+    expect(g[`${P}colours`].inputs.photo_region).toEqual([`${P}oldgrow`, 0]);
+    expect(g[saveId].inputs.images).toEqual([`${P}colours`, 0]);
+  });
+  it('does nothing without a keep-scene redraw', () => {
+    expect(addCopyColours(graph())).toBeNull();
   });
 });

@@ -41,7 +41,7 @@ import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, PO
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addKeepScene, DEPTH_NODES, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
+import { addCopyColours, addKeepScene, COPY_COLOURS_CLASS, DEPTH_NODES, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, aiSawExposure, COPY_EXPOSURE_THRESHOLD, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -771,6 +771,14 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
     detailPass = reason ? { status: 'skipped', reason } : { status: 'on', style: dp.style, file, strength, denoise, ...(quality.hires ? { hires: true } : {}) };
     if (reason) warnings.push(`Close-up detail skipped — ${reason}.`);
+  }
+
+  // ── Copy Photo: the outfit's and skin's colours from the photo's pixels, the last change before the checks ──
+  if (p.keepScene && process.env.SIENNA_COPY_COLOURS !== 'off') {
+    const has = await backend.nodeInfo(COPY_COLOURS_CLASS, true).catch(() => null);
+    const coloured = has ? addCopyColours(graph) : null;
+    if (coloured) graph = coloured;
+    else if (!has && graph[`${KEEP_SCENE_PREFIX}person`]) warnings.push('Copy Photo: the GPU server has no colour step yet (SiennaCopyColours) — outfit and skin colours follow the description only.');
   }
 
   // ── Photo checks (retries happen in doRefresh): top check when the outfit has a top, face check with Sienna Lock ──

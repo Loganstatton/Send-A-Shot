@@ -764,3 +764,42 @@ def test_paint_out_removes_overlay_strokes():
     out = so.paint_out(img, mask)
     assert out[265:290, 5:80].max() < 0.6
     assert abs(out[50, 100].mean() - 0.4) < 0.01
+
+
+def _cc_classes(h, w, clothes_box, skin_box):
+    cls = [np.zeros((h, w), np.float32) for _ in range(6)]
+    y0, y1, x0, x1 = clothes_box
+    cls[4][y0:y1, x0:x1] = 1
+    y0, y1, x0, x1 = skin_box
+    cls[2][y0:y1, x0:x1] = 1
+    return cls
+
+
+def test_copy_colours_moves_garment_to_photo_colour():
+    import sienna_copy_colour as cc
+
+    h, w = 200, 200
+    photo = np.full((h, w, 3), 0.5, np.float32)
+    photo[50:100, 50:150] = (0.45, 0.15, 0.55)  # purple garment
+    photo[100:150, 50:150] = (0.9, 0.75, 0.65)  # pale skin
+    copy = np.full((h, w, 3), 0.5, np.float32)
+    copy[60:110, 50:150] = (0.15, 0.15, 0.85)  # blue garment, a bit lower
+    copy[110:160, 50:150] = (0.55, 0.35, 0.22)  # bronzed skin
+    copy[10:40, 10:40] = (0.1, 0.8, 0.1)  # outside the region: untouched
+    region = np.zeros((h, w), np.float32)
+    region[40:180, 40:160] = 1
+    out, info = cc.copy_colours(photo, copy, region, _cc_classes(h, w, (50, 100, 50, 150), (100, 150, 50, 150)),
+                                _cc_classes(h, w, (60, 110, 50, 150), (110, 160, 50, 150)), clothes=1.0, skin=0.6, feather=0)
+    assert info["changed"] and "shift_lab" in info["clothes"] and "shift_lab" in info["skin"]
+    assert np.abs(out[85, 100] - photo[75, 100]).max() < 0.03  # garment now the photo's purple
+    sk = out[135, 100]
+    assert copy[135, 100][0] < sk[0] < photo[125, 100][0]  # skin part of the way to the photo's
+    assert np.array_equal(out[20, 20], copy[20, 20])
+
+
+def test_copy_colours_without_segmenter_changes_nothing():
+    import sienna_copy_colour as cc
+
+    img = np.random.default_rng(1).random((50, 50, 3)).astype(np.float32)
+    out, info = cc.copy_colours(img, img * 0.5, np.ones((50, 50), np.float32), None, None)
+    assert not info["changed"] and np.allclose(out, img * 0.5)

@@ -621,7 +621,63 @@ class SiennaFigureComposite:
         return {"ui": {"text": [text]}, "result": (_with_rest(torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...], original), text)}
 
 
+
+class SiennaCopyColours:
+    """Copy Photo: the copy's outfit and skin colours taken from the photo's pixels (sienna_copy_colour.py). Shapes stay
+    the copy's; her face features and hair are never changed. On any failure the image passes through unchanged and
+    the report says why."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "photo": ("IMAGE",),
+                "image": ("IMAGE",),
+                "region": ("MASK",),
+                "photo_region": ("MASK",),
+                "clothes": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "skin": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.05}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, photo, image, region, photo_region, clothes, skin):
+        import cv2
+        from . import sienna_copy_colour
+        from .sienna_redraw import segment_classes, segmenter_error
+
+        def to_mask(m, shape):
+            m = (m[0] if m.dim() == 3 else m).detach().cpu().numpy().astype(np.float32)
+            return m if m.shape == shape else cv2.resize(m, (shape[1], shape[0]), interpolation=cv2.INTER_LINEAR)
+
+        try:
+            img = image[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+            ph = photo[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+            shape = img.shape[:2]
+            if ph.shape[:2] != shape:
+                ph = cv2.resize(ph, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
+            pc, ic = segment_classes(ph), segment_classes(img)
+            out, info = sienna_copy_colour.copy_colours(ph, img, to_mask(region, shape), pc, ic, float(clothes), float(skin),
+                                                        photo_region=to_mask(photo_region, shape))
+            if pc is None or ic is None:
+                info["segmenter_error"] = segmenter_error()
+            res = torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...]
+            if image.shape[0] > 1:
+                info["batch_note"] = f"only the first of {image.shape[0]} photos was changed"
+                res = torch.cat([res, image[1:, ..., :3].to(res.dtype)], 0) if image.shape[1:3] == res.shape[1:3] else res
+        except Exception as e:  # never lose the photo over the colour step
+            res, info = image, {"changed": False, "error": f"{type(e).__name__}: {e}"[:300]}
+        text = json.dumps(info)
+        print(f"[sienna] copy colours: {text}", flush=True)
+        return {"ui": {"text": [text]}, "result": (res, text)}
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaCopyColours": SiennaCopyColours,
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
     "SiennaChinCrop": SiennaChinCrop,
@@ -640,6 +696,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaCopyColours": "Sienna Copy Colours",
     "SiennaPoseRetarget": "Sienna Pose Retarget",
     "SiennaGarmentIsolate": "Sienna Garment Isolate",
     "SiennaChinCrop": "Sienna Chin Crop",

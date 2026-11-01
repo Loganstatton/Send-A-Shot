@@ -218,3 +218,33 @@ export function addKeepScene(
   }
   return g;
 }
+
+/** The copy's outfit and skin colours taken from the photo's pixels (SiennaCopyColours): words drifted them — a purple
+ * bikini drawn royal blue, a pale woman under grey light drawn deeply bronzed (1 Nov). */
+export const COPY_COLOURS_CLASS = 'SiennaCopyColours';
+export const COPY_COLOURS = { clothes: 1.0, skin: 0.8 } as const;
+/** The graph with the colour step as the last change before SaveImage, or null without a keep-scene redraw in it. */
+export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin?: number } = {}): ComfyGraph | null {
+  const p = KEEP_SCENE_PREFIX;
+  const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
+  const person = graph[`${p}person`];
+  if (!saveId || !person || !graph[`${p}newgrow`] || !graph[`${p}oldgrow`]) return null;
+  const image = graph[saveId].inputs.images;
+  if (!isRef(image) || !isRef(person.inputs.image)) return null;
+  return {
+    ...graph,
+    [`${p}colours`]: {
+      class_type: COPY_COLOURS_CLASS,
+      inputs: {
+        photo: person.inputs.image,
+        image,
+        region: [`${p}newgrow`, 0],
+        photo_region: [`${p}oldgrow`, 0],
+        clothes: opts.clothes ?? COPY_COLOURS.clothes,
+        skin: opts.skin ?? COPY_COLOURS.skin,
+      },
+      _meta: { title: 'Keep scene: outfit and skin colours from the photo' },
+    },
+    [saveId]: { ...graph[saveId], inputs: { ...graph[saveId].inputs, images: [`${p}colours`, 0] } },
+  };
+}
