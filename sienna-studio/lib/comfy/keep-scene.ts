@@ -228,7 +228,7 @@ export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin
   const p = KEEP_SCENE_PREFIX;
   const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
   const person = graph[`${p}person`];
-  if (!saveId || !person || !graph[`${p}newgrow`] || !graph[`${p}oldgrow`]) return null;
+  if (!saveId || !person || !graph[`${p}new`] || !graph[`${p}oldgrow`]) return null;
   const image = graph[saveId].inputs.images;
   if (!isRef(image) || !isRef(person.inputs.image)) return null;
   return {
@@ -238,8 +238,10 @@ export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin
       inputs: {
         photo: person.inputs.image,
         image,
-        region: [`${p}newgrow`, 0],
-        photo_region: [`${p}oldgrow`, 0],
+        region: [`${p}new`, 0],
+        // the photo's garment colour read only on the garment itself (Florence-2's mask, when the outline guide ran):
+        // the segmenter called foam round her legs "clothes" and the copy's yellow bikini was turned white (1 Nov)
+        photo_region: graph[`${p}gmask`] ? [`${p}gmask`, 0] : [`${p}oldgrow`, 0],
         clothes: opts.clothes ?? COPY_COLOURS.clothes,
         skin: opts.skin ?? COPY_COLOURS.skin,
       },

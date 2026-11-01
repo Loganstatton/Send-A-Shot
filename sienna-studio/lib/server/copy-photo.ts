@@ -149,8 +149,12 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   // never confirm her and each copy went to Needs Review (1 Nov)
   let eyewearNote = '';
   let checked = checkText;
-  if (!copyKeepsEyewear() && /\b(sunglasses|glasses|shades|aviators|eyewear)\b/i.test(`${it.fields.outfit},${it.fields.bodyPresentation},${it.fields.extra}`)) {
-    for (const k of ['outfit', 'bodyPresentation', 'extra'] as const) it.fields[k] = dropEyewear(it.fields[k]);
+  // every field: the reader also put them in the pose and expression ("eyes hidden behind sunglasses" at 1.4 drew them
+  // back, 1 Nov)
+  const EYEWEAR = /\b(sunglasses|glasses|shades|aviators|eyewear)\b/i;
+  const fieldKeys = (Object.keys(it.fields) as (keyof typeof it.fields)[]).filter((k) => k !== 'avoid' && typeof it.fields[k] === 'string');
+  if (!copyKeepsEyewear() && fieldKeys.some((k) => EYEWEAR.test(it.fields[k] as string))) {
+    for (const k of fieldKeys) (it.fields as unknown as Record<string, string>)[k] = dropEyewear(it.fields[k] as string);
     it.fields.avoid = [it.fields.avoid, COPY_EYEWEAR_AVOID].filter(Boolean).join(', ');
     checked = `${dropEyewear(checkText)}. No sunglasses or glasses: her eyes are uncovered.`;
     eyewearNote = 'The photo’s sunglasses were left off so her face shows and can be confirmed as Sienna.';

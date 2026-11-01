@@ -56,7 +56,11 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
             continue
         ms = np.logical_or.reduce([photo_classes[c] > 0.5 for c in cls])
         if photo_region is not None:
-            ms &= np.asarray(photo_region, np.float32) > 0.5
+            pr = np.asarray(photo_region, np.float32) > 0.5
+            ms &= pr
+            # a tiny garment the segmenter calls skin: the garment mask itself, its edge trimmed off
+            if name == "clothes" and ms.sum() < MIN_PIXELS:
+                ms = cv2.erode(pr.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
         mr = m & np.logical_or.reduce([image_classes[c] > 0.5 for c in cls])
         if (name != "skin" and ms.sum() < MIN_PIXELS) or mr.sum() < MIN_PIXELS:
             info[name] = {"skipped": f"too few pixels (photo {int(ms.sum())}, copy {int(mr.sum())})"}

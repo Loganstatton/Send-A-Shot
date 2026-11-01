@@ -102,11 +102,19 @@ describe('addCopyColours', () => {
     expect(g[`${P}colours`].class_type).toBe('SiennaCopyColours');
     expect(g[`${P}colours`].inputs.image).toEqual(before);
     expect(g[`${P}colours`].inputs.photo).toEqual(kept[`${P}person`].inputs.image);
-    expect(g[`${P}colours`].inputs.region).toEqual([`${P}newgrow`, 0]);
+    expect(g[`${P}colours`].inputs.region).toEqual([`${P}new`, 0]);
     expect(g[`${P}colours`].inputs.photo_region).toEqual([`${P}oldgrow`, 0]);
     expect(g[saveId].inputs.images).toEqual([`${P}colours`, 0]);
   });
   it('does nothing without a keep-scene redraw', () => {
     expect(addCopyColours(graph())).toBeNull();
+  });
+});
+
+describe('addCopyColours with the garment outline', () => {
+  it('reads the photo garment colour on the garment mask only', () => {
+    const kept = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors' } })!;
+    const g = addCopyColours(kept)!;
+    expect(g[`${P}colours`].inputs.photo_region).toEqual([`${P}gmask`, 0]);
   });
 });
