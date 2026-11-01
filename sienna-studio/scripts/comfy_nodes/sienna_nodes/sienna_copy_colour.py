@@ -114,3 +114,69 @@ def fill_gaps(img: np.ndarray, gap: np.ndarray, avoid: np.ndarray, scale: float 
     wgt = np.where(g[..., None], 1.0, wgt) * (1 - (np.asarray(avoid, np.float32)[..., None] > 0.5))
     out = img[..., :3].astype(np.float32)
     return np.clip(out * (1 - wgt) + filled * wgt, 0, 1).astype(np.float32)
+
+
+# ── run in its own process ────────────────────────────────────────────────────
+# The segmenter (MediaPipe) ran inside ComfyUI's process; three times on 1 Nov ComfyUI died mid-copy (every call a
+# 502 while the pod kept running). A crash or hang in its own process can only skip the colour step.
+ISOLATED_TIMEOUT = 120
+
+
+def copy_colours_isolated(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo_region: Optional[np.ndarray],
+                          clothes: float, skin: float, timeout: float = ISOLATED_TIMEOUT) -> Tuple[np.ndarray, Dict]:
+    """copy_colours with the segmentation and the colour moves in a child process; on a crash, stall or error the
+    image comes back unchanged and the report says why."""
+    import json
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    out = image[..., :3].astype(np.float32)
+    with tempfile.TemporaryDirectory(prefix="sienna_cc_") as td:
+        inp, res = os.path.join(td, "in.npz"), os.path.join(td, "out.npz")
+        arrays = {"photo": photo[..., :3].astype(np.float32), "image": out, "region": np.asarray(region, np.float32)}
+        if photo_region is not None:
+            arrays["photo_region"] = np.asarray(photo_region, np.float32)
+        np.savez(inp, params=np.array(json.dumps({"clothes": clothes, "skin": skin})), **arrays)
+        log = os.path.join(td, "worker.log")
+        with open(log, "w") as f:
+            p = subprocess.Popen([sys.executable, os.path.abspath(__file__), inp, res], stdout=f, stderr=f, start_new_session=True)
+            try:
+                rc = p.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(p.pid, 9)
+                except OSError:
+                    p.kill()
+                return out, {"changed": False, "error": f"colour step timed out after {timeout:.0f}s"}
+        tail = open(log, errors="replace").read()[-400:]
+        if rc != 0 or not os.path.exists(res):
+            return out, {"changed": False, "error": f"colour step failed (exit {rc})", "worker_log": tail}
+        r = np.load(res, allow_pickle=False)
+        return r["image"].astype(np.float32), json.loads(str(r["info"]))
+
+
+def _main(inp: str, res: str) -> None:
+    import json
+    import os
+    import sys
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from sienna_redraw import segment_classes, segmenter_error
+
+    d = np.load(inp, allow_pickle=False)
+    params = json.loads(str(d["params"]))
+    photo, image = d["photo"], d["image"]
+    pc, ic = segment_classes(photo), segment_classes(image)
+    out, info = copy_colours(photo, image, d["region"], pc, ic, float(params["clothes"]), float(params["skin"]),
+                             photo_region=d["photo_region"] if "photo_region" in d.files else None)
+    if pc is None or ic is None:
+        info["segmenter_error"] = segmenter_error()
+    np.savez(res, image=out.astype(np.float32), info=np.array(json.dumps(info)))
+
+
+if __name__ == "__main__":
+    import sys
+
+    _main(sys.argv[1], sys.argv[2])

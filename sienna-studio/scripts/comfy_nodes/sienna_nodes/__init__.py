@@ -649,8 +649,6 @@ class SiennaCopyColours:
     def run(self, photo, image, region, photo_region, clothes, skin):
         import cv2
         from . import sienna_copy_colour
-        from .sienna_redraw import segment_classes, segmenter_error
-
         def to_mask(m, shape):
             m = (m[0] if m.dim() == 3 else m).detach().cpu().numpy().astype(np.float32)
             return m if m.shape == shape else cv2.resize(m, (shape[1], shape[0]), interpolation=cv2.INTER_LINEAR)
@@ -661,11 +659,9 @@ class SiennaCopyColours:
             shape = img.shape[:2]
             if ph.shape[:2] != shape:
                 ph = cv2.resize(ph, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
-            pc, ic = segment_classes(ph), segment_classes(img)
-            out, info = sienna_copy_colour.copy_colours(ph, img, to_mask(region, shape), pc, ic, float(clothes), float(skin),
-                                                        photo_region=to_mask(photo_region, shape))
-            if pc is None or ic is None:
-                info["segmenter_error"] = segmenter_error()
+            # in its own process: a segmenter crash inside ComfyUI took the whole GPU down (1 Nov)
+            out, info = sienna_copy_colour.copy_colours_isolated(ph, img, to_mask(region, shape), to_mask(photo_region, shape),
+                                                                 float(clothes), float(skin))
             res = torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...]
             if image.shape[0] > 1:
                 info["batch_note"] = f"only the first of {image.shape[0]} photos was changed"
