@@ -285,7 +285,7 @@ describe('copy mode (Copy Photo)', () => {
     expect(r.positive).toContain('dark-brown hair with lighter caramel ends');
     expect(r.positive).not.toContain('long dark-brown wavy hair');
     expect(r.positive).not.toContain('(large round natural breasts:1.2)');
-    expect(r.positive).toContain('(neutral, lips parted mid-sentence:1.2)');
+    expect(r.positive).toContain('(neutral, lips parted mid-sentence:1.4)');
   });
   it('changes nothing about her outside copy mode', () => {
     const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'hair in a bun' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult' });
@@ -328,5 +328,22 @@ describe('copy mode hands', () => {
   it('keeps invented objects out of her hands unless the photo has her holding something', () => {
     expect(run('arm resting on the tub edge')).toContain('holding a plant');
     expect(run('holding a phone at arm’s length')).not.toContain('holding a plant');
+  });
+});
+
+describe('copy mode details', () => {
+  const run = (f: Partial<typeof EMPTY_FIELDS>) => buildPrompt({ fields: { ...EMPTY_FIELDS, ...f }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
+  it('keeps a neutral talking face from smiling', () => {
+    const r = run({ expression: 'neutral, lips parted mid-sentence' });
+    expect(r.positive).toContain('(neutral, lips parted mid-sentence:1.4)');
+    expect(r.negative).toContain('smiling');
+    expect(run({ expression: 'relaxed smile' }).negative).not.toContain('grin');
+  });
+  it('keeps out accessories and strap colours the photo doesn’t have', () => {
+    const r = run({ outfit: 'white triangle bikini top, thin white strings' });
+    expect(r.negative).toContain('scrunchie on her arm');
+    expect(r.negative).toContain('black straps');
+    expect(r.negative).not.toContain('white straps');
+    expect(run({ outfit: 'purple bikini top, small gold rings joining strings to cups, gold bracelet' }).negative).not.toContain('bangles');
   });
 });

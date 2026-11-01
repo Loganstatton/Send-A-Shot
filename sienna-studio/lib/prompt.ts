@@ -148,6 +148,21 @@ function copyEyewear(text: string): string {
   const g = text.split(',').map((p) => p.trim()).find((p) => /\b(sunglasses|glasses|shades|aviators)\b/i.test(p));
   return g ? `(wearing ${g.replace(/^(wearing|with)\s+/i, '')}:1.3)` : '';
 }
+function copyNoSmile(expression: string): boolean {
+  return /\b(neutral|serious|mid-?sentence|talking|speaking|lips (softly )?parted|calm|blank|unsmiling|no smile)\b/i.test(expression) && !/\b(smil|grin|laugh)/i.test(expression.replace(/\bno smile\b/gi, ''));
+}
+const COPY_EXTRA_ACCESSORIES: [RegExp, string][] = [
+  [/\b(bracelets?|bangles?|wristbands?|watch)\b/i, 'bracelets, bangles, wristband'],
+  [/\b(hair ?ties?|scrunchies?)\b/i, 'hair tie on her wrist, scrunchie on her arm'],
+  [/\b(rings?)\b(?! slider| joining| at| high| where| near)/i, 'rings on her fingers'],
+  [/\b(necklaces?|pendants?|chains?)\b/i, 'necklace, pendant'],
+];
+const STRAP_COLOURS = ['black', 'white', 'red', 'pink', 'purple', 'blue', 'green', 'yellow', 'orange', 'brown', 'beige', 'gold', 'silver'];
+function copyStrapColours(outfit: string): string {
+  const own = STRAP_COLOURS.filter((c) => new RegExp(`\\b${c}\\b`, 'i').test(outfit));
+  if (own.length !== 1) return '';
+  return STRAP_COLOURS.filter((c) => c !== own[0] && c !== 'gold' && c !== 'silver').map((c) => `${c} straps`).join(', ');
+}
 const COPY_COVER_POSITIVE = '(each cup fully covering the nipple and areola:1.3)';
 const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulders, hair worn down';
 function weighHairstyle(text: string): string {
@@ -366,7 +381,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     // face accessories: the face pass redraws her face and dropped the photo's sunglasses (1 Nov)
     copy ? copyEyewear(`${f.outfit}, ${f.bodyPresentation}`) : '',
     // the photo's expression over her usual smile (the LoRA and the face pass pull towards it)
-    copy && f.expression.trim() ? `(${f.expression.trim()}:1.2)` : f.expression,
+    // a neutral or talking face loses to her LoRA's smile at 1.2 (1 Nov): 1.4, and the smile goes to the negative
+    copy && f.expression.trim() ? `(${f.expression.trim()}:${copyNoSmile(f.expression) ? 1.4 : 1.2})` : f.expression,
     f.setting,
     f.lighting,
     f.extra,
@@ -398,6 +414,11 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy && copyHairstyle(`${f.bodyPresentation}, ${f.extra}`)?.up ? COPY_UPDO_NEGATIVE : '',
     copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
     // nothing invented in her hands (a sprig of leaves appeared in one, 1 Nov) unless the photo shows her holding something
+    copy && copyNoSmile(f.expression) ? 'smiling, smile, grin, showing teeth' : '',
+    // accessories the photo doesn't have (a yellow hair tie appeared on her arm, 1 Nov)
+    copy ? COPY_EXTRA_ACCESSORIES.filter(([re]) => !re.test(`${f.outfit} ${f.bodyPresentation} ${f.pose}`)).map(([, w]) => w).join(', ') : '',
+    // straps and strings in another colour than the garment (a black strap on an all-white bikini, 1 Nov)
+    copy ? copyStrapColours(f.outfit) : '',
     copy && !/\b(holding|holds|in (her|one|each) hand|grips?|gripping|carrying|clutching)\b/i.test(`${f.pose} ${f.outfit} ${f.extra} ${f.bodyPresentation}`) ? 'holding flowers, holding leaves, holding a plant, object in her hand' : '',
     avoidItems.join(', '),
   ]);
