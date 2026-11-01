@@ -25,6 +25,17 @@ export const KEEP_SCENE_TIGHT = 0.008;
 /** Second pass over painted-out overlays: enough for the water's texture, too little for new shapes. */
 export const UI_TOUCH_DENOISE = 0.5;
 export const UI_MASK_CLASS = 'SiennaUiMask';
+/** Depth preprocessors (comfyui_controlnet_aux), best first, with their inputs. */
+export type DepthNode = 'DepthAnythingV2Preprocessor' | 'DepthAnythingPreprocessor' | 'MiDaS-DepthMapPreprocessor';
+export const DEPTH_NODES: DepthNode[] = ['DepthAnythingV2Preprocessor', 'DepthAnythingPreprocessor', 'MiDaS-DepthMapPreprocessor'];
+const DEPTH_INPUTS: Record<DepthNode, Record<string, unknown>> = {
+  DepthAnythingV2Preprocessor: { ckpt_name: 'depth_anything_v2_vitl.pth', resolution: 1024 },
+  DepthAnythingPreprocessor: { ckpt_name: 'depth_anything_vitl14.pth', resolution: 1024 },
+  'MiDaS-DepthMapPreprocessor': { a: 6.283185307179586, bg_threshold: 0.1, resolution: 1024 },
+};
+/** The depth of her figure (no head): where the bust touches and where it separates is shading, not edges, so the
+ * outline missed it and her cleavage ran long where the photo's was short (1 Nov). */
+export const BODY_DEPTH = { strength: 0.6, end: 0.6 } as const;
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
 export const UNION_CN_FILE = 'xinsir_union_promax.safetensors';
@@ -50,7 +61,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean } },
+  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -170,8 +181,25 @@ export function addKeepScene(
       inputs: { positive: g[samplerId].inputs.positive, negative: g[samplerId].inputs.negative, control_net: [`${p}cntype`, 0], image: [`${p}lines`, 0], strength: GARMENT_LINES.strength, start_percent: 0, end_percent: GARMENT_LINES.end },
       _meta: { title: 'Keep scene: follow the garment’s outline' },
     };
-    g[samplerId].inputs.positive = [`${p}cnapply`, 0];
-    g[samplerId].inputs.negative = [`${p}cnapply`, 1];
+    let cond: Ref = [`${p}cnapply`, 0];
+    if (opts.garment.body && opts.garment.depth) {
+      g[`${p}depth`] = { class_type: opts.garment.depth, inputs: { image: scene, ...DEPTH_INPUTS[opts.garment.depth] }, _meta: { title: 'Keep scene: depth of the photo' } };
+      g[`${p}depthblack`] = { class_type: 'EmptyImage', inputs: { width: opts.width, height: opts.height, batch_size: 1, color: 0 } };
+      g[`${p}bodydepth`] = {
+        class_type: 'ImageCompositeMasked',
+        inputs: { destination: [`${p}depthblack`, 0], source: [`${p}depth`, 0], x: 0, y: 0, resize_source: true, mask: [`${p}body`, 0] },
+        _meta: { title: 'Keep scene: her figure’s depth (no head)' },
+      };
+      g[`${p}cndtype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'depth' } };
+      g[`${p}cndapply`] = {
+        class_type: 'ControlNetApplyAdvanced',
+        inputs: { positive: [`${p}cnapply`, 0], negative: [`${p}cnapply`, 1], control_net: [`${p}cndtype`, 0], image: [`${p}bodydepth`, 0], strength: BODY_DEPTH.strength, start_percent: 0, end_percent: BODY_DEPTH.end },
+        _meta: { title: 'Keep scene: follow her figure’s depth' },
+      };
+      cond = [`${p}cndapply`, 0];
+    }
+    g[samplerId].inputs.positive = cond;
+    g[samplerId].inputs.negative = [cond[0], 1];
   }
   for (const [id, node] of Object.entries(g)) {
     // the paste and the person-finder read the raw redraw; the overlay touch-up reads the paste

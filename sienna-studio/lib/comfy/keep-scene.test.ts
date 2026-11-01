@@ -63,6 +63,15 @@ describe('addKeepScene', () => {
     const g = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true } })!;
     expect(g[`${P}body`].inputs).toMatchObject({ destination: [`${P}person`, 0], source: [`${P}face`, 0], operation: 'subtract' });
     expect(g[`${P}lines`].inputs.destination).toEqual([`${P}bodylines`, 0]);
+    expect(g[`${P}cndapply`]).toBeUndefined();
+  });
+  it('adds her figure’s depth (no head) as a second guide when the server has a depth node', () => {
+    const g = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true, depth: 'DepthAnythingV2Preprocessor' } })!;
+    expect(g[`${P}cndtype`].inputs.type).toBe('depth');
+    expect(g[`${P}bodydepth`].inputs).toMatchObject({ source: [`${P}depth`, 0], mask: [`${P}body`, 0], resize_source: true });
+    expect(g[`${P}cndapply`].inputs.positive).toEqual([`${P}cnapply`, 0]);
+    expect(g['40'].inputs.positive).toEqual([`${P}cndapply`, 0]);
+    expect(g['40'].inputs.negative).toEqual([`${P}cndapply`, 1]);
   });
   it('is skipped without an init image or with the hi-res pass', () => {
     expect(addKeepScene(structuredClone(sdxl) as ComfyGraph, { width: 776 })).toBeNull();

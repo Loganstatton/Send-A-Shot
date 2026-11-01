@@ -41,7 +41,7 @@ import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, PO
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addKeepScene, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
+import { addKeepScene, DEPTH_NODES, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, aiSawExposure, COPY_EXPOSURE_THRESHOLD, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -671,7 +671,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       /* can't ask: leave the overlays, hard seam */
     }
     // the garment's outline needs the union ControlNet file and the Florence-2 / canny nodes on the GPU server
-    let garment: { phrases: string[]; controlnet: string; body?: boolean } | undefined;
+    let garment: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } | undefined;
     if (p.keepSceneGarment?.length) {
       try {
         const [cns, missing] = await Promise.all([
@@ -679,7 +679,13 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
           backend.inputChoices('ControlNetLoader', 'control_net_name', true),
           missingClasses(backend, Object.fromEntries(GARMENT_LINES_CLASSES.map((c) => [c, { class_type: c, inputs: {} }])), GARMENT_LINES_CLASSES),
         ]);
-        if (cns.includes(UNION_CN_FILE) && !missing.length) garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body: process.env.SIENNA_COPY_BODY_LINES !== 'off' };
+        if (cns.includes(UNION_CN_FILE) && !missing.length) {
+          const body = process.env.SIENNA_COPY_BODY_LINES !== 'off';
+          // the first depth preprocessor the server has (its model downloads on first use)
+          let depth: DepthNode | undefined;
+          if (body && process.env.SIENNA_COPY_BODY_DEPTH !== 'off') for (const d of DEPTH_NODES) if (!depth && (await backend.nodeInfo(d).catch(() => null))) depth = d;
+          garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body, depth };
+        }
         else warnings.push(`Copy Photo: the garment’s outline wasn’t used — the GPU server is missing ${cns.includes(UNION_CN_FILE) ? describeMissing(missing) : UNION_CN_FILE}.`);
       } catch {
         /* can't ask: no outline */
