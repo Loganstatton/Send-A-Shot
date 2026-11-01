@@ -160,6 +160,10 @@ export function addKeepScene(
         garment = [`${p}segadd${i}`, 0];
       }
     });
+    // only on her: a segmented string sliver running off her hip down into the water was drawn as a string down her
+    // thigh (1 Nov)
+    g[`${p}gonher`] = { class_type: 'MaskComposite', inputs: { destination: garment!, source: [`${p}oldgrow`, 0], x: 0, y: 0, operation: 'multiply' } };
+    garment = [`${p}gonher`, 0];
     g[`${p}gmask`] = { class_type: 'GrowMask', inputs: { mask: garment!, expand: 6, tapered_corners: true } };
     // the garment's own shape, not its texture: the canny of the photo inside the garment traced every ruched fold of a
     // micro bikini's cups and the copy drew each fold as a separate string (open string cups, 1 Nov). The outline of
