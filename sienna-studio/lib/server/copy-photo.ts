@@ -153,6 +153,9 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     if (bust.length) it.fields.bodyPresentation = [it.fields.bodyPresentation, ...bust].filter(Boolean).join(', ');
   }
   for (const id of COPY_BODY_PACKS) delete it.packs[id];
+  // a micro top: the Natural skin pack and the soft-breast wording made every boat try bare the nipples beside its tiny
+  // cups (three runs in a row, 1 Nov; the same photo passed before them), so they stay off
+  const microTop = /\b(micro|tiny|very small|sliver|narrow)\b[^,]*\b(cups?|top|triangles?)\b/i.test(it.fields.outfit);
   // a cup is always centred over the nipple: "cups set slightly toward the outer sides" left the nipples bare on every
   // try of the boat copy (1 Nov)
   for (const k of ['outfit', 'bodyPresentation'] as const)
@@ -217,7 +220,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
       ...req.params,
       // an outfit pack draws its own garment over the photo's (String Swimsuit drew ordinary triangle cups)
       // Natural skin (matte, pores) on every copy: the copies' skin and body looked airbrushed (1 Nov)
-      stylePacks: { ...(garment ? Object.fromEntries(Object.entries(it.packs).filter(([id]) => !GARMENT_PACK_IDS.has(id))) : it.packs), ...(it.packs.natural_skin === undefined ? { natural_skin: COPY_SKIN_PACK } : {}) },
+      stylePacks: { ...(garment ? Object.fromEntries(Object.entries(it.packs).filter(([id]) => !GARMENT_PACK_IDS.has(id))) : it.packs), ...(it.packs.natural_skin === undefined && !microTop ? { natural_skin: COPY_SKIN_PACK } : {}) },
       posePreset: null,
       ...(aiRan ? { autoPosePreset: false } : {}),
       ...(garment ? { outfitIsolation: 'garment' as const, outfitStrength: COPY_GARMENT_STRENGTH, outfitMode: 'design' as const } : {}),
