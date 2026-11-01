@@ -10,6 +10,8 @@ import type { GenerateRequest, StoredImage } from '../types';
 import { aiDescribePhoto, aiEnabled, aiRead } from './ai';
 import { queueImageJob, settledJobState } from './jobs';
 import { applyAiReading } from './reading';
+import { readLessons } from './copy-lessons';
+import { lessonsFor } from '../copy-lessons';
 import { sceneSize } from '../comfy/keep-scene';
 import { GARMENT_PACK_IDS } from '../style-packs';
 import { adultContentAllowed, getComfyUrl, getSettings, mimeFromBytes, readImage, storeImage } from './store';
@@ -149,6 +151,10 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     if (bust.length) it.fields.bodyPresentation = [it.fields.bodyPresentation, ...bust].filter(Boolean).join(', ');
   }
   for (const id of COPY_BODY_PACKS) delete it.packs[id];
+  // what earlier copies kept getting wrong, avoided here too (never something this photo shows)
+  const learned = process.env.SIENNA_COPY_LESSONS === 'off' ? [] : lessonsFor(await readLessons(), `${description} ${copy.userText}`);
+  if (learned.length) it.fields.avoid = [it.fields.avoid, ...learned.map((l) => l.phrase)].filter(Boolean).join(', ');
+  const learnedNote = learned.length ? `Learned from earlier copies, avoided here: ${learned.map((l) => `${l.phrase} (${l.count}×)`).join(', ')}.` : '';
   // small stud earrings are left off and earrings avoided: the words drew gold hoops (1 Nov)
   let studs = false;
   {
@@ -207,7 +213,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     images: { ...req.images, ...sceneImages, ...(garment ? { outfitImage: req.images.poseImage, outfitGarmentImage: garment } : {}) },
     simple: {
       ...simple,
-      notes: [...it.notes, ...sceneNote, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : []), ...(eyewearNote ? [eyewearNote] : [])],
+      notes: [...it.notes, ...sceneNote, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : []), ...(eyewearNote ? [eyewearNote] : []), ...(learnedNote ? [learnedNote] : [])],
       ai: { ...(simple.ai ?? { read: false, check: false }), read: aiRan, check: !!simple.ai?.check && aiOk },
       copy: { ...copy, status: 'done', description, by, text: checked },
     },

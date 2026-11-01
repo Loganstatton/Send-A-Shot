@@ -43,6 +43,7 @@ import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addCopyColours, addKeepScene, COPY_COLOURS_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
+import { recordLessons } from './copy-lessons';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, aiSawExposure, COPY_EXPOSURE_THRESHOLD, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { addFigurePass, FIGURE_NODES, figurePassFromEnv, parseFigurePass } from '../comfy/figure-pass';
@@ -1234,6 +1235,9 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
             }
           }
           const kept = pickAttempt(attempts);
+          // Copy Photo learns from its own mistakes: the checker's serious misses across this copy's tries are remembered
+          // and avoided in later copies (lib/copy-lessons.ts)
+          if (rec.simple?.copy) void recordLessons(attempts.flatMap((a) => a.aiFixes ?? []));
           if (kept.exposed) {
             // Never hand over a photo with a nipple showing when the outfit has a top.
             return patchRecord(id, {
