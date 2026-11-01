@@ -411,6 +411,8 @@ export interface GenerationRecord {
       framingOk?: boolean;
       /** What the body check saw cut off by the frame ("her knees") when it wasn't redone for it. */
       framingMiss?: string;
+      /** Copy Photo: the outfit's overlap with the photo's (0–1). */
+      closeness?: number;
       /** Targeted figure pass report: region size, colour shift undone, hip width change. */
       figure?: import('./comfy/figure-pass').FigurePassReport;
       detail?: import('./comfy/detail-pass').DetailPassReport;

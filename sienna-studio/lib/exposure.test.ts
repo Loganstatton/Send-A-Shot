@@ -188,3 +188,12 @@ describe('pickAttempt with a badly drawn hand', () => {
     expect(pickAttempt([extra, wrong])).toBe(wrong);
   });
 });
+
+describe('pickAttempt with closeness', () => {
+  it('prefers the copy whose outfit overlaps the photo more, other things equal', () => {
+    const mk = (closeness: number) => ({ seed: 1, exposed: false, score: 0, images: [], identity: 'likely', faceOk: true, aiOk: false, closeness, aiChecklist: [{ category: 'clothing', status: 'minor' }] }) as any;
+    const far = mk(0.3);
+    const near = mk(0.8);
+    expect(pickAttempt([far, near, mk(0.5)])).toBe(near);
+  });
+});

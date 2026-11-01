@@ -791,6 +791,7 @@ def test_copy_colours_moves_garment_to_photo_colour():
     out, info = cc.copy_colours(photo, copy, region, _cc_classes(h, w, (50, 100, 50, 150), (100, 150, 50, 150)),
                                 _cc_classes(h, w, (60, 110, 50, 150), (110, 160, 50, 150)), clothes=1.0, skin=0.6, feather=0)
     assert info["changed"] and "shift_lab" in info["clothes"] and "shift_lab" in info["skin"]
+    assert 0.6 < info["garment_iou"] < 0.7  # 50 rows of garment, shifted by 10: 40/60
     assert np.abs(out[85, 100] - photo[75, 100]).max() < 0.03  # garment now the photo's purple
     import cv2
     lab = lambda px: cv2.cvtColor(np.uint8([[np.round(px * 255)]]), cv2.COLOR_RGB2LAB)[0, 0].astype(float)

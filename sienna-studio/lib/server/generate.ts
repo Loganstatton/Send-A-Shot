@@ -1041,6 +1041,16 @@ export function refreshStatus(id: string): Promise<GenerationRecord | null> {
 
 const GPU_DOWN_LIMIT_MS = 4 * 60_000;
 
+/** Copy Photo: the colour step's garment overlap with the photo (0–1), when it ran and measured it. */
+function copyCloseness(texts: Record<string, string[]> | undefined): number | undefined {
+  try {
+    const v = JSON.parse((texts?.[`${KEEP_SCENE_PREFIX}colours`] ?? [])[0] ?? '{}').garment_iou;
+    return typeof v === 'number' && v >= 0 && v <= 1 ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function doRefresh(id: string): Promise<GenerationRecord | null> {
   let rec = await getRecord(id);
   if (rec && photoWaiting(rec)) {
@@ -1152,6 +1162,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               ...(figureReport ? { figure: figureReport } : {}),
               ...(detailReport ? { detail: detailReport } : {}),
               ...(poseCheck ? { poseOk: poseCheck.ok } : {}),
+              ...(copyCloseness(state.texts) !== undefined ? { closeness: copyCloseness(state.texts) } : {}),
               // a correction records the photo it was made from (and whether she was kept pixel for pixel)
               ...(guard.next ? { basedOn: guard.next.basedOn, ...(guard.next.keptPerson ? { keptPerson: true } : {}) } : {}),
               images: state.images,
@@ -1273,6 +1284,7 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           else if (checks.face && !faceProblem) faceProblem = 'the face check had no result for the kept photo';
           extra.exposureGuard = { ...guard, attempts };
           const note = exposureWarning(attempts, kept);
+          if (typeof kept.closeness === 'number') notes.push(`Closeness to your photo: the outfit overlaps yours by ${Math.round(kept.closeness * 100)}%${attempts.filter((a) => typeof a.closeness === 'number').length > 1 ? ` (best of ${attempts.filter((a) => typeof a.closeness === 'number').length} tries: ${attempts.map((a) => (typeof a.closeness === 'number' ? `${Math.round(a.closeness * 100)}%` : '–')).join(', ')})` : ''}.`);
           if (note) notes.push(note);
           // the GPU top check only looks at her chest: with minimal bottoms and no AI verdict, coverage is unconfirmed
           if (kept.aiStatus !== 'pass' && kept.aiStatus !== 'fail' && REVEALING_BOTTOMS_RE.test(rec.fields.outfit)) {

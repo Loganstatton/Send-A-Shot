@@ -66,6 +66,9 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
             if name == "clothes" and ms.sum() < MIN_PIXELS:
                 ms = cv2.erode(pr.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
         mr = m & np.logical_or.reduce([image_classes[c] > 0.5 for c in cls])
+        if name == "clothes" and ms.any() and mr.any():
+            # closeness to the photo: how much the copy's garment overlaps the photo's (intersection over union)
+            info["garment_iou"] = round(float((ms & mr).sum()) / float((ms | mr).sum()), 3)
         if (name != "skin" and ms.sum() < MIN_PIXELS) or mr.sum() < MIN_PIXELS:
             info[name] = {"skipped": f"too few pixels (photo {int(ms.sum())}, copy {int(mr.sum())})"}
             continue
