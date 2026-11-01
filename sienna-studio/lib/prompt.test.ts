@@ -322,3 +322,11 @@ describe('copy mode hairstyle', () => {
     expect(r.negative).not.toContain('long loose hair down');
   });
 });
+
+describe('copy mode hands', () => {
+  const run = (pose: string) => buildPrompt({ fields: { ...EMPTY_FIELDS, pose }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true }).negative;
+  it('keeps invented objects out of her hands unless the photo has her holding something', () => {
+    expect(run('arm resting on the tub edge')).toContain('holding a plant');
+    expect(run('holding a phone at arm’s length')).not.toContain('holding a plant');
+  });
+});

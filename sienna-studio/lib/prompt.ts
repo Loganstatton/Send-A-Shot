@@ -397,6 +397,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
     copy && copyHairstyle(`${f.bodyPresentation}, ${f.extra}`)?.up ? COPY_UPDO_NEGATIVE : '',
     copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
+    // nothing invented in her hands (a sprig of leaves appeared in one, 1 Nov) unless the photo shows her holding something
+    copy && !/\b(holding|holds|in (her|one|each) hand|grips?|gripping|carrying|clutching)\b/i.test(`${f.pose} ${f.outfit} ${f.extra} ${f.bodyPresentation}`) ? 'holding flowers, holding leaves, holding a plant, object in her hand' : '',
     avoidItems.join(', '),
   ]);
 
