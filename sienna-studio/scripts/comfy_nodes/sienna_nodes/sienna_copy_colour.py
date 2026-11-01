@@ -4,9 +4,9 @@ The keep-scene copy redraws the person from noise with a written description, so
 out royal blue, a pale woman under grey light came out deeply bronzed and oily, a white bikini blue-tinted (1 Nov).
 Here the photo and the copy are each split into skin and clothes (MediaPipe multiclass selfie segmenter, the same one
 the garment redraw uses) and, inside the region where Sienna was drawn, each class's colour (mean and spread in LAB)
-is moved onto the photo's. Shapes and shading stay the copy's; only colour moves, so her features and identity are
-unchanged. Her skin (face and body together) moves most of the way (skin strength), to the photo's light; her hair is
-never touched.
+is moved: the clothes onto the photo's garment colour; her skin (face and body together) onto Sienna's own skin tone,
+never the other woman's (the owner, 1 Nov: "skin color should still be Sienna's skin color"). Shapes and shading stay
+the copy's; her features and hair are never touched.
 
 No ComfyUI imports: tested on CPU (tests/test_sienna_nodes.py).
 """
@@ -17,6 +17,11 @@ import numpy as np
 
 BODY_SKIN, FACE_SKIN, CLOTHES = 2, 3, 4
 MIN_PIXELS = 200
+# Sienna's skin in OpenCV 8-bit LAB, the median over eight of her accepted copies (bed, gym, mirror, backless, towel,
+# implied, two hot tubs; 1 Nov): its hue (a, b) is fixed; its lightness follows the scene's light and is only pulled
+# back inside her normal range (a bronzed copy measured L 54, a blue-cast one b 118)
+SIENNA_SKIN_AB = (145.0, 150.0)
+SIENNA_SKIN_L = (100.0, 165.0)
 
 
 def _lab(img: np.ndarray) -> np.ndarray:
@@ -53,13 +58,17 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
         if photo_region is not None:
             ms &= np.asarray(photo_region, np.float32) > 0.5
         mr = m & np.logical_or.reduce([image_classes[c] > 0.5 for c in cls])
-        if ms.sum() < MIN_PIXELS or mr.sum() < MIN_PIXELS:
+        if (name != "skin" and ms.sum() < MIN_PIXELS) or mr.sum() < MIN_PIXELS:
             info[name] = {"skipped": f"too few pixels (photo {int(ms.sum())}, copy {int(mr.sum())})"}
             continue
-        mu_s, sd_s = _robust(a[ms])
         mu_r, sd_r = _robust(b[mr])
-        scale = np.clip(sd_s / sd_r, 0.6, 1.6)
-        scale[0] = 1.0  # lightness spread stays the copy's: its folds and shading
+        if name == "skin":  # Sienna's own tone, in this scene's light
+            mu_s = np.array([np.clip(mu_r[0], *SIENNA_SKIN_L), *SIENNA_SKIN_AB], np.float32)
+            scale = np.ones(3, np.float32)
+        else:
+            mu_s, sd_s = _robust(a[ms])
+            scale = np.clip(sd_s / sd_r, 0.6, 1.6)
+            scale[0] = 1.0  # lightness spread stays the copy's: its folds and shading
         lab[mr] = (b[mr] - mu_r) * scale + mu_s
         weight[mr] = strength
         info[name] = {"shift_lab": [round(float(x), 1) for x in (mu_s - mu_r)], "pixels": int(mr.sum()), "strength": strength}

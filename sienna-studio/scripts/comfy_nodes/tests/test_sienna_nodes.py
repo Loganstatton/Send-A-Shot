@@ -792,8 +792,12 @@ def test_copy_colours_moves_garment_to_photo_colour():
                                 _cc_classes(h, w, (60, 110, 50, 150), (110, 160, 50, 150)), clothes=1.0, skin=0.6, feather=0)
     assert info["changed"] and "shift_lab" in info["clothes"] and "shift_lab" in info["skin"]
     assert np.abs(out[85, 100] - photo[75, 100]).max() < 0.03  # garment now the photo's purple
-    sk = out[135, 100]
-    assert copy[135, 100][0] < sk[0] < photo[125, 100][0]  # skin part of the way to the photo's
+    import cv2
+    lab = lambda px: cv2.cvtColor(np.uint8([[np.round(px * 255)]]), cv2.COLOR_RGB2LAB)[0, 0].astype(float)
+    before, after = lab(copy[135, 100]), lab(out[135, 100])
+    # skin goes toward Sienna's own tone, not the photo's pale skin
+    assert abs(after[2] - cc.SIENNA_SKIN_AB[1]) < abs(before[2] - cc.SIENNA_SKIN_AB[1])
+    assert after[0] >= before[0]
     assert np.array_equal(out[20, 20], copy[20, 20])
 
 
