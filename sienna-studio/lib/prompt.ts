@@ -144,6 +144,10 @@ export function copyHairstyle(text: string): { phrase: string; up: boolean } | n
   return phrase ? { phrase, up: UPDO_RE.test(phrase) } : null;
 }
 
+function copyEyewear(text: string): string {
+  const g = text.split(',').map((p) => p.trim()).find((p) => /\b(sunglasses|glasses|shades|aviators)\b/i.test(p));
+  return g ? `(wearing ${g.replace(/^(wearing|with)\s+/i, '')}:1.3)` : '';
+}
 const COPY_COVER_POSITIVE = '(each cup fully covering the nipple and areola:1.3)';
 const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulders, hair worn down';
 function weighHairstyle(text: string): string {
@@ -359,6 +363,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy ? weighHairstyle(f.bodyPresentation) : f.bodyPresentation,
     // narrow copied cups left her nipples at the cup edges (1 Nov): in copy mode a top always covers them
     copy && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
+    // face accessories: the face pass redraws her face and dropped the photo's sunglasses (1 Nov)
+    copy ? copyEyewear(`${f.outfit}, ${f.bodyPresentation}`) : '',
     // the photo's expression over her usual smile (the LoRA and the face pass pull towards it)
     copy && f.expression.trim() ? `(${f.expression.trim()}:1.2)` : f.expression,
     f.setting,

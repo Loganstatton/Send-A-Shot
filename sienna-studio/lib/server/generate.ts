@@ -44,7 +44,7 @@ import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addKeepScene, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
-import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, COPY_EXPOSURE_THRESHOLD, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
+import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, aiSawExposure, COPY_EXPOSURE_THRESHOLD, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
 import { addFigurePass, FIGURE_NODES, figurePassFromEnv, parseFigurePass } from '../comfy/figure-pass';
 import { addDetailPass, bareBelow, DETAIL_NODES, detailDenoise, DETAIL_STYLES, detailFile, detailPassFromEnv, parseDetailPass } from '../comfy/detail-pass';
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, kneeFramingOk, parseBodyFrame } from '../body-frame';
@@ -1140,6 +1140,11 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
                 latest.aiUnsure = g.unsure;
                 latest.aiChecklist = g.checklist;
                 latest.aiFixes = major;
+                // a nipple the AI saw at a cup's edge is exposure even when NudeNet scored it 0 (narrow copied cups, 1 Nov)
+                if (outfitHasTop(rec.fields.outfit) && aiSawExposure([...g.issues.map((i) => `${i.aspect}: ${i.problem}`)])) {
+                  latest.exposed = true;
+                  latest.score = Math.max(latest.score, 1);
+                }
               }
             } catch (e) {
               latest.aiStatus = 'unavailable';

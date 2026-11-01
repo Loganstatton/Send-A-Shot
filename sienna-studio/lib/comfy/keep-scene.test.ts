@@ -44,6 +44,10 @@ describe('addKeepScene', () => {
     expect(g[`${P}noise`].inputs.mask).toEqual([`${P}grow`, 0]);
     expect(g[`${P}union`]).toBeUndefined();
     expect(g[`${P}within`].inputs.destination).toEqual([`${P}both`, 0]);
+    // a light second pass over the painted-out spots, and the rest of the graph reads its result
+    expect(g[`${P}uiks`].inputs).toMatchObject({ denoise: 0.5, latent_image: [`${P}uinoise`, 0], positive: ['22', 0] });
+    expect(g[`${P}uienc`].inputs.pixels).toEqual([`${P}paste`, 0]);
+    for (const [id, n] of Object.entries(g)) if (!id.startsWith(P)) for (const v of Object.values(n.inputs)) expect(v).not.toEqual([`${P}paste`, 0]);
   });
   it('traces the garment’s outline with the union ControlNet when asked', () => {
     const g = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors' } })!;

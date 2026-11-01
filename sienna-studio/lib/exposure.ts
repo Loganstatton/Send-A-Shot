@@ -331,3 +331,16 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
   else if (unverified) parts.push(unverified);
   return parts.length ? parts.join(' ') : null;
 }
+
+/** The AI check saw a nipple or areola outside the clothing: a narrow cup's edge that NudeNet scored 0 (1 Nov). Read
+ * from its issues; statements that they are covered, or asking for coverage, don't count. */
+const AI_EXPOSED_RE = /\b(nipples?|areolae?|areolas?)\b[^.;]*\b(visible|showing|exposed|peek\w*|uncovered|outside|slip\w*|out of)\b|\b(visible|exposed|uncovered|showing)\b[^.;]*\b(nipples?|areolae?|areolas?)\b/i;
+const AI_COVERED_RE = /\b(fully covered|covered by|cover(ing|s)? (the |her |both )?(nipples?|areolae?)|not visible|no (visible )?(nipples?|areolae?))\b/i;
+export function aiSawExposure(issues: string[] | undefined): boolean {
+  return (issues ?? []).some((issue) => {
+    // corrections read "what it should be (not what it was)": the part after "(not" is what the photo shows
+    const seen = issue.match(/\(not ([^)]*)\)/)?.[1];
+    if (seen !== undefined) return AI_EXPOSED_RE.test(seen) || /\b(nipples?|areolae?|areolas?)\b/i.test(seen);
+    return AI_EXPOSED_RE.test(issue) && !AI_COVERED_RE.test(issue);
+  });
+}

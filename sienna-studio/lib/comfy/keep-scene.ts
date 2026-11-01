@@ -22,6 +22,8 @@ export const KEEP_SCENE_PREFIX = 'ks_';
 export const KEEP_SCENE_GROW = 0.022;
 /** After the redraw, only this far past her (new and old outline) stays redrawn; the rest of the margin is the photo. */
 export const KEEP_SCENE_TIGHT = 0.008;
+/** Second pass over painted-out overlays: enough for the water's texture, too little for new shapes. */
+export const UI_TOUCH_DENOISE = 0.5;
 export const UI_MASK_CLASS = 'SiennaUiMask';
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
@@ -103,6 +105,23 @@ export function addKeepScene(
     _meta: { title: 'Keep scene: the photo, pixel for pixel, around her' },
   };
   g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: [`${p}noise`, 0], denoise: 1 } };
+  // Painted-out overlays get a light second pass of their own: the plain fill smeared on foamy water (blue streaks,
+  // 1 Nov), and at this strength the fill's shapes stay, so no letters can come back.
+  let finalImage: Ref = [`${p}paste`, 0];
+  if (opts.uiPaint && opts.uiMask && isRef(g[decodeId].inputs.vae)) {
+    const k = g[samplerId].inputs;
+    g[`${p}uigrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}ui`, 0], expand: 6, tapered_corners: true } };
+    g[`${p}uienc`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}paste`, 0], vae: g[decodeId].inputs.vae } };
+    g[`${p}uinoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}uienc`, 0], mask: [`${p}uigrow`, 0] } };
+    g[`${p}uiks`] = {
+      class_type: 'KSampler',
+      inputs: { model: k.model, positive: k.positive, negative: k.negative, latent_image: [`${p}uinoise`, 0], seed: k.seed, steps: 20, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: UI_TOUCH_DENOISE },
+      _meta: { title: 'Keep scene: texture where the overlays were' },
+    };
+    g[`${p}uidec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}uiks`, 0], vae: g[decodeId].inputs.vae } };
+    g[`${p}uifix`] = { class_type: 'ImageCompositeMasked', inputs: { destination: [`${p}paste`, 0], source: [`${p}uidec`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}uigrow`, 0] } };
+    finalImage = [`${p}uifix`, 0];
+  }
   // The garment's own outline from the photo (only the garment: Florence-2 segments the named pieces), so the cups and
   // straps follow the original instead of the model's default triangle top (31 Oct). Union ControlNet, canny mode.
   const gp = opts.garment?.phrases.filter(Boolean).slice(0, 3) ?? [];
@@ -155,9 +174,9 @@ export function addKeepScene(
     g[samplerId].inputs.negative = [`${p}cnapply`, 1];
   }
   for (const [id, node] of Object.entries(g)) {
-    // the paste and the person-finder read the raw redraw
+    // the paste and the person-finder read the raw redraw; the overlay touch-up reads the paste
     if (id === `${p}paste` || id === `${p}new`) continue;
-    for (const [k, v] of Object.entries(node.inputs)) if (isRef(v) && v[0] === decodeId && v[1] === 0) node.inputs[k] = [`${p}paste`, 0];
+    for (const [k, v] of Object.entries(node.inputs)) if (isRef(v) && v[0] === decodeId && v[1] === 0) node.inputs[k] = finalImage;
   }
   return g;
 }

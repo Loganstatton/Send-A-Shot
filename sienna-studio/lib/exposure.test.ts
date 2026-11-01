@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addCoverage, exposureNode, failed, softenPacks, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed } from './exposure';
+import { addCoverage, aiSawExposure, exposureNode, failed, softenPacks, exposureWarning, outfitHasTop, parseExposure, pickAttempt, reseed } from './exposure';
 import type { ComfyGraph } from './types';
 
 const graph: ComfyGraph = {
@@ -158,5 +158,18 @@ describe('no face to compare (production)', () => {
     expect(failed(seq[0])).toBe(true);
     expect(pickAttempt(seq).seed).toBe(2);
     expect(exposureWarning(seq, seq[1])).toContain('kept the best (seed 2). Face not verified — manual review required');
+  });
+});
+
+describe('aiSawExposure', () => {
+  it('reads nipples the AI saw outside the clothing as exposure', () => {
+    expect(aiSawExposure(['outfit: cups fully covering nipples and areolae (not visible areolae outside the cups)'])).toBe(true);
+    expect(aiSawExposure(['outfit: areola peeking out at the inner cup edge'])).toBe(true);
+    expect(aiSawExposure(['outfit: nipples visible at the cup edges'])).toBe(true);
+  });
+  it('ignores other issues and coverage statements', () => {
+    expect(aiSawExposure(['outfit: small stud earrings (not hoop earrings)'])).toBe(false);
+    expect(aiSawExposure(['outfit: cups fully cover the nipples'])).toBe(false);
+    expect(aiSawExposure(undefined)).toBe(false);
   });
 });
