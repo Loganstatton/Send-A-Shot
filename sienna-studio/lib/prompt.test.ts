@@ -301,3 +301,12 @@ describe('copy mode bust', () => {
     expect(run('damp skin')).not.toContain('(large round natural breasts:1.2)');
   });
 });
+
+describe('Avoid keeps bust-shape words under Sienna Lock', () => {
+  it('lets "breasts pressed together" and "pushed-up breasts" through, still blocks "large breasts"', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, avoid: 'breasts pressed together, pushed-up breasts, large breasts' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult' });
+    expect(r.negative).toContain('breasts pressed together');
+    expect(r.negative).toContain('pushed-up breasts');
+    expect(r.negative).not.toMatch(/(^|, )large breasts/);
+  });
+});

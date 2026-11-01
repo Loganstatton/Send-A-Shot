@@ -443,7 +443,9 @@ function siennaLockedAvoid(avoidItems: string[], siennaLock: boolean, character:
     for (const r of res.removed) warnings.push(`Sienna Lock removed “${r.term}” from Avoid (${r.category} is locked).`);
     const kept = res.text.trim();
     // "bare breasts" / "exposed nipples" ask for coverage, not a smaller bust — let those through
-    const coverage = /\b(bare|topless|nude|naked|exposed|nipples?|areolae?|uncovered|see-through)\b/i.test(kept);
+    // and the shape words ("breasts pressed together", "pushed-up breasts", "deep cleavage") are about how they sit, not
+    // their size: Copy Photo uses them to copy a photo's bust (1 Nov: the lock dropped them and the copy stayed pushed up)
+    const coverage = /\b(bare|topless|nude|naked|exposed|nipples?|areolae?|uncovered|see-through|pressed together|pushed[- ]up|push-up|cleavage)\b/i.test(kept);
     const hit = coverage ? undefined : (kept.toLowerCase().match(/[a-z]{4,}/g) ?? []).find((w) => traitWords.has(w) || traitWords.has(w.replace(/s$/, '')));
     if (hit) warnings.push(`Sienna Lock removed “${kept}” from Avoid (it is one of her traits).`);
     return kept && !hit ? [kept] : [];

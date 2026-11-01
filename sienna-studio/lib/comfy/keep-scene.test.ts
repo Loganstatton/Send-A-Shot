@@ -41,6 +41,12 @@ describe('addKeepScene', () => {
     expect(g[`${P}seg0`].inputs).toMatchObject({ text_input: 'bikini top', image: ['31', 0] });
     expect(g[`${P}lines`].inputs.mask).toEqual([`${P}gmask`, 0]);
     expect(g[`${P}cntype`].inputs.type).toBe('canny/lineart/anime_lineart/mlsd');
+    expect(g[`${P}body`]).toBeUndefined();
+  });
+  it('adds her figure’s outline without the head when asked', () => {
+    const g = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true } })!;
+    expect(g[`${P}body`].inputs).toMatchObject({ destination: [`${P}person`, 0], source: [`${P}face`, 0], operation: 'subtract' });
+    expect(g[`${P}lines`].inputs.destination).toEqual([`${P}bodylines`, 0]);
   });
   it('is skipped without an init image or with the hi-res pass', () => {
     expect(addKeepScene(structuredClone(sdxl) as ComfyGraph, { width: 776 })).toBeNull();

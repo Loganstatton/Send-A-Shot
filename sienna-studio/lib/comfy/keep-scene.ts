@@ -14,7 +14,7 @@
  */
 import type { ComfyGraph } from '../types';
 import { PERSON_SEGM_FILE } from '../outfit-edit';
-import { FLORENCE_MODEL } from '../outfit';
+import { FLORENCE_MODEL, OUTFIT_FACE_MODEL } from '../outfit';
 
 export const KEEP_SCENE_PREFIX = 'ks_';
 /** How far past her outline the redraw reaches, as a share of the picture's width: room for Sienna's own hair and
@@ -25,7 +25,7 @@ export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
 export const UNION_CN_FILE = 'xinsir_union_promax.safetensors';
 export const UNION_CN_URL = 'https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors';
-export const GARMENT_LINES_CLASSES = ['Florence2Run', 'DownloadAndLoadFlorence2Model', 'Canny', 'SetUnionControlNetType', 'EmptyImage'];
+export const GARMENT_LINES_CLASSES = ['Florence2Run', 'DownloadAndLoadFlorence2Model', 'Canny', 'SetUnionControlNetType', 'EmptyImage', 'BboxDetectorCombined_v2'];
 /** How hard the garment's outline steers the redraw, and for how much of it (the end is left free for detail). */
 export const GARMENT_LINES = { strength: 0.75, end: 0.65 } as const;
 
@@ -46,7 +46,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; softSeam?: boolean; garment?: { phrases: string[]; controlnet: string } },
+  opts: { width: number; height?: number; uiMask?: boolean; softSeam?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -98,10 +98,25 @@ export function addKeepScene(
     g[`${p}gmask`] = { class_type: 'GrowMask', inputs: { mask: garment!, expand: 6, tapered_corners: true } };
     g[`${p}canny`] = { class_type: 'Canny', inputs: { image: scene, low_threshold: 0.15, high_threshold: 0.4 } };
     g[`${p}black`] = { class_type: 'EmptyImage', inputs: { width: opts.width, height: opts.height, batch_size: 1, color: 0 } };
+    let lines: Ref = [`${p}black`, 0];
+    if (opts.garment.body) {
+      // her figure's outline too (bust, the gap between, waist), softer edges, never her head: words alone left the
+      // bust pushed up and together where the photo's hung apart (1 Nov). Face + hair box grown well past the face.
+      g[`${p}fdet`] = { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: OUTFIT_FACE_MODEL } };
+      g[`${p}face`] = { class_type: 'BboxDetectorCombined_v2', inputs: { bbox_detector: [`${p}fdet`, 0], image: scene, threshold: 0.3, dilation: Math.round(opts.width * 0.08) } };
+      g[`${p}body`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}person`, 0], source: [`${p}face`, 0], x: 0, y: 0, operation: 'subtract' }, _meta: { title: 'Keep scene: her body without the head' } };
+      g[`${p}softcanny`] = { class_type: 'Canny', inputs: { image: scene, low_threshold: 0.08, high_threshold: 0.25 } };
+      g[`${p}bodylines`] = {
+        class_type: 'ImageCompositeMasked',
+        inputs: { destination: lines, source: [`${p}softcanny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}body`, 0] },
+        _meta: { title: 'Keep scene: her figure’s outline (no head)' },
+      };
+      lines = [`${p}bodylines`, 0];
+    }
     g[`${p}lines`] = {
       class_type: 'ImageCompositeMasked',
-      inputs: { destination: [`${p}black`, 0], source: [`${p}canny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] },
-      _meta: { title: 'Keep scene: the garment’s outline only' },
+      inputs: { destination: lines, source: [`${p}canny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] },
+      _meta: { title: 'Keep scene: the garment’s outline' },
     };
     g[`${p}cn`] = { class_type: 'ControlNetLoader', inputs: { control_net_name: opts.garment.controlnet } };
     g[`${p}cntype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'canny/lineart/anime_lineart/mlsd' } };

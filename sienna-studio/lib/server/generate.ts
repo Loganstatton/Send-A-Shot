@@ -667,7 +667,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       /* can't ask: leave the overlays, hard seam */
     }
     // the garment's outline needs the union ControlNet file and the Florence-2 / canny nodes on the GPU server
-    let garment: { phrases: string[]; controlnet: string } | undefined;
+    let garment: { phrases: string[]; controlnet: string; body?: boolean } | undefined;
     if (p.keepSceneGarment?.length) {
       try {
         const [cns, missing] = await Promise.all([
@@ -675,7 +675,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
           backend.inputChoices('ControlNetLoader', 'control_net_name', true),
           missingClasses(backend, Object.fromEntries(GARMENT_LINES_CLASSES.map((c) => [c, { class_type: c, inputs: {} }])), GARMENT_LINES_CLASSES),
         ]);
-        if (cns.includes(UNION_CN_FILE) && !missing.length) garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE };
+        if (cns.includes(UNION_CN_FILE) && !missing.length) garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body: process.env.SIENNA_COPY_BODY_LINES !== 'off' };
         else warnings.push(`Copy Photo: the garment’s outline wasn’t used — the GPU server is missing ${cns.includes(UNION_CN_FILE) ? describeMissing(missing) : UNION_CN_FILE}.`);
       } catch {
         /* can't ask: no outline */
