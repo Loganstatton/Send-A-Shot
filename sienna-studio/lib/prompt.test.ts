@@ -310,3 +310,15 @@ describe('Avoid keeps bust-shape words under Sienna Lock', () => {
     expect(r.negative).not.toMatch(/(^|, )large breasts/);
   });
 });
+
+describe('copy mode hairstyle', () => {
+  it('weights an updo and keeps her hair from falling loose', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'hair slicked back into a high neat top-knot bun, damp skin' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
+    expect(r.positive).toContain('(hair slicked back into a high neat top-knot bun:1.3)');
+    expect(r.negative).toContain('long loose hair down');
+  });
+  it('leaves hair worn down alone', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'hair down and wavy' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
+    expect(r.negative).not.toContain('long loose hair down');
+  });
+});

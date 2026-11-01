@@ -136,6 +136,20 @@ export function copyTraits(traits: string, request: string): string {
     .join(', ');
 }
 
+/** Copy Photo: the photo's hairstyle as one weighted phrase, and whether it is up (bun, ponytail…): her LoRA draws
+ * long loose hair, which beat "high top-knot bun" in every copy (1 Nov). */
+const UPDO_RE = /\b(bun|top-?knot|ponytail|pony tail|updo|up-do|pulled back|slicked back|tied up|tied back|claw clip|chignon|braided)\b/i;
+export function copyHairstyle(text: string): { phrase: string; up: boolean } | null {
+  const phrase = text.split(',').map((p) => p.trim()).find((p) => HAIRSTYLE_RE.test(p) && /\bhair\b|\bbun\b|top-?knot|ponytail/i.test(p));
+  return phrase ? { phrase, up: UPDO_RE.test(phrase) } : null;
+}
+
+const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulders, hair worn down';
+function weighHairstyle(text: string): string {
+  const h = copyHairstyle(text);
+  return h ? text.replace(h.phrase, `(${h.phrase}:1.3)`) : text;
+}
+
 /** With "barefoot": the model still added sandals from habit. */
 const BAREFOOT_NEGATIVE = 'shoes, sandals, flip-flops, footwear';
 const FULL_BODY_RE = /\b(full[\s-]?body|head[\s-]?to[\s-]?toe|full[\s-]?length|entire\s+body)\b/i;
@@ -341,7 +355,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     shorts.fit,
     poseGuide ?? '',
     poseGuide === undefined ? '' : f.pose,
-    f.bodyPresentation,
+    copy ? weighHairstyle(f.bodyPresentation) : f.bodyPresentation,
     // the photo's expression over her usual smile (the LoRA and the face pass pull towards it)
     copy && f.expression.trim() ? `(${f.expression.trim()}:1.2)` : f.expression,
     f.setting,
@@ -372,6 +386,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     shorts.negative,
     colourDriftNegative(f.outfit),
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
+    copy && copyHairstyle(`${f.bodyPresentation}, ${f.extra}`)?.up ? COPY_UPDO_NEGATIVE : '',
     avoidItems.join(', '),
   ]);
 
