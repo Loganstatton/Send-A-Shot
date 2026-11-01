@@ -220,7 +220,9 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
       ...req.params,
       // an outfit pack draws its own garment over the photo's (String Swimsuit drew ordinary triangle cups)
       // Natural skin (matte, pores) on every copy: the copies' skin and body looked airbrushed (1 Nov)
-      stylePacks: { ...(garment ? Object.fromEntries(Object.entries(it.packs).filter(([id]) => !GARMENT_PACK_IDS.has(id))) : it.packs), ...(it.packs.natural_skin === undefined && !microTop ? { natural_skin: COPY_SKIN_PACK } : {}) },
+      // no outfit pack on a copy: the photo's own garment outline shapes it, and the reader's Micro bikini pack at 0.85
+      // shrank the cups off the nipples on every try of the boat copy (1 Nov)
+      stylePacks: { ...(garment || keepScene ? Object.fromEntries(Object.entries(it.packs).filter(([id]) => !GARMENT_PACK_IDS.has(id))) : it.packs), ...(it.packs.natural_skin === undefined && !microTop ? { natural_skin: COPY_SKIN_PACK } : {}) },
       posePreset: null,
       ...(aiRan ? { autoPosePreset: false } : {}),
       ...(garment ? { outfitIsolation: 'garment' as const, outfitStrength: COPY_GARMENT_STRENGTH, outfitMode: 'design' as const } : {}),
