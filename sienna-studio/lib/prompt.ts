@@ -415,6 +415,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
     // nothing invented in her hands (a sprig of leaves appeared in one, 1 Nov) unless the photo shows her holding something
     copy && copyNoSmile(f.expression) ? 'smiling, smile, grin, showing teeth' : '',
+    // topless in the photo: no top invented (a bra strap appeared across a bare back, 1 Nov)
+    copy && /\btopless\b/i.test(`${f.outfit} ${f.bodyPresentation}`) ? 'bra, bra strap, strap across her back, bikini top' : '',
     // accessories the photo doesn't have (a yellow hair tie appeared on her arm, 1 Nov)
     copy ? COPY_EXTRA_ACCESSORIES.filter(([re]) => !re.test(`${f.outfit} ${f.bodyPresentation} ${f.pose}`)).map(([, w]) => w).join(', ') : '',
     // straps and strings in another colour than the garment (a black strap on an all-white bikini, 1 Nov)

@@ -347,3 +347,10 @@ describe('copy mode details', () => {
     expect(run({ outfit: 'purple bikini top, small gold rings joining strings to cups, gold bracelet' }).negative).not.toContain('bangles');
   });
 });
+
+describe('copy mode topless', () => {
+  it('keeps a top from being invented on a topless photo', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, outfit: 'white lace thong, topless from behind' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
+    expect(r.negative).toContain('strap across her back');
+  });
+});
