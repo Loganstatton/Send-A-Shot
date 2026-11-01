@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bustPhrases, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
+import { bustPhrases, bustWords, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
 
 describe('copyUserText', () => {
   it('drops the copy instruction itself', () => {
@@ -60,5 +60,18 @@ describe('bustPhrases', () => {
       'very large natural breasts set wide apart with a gap between them',
       'no cleavage',
     ]);
+  });
+});
+
+describe('bustWords', () => {
+  it('turns a gap into weighted words and avoids the pushed-together look', () => {
+    const w = bustWords({ size: 'very large', gap: 'gap of bare skin between them lower down' });
+    expect(w.positive).toContain('very large natural breasts');
+    expect(w.positive).toContain('(breasts set apart with a visible gap of bare skin between them:1.3)');
+    expect(w.avoid).toContain('breasts pressed together');
+  });
+  it('says nothing about a gap that isn’t there', () => {
+    expect(bustWords({ size: 'large', gap: 'touching all the way down' })).toEqual({ positive: 'large natural breasts, breasts close together with a cleavage line', avoid: '' });
+    expect(bustWords({ size: 'not visible', gap: 'not visible' })).toEqual({ positive: '', avoid: '' });
   });
 });

@@ -103,6 +103,8 @@ Describe precisely, most important first:
 
 Never describe her face features, hair colour, skin colour, ethnicity, age, tattoos, piercings or anything else that identifies the person, and nothing about her body beyond the general bust size. Ignore everything an app put on top of the photo — icons, like and comment counts, usernames, captions, buttons, progress bars, watermarks — and never mention them.
 
+Also answer bust_size and bust_gap. For bust_gap, look at the lower half of the bust: if any bare skin shows between the two breasts there, even where they touch higher up, the answer is "gap of bare skin between them lower down"; "touching all the way down" only when no skin shows between them anywhere.
+
 Write one paragraph of short comma-separated phrases, 90 to 180 words, no full sentences about the photo itself ("the photo shows"), no names. If there is no person in the photo, describe the scene and set person_found to false.`;
 
 export const describeUser = 'Describe this photo for the recreation.';
@@ -141,4 +143,17 @@ export function bustPhrases(description: string): string[] {
     .split(/[,;.]/)
     .map((p) => p.trim())
     .filter((p) => /\b(breasts?|bust|cleavage)\b/i.test(p) && !/\b(bikini|cups?|top|bra|strings?|fabric|ring|straps?)\b/i.test(p));
+}
+
+/** The fixed bust answers as prompt words (positive, avoid). A gap gets weight and its opposite goes to Avoid: the
+ * Sienna LoRA's own figure leans to a pushed-together bust. */
+export function bustWords(b: { size: string; gap: string }): { positive: string; avoid: string } {
+  const size = b.size && b.size !== 'not visible' ? `${b.size} natural breasts` : '';
+  if (b.gap.startsWith('gap')) {
+    return {
+      positive: [size, '(breasts set apart with a visible gap of bare skin between them:1.3)', 'natural soft breasts hanging slightly apart'].filter(Boolean).join(', '),
+      avoid: 'deep cleavage, pushed-up breasts, breasts pressed together, push-up bra effect',
+    };
+  }
+  return { positive: [size, b.gap.startsWith('touching') ? 'breasts close together with a cleavage line' : ''].filter(Boolean).join(', '), avoid: '' };
 }

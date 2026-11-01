@@ -1,6 +1,6 @@
 import 'server-only';
 import { NUDE_RE } from '../ai-prompts';
-import { bustPhrases, COPY_BODY_PACKS, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
+import { bustPhrases, bustWords, COPY_BODY_PACKS, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
 import { buildGarmentIsolationGraph, GARMENT_ISOLATE_NODE, OUTFIT_PREVIEW_NODE } from '../outfit';
 import { parseExposure } from '../exposure';
 import { interpretPrompt } from '../interpret';
@@ -84,13 +84,14 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   let nudePhoto = true;
   let error: string | undefined;
   let aiFailed: string | undefined;
+  let bustAnswer: { size: string; gap: string } | undefined;
   try {
     const g = await gate(req);
     nudePhoto = !g.exposure?.available || g.exposure.exposed;
     if (aiEnabled() && !nudePhoto && !NUDE_RE.test(copy.userText)) {
       const { bytes, mime } = await readImage(req.images.poseImage.file);
       const d = await aiDescribePhoto(bytes, mime);
-      if ('description' in d) [description, by] = [d.description, 'ai'];
+      if ('description' in d) [description, by, bustAnswer] = [d.description, 'ai', d.bust];
       else aiFailed = d.failed;
     }
     if (!description && g.caption) [description, by] = [g.caption, 'gpu-caption'];
@@ -126,11 +127,22 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     }
   }
   // her figure as the photo shows it: the description's bust phrases, never a body-reshaping pack
-  const bust = bustPhrases(description).filter((b) => !it.fields.bodyPresentation.toLowerCase().includes(b.toLowerCase()));
-  if (bust.length) it.fields.bodyPresentation = [it.fields.bodyPresentation, ...bust].filter(Boolean).join(', ');
-  if (/\b(gap|space|apart|no cleavage)\b/i.test(bust.join(' ')) && !/\bpressed (together|close)\b/i.test(bust.join(' '))) {
-    for (const k of ['outfit', 'bodyPresentation'] as const) it.fields[k] = it.fields[k].replace(/,?\s*deep cleavage\b/gi, '');
-    it.fields.avoid = [it.fields.avoid, 'deep cleavage, pushed-up breasts, breasts pressed together'].filter(Boolean).join(', ');
+  // the AI's fixed answers win over its prose (the prose said "pressed close" for a bust with a clear gap, 1 Nov)
+  const BUST_TALK = /[^,]*\b(breasts?|bust|cleavage)\b[^,]*/gi;
+  if (bustAnswer) {
+    const w = bustWords(bustAnswer);
+    for (const k of ['outfit', 'bodyPresentation'] as const)
+      it.fields[k] = it.fields[k].replace(BUST_TALK, (m) => (/\b(bikini|cups?|top|bra|strings?|fabric|ring|straps?|cover)/i.test(m) ? m.replace(/,?\s*(deep cleavage|cleavage line)\b/gi, '') : '')).replace(/(,\s*){2,}/g, ', ').replace(/^,\s*|,\s*$/g, '');
+    it.fields.bodyPresentation = [it.fields.bodyPresentation, w.positive].filter(Boolean).join(', ');
+    if (w.avoid) it.fields.avoid = [it.fields.avoid, w.avoid].filter(Boolean).join(', ');
+  }
+  // what the AI checker grades against: the same bust as the prompt, not the prose it replaced
+  const checkText = bustAnswer
+    ? `${text.replace(BUST_TALK, (m) => (/\b(bikini|cups?|top|bra|strings?|fabric|ring|straps?|cover)/i.test(m) ? m : '')).replace(/(,\s*){2,}/g, ', ')}. Her bust: ${bustWords(bustAnswer).positive.replace(/[()]|:[\d.]+/g, '')}.`
+    : text;
+  if (!bustAnswer) {
+    const bust = bustPhrases(description).filter((b) => !it.fields.bodyPresentation.toLowerCase().includes(b.toLowerCase()));
+    if (bust.length) it.fields.bodyPresentation = [it.fields.bodyPresentation, ...bust].filter(Boolean).join(', ');
   }
   for (const id of COPY_BODY_PACKS) delete it.packs[id];
   const how =
@@ -169,7 +181,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
       ...simple,
       notes: [...it.notes, ...sceneNote, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : [])],
       ai: { ...(simple.ai ?? { read: false, check: false }), read: aiRan, check: !!simple.ai?.check && aiOk },
-      copy: { ...copy, status: 'done', description, by, text },
+      copy: { ...copy, status: 'done', description, by, text: checkText },
     },
   };
 }
