@@ -161,7 +161,11 @@ export function addKeepScene(
       }
     });
     g[`${p}gmask`] = { class_type: 'GrowMask', inputs: { mask: garment!, expand: 6, tapered_corners: true } };
-    g[`${p}canny`] = { class_type: 'Canny', inputs: { image: scene, low_threshold: 0.15, high_threshold: 0.4 } };
+    // the garment's own shape, not its texture: the canny of the photo inside the garment traced every ruched fold of a
+    // micro bikini's cups and the copy drew each fold as a separate string (open string cups, 1 Nov). The outline of
+    // Florence-2's filled garment mask gives the solid panel's shape only.
+    g[`${p}gimage`] = { class_type: 'MaskToImage', inputs: { mask: garment! } };
+    g[`${p}canny`] = { class_type: 'Canny', inputs: { image: [`${p}gimage`, 0], low_threshold: 0.15, high_threshold: 0.4 } };
     g[`${p}black`] = { class_type: 'EmptyImage', inputs: { width: opts.width, height: opts.height, batch_size: 1, color: 0 } };
     let lines: Ref = [`${p}black`, 0];
     if (opts.garment.body) {
