@@ -380,6 +380,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
     // face accessories: the face pass redraws her face and dropped the photo's sunglasses (1 Nov)
     copy ? copyEyewear(`${f.outfit}, ${f.bodyPresentation}`) : '',
+    // a hand at her waist came out as one big thumb (1 Nov)
+    copy && /\bhands?\b/i.test(f.pose) ? 'natural hands with separate fingers and knuckles' : '',
     // the photo's expression over her usual smile (the LoRA and the face pass pull towards it)
     // a neutral or talking face loses to her LoRA's smile at 1.2 (1 Nov): 1.4, and the smile goes to the negative
     copy && f.expression.trim() ? `(${f.expression.trim()}:${copyNoSmile(f.expression) ? 1.4 : 1.2})` : f.expression,

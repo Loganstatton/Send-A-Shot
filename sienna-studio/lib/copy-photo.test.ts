@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bustPhrases, bustWords, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
+import { bustPhrases, bustWords, dropEyewear, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
 
 describe('copyUserText', () => {
   it('drops the copy instruction itself', () => {
@@ -81,5 +81,13 @@ describe('bustWords', () => {
     expect(low.avoid).toContain('perky breasts sitting high on the chest');
     expect(bustWords({ size: 'large', gap: 'touching all the way down', height: 'sitting low and natural' }).avoid).toContain('high round breasts');
     expect(bustWords({ size: 'large', gap: 'touching all the way down', height: 'high and round' }).positive).not.toContain('sitting low');
+  });
+});
+
+describe('dropEyewear', () => {
+  it('removes the sunglasses phrase and keeps the rest', () => {
+    expect(dropEyewear('tiny yellow string bikini, dark tortoiseshell sunglasses, small stud earring')).toBe('tiny yellow string bikini, small stud earring');
+    expect(dropEyewear('sunglasses')).toBe('');
+    expect(dropEyewear('white bikini')).toBe('white bikini');
   });
 });

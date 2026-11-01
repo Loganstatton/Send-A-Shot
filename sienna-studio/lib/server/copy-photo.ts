@@ -1,6 +1,6 @@
 import 'server-only';
 import { NUDE_RE } from '../ai-prompts';
-import { bustPhrases, bustWords, COPY_BODY_PACKS, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
+import { bustPhrases, bustWords, COPY_EYEWEAR_AVOID, copyKeepsEyewear, dropEyewear, COPY_BODY_PACKS, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
 import { buildGarmentIsolationGraph, GARMENT_ISOLATE_NODE, OUTFIT_PREVIEW_NODE } from '../outfit';
 import { parseExposure } from '../exposure';
 import { interpretPrompt } from '../interpret';
@@ -145,6 +145,16 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     if (bust.length) it.fields.bodyPresentation = [it.fields.bodyPresentation, ...bust].filter(Boolean).join(', ');
   }
   for (const id of COPY_BODY_PACKS) delete it.packs[id];
+  // sunglasses are left off (SIENNA_COPY_EYEWEAR=keep copies them): they hid her face, so the face check could
+  // never confirm her and each copy went to Needs Review (1 Nov)
+  let eyewearNote = '';
+  let checked = checkText;
+  if (!copyKeepsEyewear() && /\b(sunglasses|glasses|shades|aviators|eyewear)\b/i.test(`${it.fields.outfit},${it.fields.bodyPresentation},${it.fields.extra}`)) {
+    for (const k of ['outfit', 'bodyPresentation', 'extra'] as const) it.fields[k] = dropEyewear(it.fields[k]);
+    it.fields.avoid = [it.fields.avoid, COPY_EYEWEAR_AVOID].filter(Boolean).join(', ');
+    checked = `${dropEyewear(checkText)}. No sunglasses or glasses: her eyes are uncovered.`;
+    eyewearNote = 'The photo’s sunglasses were left off so her face shows and can be confirmed as Sienna.';
+  }
   const how =
     by === 'ai' ? 'described by the AI'
     : aiFailed ? `described by the GPU only, a much rougher description, because the AI couldn’t read it (${aiFailed})`
@@ -179,9 +189,9 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     images: { ...req.images, ...sceneImages, ...(garment ? { outfitImage: req.images.poseImage, outfitGarmentImage: garment } : {}) },
     simple: {
       ...simple,
-      notes: [...it.notes, ...sceneNote, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : [])],
+      notes: [...it.notes, ...sceneNote, `Your photo, ${how}: ${description}`, ...(garmentNote ? [garmentNote] : []), ...(eyewearNote ? [eyewearNote] : [])],
       ai: { ...(simple.ai ?? { read: false, check: false }), read: aiRan, check: !!simple.ai?.check && aiOk },
-      copy: { ...copy, status: 'done', description, by, text: checkText },
+      copy: { ...copy, status: 'done', description, by, text: checked },
     },
   };
 }

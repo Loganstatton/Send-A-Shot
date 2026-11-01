@@ -163,3 +163,17 @@ export function bustWords(b: { size: string; gap: string; height?: string }): { 
   }
   return { positive: [size, b.gap.startsWith('touching') ? 'breasts close together with a cleavage line' : '', lowPositive].filter(Boolean).join(', '), avoid: lowAvoid };
 }
+
+/** Eyewear in a copied photo: phrases naming sunglasses or glasses. Copies leave them off by default, so her face
+ * shows and the face check can confirm her (the owner, 1 Nov: "if it's easier don't require sunglasses"). */
+const EYEWEAR_RE = /\b(sunglasses|glasses|shades|aviators|eyewear)\b/i;
+export const COPY_EYEWEAR_AVOID = 'sunglasses, glasses, eyewear';
+export function dropEyewear(text: string): string {
+  return text
+    .split(',')
+    .filter((p) => !EYEWEAR_RE.test(p))
+    .join(',')
+    .replace(/^\s*,\s*|\s*,\s*$/g, '')
+    .trim();
+}
+export const copyKeepsEyewear = () => process.env.SIENNA_COPY_EYEWEAR === 'keep';
