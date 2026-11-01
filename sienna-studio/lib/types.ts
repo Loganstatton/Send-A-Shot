@@ -374,6 +374,8 @@ export interface GenerationRecord {
   outfitReference?: { image: StoredImage; strength: number; mode: OutfitMode } | null;
   /** Style packs that were applied, after availability checks. */
   stylePacks?: { id: string; label: string; file: string; strength: number }[];
+  /** When the photo GPU first failed to answer about this photo (cleared when it answers again). */
+  gpuDownSince?: string;
   warnings: string[];
   /** Optional modules removed for this run (unused or missing nodes). */
   prunedModules?: string[];

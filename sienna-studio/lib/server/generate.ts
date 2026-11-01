@@ -51,7 +51,7 @@ import { addDetailPass, bareBelow, DETAIL_NODES, detailDenoise, DETAIL_STYLES, d
 import { BODY_FRAME_NODE_ID, BODY_SEGM_MODEL, bodyFrameNodes, bodyFramingOk, hingeCheck, kneeFramingOk, parseBodyFrame } from '../body-frame';
 import { FACE_NODE_ID, faceNode, faceVerdict, framingOk, missingIdentity, parseFace, rearRequest, type FacePolicy, type FaceReport } from '../identity';
 import { resolveLockedLora } from '../sienna-models';
-import { ensurePhotoGpu, photoGpuEnabled, photoGpuReady, tickPhotoGpu, touchPhotoGpu } from './photo-gpu';
+import { ensurePhotoGpu, photoGpuEnabled, photoGpuReady, stopPhotoGpu, tickPhotoGpu, touchPhotoGpu } from './photo-gpu';
 import { activeStylePacks, nudeOnlyAllowed, toplessAllowed, packCoverage, resolvePackConflicts, STYLE_PACK_STACK_LIMIT, STYLE_PACKS, withoutRearUnsafePacks, withPackNegatives, withPackOutfit, withTriggers } from '../style-packs';
 import { fixesFromEnv, hasFix } from '../fixes';
 import { kneeUpRequest, outputHeight } from '../framing';
@@ -1039,6 +1039,8 @@ export function refreshStatus(id: string): Promise<GenerationRecord | null> {
   return p;
 }
 
+const GPU_DOWN_LIMIT_MS = 4 * 60_000;
+
 async function doRefresh(id: string): Promise<GenerationRecord | null> {
   let rec = await getRecord(id);
   if (rec && photoWaiting(rec)) {
@@ -1054,9 +1056,26 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
   try {
     state = await backend.jobState(rec.promptId, workflow?.outputNodeIds ?? []);
   } catch (e: any) {
-    // Transient network problems shouldn't fail the job; report and retry on next poll.
+    // Transient network problems shouldn't fail the job; report and retry on next poll. But a photo GPU whose ComfyUI
+    // died (the pod still running, every call a 502) left copies "running" for an hour (1 Nov): after
+    // GPU_DOWN_LIMIT_MS of it the GPU is replaced (stopped; the next photo starts a fresh one) and the photo fails
+    // with a clear message instead of hanging.
+    const down = /\b50[234]\b|isn.t answering|ECONNREFUSED|fetch failed/i.test(String(e?.message));
+    const since = rec.gpuDownSince ? Date.parse(rec.gpuDownSince) : NaN;
+    if (down && photoGpuEnabled() && rec.backend !== 'mock') {
+      if (!Number.isFinite(since)) return patchRecord(id, { gpuDownSince: new Date().toISOString() });
+      if (Date.now() - since > GPU_DOWN_LIMIT_MS) {
+        await stopPhotoGpu('it stopped answering in the middle of a photo').catch(() => null);
+        return patchRecord(id, {
+          status: 'error',
+          error: 'The photo GPU stopped answering in the middle of this photo, so it was restarted — please make it again.',
+          completedAt: new Date().toISOString(),
+        });
+      }
+    }
     return { ...rec, warnings: [...rec.warnings.filter((w) => !w.startsWith('Status check:')), `Status check: ${e.message}`] };
   }
+  if (rec.gpuDownSince) void patchRecord(id, { gpuDownSince: undefined });
 
   // the current prompt's age: a redo is queued long after the record was made (and a photo waiting for the GPU
   // was created before the GPU booted)
