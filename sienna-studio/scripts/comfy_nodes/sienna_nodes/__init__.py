@@ -676,7 +676,41 @@ class SiennaCopyColours:
         print(f"[sienna] copy colours: {text}", flush=True)
         return {"ui": {"text": [text]}, "result": (res, text)}
 
+
+class SiennaFillGaps:
+    """Copy Photo: where the photo's person was but Sienna isn't, the scene continued from the background round it
+    (sienna_copy_colour.fill_gaps); Sienna is never a source. On any failure the image passes through unchanged."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"image": ("IMAGE",), "gap": ("MASK",), "avoid": ("MASK",)}}
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "run"
+    CATEGORY = "sienna"
+
+    def run(self, image, gap, avoid):
+        import cv2
+        from . import sienna_copy_colour
+
+        def to_mask(m, shape):
+            m = (m[0] if m.dim() == 3 else m).detach().cpu().numpy().astype(np.float32)
+            return m if m.shape == shape else cv2.resize(m, (shape[1], shape[0]), interpolation=cv2.INTER_LINEAR)
+
+        try:
+            img = image[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+            shape = img.shape[:2]
+            out = sienna_copy_colour.fill_gaps(img, to_mask(gap, shape), to_mask(avoid, shape))
+            res = torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...]
+            if image.shape[0] > 1 and image.shape[1:3] == res.shape[1:3]:
+                res = torch.cat([res, image[1:, ..., :3].to(res.dtype)], 0)
+        except Exception as e:  # never lose the photo over the gap fill
+            print(f"[sienna] fill gaps failed: {type(e).__name__}: {e}", flush=True)
+            res = image
+        return (res,)
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaFillGaps": SiennaFillGaps,
     "SiennaCopyColours": SiennaCopyColours,
     "SiennaPoseRetarget": SiennaPoseRetarget,
     "SiennaGarmentIsolate": SiennaGarmentIsolate,
@@ -696,6 +730,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaFillGaps": "Sienna Fill Gaps",
     "SiennaCopyColours": "Sienna Copy Colours",
     "SiennaPoseRetarget": "Sienna Pose Retarget",
     "SiennaGarmentIsolate": "Sienna Garment Isolate",

@@ -41,7 +41,7 @@ import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, PO
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addCopyColours, addKeepScene, COPY_COLOURS_CLASS, DEPTH_NODES, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
+import { addCopyColours, addKeepScene, COPY_COLOURS_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
 import { addHandRefine, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, aiSawExposure, COPY_EXPOSURE_THRESHOLD, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -691,7 +691,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         /* can't ask: no outline */
       }
     }
-    const kept = addKeepScene(graph, { width: outW, height: outH, uiMask: ui, uiPaint, softSeam, garment });
+    // the scene continued where the photo's wider person was (SiennaFillGaps on the GPU server; SIENNA_COPY_GAPFILL=off)
+    const gapFill = process.env.SIENNA_COPY_GAPFILL !== 'off' && !!(await backend.nodeInfo(GAP_FILL_CLASS, true).catch(() => null));
+    const kept = addKeepScene(graph, { width: outW, height: outH, uiMask: ui, uiPaint, softSeam, gapFill, garment });
     if (kept) graph = kept;
     else warnings.push('Copy Photo: this workflow can’t keep the photo as the background — the whole picture was redrawn.');
     if (kept && !ui) warnings.push('Copy Photo: the GPU server has no app-overlay remover yet (SiennaUiMask) — screenshot icons and text may stay.');

@@ -807,3 +807,20 @@ def test_copy_colours_without_segmenter_changes_nothing():
     img = np.random.default_rng(1).random((50, 50, 3)).astype(np.float32)
     out, info = cc.copy_colours(img, img * 0.5, np.ones((50, 50), np.float32), None, None)
     assert not info["changed"] and np.allclose(out, img * 0.5)
+
+
+def test_fill_gaps_uses_background_not_her():
+    import sienna_copy_colour as cc
+
+    img = np.zeros((120, 120, 3), np.float32)
+    img[:, :] = (0.2, 0.5, 0.8)  # water
+    img[30:90, 40:70] = (0.8, 0.6, 0.5)  # Sienna
+    img[30:90, 70:85] = (0.0, 0.9, 0.0)  # an invented green rail where the old person was
+    gap = np.zeros((120, 120), np.float32)
+    gap[30:90, 70:85] = 1
+    her = np.zeros((120, 120), np.float32)
+    her[30:90, 40:70] = 1
+    out = cc.fill_gaps(img, gap, her)
+    assert abs(out[60, 78] - np.array([0.2, 0.5, 0.8])).max() < 0.08  # the rail is gone, water continues
+    assert np.allclose(out[60, 50], img[60, 50])  # Sienna untouched
+    assert np.allclose(out[5, 5], img[5, 5], atol=1e-6)

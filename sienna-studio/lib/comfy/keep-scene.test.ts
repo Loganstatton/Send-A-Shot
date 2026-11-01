@@ -122,3 +122,17 @@ describe('addCopyColours with the garment outline', () => {
     expect(g[`${P}colours`].inputs.photo_region).toEqual([`${P}gmask`, 0]);
   });
 });
+
+describe('addKeepScene gap fill', () => {
+  it('fills where the photo’s person was but Sienna isn’t, then the overlay pass reads that', () => {
+    const g = addKeepScene(graph(), { width: 776, uiMask: true, uiPaint: true, gapFill: true })!;
+    expect(g[`${P}gap`].inputs).toMatchObject({ destination: [`${P}oldgrow`, 0], source: [`${P}newgrow`, 0], operation: 'subtract' });
+    expect(g[`${P}gapfill`].inputs.image).toEqual([`${P}paste`, 0]);
+    expect(g[`${P}gapfill`].inputs.avoid).toEqual([`${P}new`, 0]);
+    expect(g[`${P}uienc`].inputs.pixels).toEqual([`${P}gapfix`, 0]);
+    expect(g[`${P}uifix`].inputs.destination).toEqual([`${P}gapfix`, 0]);
+  });
+  it('is off unless asked', () => {
+    expect(addKeepScene(graph(), { width: 776 })![`${P}gapfill`]).toBeUndefined();
+  });
+});

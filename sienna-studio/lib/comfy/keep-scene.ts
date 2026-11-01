@@ -24,6 +24,8 @@ export const KEEP_SCENE_GROW = 0.022;
 export const KEEP_SCENE_TIGHT = 0.008;
 /** Second pass over painted-out overlays: enough for the water's texture, too little for new shapes. */
 export const UI_TOUCH_DENOISE = 0.5;
+export const GAP_FILL_CLASS = 'SiennaFillGaps';
+export const GAP_TOUCH_DENOISE = 0.5;
 export const UI_MASK_CLASS = 'SiennaUiMask';
 /** Depth preprocessors (comfyui_controlnet_aux), best first, with their inputs. */
 export type DepthNode = 'DepthAnythingV2Preprocessor' | 'DepthAnythingPreprocessor' | 'MiDaS-DepthMapPreprocessor';
@@ -72,7 +74,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } },
+  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -130,10 +132,29 @@ export function addKeepScene(
   // Painted-out overlays get a light second pass of their own: the plain fill smeared on foamy water (blue streaks,
   // 1 Nov), and at this strength the fill's shapes stay, so no letters can come back.
   let finalImage: Ref = [`${p}paste`, 0];
+  // Where the photo's person was but Sienna isn't, the redraw invented things (a green rail by her thigh, water where
+  // the tub's edge was, 1 Nov): that gap is filled from the background round it and given texture by a light pass.
+  if (opts.gapFill && isRef(g[decodeId].inputs.vae)) {
+    const k = g[samplerId].inputs;
+    g[`${p}gap`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}oldgrow`, 0], source: [`${p}newgrow`, 0], x: 0, y: 0, operation: 'subtract' } };
+    g[`${p}gapin`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}gap`, 0], source: redraw, x: 0, y: 0, operation: 'multiply' } };
+    g[`${p}gapgrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}gapin`, 0], expand: 4, tapered_corners: true } };
+    g[`${p}gapfill`] = { class_type: GAP_FILL_CLASS, inputs: { image: finalImage, gap: [`${p}gapgrow`, 0], avoid: [`${p}new`, 0] }, _meta: { title: 'Keep scene: the scene continued where the other person was' } };
+    g[`${p}gapenc`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}gapfill`, 0], vae: g[decodeId].inputs.vae } };
+    g[`${p}gapnoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}gapenc`, 0], mask: [`${p}gapgrow`, 0] } };
+    g[`${p}gapks`] = {
+      class_type: 'KSampler',
+      inputs: { model: k.model, positive: k.positive, negative: k.negative, latent_image: [`${p}gapnoise`, 0], seed: k.seed, steps: 20, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: GAP_TOUCH_DENOISE },
+      _meta: { title: 'Keep scene: texture in the filled gap' },
+    };
+    g[`${p}gapdec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}gapks`, 0], vae: g[decodeId].inputs.vae } };
+    g[`${p}gapfix`] = { class_type: 'ImageCompositeMasked', inputs: { destination: [`${p}gapfill`, 0], source: [`${p}gapdec`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gapgrow`, 0] } };
+    finalImage = [`${p}gapfix`, 0];
+  }
   if (opts.uiPaint && opts.uiMask && isRef(g[decodeId].inputs.vae)) {
     const k = g[samplerId].inputs;
     g[`${p}uigrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}ui`, 0], expand: 6, tapered_corners: true } };
-    g[`${p}uienc`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}paste`, 0], vae: g[decodeId].inputs.vae } };
+    g[`${p}uienc`] = { class_type: 'VAEEncode', inputs: { pixels: finalImage, vae: g[decodeId].inputs.vae } };
     g[`${p}uinoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}uienc`, 0], mask: [`${p}uigrow`, 0] } };
     g[`${p}uiks`] = {
       class_type: 'KSampler',
@@ -141,7 +162,7 @@ export function addKeepScene(
       _meta: { title: 'Keep scene: texture where the overlays were' },
     };
     g[`${p}uidec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}uiks`, 0], vae: g[decodeId].inputs.vae } };
-    g[`${p}uifix`] = { class_type: 'ImageCompositeMasked', inputs: { destination: [`${p}paste`, 0], source: [`${p}uidec`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}uigrow`, 0] } };
+    g[`${p}uifix`] = { class_type: 'ImageCompositeMasked', inputs: { destination: finalImage, source: [`${p}uidec`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}uigrow`, 0] } };
     finalImage = [`${p}uifix`, 0];
   }
   // The garment's own outline from the photo (only the garment: Florence-2 segments the named pieces), so the cups and

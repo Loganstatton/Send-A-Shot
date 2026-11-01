@@ -92,3 +92,25 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
         weight = cv2.GaussianBlur(weight, (k, k), feather / 2)
     w = np.clip(weight, 0, 1)[..., None]
     return np.clip(out * (1 - w) + rgb * w, 0, 1).astype(np.float32), info
+
+
+def fill_gaps(img: np.ndarray, gap: np.ndarray, avoid: np.ndarray, scale: float = 0.5) -> np.ndarray:
+    """Where the photo's person was but Sienna isn't (`gap`), the scene continued from the background round it: the
+    redraw invented things there (a green rail by her thigh, water where the tub's edge was, 1 Nov). Filled by Telea
+    inpainting from background pixels only (Sienna, `avoid`, is never a source), at half size for speed, softened, and
+    pasted into the gap alone. A light diffusion pass afterwards gives it texture."""
+    g = np.asarray(gap, np.float32) > 0.5
+    if not g.any():
+        return img[..., :3].astype(np.float32)
+    h, w = g.shape
+    hole = (g | (np.asarray(avoid, np.float32) > 0.5)).astype(np.uint8)
+    sw, sh = max(8, int(w * scale)), max(8, int(h * scale))
+    f8 = cv2.resize(np.clip(np.round(img[..., :3] * 255), 0, 255).astype(np.uint8), (sw, sh), interpolation=cv2.INTER_AREA)
+    m8 = (cv2.resize(hole, (sw, sh), interpolation=cv2.INTER_NEAREST) > 0).astype(np.uint8)
+    filled = cv2.inpaint(f8, m8, 7, cv2.INPAINT_TELEA)
+    filled = cv2.GaussianBlur(filled, (0, 0), 2)
+    filled = cv2.resize(filled, (w, h), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255
+    wgt = cv2.GaussianBlur(g.astype(np.float32), (0, 0), 2)[..., None]
+    wgt = np.where(g[..., None], 1.0, wgt) * (1 - (np.asarray(avoid, np.float32)[..., None] > 0.5))
+    out = img[..., :3].astype(np.float32)
+    return np.clip(out * (1 - wgt) + filled * wgt, 0, 1).astype(np.float32)
