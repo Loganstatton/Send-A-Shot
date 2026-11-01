@@ -25,7 +25,8 @@ export const KEEP_SCENE_TIGHT = 0.008;
 /** Second pass over painted-out overlays: enough for the water's texture, too little for new shapes. */
 export const UI_TOUCH_DENOISE = 0.5;
 export const GAP_FILL_CLASS = 'SiennaFillGaps';
-export const GAP_TOUCH_DENOISE = 0.5;
+// 0.5 left the inpainted gap's smear visible (a bright patch beside her face, a blurred tub edge by her hip, 1 Nov)
+export const GAP_TOUCH_DENOISE = 0.7;
 export const UI_MASK_CLASS = 'SiennaUiMask';
 /** Depth preprocessors (comfyui_controlnet_aux), best first, with their inputs. */
 export type DepthNode = 'DepthAnythingV2Preprocessor' | 'DepthAnythingPreprocessor' | 'MiDaS-DepthMapPreprocessor';

@@ -395,6 +395,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy ? weighHairstyle(f.bodyPresentation) : f.bodyPresentation,
     // narrow copied cups left her nipples at the cup edges (1 Nov): in copy mode a top always covers them
     copy && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
+    // the photo's breasts hung below the under-bust string; the copy's ended at it (1 Nov)
+    copy && /\b(hangs?|hanging|showing|visible)\b[^,]*\bbelow the (thin )?(under-?(bust|band)? ?)?(string|band)\b|\bunderside[s]? (largely |mostly )?bare\b|\bunderboob\b/i.test(`${f.outfit}, ${f.bodyPresentation}`) ? '(lower curve of each breast hanging below the thin under-bust string:1.2)' : '',
     // a wet micro bikini was drawn see-through on every try (1 Nov): opaque unless the photo's garment is sheer
     copy && outfitHasTop(f.outfit) && !COPY_SHEER_RE.test(f.outfit) ? '(solid opaque fabric cups:1.2)' : '',
     copy ? 'her natural light-tan skin' : '',

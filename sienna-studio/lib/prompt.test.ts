@@ -371,3 +371,10 @@ describe('copy mode colour drift', () => {
     expect(r.positive).toContain('her natural light-tan skin');
   });
 });
+
+describe('copy mode underboob', () => {
+  it('asks for the breasts to hang below the under-string when the photo shows it', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, outfit: 'yellow micro bikini top, inner and outer curves and undersides largely bare' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
+    expect(r.positive).toContain('hanging below the thin under-bust string');
+  });
+});
