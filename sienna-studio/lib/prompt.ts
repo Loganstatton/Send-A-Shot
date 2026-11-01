@@ -436,6 +436,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy && copyHairstyle(`${f.bodyPresentation}, ${f.extra}`)?.up ? COPY_UPDO_NEGATIVE : '',
     copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
     copy && outfitHasTop(f.outfit) && !COPY_SHEER_RE.test(f.outfit) ? '(see-through fabric, sheer cups, transparent wet fabric, nipples showing through:1.3)' : '',
+    // the cups drawn as bare string outlines and loose strings dangling at her side (1 Nov)
+    copy && outfitHasTop(f.outfit) ? 'open cups, cupless string outline, empty string frame cups, dangling loose strings, extra strings' : '',
     // her own skin tone, not the photo's warm light: copies came out deeply bronzed and oily (1 Nov)
     copy ? 'deep tan, bronzed skin, dark tanned skin, oiled skin, greasy shine' : '',
     copy ? copyNearColours(f.outfit) : '',
