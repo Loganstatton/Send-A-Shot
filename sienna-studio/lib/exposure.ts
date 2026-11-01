@@ -274,7 +274,8 @@ export function regressions<Ref>(a: ExposureAttempt<Ref>, attempts: ExposureAtte
  *  3. the GPU body checks (pose held, full body);
  *  4. what a correction broke that an earlier photo had right counts against it;
  *  5. how closely it follows the whole description (category-weighted), and how many categories are fully right;
- *  6. the face's closeness only breaks ties — it used to outrank the description.
+ *  6. the face's closeness counts a little (x10): among photos that all miss the strict face check, a face turned away
+ *     (similarity 0.2) shouldn't tie with one looking at the camera (0.65, 1 Nov) — it used to outrank the description.
  */
 export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAttempt<Ref> {
   const last = attempts[attempts.length - 1];
@@ -289,7 +290,7 @@ export function pickAttempt<Ref>(attempts: ExposureAttempt<Ref>[]): ExposureAtte
     };
     const rank = (a: ExposureAttempt<Ref>) =>
       (severeAnatomy(a) ? 0 : 10000) - (brokenAnatomy(a) ? 40 : 0) + (wrongIdentity(a) ? 0 : 5000) + (a.poseOk === false ? 0 : 2000) + (a.framingOk === false ? 0 : 1000)
-      - regressions(a, attempts).length * 15 + fit(a) * 60 + clean(a) * 20 + idRank(a) / 4 + (a.similarity ?? -1);
+      - regressions(a, attempts).length * 15 + fit(a) * 60 + clean(a) * 20 + idRank(a) / 4 + (a.similarity ?? -1) * 10;
     return covered.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   }
   return attempts.reduce((a, b) => (b.score < a.score ? b : a));
