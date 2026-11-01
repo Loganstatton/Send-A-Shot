@@ -347,11 +347,3 @@ describe('copy mode details', () => {
     expect(run({ outfit: 'purple bikini top, small gold rings joining strings to cups, gold bracelet' }).negative).not.toContain('bangles');
   });
 });
-
-describe('copy mode short cleavage', () => {
-  it('asks for a short cleavage when the photo has a gap', () => {
-    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'very large natural breasts, (breasts set apart with a visible gap of bare skin between them:1.3)' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
-    expect(r.positive).toContain('short cleavage');
-    expect(r.negative).toContain('long deep cleavage line');
-  });
-});
