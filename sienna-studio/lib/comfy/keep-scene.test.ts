@@ -87,8 +87,8 @@ describe('addKeepScene', () => {
 
 describe('garmentLines', () => {
   it('defaults to the stronger outline and reads an override', () => {
-    expect(garmentLines(undefined)).toEqual({ strength: 0.9, end: 0.8 });
+    expect(garmentLines(undefined)).toEqual({ strength: 0.9, end: 0.65 });
     expect(garmentLines('0.75,0.65')).toEqual({ strength: 0.75, end: 0.65 });
-    expect(garmentLines('junk')).toEqual({ strength: 0.9, end: 0.8 });
+    expect(garmentLines('junk')).toEqual({ strength: 0.9, end: 0.65 });
   });
 });

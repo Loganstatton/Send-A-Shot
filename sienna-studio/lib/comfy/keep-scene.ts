@@ -43,8 +43,10 @@ export const UNION_CN_URL = 'https://huggingface.co/xinsir/controlnet-union-sdxl
 export const GARMENT_LINES_CLASSES = ['Florence2Run', 'DownloadAndLoadFlorence2Model', 'Canny', 'SetUnionControlNetType', 'EmptyImage', 'BboxDetectorCombined_v2'];
 /** How hard the garment's and figure's outline steers the redraw, and for how much of it (the end is left free for
  * detail). 0.75 / 0.65 let her bust drift off the photo's: the cleavage moved sideways, one breast bigger than the
- * other (1 Nov). SIENNA_COPY_LINES="strength,end" overrides it. */
-export const GARMENT_LINES = { strength: 0.9, end: 0.8 } as const;
+ * other (1 Nov). 0.9 until 80% matched the bust but turned the colours cold and washed out (a purple bikini came out
+blue): the outline is let go at 65%, when the shapes are set and the colours are not. SIENNA_COPY_LINES="strength,end"
+overrides it. */
+export const GARMENT_LINES = { strength: 0.9, end: 0.65 } as const;
 export function garmentLines(env: string | undefined = process.env.SIENNA_COPY_LINES): { strength: number; end: number } {
   const [s, e] = (env ?? '').split(',').map((v) => Number(v.trim()));
   const ok = (v: number, max: number) => Number.isFinite(v) && v > 0 && v <= max;

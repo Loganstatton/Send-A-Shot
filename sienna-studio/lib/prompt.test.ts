@@ -362,3 +362,12 @@ describe('copy mode bust height', () => {
     expect(r.negative).toContain('high round breasts');
   });
 });
+
+describe('copy mode colour drift', () => {
+  it('avoids the colour a purple garment drifts to, and invented hoops', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, outfit: 'purple bikini top' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
+    expect(r.negative).toContain('royal blue bikini');
+    expect(r.negative).toContain('hoop earrings');
+    expect(r.positive).toContain('her natural light-tan skin');
+  });
+});

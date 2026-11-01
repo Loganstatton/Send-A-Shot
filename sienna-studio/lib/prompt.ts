@@ -156,7 +156,23 @@ const COPY_EXTRA_ACCESSORIES: [RegExp, string][] = [
   [/\b(hair ?ties?|scrunchies?)\b/i, 'hair tie on her wrist, scrunchie on her arm'],
   [/\b(rings?)\b(?! slider| joining| at| high| where| near)/i, 'rings on her fingers'],
   [/\b(necklaces?|pendants?|chains?)\b/i, 'necklace, pendant'],
+  // gold hoops appeared where the photo had none (1 Nov)
+  [/\b(hoops?|dangl\w*|drop earrings?)\b/i, 'hoop earrings, large earrings'],
 ];
+/** The colours a copied garment drifts to (a purple bikini came out royal blue, a white one blue-tinted, 1 Nov). */
+const NEAR_COLOURS: Record<string, string> = {
+  purple: 'blue fabric, royal blue bikini',
+  white: 'blue-tinted fabric, grey fabric',
+  yellow: 'orange fabric, mustard fabric',
+  pink: 'red fabric, magenta fabric',
+  red: 'orange fabric, pink fabric',
+  green: 'teal fabric, blue fabric',
+  black: 'navy fabric, grey fabric',
+};
+function copyNearColours(outfit: string): string {
+  const own = Object.keys(NEAR_COLOURS).filter((c) => new RegExp(`\\b${c}\\b`, 'i').test(outfit));
+  return own.length === 1 ? NEAR_COLOURS[own[0]] : '';
+}
 const STRAP_COLOURS = ['black', 'white', 'red', 'pink', 'purple', 'blue', 'green', 'yellow', 'orange', 'brown', 'beige', 'gold', 'silver'];
 function copyStrapColours(outfit: string): string {
   const own = STRAP_COLOURS.filter((c) => new RegExp(`\\b${c}\\b`, 'i').test(outfit));
@@ -418,6 +434,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
     // her own skin tone, not the photo's warm light: copies came out deeply bronzed and oily (1 Nov)
     copy ? 'deep tan, bronzed skin, dark tanned skin, oiled skin, greasy shine' : '',
+    copy ? copyNearColours(f.outfit) : '',
+    copy ? 'cold blue colour cast, washed-out colours' : '',
     // nothing invented in her hands (a sprig of leaves appeared in one, 1 Nov) unless the photo shows her holding something
     copy && copyNoSmile(f.expression) ? 'smiling, smile, grin, showing teeth' : '',
     // topless in the photo: no top invented (a bra strap appeared across a bare back, 1 Nov)
