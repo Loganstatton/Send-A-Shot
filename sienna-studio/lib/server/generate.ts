@@ -41,7 +41,7 @@ import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, PO
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
+import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, HAND_CHECK_CLASS, HAND_CHECK_NODE_ID, handCheckNode, parseHandCheck, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
 import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 /** Source-locked copies' hand pass (0.5 left thumb-like lumps; 0.6 broke a good hand in the 21 Oct A/B). */
 const COPY_LOCK_HAND_DENOISE = 0.55;
@@ -830,6 +830,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     const wanted: [string, ComfyGraph[string] | null][] = [];
     if (saveId && outfitHasTop(req.fields.outfit)) wanted.push([EXPOSURE_NODE_ID, exposureNode(graph, saveId, req.simple?.copy ? COPY_EXPOSURE_THRESHOLD : undefined)]);
     if (saveId && req.siennaLock && p.faceCheck !== false) wanted.push([FACE_NODE_ID, faceNode(graph, saveId)]);
+    // source-locked copies: every hand of the photo kept (a lump the photo checker missed, 2 Nov)
+    if (saveId && p.keepScene && (p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on') && (await backend.nodeInfo(HAND_CHECK_CLASS, true).catch(() => null)))
+      wanted.push([HAND_CHECK_NODE_ID, handCheckNode(graph)]);
     const added: string[] = [];
     const missingAll: string[] = [];
     for (const [nodeId, node] of wanted) {
@@ -1238,6 +1241,14 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               latest.aiStatus = 'unavailable';
               latest.aiReason = `the photo could not be sent to the AI check (${(e as Error).message})`;
             }
+          }
+          // a hand the photo shows but the copy lost (a lump, a missing hand) is an anatomy failure: redone, and learned
+          const hands = parseHandCheck(state.texts?.[HAND_CHECK_NODE_ID]);
+          if (hands && !hands.ok && !latest.exposed) {
+            const problem = `a hand came out malformed or missing (the photo shows ${hands.photo} hands, the copy ${hands.copy} well-formed)`;
+            latest.aiOk = false;
+            latest.aiIssues = [...(latest.aiIssues ?? []), `anatomy: ${problem}`];
+            latest.aiFixes = [...(latest.aiFixes ?? []), { aspect: 'anatomy', problem, major: true, emphasize: '(natural hands with five separate fingers:1.2)', avoid: 'thumb-like hand, malformed hand, fused fingers, missing hand' }];
           }
           const kind = rec.submittedGraph ? nextRetry(attempts, guard.maxAttempts) : null;
           if (kind) {

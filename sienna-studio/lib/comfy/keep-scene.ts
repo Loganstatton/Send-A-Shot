@@ -484,6 +484,28 @@ export function addCoverUp(graph: ComfyGraph, opts: { top: string; threshold: nu
   return g;
 }
 
+/** Copy Photo hand check (SiennaHandCheck): the copy keeps every hand the photo shows. The photo checker passed a boat
+ * copy whose hand on her hip was a thumb-like lump (2 Nov); MediaPipe found 2 hands in the photo and 1 in that copy. */
+export const HAND_CHECK_CLASS = 'SiennaHandCheck';
+export const HAND_CHECK_NODE_ID = `${KEEP_SCENE_PREFIX}hands`;
+/** The hand-check node reading the image that goes into SaveImage, or null without a keep-scene redraw. */
+export function handCheckNode(graph: ComfyGraph): ComfyGraph[string] | null {
+  const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
+  const person = graph[`${KEEP_SCENE_PREFIX}person`];
+  const image = saveId ? graph[saveId].inputs.images : undefined;
+  if (!person || !isRef(image) || !isRef(person.inputs.image)) return null;
+  return { class_type: HAND_CHECK_CLASS, inputs: { photo: person.inputs.image, image }, _meta: { title: 'Copy: every hand of the photo kept' } };
+}
+/** The hand check's verdict: false when the copy lost a hand the photo shows; undefined when it didn't run. */
+export function parseHandCheck(texts: string[] | undefined): { ok: boolean; photo: number; copy: number } | undefined {
+  try {
+    const r = JSON.parse(texts?.[0] ?? '');
+    return r && r.available && typeof r.ok === 'boolean' ? { ok: r.ok, photo: Number(r.photo) || 0, copy: Number(r.copy) || 0 } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The copy's outfit and skin colours taken from the photo's pixels (SiennaCopyColours): words drifted them — a purple
  * bikini drawn royal blue, a pale woman under grey light drawn deeply bronzed (1 Nov). */
 export const COPY_COLOURS_CLASS = 'SiennaCopyColours';

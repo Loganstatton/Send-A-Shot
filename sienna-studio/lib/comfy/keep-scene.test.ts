@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { addCopyColours, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
+import { addCopyColours, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, handCheckNode, parseHandCheck, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -250,5 +250,22 @@ describe('detail pass keeps off the garment', () => {
     const g = addKeepScene(graph(), { width: 776, height: 1296, detail: true, softSeam: true, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors' } })!;
     expect(g[`${P}detmaskg`].inputs).toMatchObject({ source: [`${P}detkeep`, 0], operation: 'subtract' });
     expect(g[`${P}detmask`].inputs.mask).toEqual([`${P}detmaskg`, 0]);
+  });
+});
+
+describe('hand check', () => {
+  it('compares the photo with the image going into SaveImage', () => {
+    const g = addCopyColours(addKeepScene(graph(), { width: 776 })!)!;
+    const n = handCheckNode(g)!;
+    expect(n.class_type).toBe('SiennaHandCheck');
+    expect(n.inputs.photo).toEqual(g[`${P}person`].inputs.image);
+    expect(n.inputs.image).toEqual([`${P}colours`, 0]);
+    expect(handCheckNode(graph())).toBeNull();
+  });
+  it('reads a lost hand as not ok, and a check that could not run as no verdict', () => {
+    expect(parseHandCheck([JSON.stringify({ available: true, photo: 2, copy: 1, ok: false })])).toEqual({ ok: false, photo: 2, copy: 1 });
+    expect(parseHandCheck([JSON.stringify({ available: true, photo: 2, copy: 2, ok: true })])?.ok).toBe(true);
+    expect(parseHandCheck([JSON.stringify({ available: false, reason: 'hand model not found' })])).toBeUndefined();
+    expect(parseHandCheck(undefined)).toBeUndefined();
   });
 });

@@ -425,6 +425,37 @@ class SiennaWarpGarment:
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...], text)}
 
 
+class SiennaHandCheck:
+    """Copy Photo: the copy keeps every hand the photo shows (sienna_hand_check.py, MediaPipe in a child process). Report
+    only; the app redoes a copy that lost a hand or turned one into a lump."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"photo": ("IMAGE",), "image": ("IMAGE",)}}
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("report",)
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, photo, image):
+        import cv2
+        from . import sienna_hand_check
+
+        try:
+            img = image[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+            ph = photo[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+            if ph.shape[:2] != img.shape[:2]:
+                ph = cv2.resize(ph, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_AREA)
+            info = sienna_hand_check.check_isolated(ph, img)
+        except Exception as e:  # never fail the photo over the hand check
+            info = {"available": False, "reason": f"{type(e).__name__}: {e}"[:300]}
+        text = json.dumps(info)
+        print(f"[sienna] hand check: {text}", flush=True)
+        return {"ui": {"text": [text]}, "result": (text,)}
+
+
 class SiennaFaceCheck:
     """Cosine similarity of the main face to Sienna's approved-face embedding (the app redoes photos below threshold)."""
 
@@ -792,6 +823,7 @@ class SiennaFillGaps:
         return (res,)
 
 NODE_CLASS_MAPPINGS = {
+    "SiennaHandCheck": SiennaHandCheck,
     "SiennaWarpGarment": SiennaWarpGarment,
     "SiennaCoverMask": SiennaCoverMask,
     "SiennaFillGaps": SiennaFillGaps,
@@ -814,6 +846,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaHandCheck": "Sienna Hand Check (copy)",
     "SiennaWarpGarment": "Sienna Warp Garment (copy)",
     "SiennaCoverMask": "Sienna Cover Mask (copy)",
     "SiennaFillGaps": "Sienna Fill Gaps",

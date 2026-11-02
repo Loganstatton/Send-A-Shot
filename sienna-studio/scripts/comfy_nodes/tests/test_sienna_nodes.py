@@ -11,6 +11,7 @@ import sienna_body as sb  # noqa: E402
 import sienna_redraw as rd  # noqa: E402
 import sienna_exposure as ex  # noqa: E402
 import sienna_garment_warp as gw  # noqa: E402
+import sienna_hand_check as hc  # noqa: E402
 import sienna_face as sf  # noqa: E402
 from sienna_garment import garment_composite  # noqa: E402
 from sienna_pose import (  # noqa: E402
@@ -499,6 +500,24 @@ def test_garment_warp_moves_the_photo_garment_onto_her_torso():
     huge = [None if p is None else (p[0] * 3, p[1] * 3) for p in photo]
     kept, why2 = gw.warp_mask(mask, _openpose(photo), _openpose(huge, normalized=False))
     assert why2["warped"] is False and np.array_equal(kept, mask)
+
+
+def test_hand_check_flags_a_copy_that_lost_a_hand():
+    assert hc.verdict([0.97, 0.95], [0.96, 0.93]) == {"photo": 2, "copy": 2, "ok": True}
+    assert hc.verdict([0.97, 0.95], [0.96]) == {"photo": 2, "copy": 1, "ok": False}           # a hand became a lump
+    assert hc.verdict([0.97, 0.95], [0.96, 0.3])["ok"] is False                               # an unsure blob isn't a hand
+    assert hc.verdict([0.9], [0.9, 0.8])["ok"] is True                                        # an extra hand is the checker's job
+    assert hc.verdict([], [])["ok"] is True
+
+
+def test_hand_check_counts_real_hands_with_mediapipe():
+    import cv2
+    path = os.environ.get("SIENNA_HAND_MODEL") or "/tmp/claude-0/-home-user-Send-A-Shot/5ab8d7bf-5d0f-550f-a69c-62a6985b93f2/scratchpad/cnaux/src/custom_controlnet_aux/mesh_graphormer/hand_landmarker.task"
+    photo = "/tmp/claude-0/-home-user-Send-A-Shot/5ab8d7bf-5d0f-550f-a69c-62a6985b93f2/scratchpad/testset/photos/boat.jpg"
+    if not (os.path.isfile(path) and os.path.isfile(photo)):
+        return  # models and test photos live outside the repository
+    img = cv2.cvtColor(cv2.imread(photo), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+    assert len([s for s in hc.hand_scores(img, path) if s >= hc.MIN_SCORE]) == 2
 
 
 def test_exposure_chest_crop_box_pads_covered_breasts_and_stays_in_frame():
