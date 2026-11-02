@@ -192,6 +192,8 @@ export interface GenerationParams {
   copyLockDepth?: boolean;
   /** Benchmark: a source-locked copy's face-pass denoise (unset: 0.4). */
   copyFaceDenoise?: number;
+  /** Benchmark: a source-locked copy's face-reference weight (unset: faceStrength). */
+  copyFaceWeight?: number;
   hiresScale?: number;
   hiresDenoise?: number;
   /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */
