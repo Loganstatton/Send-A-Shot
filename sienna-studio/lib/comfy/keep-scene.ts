@@ -525,8 +525,11 @@ export function parseHandCheck(texts: string[] | undefined): { ok: boolean; phot
  * bikini drawn royal blue, a pale woman under grey light drawn deeply bronzed (1 Nov). */
 export const COPY_COLOURS_CLASS = 'SiennaCopyColours';
 export const COPY_COLOURS = { clothes: 1.0, skin: 0.8 } as const;
+/** Source-locked copies: each piece of the garment matched on its own, and pieces of the photo's garment the garment
+ * finder missed counted (a raised sleeve drawn blue on a grey top, 2 Nov). */
+export const COPY_COLOURS_LOCAL = 1.0;
 /** The graph with the colour step as the last change before SaveImage, or null without a keep-scene redraw in it. */
-export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin?: number } = {}): ComfyGraph | null {
+export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin?: number; local?: number } = {}): ComfyGraph | null {
   const p = KEEP_SCENE_PREFIX;
   const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
   const person = graph[`${p}person`];
@@ -546,6 +549,7 @@ export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin
         photo_region: graph[`${p}gmask`] ? [`${p}gmask`, 0] : [`${p}oldgrow`, 0],
         clothes: opts.clothes ?? COPY_COLOURS.clothes,
         skin: opts.skin ?? COPY_COLOURS.skin,
+        ...(opts.local ? { local: opts.local } : {}),
       },
       _meta: { title: 'Keep scene: outfit and skin colours from the photo' },
     },

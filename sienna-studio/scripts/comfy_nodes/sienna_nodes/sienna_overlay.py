@@ -116,11 +116,61 @@ def clean_frames(frames: np.ndarray) -> Tuple[np.ndarray, Dict]:
 # outlines), round the edges of the screen: the right-hand column of buttons, the username and caption along the
 # bottom, the top bar. Real scenes have little thin pure white there; a white tub or foam is broad or off-white.
 UI_WHITE = 0.9        # overlay text and icons are pure white
+UI_LIGHT = 0.76       # ... or a see-through white ("See more" under a caption measured 0.81-0.85)
 UI_STROKE = 9         # strokes thinner than this (pixels) count; broad white areas don't
 UI_ZONE = (0.08, 0.80, 0.72)  # top band, right column start, bottom band start (shares of height / width)
 UI_MAX_PART = 0.02    # one overlay element covers less than this share of the picture
 UI_MAX_MASK = 0.15
 UI_AVATAR = 0.13     # a username's profile picture sits up to this share of the width to its left
+# Letters and icons are dense strokes: 7-28% of their box (2 Nov, 8 screenshots). The white flecks of a heathered knit
+# top along the bottom of a selfie were 1.5-5%, and their boxes made a quarter of the picture "overlay", so nothing
+# was removed (the speaker button stayed in every copy).
+UI_DENSITY = 0.06
+UI_LINE = 0.06        # a caption line or username is at most this share of the height
+UI_BACKING_TOL = 0.08  # a button's disc or pill: one flat colour round its icon (max channel difference)
+UI_BACKING_STD = 0.05
+UI_LETTER_H = 0.008   # ... and a letter at least this share of the height tall (coping glints were 1-8 px)
+UI_LETTERS = 3       # outside the button column an element is words: at least this many separate strokes
+
+
+def _strokes(rgb: np.ndarray, level: float) -> np.ndarray:
+    import cv2
+
+    white = (rgb.min(-1) > level) & ((rgb.max(-1) - rgb.min(-1)) < 0.1)
+    broad = cv2.morphologyEx(white.astype(np.uint8), cv2.MORPH_OPEN, np.ones((UI_STROKE, UI_STROKE), np.uint8)).astype(bool)
+    g = rgb.mean(-1).astype(np.float32)
+    grad = 0.25 if level >= UI_WHITE else 0.2
+    edge = cv2.dilate((cv2.morphologyEx(g, cv2.MORPH_GRADIENT, np.ones((3, 3), np.uint8)) > grad).astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+    return white & ~broad & edge
+
+
+def _backing(rgb: np.ndarray, part: np.ndarray, box: Tuple[int, int, int, int]) -> np.ndarray:
+    """The flat disc or pill an icon sits on (a dark see-through circle behind a speaker glyph, 2 Nov), or nothing when
+    the icon sits straight on the scene. Pixels round the icon of one colour, joined to it, inside a box a little
+    bigger than it, and not filling that box (a plain wall would)."""
+    import cv2
+
+    h, w = part.shape
+    x0, y0, bw, bh = box
+    pad = int(0.6 * max(bw, bh)) + 4
+    X0, Y0, X1, Y1 = max(0, x0 - pad), max(0, y0 - pad), min(w, x0 + bw + pad), min(h, y0 + bh + pad)
+    win, sub = rgb[Y0:Y1, X0:X1], part[Y0:Y1, X0:X1]
+    near = cv2.dilate(sub.astype(np.uint8), np.ones((7, 7), np.uint8)).astype(bool) & ~cv2.dilate(sub.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+    if near.sum() < 10:
+        return np.zeros_like(part)
+    ring = win[near]
+    if float(ring.std(0).max()) > UI_BACKING_STD:
+        return np.zeros_like(part)
+    same = (np.abs(win - np.median(ring, 0)).max(-1) < UI_BACKING_TOL) | sub
+    n, lab = cv2.connectedComponents(same.astype(np.uint8), connectivity=8)
+    ids = np.unique(lab[sub & same])
+    region = np.isin(lab, ids[ids > 0])
+    if region.mean() > 0.85 or region.sum() > 6 * max(1, sub.sum()) * 4:
+        return np.zeros_like(part)
+    region = cv2.morphologyEx(region.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)).astype(bool)
+    out = np.zeros_like(part)
+    out[Y0:Y1, X0:X1] = region
+    return out
 
 
 def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
@@ -128,38 +178,48 @@ def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
     import cv2
 
     h, w = img.shape[:2]
-    rgb = img[..., :3]
-    white = (rgb.min(-1) > UI_WHITE) & ((rgb.max(-1) - rgb.min(-1)) < 0.1)
-    w8 = white.astype(np.uint8)
-    broad = cv2.morphologyEx(w8, cv2.MORPH_OPEN, np.ones((UI_STROKE, UI_STROKE), np.uint8)).astype(bool)
-    g = rgb.mean(-1).astype(np.float32)
-    edge = cv2.dilate((cv2.morphologyEx(g, cv2.MORPH_GRADIENT, np.ones((3, 3), np.uint8)) > 0.25).astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
-    strokes = white & ~broad & edge
-    # letters and icon parts sit close together: join them into elements
-    joined = cv2.dilate(strokes.astype(np.uint8), np.ones((9, 9), np.uint8))
-    n, lab, stats, cent = cv2.connectedComponentsWithStats(joined, 8)
+    rgb = img[..., :3].astype(np.float32)
     top, right, bottom = UI_ZONE
     mask = np.zeros((h, w), bool)
     parts = 0
-    for i in range(1, n):
-        cx, cy = cent[i]
-        area = stats[i, cv2.CC_STAT_AREA]
-        if area > UI_MAX_PART * h * w or area < 30:
-            continue
-        if not (cy < top * h or cx > right * w or cy > bottom * h):
-            continue
-        parts += 1
-        if cx > right * w:
-            # the button column: its icons and counts only, so little of the scene is repainted (whole rectangles
-            # left blocky patches in foamy water, 31 Oct)
-            mask |= cv2.dilate(((lab == i) & strokes).astype(np.uint8), np.ones((9, 9), np.uint8), iterations=2).astype(bool)
-            continue
-        x0, y0, bw, bh = (int(v) for v in stats[i, :4])
-        # the whole element, not only its white strokes: the coloured profile picture left of a username, the dark
-        # pill behind "Made with Edits", icon fills (31 Oct: the avatar and a dark smudge stayed in the copies)
-        pad_y = max(8, int(0.6 * bh))
-        left = int(UI_AVATAR * w)
-        mask[max(0, y0 - pad_y):min(h, y0 + bh + pad_y), max(0, x0 - left):min(w, x0 + bw + 6)] = True
+    seen = np.zeros((h, w), bool)
+    for level in (UI_WHITE, UI_LIGHT):
+        strokes = _strokes(rgb, level) & ~seen
+        # letters and icon parts sit close together: join them into elements
+        joined = cv2.dilate(strokes.astype(np.uint8), np.ones((9, 9), np.uint8))
+        n, lab, stats, cent = cv2.connectedComponentsWithStats(joined, 8)
+        for i in range(1, n):
+            cx, cy = cent[i]
+            area = stats[i, cv2.CC_STAT_AREA]
+            if area > UI_MAX_PART * h * w or area < 30:
+                continue
+            if not (cy < top * h or cx > right * w or cy > bottom * h):
+                continue
+            x0, y0, bw, bh = (int(v) for v in stats[i, :4])
+            part = (lab == i) & strokes
+            if part.sum() < 12 or part.sum() / float(bw * bh) < UI_DENSITY:
+                continue  # sparse flecks: fabric, foam, hair highlights
+            if level < UI_WHITE and not (cy > bottom * h and bh <= 0.035 * h and bw >= 1.2 * bh):
+                continue  # see-through white only as a caption line along the bottom
+            backing = _backing(rgb, part, (x0, y0, bw, bh))
+            if cx <= right * w and not backing.any():
+                nl, _, ls, _ = cv2.connectedComponentsWithStats(part.astype(np.uint8), connectivity=8)
+                tallest = int(ls[1:, cv2.CC_STAT_HEIGHT].max()) if nl > 1 else 0
+                if nl - 1 < UI_LETTERS or tallest < UI_LETTER_H * h or tallest < 0.45 * (bh - 8):
+                    # flat dashes along an edge: the bright lip of a pool's coping, not words (2 Nov)
+                    continue
+            parts += 1
+            seen |= cv2.dilate(part.astype(np.uint8), np.ones((15, 15), np.uint8)).astype(bool)
+            if cx > right * w or bh > UI_LINE * h:
+                # the button column (or a tall icon): its icons and counts and any disc behind them, so little of the
+                # scene is repainted (whole rectangles left blocky patches in foamy water, 31 Oct)
+                mask |= cv2.dilate((part | backing).astype(np.uint8), np.ones((9, 9), np.uint8), iterations=2).astype(bool)
+                continue
+            # the whole element, not only its white strokes: the coloured profile picture left of a username, the dark
+            # pill behind "Made with Edits", icon fills (31 Oct: the avatar and a dark smudge stayed in the copies)
+            pad_y = max(8, int(0.6 * bh))
+            left = int(UI_AVATAR * w) if level >= UI_WHITE else 6
+            mask[max(0, y0 - pad_y):min(h, y0 + bh + pad_y), max(0, x0 - left):min(w, x0 + bw + 6)] = True
     share = float(mask.mean())
     report = {"ui_share": round(share, 4), "parts": parts}
     if share > UI_MAX_MASK:

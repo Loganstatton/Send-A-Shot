@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { addCopyColours, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, handCheckNode, parseHandCheck, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
+import { addCopyColours, COPY_COLOURS_LOCAL, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, handCheckNode, parseHandCheck, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -109,6 +109,11 @@ describe('addCopyColours', () => {
     expect(g[`${P}colours`].inputs.region).toEqual([`${P}new`, 0]);
     expect(g[`${P}colours`].inputs.photo_region).toEqual([`${P}oldgrow`, 0]);
     expect(g[saveId].inputs.images).toEqual([`${P}colours`, 0]);
+  });
+  it('matches each garment piece on its own for a source-locked copy only', () => {
+    const kept = addKeepScene(graph(), { width: 776 })!;
+    expect(addCopyColours(kept)![`${P}colours`].inputs).not.toHaveProperty('local');
+    expect(addCopyColours(kept, { local: COPY_COLOURS_LOCAL })![`${P}colours`].inputs.local).toBe(1);
   });
   it('does nothing without a keep-scene redraw', () => {
     expect(addCopyColours(graph())).toBeNull();

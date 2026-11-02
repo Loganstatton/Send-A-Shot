@@ -42,7 +42,7 @@ import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { UNDELIVERABLE_RE } from '../copy-photo';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, HAND_CHECK_CLASS, HAND_CHECK_NODE_ID, handCheckNode, parseHandCheck, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
+import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COPY_COLOURS_LOCAL, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, HAND_CHECK_CLASS, HAND_CHECK_NODE_ID, handCheckNode, parseHandCheck, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
 import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 /** Source-locked copies' hand pass (0.5 left thumb-like lumps; 0.6 broke a good hand in the 21 Oct A/B). */
 const COPY_LOCK_HAND_DENOISE = 0.55;
@@ -820,7 +820,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   // ── Copy Photo: the outfit's and skin's colours from the photo's pixels, the last change before the checks ──
   if (p.keepScene && process.env.SIENNA_COPY_COLOURS !== 'off') {
     const has = await backend.nodeInfo(COPY_COLOURS_CLASS, true).catch(() => null);
-    const coloured = has ? addCopyColours(graph) : null;
+    const locked = !!(p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on');
+    const coloured = has ? addCopyColours(graph, locked ? { local: COPY_COLOURS_LOCAL } : {}) : null;
     if (coloured) graph = coloured;
     else if (!has && graph[`${KEEP_SCENE_PREFIX}person`]) warnings.push('Copy Photo: the GPU server has no colour step yet (SiennaCopyColours) — outfit and skin colours follow the description only.');
   }

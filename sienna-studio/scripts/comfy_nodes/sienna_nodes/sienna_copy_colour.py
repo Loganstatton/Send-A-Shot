@@ -42,12 +42,17 @@ def _robust(px: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
 def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo_classes: Optional[List[np.ndarray]],
                  image_classes: Optional[List[np.ndarray]], clothes: float = 1.0, skin: float = 0.8,
-                 feather: int = 12, photo_region: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Dict]:
+                 feather: int = 12, photo_region: Optional[np.ndarray] = None, local: float = 0.0) -> Tuple[np.ndarray, Dict]:
     """`image` with its clothes and body-skin colours inside `region` moved onto `photo`'s (float32 RGB 0..1, same
     size). The photo's colours are read only inside `photo_region` (its person): the segmenter called foamy water
     "clothes" and turned a yellow bikini pale blue-white (1 Nov). Statistics are robust (median and spread of the
     middle of each class), so a stray patch can't drag them. Without classes (segmenter missing) the image is returned
-    unchanged, with the reason in the report."""
+    unchanged, with the reason in the report.
+
+    `local` (0..1, source-locked copies, where she lies exactly where the photo's woman did): the clothes' colour is
+    also matched place by place, each part of the copy's garment onto the photo's garment round the same spot, and
+    every piece of the photo's clothing joined to its garment counts. With one shift for the whole garment a sleeve
+    drawn blue stayed bluer than the grey body of the top (cut-out top, 2 Nov)."""
     out = image[..., :3].astype(np.float32).copy()
     if photo_classes is None or image_classes is None:
         return out, {"changed": False, "reason": "segmenter unavailable"}
@@ -72,7 +77,16 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
             # only clothes in and near the photo's garment: the segmenter called her legs in bubbling water "clothes" and
             # they were dyed the bikini's green, with a green glow at her hip (hot-tub copy, 2 Nov)
             k = max(3, int(GARMENT_REACH * m.shape[1])) | 1
-            near = cv2.dilate((np.asarray(photo_region, np.float32) > 0.5).astype(np.uint8), np.ones((k, k), np.uint8)) > 0
+            garment = np.asarray(photo_region, np.float32) > 0.5
+            near = cv2.dilate(garment.astype(np.uint8), np.ones((k, k), np.uint8)) > 0
+            if local > 0:
+                # the photo's other clothing pieces of the garment's colour (a raised sleeve cut off from the top by her
+                # hair), never foam or a towel of another colour; the copy's arm may sit a little off, so they reach
+                # further
+                extra = _same_garment(photo_classes[CLOTHES] > 0.5, garment, a)
+                if extra.any():
+                    near |= cv2.dilate(extra.astype(np.uint8), np.ones((2 * k + 1, 2 * k + 1), np.uint8)) > 0
+                    info["garment_pieces_added"] = int(extra.sum())
             mr &= near
         if name == "clothes" and ms.any() and mr.any():
             # closeness to the photo: how much the copy's garment overlaps the photo's (intersection over union)
@@ -92,6 +106,21 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
         shift[0] = float(np.clip(shift[0], -MAX_L_SHIFT, MAX_L_SHIFT))
         mu_s = mu_r + shift
         lab[mr] = (b[mr] - mu_r) * scale + mu_s
+        if name == "clothes" and local > 0:
+            # each separate piece of the copy's garment (a sleeve, the body of the top) onto the photo's colour by its
+            # own median, so a piece drawn bluer than the rest ends the same grey
+            n, comp = cv2.connectedComponents(mr.astype(np.uint8), connectivity=8)
+            pieces = 0
+            for i in range(1, n):
+                sel = comp == i
+                if sel.sum() < MIN_PIXELS:
+                    continue
+                own = mu_s - np.median(b[sel], axis=0)
+                own[0] = float(np.clip(own[0], -MAX_L_SHIFT, MAX_L_SHIFT))
+                sh = shift + float(local) * (own - shift)
+                lab[sel] = (b[sel] - mu_r) * scale + mu_r + sh
+                pieces += 1
+            info["clothes_pieces"] = pieces
         weight[mr] = strength
         info[name] = {"shift_lab": [round(float(x), 1) for x in (mu_s - mu_r)], "pixels": int(mr.sum()), "strength": strength}
         info["changed"] = True
@@ -106,6 +135,33 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
     weight = weight * (1 - cv2.GaussianBlur(hair, (0, 0), 1.5))
     w = np.clip(weight, 0, 1)[..., None]
     return np.clip(out * (1 - w) + rgb * w, 0, 1).astype(np.float32), info
+
+
+# a clothing piece within this hue distance (8-bit LAB a, b) of the garment, and this lightness (shade: a raised sleeve
+# in shadow measured L 113 against the top's 150), is the same garment
+SAME_GARMENT_DE = 8.0
+SAME_GARMENT_DL = 50.0
+SAME_GARMENT_SIZE = 1.5  # ... and no bigger than this many times the garment (foam, a duvet)
+
+
+def _same_garment(clothes: np.ndarray, garment: np.ndarray, lab: np.ndarray) -> np.ndarray:
+    """The pieces of the segmenter's `clothes` outside the garment finder's `garment` that are the garment's colour."""
+    gpx = garment & clothes
+    if gpx.sum() < MIN_PIXELS:
+        return np.zeros_like(clothes)
+    ref = np.median(lab[gpx], axis=0)
+    rest = clothes & ~(cv2.dilate(garment.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0)
+    n, comp = cv2.connectedComponents(rest.astype(np.uint8), connectivity=8)
+    out = np.zeros_like(clothes)
+    for i in range(1, n):
+        sel = comp == i
+        size = int(sel.sum())
+        if size < MIN_PIXELS or size > SAME_GARMENT_SIZE * gpx.sum():
+            continue
+        d = np.median(lab[sel], axis=0) - ref
+        if float(np.hypot(d[1], d[2])) <= SAME_GARMENT_DE and abs(float(d[0])) <= SAME_GARMENT_DL:
+            out |= sel
+    return out
 
 
 def fill_gaps(img: np.ndarray, gap: np.ndarray, avoid: np.ndarray, scale: float = 0.5) -> np.ndarray:
@@ -137,7 +193,7 @@ ISOLATED_TIMEOUT = 120
 
 
 def copy_colours_isolated(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo_region: Optional[np.ndarray],
-                          clothes: float, skin: float, timeout: float = ISOLATED_TIMEOUT) -> Tuple[np.ndarray, Dict]:
+                          clothes: float, skin: float, timeout: float = ISOLATED_TIMEOUT, local: float = 0.0) -> Tuple[np.ndarray, Dict]:
     """copy_colours with the segmentation and the colour moves in a child process; on a crash, stall or error the
     image comes back unchanged and the report says why."""
     import json
@@ -152,7 +208,7 @@ def copy_colours_isolated(photo: np.ndarray, image: np.ndarray, region: np.ndarr
         arrays = {"photo": photo[..., :3].astype(np.float32), "image": out, "region": np.asarray(region, np.float32)}
         if photo_region is not None:
             arrays["photo_region"] = np.asarray(photo_region, np.float32)
-        np.savez(inp, params=np.array(json.dumps({"clothes": clothes, "skin": skin})), **arrays)
+        np.savez(inp, params=np.array(json.dumps({"clothes": clothes, "skin": skin, "local": local})), **arrays)
         log = os.path.join(td, "worker.log")
         with open(log, "w") as f:
             p = subprocess.Popen([sys.executable, os.path.abspath(__file__), inp, res], stdout=f, stderr=f, start_new_session=True)
@@ -184,7 +240,8 @@ def _main(inp: str, res: str) -> None:
     photo, image = d["photo"], d["image"]
     pc, ic = segment_classes(photo), segment_classes(image)
     out, info = copy_colours(photo, image, d["region"], pc, ic, float(params["clothes"]), float(params["skin"]),
-                             photo_region=d["photo_region"] if "photo_region" in d.files else None)
+                             photo_region=d["photo_region"] if "photo_region" in d.files else None,
+                             local=float(params.get("local", 0.0)))
     if pc is None or ic is None:
         info["segmenter_error"] = segmenter_error()
     np.savez(res, image=out.astype(np.float32), info=np.array(json.dumps(info)))

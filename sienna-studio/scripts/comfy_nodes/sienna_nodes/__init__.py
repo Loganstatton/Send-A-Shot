@@ -755,6 +755,8 @@ class SiennaCopyColours:
                 "clothes": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}),
                 "skin": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.05}),
             },
+            # source-locked copies: the garment's colour matched place by place too (a blue sleeve on a grey top)
+            "optional": {"local": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05})},
         }
 
     RETURN_TYPES = ("IMAGE", "STRING")
@@ -763,7 +765,7 @@ class SiennaCopyColours:
     OUTPUT_NODE = True
     CATEGORY = "sienna"
 
-    def run(self, photo, image, region, photo_region, clothes, skin):
+    def run(self, photo, image, region, photo_region, clothes, skin, local=0.0):
         import cv2
         from . import sienna_copy_colour
         def to_mask(m, shape):
@@ -778,7 +780,7 @@ class SiennaCopyColours:
                 ph = cv2.resize(ph, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
             # in its own process: a segmenter crash inside ComfyUI took the whole GPU down (1 Nov)
             out, info = sienna_copy_colour.copy_colours_isolated(ph, img, to_mask(region, shape), to_mask(photo_region, shape),
-                                                                 float(clothes), float(skin))
+                                                                 float(clothes), float(skin), local=float(local))
             res = torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...]
             if image.shape[0] > 1:
                 info["batch_note"] = f"only the first of {image.shape[0]} photos was changed"

@@ -848,6 +848,38 @@ def test_ui_mask_finds_thin_white_overlays_at_the_edges_only():
     assert rep["parts"] >= 2
 
 
+def test_ui_mask_takes_the_disc_behind_a_button_and_a_see_through_caption():
+    import cv2
+    import sienna_overlay as so
+
+    canvas = np.full((600, 400, 3), 235, np.uint8)  # a white bed
+    cv2.circle(canvas, (370, 570), 18, (105, 105, 105), -1)  # a dark see-through disc ...
+    cv2.rectangle(canvas, (362, 562), (368, 578), (255, 255, 255), -1)  # ... with a white speaker glyph
+    cv2.line(canvas, (372, 562), (380, 556), (255, 255, 255), 2)
+    cv2.line(canvas, (372, 578), (380, 584), (255, 255, 255), 2)
+    canvas[440:600, 0:300] = 60  # dark water under the caption
+    cv2.putText(canvas, "See more", (20, 520), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (210, 210, 210), 2)  # see-through white
+    mask, rep = so.ui_mask(canvas.astype(np.float32) / 255)
+    assert mask[560:580, 356:384].mean() > 0.9  # the disc too, not only the glyph
+    assert mask[500:525, 20:140].mean() > 0.5
+    assert not mask[100:400, :].any()
+
+
+def test_ui_mask_ignores_knit_flecks_and_a_pool_edge():
+    import cv2
+    import sienna_overlay as so
+
+    rng = np.random.default_rng(3)
+    img = np.full((600, 400, 3), 0.5, np.float32)
+    flecks = rng.random((600, 400)) > 0.985  # white flecks of a heathered knit along the bottom
+    img[450:][flecks[450:]] = 0.97
+    img[540:542, 20:380] = 0.95  # the bright lip of a pool's coping, broken into dashes
+    img[540:542, 100:110] = 0.5
+    img[540:542, 200:210] = 0.5
+    mask, rep = so.ui_mask(img)
+    assert mask.mean() < 0.01, rep
+
+
 def test_ui_mask_leaves_a_plain_photo_alone():
     import sienna_overlay as so
 
@@ -931,6 +963,32 @@ def test_copy_colours_keeps_off_legs_far_from_the_garment_and_off_her_hair():
     assert out[70, 100][1] > out[70, 100][2]                       # the top turned green
     assert np.abs(out[240, 100] - copy[240, 100]).max() < 0.02     # the legs did not
     assert np.abs(out[20, 100] - copy[20, 100]).max() < 0.02       # nor did her hair
+
+
+def test_copy_colours_local_matches_a_sleeve_drawn_another_colour():
+    import cv2
+    import sienna_copy_colour as cc
+
+    h, w = 300, 300
+    grey, blue = (0.55, 0.55, 0.58), (0.35, 0.45, 0.75)
+    photo = np.full((h, w, 3), 0.9, np.float32)
+    photo[150:280, 40:260] = grey  # the top
+    photo[20:100, 60:120] = (0.42, 0.42, 0.45)  # its raised sleeve, in shade, cut off by her hair
+    image = photo.copy()
+    image[20:100, 60:120] = blue  # the copy drew the sleeve blue
+    cls = [np.zeros((h, w), np.float32) for _ in range(6)]
+    cls[4][150:280, 40:260] = 1
+    cls[4][20:100, 60:120] = 1
+    garment = np.zeros((h, w), np.float32)
+    garment[150:280, 40:260] = 1  # the garment finder found the top only
+    region = np.ones((h, w), np.float32)
+    lab = lambda x: cv2.cvtColor((x * 255).astype(np.uint8)[None, None], cv2.COLOR_RGB2LAB)[0, 0].astype(float)
+    out, _ = cc.copy_colours(photo, image, region, cls, cls, 1.0, 0.0, feather=0, photo_region=garment)
+    assert abs(lab(out[60, 90])[2] - lab(np.array(blue, np.float32))[2]) < 3  # whole-garment shift: still blue
+    out, info = cc.copy_colours(photo, image, region, cls, cls, 1.0, 0.0, feather=0, photo_region=garment, local=1.0)
+    hue = lab(out[60, 90])[1:] - lab(np.array(grey, np.float32))[1:]
+    assert np.hypot(*hue) < 4, info  # grey like the top
+    assert info["garment_pieces_added"] > 0
 
 
 def test_copy_colours_without_segmenter_changes_nothing():
