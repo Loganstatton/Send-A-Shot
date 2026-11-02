@@ -347,7 +347,10 @@ class SiennaCoverMask:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {"image": ("IMAGE",), "threshold": ("FLOAT", {"default": DEFAULT_THRESHOLD, "min": 0.05, "max": 0.95, "step": 0.05})},
-                "optional": {"fill": ("STRING", {"default": ""})}}
+                "optional": {"fill": ("STRING", {"default": ""}),
+                             # locate: find the areola by colour; off (the second round), a larger patch at the box's middle
+                             "locate": ("BOOLEAN", {"default": True}),
+                             "radius": ("FLOAT", {"default": 0.3, "min": 0.1, "max": 0.6, "step": 0.01})}}
 
     RETURN_TYPES = ("MASK", "STRING", "IMAGE")
     RETURN_NAMES = ("mask", "report", "filled")
@@ -355,7 +358,7 @@ class SiennaCoverMask:
     OUTPUT_NODE = True
     CATEGORY = "sienna"
 
-    def run(self, image, threshold, fill=""):
+    def run(self, image, threshold, fill="", locate=True, radius=0.3):
         import os
         import tempfile
 
@@ -376,7 +379,7 @@ class SiennaCoverMask:
             try:
                 cv2.imwrite(path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
                 dets = det.detect(path)
-                mask = cover_mask(dets, w, h, threshold, image=img)
+                mask = cover_mask(dets, w, h, threshold, radius=float(radius), image=img if locate else None)
                 hits = [d for d in dets if d.get("class") == "FEMALE_BREAST_EXPOSED" and float(d.get("score", 0)) >= threshold]
                 info = {"covered": len(hits), "scores": [round(float(d["score"]), 3) for d in hits], "pixels": int((mask > 0.5).sum())}
                 hexs = (fill or "").strip().lstrip("#")

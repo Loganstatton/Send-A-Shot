@@ -122,16 +122,19 @@ describe('addCoverUp', () => {
     const before = kept[saveId].inputs.images;
     const g = addCoverUp(kept, { top: 'tiny white micro string bikini top', threshold: 0.25 })!;
     expect(g[`${P}covmask`].class_type).toBe('SiennaCoverMask');
-    expect(g[`${P}covmask`].inputs).toMatchObject({ image: before, threshold: 0.25, fill: '#f2f1ee' });
+    expect(g[`${P}covmask`].inputs).toMatchObject({ image: before, threshold: 0.25, fill: '#f2f1ee', locate: true });
+    // a second look at the covered photo, a larger patch at the breast's middle for anything still showing
+    expect(g[`${P}covmask2`].inputs).toMatchObject({ image: [`${P}cover`, 0], locate: false, radius: COVER.secondRadius });
+    expect(g[`${P}cover2`].inputs).toMatchObject({ destination: [`${P}cover`, 0], source: [`${P}covdec2`, 0] });
     expect(g[`${P}covenc`].inputs.pixels).toEqual([`${P}covmask`, 2]); // painted the top's colour first
     expect(g[`${P}covnoise`].inputs.mask).toEqual([`${P}covgrow`, 0]);
     expect(g[`${P}covks`].inputs).toMatchObject({ denoise: COVER.filledDenoise, positive: [`${P}covpos`, 0], negative: [`${P}covneg`, 0], model: kept['40'].inputs.model });
     expect(String(g[`${P}covpos`].inputs.text)).toMatch(/^tiny white micro string bikini top, \(opaque solid fabric cup/);
     expect(String(g[`${P}covneg`].inputs.text)).toMatch(/nipple/);
     expect(g[`${P}cover`].inputs).toMatchObject({ destination: before, source: [`${P}covdec`, 0], mask: [`${P}covsoft`, 0] });
-    expect(g[saveId].inputs.images).toEqual([`${P}cover`, 0]);
+    expect(g[saveId].inputs.images).toEqual([`${P}cover2`, 0]);
     // the colour step then reads the covered photo
-    expect(addCopyColours(g)![`${P}colours`].inputs.image).toEqual([`${P}cover`, 0]);
+    expect(addCopyColours(g)![`${P}colours`].inputs.image).toEqual([`${P}cover2`, 0]);
   });
   it('reads the fill colour from the garment words, and redraws more without one', () => {
     expect(coverColour('hot pink matte plain dry string bikini')).toBe('#e0287a');

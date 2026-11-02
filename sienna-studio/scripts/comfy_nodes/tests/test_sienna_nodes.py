@@ -449,6 +449,15 @@ def test_cover_mask_finds_the_areola_by_colour_off_the_box_centre():
     pink = _breast(nip=(178, 245), cup=(110, 230, 150, 290), cup_rgb=(0.9, 0.16, 0.48))
     m2 = ex.cover_mask(dets, 600, 500, threshold=0.25, image=pink)
     assert m2[245, 178] == 1.0
+    # the crease under the breast (dark, red, long, at the box's bottom) is never taken for the nipple
+    import cv2
+    crease = _breast(nip=(150, 250))
+    cv2.ellipse(crease, (150, 292), (45, 5), 0, 0, 360, (0.55, 0.33, 0.3), -1)
+    a = ex._areola(crease, (100, 200, 100, 100))
+    assert a is not None and abs(a[0] - 150) < 3 and abs(a[1] - 250) < 3
+    only_crease = np.full((500, 600, 3), (0.86, 0.68, 0.56), np.float32)
+    cv2.ellipse(only_crease, (150, 292), (45, 5), 0, 0, 360, (0.55, 0.33, 0.3), -1)
+    assert ex._areola(only_crease, (100, 200, 100, 100)) is None
     # nothing found by colour: the ellipse below the box's middle
     plain = np.full((500, 600, 3), (0.86, 0.68, 0.56), np.float32)
     assert ex.cover_mask(dets, 600, 500, threshold=0.25, image=plain)[255, 150] == 1.0

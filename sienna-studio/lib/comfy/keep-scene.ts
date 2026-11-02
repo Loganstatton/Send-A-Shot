@@ -334,7 +334,7 @@ export function addKeepScene(
 export const COVER_MASK_CLASS = 'SiennaCoverMask';
 // filled with the garment's colour first, the redraw only adds fabric texture (0.5); without a known colour it has to
 // redraw more (0.75 alone kept the nipple's dark spot on every try, 2 Nov)
-export const COVER = { denoise: 0.75, filledDenoise: 0.5, steps: 24, grow: 6 } as const;
+export const COVER = { denoise: 0.75, filledDenoise: 0.5, steps: 24, grow: 6, radius: 0.3, secondRadius: 0.38 } as const;
 /** Garment colour words → the fill colour (most specific first). */
 const COVER_COLOURS: [RegExp, string][] = [
   [/\bhot pink|fuchsia|magenta\b/, '#e0287a'], [/\b(baby|light|pastel) pink\b/, '#f2b6c8'], [/\bpink\b/, '#e98aa9'],
@@ -365,22 +365,29 @@ export function addCoverUp(graph: ComfyGraph, opts: { top: string; threshold: nu
   if (!isRef(image) || !isRef(vae) || !clip) return null;
   const g: ComfyGraph = { ...graph };
   const fill = coverColour(opts.top);
-  g[`${p}covmask`] = { class_type: COVER_MASK_CLASS, inputs: { image, threshold: opts.threshold, fill }, _meta: { title: 'Keep scene: where a nipple shows' } };
-  g[`${p}covgrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}covmask`, 0], expand: COVER.grow, tapered_corners: true } };
-  g[`${p}covenc`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}covmask`, 2], vae } };
-  g[`${p}covnoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}covenc`, 0], mask: [`${p}covgrow`, 0] } };
   g[`${p}covpos`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: `${opts.top}, (opaque solid fabric cup fully covering the nipple and areola:1.4), smooth fabric, natural skin, photo` } };
   g[`${p}covneg`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: COVER_NEGATIVE } };
-  g[`${p}covks`] = {
-    class_type: 'KSampler',
-    inputs: { model: k.model, positive: [`${p}covpos`, 0], negative: [`${p}covneg`, 0], latent_image: [`${p}covnoise`, 0], seed: k.seed, steps: COVER.steps, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: fill ? COVER.filledDenoise : COVER.denoise },
-    _meta: { title: 'Keep scene: cover-up (fabric over a showing nipple)' },
+  // Round 1 covers the areola found by colour; round 2 checks again and covers whatever still shows with a larger
+  // patch at the breast's middle (the colour search took the crease under a breast for the nipple once, 2 Nov).
+  const round = (s: string, from: Ref, locate: boolean, radius: number): Ref => {
+    g[`${p}covmask${s}`] = { class_type: COVER_MASK_CLASS, inputs: { image: from, threshold: opts.threshold, fill, locate, radius }, _meta: { title: `Keep scene: where a nipple shows (${s ? 'second look' : 'first look'})` } };
+    g[`${p}covgrow${s}`] = { class_type: 'GrowMask', inputs: { mask: [`${p}covmask${s}`, 0], expand: COVER.grow, tapered_corners: true } };
+    g[`${p}covenc${s}`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}covmask${s}`, 2], vae } };
+    g[`${p}covnoise${s}`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}covenc${s}`, 0], mask: [`${p}covgrow${s}`, 0] } };
+    g[`${p}covks${s}`] = {
+      class_type: 'KSampler',
+      inputs: { model: k.model, positive: [`${p}covpos`, 0], negative: [`${p}covneg`, 0], latent_image: [`${p}covnoise${s}`, 0], seed: k.seed, steps: COVER.steps, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: fill ? COVER.filledDenoise : COVER.denoise },
+      _meta: { title: 'Keep scene: cover-up (fabric over a showing nipple)' },
+    };
+    g[`${p}covdec${s}`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}covks${s}`, 0], vae } };
+    g[`${p}covsoft${s}`] = { class_type: SOFT_SEAM_CLASS, inputs: { mask: [`${p}covgrow${s}`, 0], kernel_size: 9, sigma: 3 } };
+    // an empty mask (nothing showing) leaves the photo exactly as it was
+    g[`${p}cover${s}`] = { class_type: 'ImageCompositeMasked', inputs: { destination: from, source: [`${p}covdec${s}`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}covsoft${s}`, 0] } };
+    return [`${p}cover${s}`, 0];
   };
-  g[`${p}covdec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}covks`, 0], vae } };
-  g[`${p}covsoft`] = { class_type: SOFT_SEAM_CLASS, inputs: { mask: [`${p}covgrow`, 0], kernel_size: 9, sigma: 3 } };
-  // an empty mask (nothing showing) leaves the photo exactly as it was
-  g[`${p}cover`] = { class_type: 'ImageCompositeMasked', inputs: { destination: image, source: [`${p}covdec`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}covsoft`, 0] } };
-  g[saveId] = { ...g[saveId], inputs: { ...g[saveId].inputs, images: [`${p}cover`, 0] } };
+  const first = round('', image, true, COVER.radius);
+  const second = round('2', first, false, COVER.secondRadius);
+  g[saveId] = { ...g[saveId], inputs: { ...g[saveId].inputs, images: second } };
   return g;
 }
 

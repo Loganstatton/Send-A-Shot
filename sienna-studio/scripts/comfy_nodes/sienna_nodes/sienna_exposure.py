@@ -108,12 +108,21 @@ def _areola(img: "np.ndarray", box) -> "Optional[Tuple[float, float, float]]":
     L, A, B = lab[..., 0], lab[..., 1], lab[..., 2]
     mL, mA, mB = (float(np.median(c)) for c in (L, A, B))
     cand = ((L < mL - 10) & (A > mA + 3) & (B > mB - 8)).astype(np.uint8)
+    # never the shadow under the breast or the under-bust string (the bottom of the box), nor its top edge: on a pink
+    # copy the darkest red patch was the crease under the breast, and the nipple stayed bare (2 Nov)
+    ch = cand.shape[0]
+    cand[: int(ch * 0.2)] = 0
+    cand[int(ch * 0.8):] = 0
     k = max(1, int(min(x1 - x0, y1 - y0) * 0.03))
     cand = cv2.morphologyEx(cand, cv2.MORPH_OPEN, np.ones((k, k), np.uint8))
     n, lbl, stats, cents = cv2.connectedComponentsWithStats(cand)
     if n <= 1:
         return None
-    i = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    # compact blobs only (an areola is round; a crease or a string is long and thin)
+    ok = [j for j in range(1, n) if max(stats[j, cv2.CC_STAT_WIDTH], stats[j, cv2.CC_STAT_HEIGHT]) <= 2.5 * max(1, min(stats[j, cv2.CC_STAT_WIDTH], stats[j, cv2.CC_STAT_HEIGHT]))]
+    if not ok:
+        return None
+    i = max(ok, key=lambda j: stats[j, cv2.CC_STAT_AREA])
     area = float(stats[i, cv2.CC_STAT_AREA])
     if area < 0.004 * (x1 - x0) * (y1 - y0):
         return None
