@@ -105,7 +105,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; detail?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode; twoPass?: boolean; sourceLock?: boolean } },
+  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; detail?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode; twoPass?: boolean; sourceLock?: boolean; pattern?: boolean } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -266,6 +266,18 @@ export function addKeepScene(
       inputs: { destination: [`${p}black`, 0], source: [`${p}canny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] },
       _meta: { title: 'Keep scene: the garment’s outline' },
     };
+    if (lock && opts.garment.pattern) {
+      // cut-outs, lattice, criss-cross straps: the outline alone drew a plain top over a lattice cut-out (lying selfie,
+      // 2 Nov), so the garment's own edges inside it are traced too (the photo, lightly blurred, inside the garment only)
+      g[`${p}patblur`] = { class_type: 'ImageBlur', inputs: { image: scene, blur_radius: 2, sigma: 1 } };
+      g[`${p}patcanny`] = { class_type: 'Canny', inputs: { image: [`${p}patblur`, 0], low_threshold: 0.12, high_threshold: 0.3 } };
+      g[`${p}patin`] = { class_type: 'GrowMask', inputs: { mask: garment!, expand: -2, tapered_corners: true } };
+      g[`${p}patlines`] = {
+        class_type: 'ImageCompositeMasked',
+        inputs: { destination: [`${p}lines`, 0], source: [`${p}patcanny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}patin`, 0] },
+        _meta: { title: 'Keep scene: the garment’s cut-outs and straps' },
+      };
+    }
     g[`${p}cn`] = { class_type: 'ControlNetLoader', inputs: { control_net_name: opts.garment.controlnet } };
     g[`${p}cntype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'canny/lineart/anime_lineart/mlsd' } };
     const lineSet = lock ? SOURCE_LOCK.garment : garmentLines();
@@ -282,7 +294,7 @@ export function addKeepScene(
     } else {
       g[`${p}cnapply`] = {
         class_type: 'ControlNetApplyAdvanced',
-        inputs: { positive: g[samplerId].inputs.positive, negative: g[samplerId].inputs.negative, control_net: [`${p}cntype`, 0], image: [`${p}lines`, 0], strength: lineSet.strength, start_percent: 0, end_percent: lineSet.end },
+        inputs: { positive: g[samplerId].inputs.positive, negative: g[samplerId].inputs.negative, control_net: [`${p}cntype`, 0], image: [g[`${p}patlines`] ? `${p}patlines` : `${p}lines`, 0], strength: lineSet.strength, start_percent: 0, end_percent: lineSet.end },
         _meta: { title: 'Keep scene: follow the garment’s outline' },
       };
       cond = [`${p}cnapply`, 0];

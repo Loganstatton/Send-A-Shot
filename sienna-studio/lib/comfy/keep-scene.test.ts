@@ -269,3 +269,14 @@ describe('hand check', () => {
     expect(parseHandCheck(undefined)).toBeUndefined();
   });
 });
+
+describe('source-locked cut-outs', () => {
+  it('traces the garment inside as well as its outline when the photo has cut-outs', () => {
+    const g = addKeepScene(graph(), { width: 800, height: 1296, garment: { phrases: ['crop top'], controlnet: 'u.safetensors', body: true, sourceLock: true, pattern: true } })!;
+    expect(g[`${P}patlines`].inputs.destination).toEqual([`${P}lines`, 0]);
+    expect(g[`${P}cnapply`].inputs.image).toEqual([`${P}patlines`, 0]);
+    const plain = addKeepScene(graph(), { width: 800, height: 1296, garment: { phrases: ['crop top'], controlnet: 'u.safetensors', body: true, sourceLock: true } })!;
+    expect(plain[`${P}patlines`]).toBeUndefined();
+    expect(plain[`${P}cnapply`].inputs.image).toEqual([`${P}lines`, 0]);
+  });
+});

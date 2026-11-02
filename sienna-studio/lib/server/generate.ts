@@ -714,7 +714,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
           const twoPass = wantTwo && !!(await backend.nodeInfo(WARP_GARMENT_CLASS, true).catch(() => null));
           if (wantTwo && !twoPass) warnings.push('Copy Photo: two-pass copy asked for, but the GPU server has no SiennaWarpGarment yet — one pass used.');
           const sourceLock = p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on';
-          garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body: body || sourceLock, depth, ...(twoPass && !sourceLock ? { twoPass } : {}), ...(sourceLock ? { sourceLock } : {}) };
+          const pattern = sourceLock && /\b(cut-?outs?|lattice|criss-?cross\w*|caged|strappy|keyhole|lace-?up|cage)\b/i.test(req.fields.outfit);
+          garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body: body || sourceLock, depth, ...(twoPass && !sourceLock ? { twoPass } : {}), ...(sourceLock ? { sourceLock } : {}), ...(pattern ? { pattern } : {}) };
         }
         else warnings.push(`Copy Photo: the garment’s outline wasn’t used — the GPU server is missing ${cns.includes(UNION_CN_FILE) ? describeMissing(missing) : UNION_CN_FILE}.`);
       } catch {
@@ -1082,6 +1083,8 @@ export function refreshStatus(id: string): Promise<GenerationRecord | null> {
 }
 
 const GPU_DOWN_LIMIT_MS = 4 * 60_000;
+/** A checker fix that asks for narrower or smaller cups (third/quarter of the breast, slivers, strips, tiny). */
+const SHRINK_CUPS_RE = /\b(narrow\w*|smaller|tiny|micro|sliver\w*|strips?|third|quarter|half)\b[^.;]*\bcups?\b|\bcups?\b[^.;]*\b(narrow\w*|smaller|tiny|sliver\w*|strips?|third|quarter)\b/i;
 
 /** Copy Photo: the colour step's garment overlap with the photo (0–1), when it ran and measured it. */
 function copyCloseness(texts: Record<string, string[]> | undefined): number | undefined {
@@ -1273,7 +1276,11 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               const base = guard.base ?? prompts;
               const earlierFixes = attempts.filter((a) => a !== from).map((a) => a.aiFixes ?? []);
               const keepOk = !!rec.simple?.ai?.keepPerson && keepPersonFor(from);
-              const fix = keepOk ? buildCorrection(backgroundFixes(from.aiFixes ?? []), base, 6) : buildCorrection(pickFixes(from.aiFixes ?? [], earlierFixes), base);
+              // a source-locked copy's garment shape comes from the photo's outline: a redo asking for narrower or smaller
+              // cups only bared a nipple on the next try (boat, 2 Nov), so those fixes are dropped there
+              const locked = !!rec.simple?.copy && (rec.params.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on');
+              const usable = locked ? (from.aiFixes ?? []).filter((f) => !SHRINK_CUPS_RE.test(`${f.problem} ${f.emphasize}`)) : (from.aiFixes ?? []);
+              const fix = keepOk ? buildCorrection(backgroundFixes(usable), base, 6) : buildCorrection(pickFixes(usable, earlierFixes), base);
               prompts = base;
               graph = stripKeepPerson(swapPrompts(graph, { positive: rec.positivePrompt, negative: rec.negativePrompt }, base));
               if (from.framingOk === false) fix.summary.push(kneeUpRequest(rec.fields.framing) ? 'framing: head to knees, knees in frame' : 'framing: full body, head to toe');
