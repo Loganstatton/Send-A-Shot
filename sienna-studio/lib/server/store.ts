@@ -56,8 +56,52 @@ async function readJson<T>(file: string): Promise<T | null> {
 async function writeJsonAtomic(file: string, data: unknown) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+  await withSpace(async () => {
+    try {
+      await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+    } catch (e) {
+      await fs.rm(tmp, { force: true }); // a half-written copy only takes the space a retry needs
+      throw e;
+    }
+  });
   await fs.rename(tmp, file);
+}
+
+// ── Disk space ──────────────────────────────────────────────────────────────
+// The 1 GB data disk filled up (2 Nov) with uploaded photos nothing used any more: deleting a record removes its
+// results but never the photo it was made from, and every Copy Photo uploads its photo again. When a write runs out
+// of space, those (and half-written .tmp files) are removed and the write is tried once more.
+
+/** Uploaded photos (up_*) no record or setting refers to, older than `minAgeMs` (a fresh upload may not be used yet),
+ * and leftover .tmp files: removed. Returns how many bytes were freed. */
+export async function pruneUnusedUploads(minAgeMs = 60 * 60_000): Promise<number> {
+  const inUse = referencedFiles(cache.history ?? (await readJson<GenerationRecord[]>(HISTORY_FILE)) ?? []);
+  referencedFiles(cache.config ?? (await readJson<ConfigDoc>(CONFIG_FILE)), inUse);
+  let freed = 0;
+  const cutoff = Date.now() - minAgeMs;
+  for (const [dir, test] of [[IMAGES_DIR, (f: string) => /^up_/.test(f) && SAFE_FILE_RE.test(f) && !inUse.has(f)], [DATA_DIR, (f: string) => f.endsWith('.tmp')]] as const) {
+    const names = await fs.readdir(dir).catch(() => [] as string[]);
+    for (const f of names) {
+      if (!test(f)) continue;
+      const st = await fs.stat(path.join(dir, f)).catch(() => null);
+      if (!st || !st.isFile() || st.mtimeMs > cutoff) continue;
+      await fs.rm(path.join(dir, f), { force: true });
+      freed += st.size;
+    }
+  }
+  if (freed) console.warn(`store: freed ${(freed / 1e6).toFixed(1)} MB of unused uploads`);
+  return freed;
+}
+
+/** Runs a disk write; when the disk is full, frees unused uploads and tries once more. */
+async function withSpace<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (e: any) {
+    if (e?.code !== 'ENOSPC') throw e;
+    if (!(await pruneUnusedUploads().catch(() => 0))) throw e;
+    return write();
+  }
 }
 
 /** Serialise read-modify-write operations. */
@@ -372,7 +416,7 @@ export async function storeImage(bytes: Buffer, mime: string, prefix: 'ref' | 'g
   await fs.mkdir(IMAGES_DIR, { recursive: true });
   const id = newId();
   const file = `${prefix}_${id}.${ext}`;
-  await fs.writeFile(path.join(IMAGES_DIR, file), bytes);
+  await withSpace(() => fs.writeFile(path.join(IMAGES_DIR, file), bytes));
   const size = imageSize(bytes);
   return { id, file, width: size?.width, height: size?.height, label, createdAt: now() };
 }
@@ -398,7 +442,7 @@ export async function readImage(file: string): Promise<{ bytes: Buffer; mime: st
 export async function writeImageFile(file: string, bytes: Buffer) {
   if (!SAFE_FILE_RE.test(file)) throw new Error('Invalid file name');
   await fs.mkdir(IMAGES_DIR, { recursive: true });
-  await fs.writeFile(path.join(IMAGES_DIR, file), bytes);
+  await withSpace(() => fs.writeFile(path.join(IMAGES_DIR, file), bytes));
 }
 
 export function mimeFromBytes(buf: Buffer): string | null {
