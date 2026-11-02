@@ -287,6 +287,9 @@ describe('copy mode (Copy Photo)', () => {
     expect(plain).toMatch(/centred over the nipple/);
     expect(locked).not.toMatch(/centred over the nipple/);
     expect(locked).toMatch(/cups toward the outer sides/);
+    const neg = buildPrompt({ fields: f, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true, sourceLock: true }).negative;
+    expect(neg).toMatch(/auburn hair/);
+    expect(buildPrompt({ fields: f, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true }).negative).not.toMatch(/auburn hair/);
   });
   it('takes the photo’s hairstyle and bust size over her profile defaults, keeping her hair colour', () => {
     const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'hair pulled back into a high messy top-knot bun, very large breasts', expression: 'neutral, lips parted mid-sentence' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });

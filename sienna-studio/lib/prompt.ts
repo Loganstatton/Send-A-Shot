@@ -187,6 +187,8 @@ const COPY_MICRO_TOP_RE = /\b(micro|tiny|very small|sliver|narrow)\b[^,]*\b(cups
 const COPY_SHEER_RE = /\b(mesh|lace|fishnet)\b/i;
 const COPY_COVER_POSITIVE = '(each cup centred over the nipple, fully covering the nipple and areola:1.35)';
 const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulders, hair worn down';
+/** Source-locked copies: colours the strong guides drifted to (red hair, orange skin, a glowing outline, 2 Nov). */
+const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body';
 function weighHairstyle(text: string): string {
   const h = copyHairstyle(text);
   return h ? text.replace(h.phrase, `(${h.phrase}:1.3)`) : text;
@@ -447,6 +449,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     colourDriftNegative(f.outfit),
     faceAway ? REAR_NEGATIVE_FACE_AWAY : rear ? REAR_NEGATIVE : '',
     copy && copyHairstyle(`${f.bodyPresentation}, ${f.extra}`)?.up ? COPY_UPDO_NEGATIVE : '',
+    copy && sourceLock ? SOURCE_LOCK_NEGATIVE : '',
     copy && outfitHasTop(f.outfit) ? 'nipple slip, areola peeking out of the cup, nipples visible at the cup edge' : '',
     copy && outfitHasTop(f.outfit) && !COPY_SHEER_RE.test(f.outfit) ? '(see-through fabric, sheer cups, transparent wet fabric, nipples showing through:1.3)' : '',
     // the cups drawn as bare string outlines and loose strings dangling at her side (1 Nov)

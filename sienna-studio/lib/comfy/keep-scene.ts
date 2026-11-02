@@ -59,7 +59,10 @@ export const BODY_DEPTH = { strength: 0.6, end: 0.6 } as const;
  * but locked to the photo: a tighter redraw region, her silhouette's own outline (from the person mask, no texture),
  * the figure's lines unblurred, and every guide held almost to the end of sampling.
  */
-export const SOURCE_LOCK = { grow: 0.015, garment: { strength: 0.9, end: 0.85 }, body: { strength: 0.85, end: 0.9 }, depth: { strength: 0.8, end: 0.8 }, blurSigma: 0.8 } as const;
+// First run (2 Nov, boat): a 1.5% redraw region put her edge on the blend seam (a cyan glow of the water round her), and
+// guides held to 85-90% of the steps over-cooked the colour (orange skin, red hair, airbrushed); the shape is set in
+// the first part of sampling, so the guides now let go earlier and the region is the normal one
+export const SOURCE_LOCK = { grow: KEEP_SCENE_GROW, garment: { strength: 0.9, end: 0.75 }, body: { strength: 0.85, end: 0.7 }, depth: { strength: 0.8, end: 0.6 }, blurSigma: 0.8 } as const;
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
 export const UNION_CN_FILE = 'xinsir_union_promax.safetensors';

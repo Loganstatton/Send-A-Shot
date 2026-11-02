@@ -183,10 +183,10 @@ describe('two-pass copy (body first, garment second)', () => {
 
 describe('source-locked copy', () => {
   const locked = () => addKeepScene(graph(), { width: 800, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true, depth: 'DepthAnythingV2Preprocessor', sourceLock: true, twoPass: true } })!;
-  it('holds every guide to the photo, almost to the end, in a tighter region', () => {
+  it('holds every guide to the photo firmly, letting go before the colour is set', () => {
     const g = locked();
-    expect(g[`${P}grow`].inputs.expand).toBe(Math.round(800 * SOURCE_LOCK.grow));
-    expect(SOURCE_LOCK.grow).toBeLessThan(KEEP_SCENE_GROW);
+    // the normal region: a tighter one put her edge on the blend seam (a glow of the water round her)
+    expect(g[`${P}grow`].inputs.expand).toBe(Math.round(800 * KEEP_SCENE_GROW));
     expect(g[`${P}cnapply`].inputs).toMatchObject({ strength: SOURCE_LOCK.garment.strength, end_percent: SOURCE_LOCK.garment.end });
     expect(g[`${P}cnbody`].inputs).toMatchObject({ strength: SOURCE_LOCK.body.strength, end_percent: SOURCE_LOCK.body.end });
     expect(g[`${P}cndapply`].inputs).toMatchObject({ strength: SOURCE_LOCK.depth.strength, end_percent: SOURCE_LOCK.depth.end });

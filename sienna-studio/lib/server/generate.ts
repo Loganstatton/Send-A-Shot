@@ -43,6 +43,8 @@ import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
 import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
+/** Source-locked copies' hand pass (0.5 left thumb-like lumps; 0.6 broke a good hand in the 21 Oct A/B). */
+const COPY_LOCK_HAND_DENOISE = 0.55;
 import { recordLessons } from './copy-lessons';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
 import { addCoverage, keepPersonFor, placeCorrection, swapPrompts, AI_MAX_ATTEMPTS, aiSawExposure, COPY_EXPOSURE_THRESHOLD, EXPOSURE_MAX_ATTEMPTS, nextRetry, EXPOSURE_NODE_ID, exposureNode, exposureWarning, failed, outfitHasTop, parseExposure, pickAttempt, reseed, softenPacks } from '../exposure';
@@ -718,10 +720,12 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     } catch {
       // can't ask: let /prompt report it
     }
-    const withHands = reason ? null : addHandRefine(graph, refineId, { denoise: p.handRefineDenoise, prompt: p.keepScene ? copyHandPrompt(req.fields.pose) : undefined });
+    // source-locked copies: a firmer hand pass (the locked pose drew thumb-like lumps at 0.5, 2 Nov)
+    const lockHands = !!req.simple?.copy && (p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on');
+    const withHands = reason ? null : addHandRefine(graph, refineId, { denoise: p.handRefineDenoise ?? (lockHands ? COPY_LOCK_HAND_DENOISE : undefined), prompt: p.keepScene ? copyHandPrompt(req.fields.pose) : undefined });
     if (withHands) {
       graph = withHands;
-      handRefine = { status: 'on', denoise: p.handRefineDenoise ?? HAND_REFINE_DENOISE };
+      handRefine = { status: 'on', denoise: p.handRefineDenoise ?? (lockHands ? COPY_LOCK_HAND_DENOISE : HAND_REFINE_DENOISE) };
     } else {
       handRefine = { status: 'skipped', reason: reason ?? 'no face pass to copy settings from' };
       if (reason) warnings.push(`Hand touch-up skipped — ${reason}.`);

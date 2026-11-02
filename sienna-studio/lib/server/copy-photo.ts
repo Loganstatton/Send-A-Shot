@@ -20,7 +20,8 @@ const GATE_TIMEOUT_MS = 4 * 60_000;
 // 0.85 kept her hand on the bikini string but threw her head back (the photo's sunglasses confuse the head points): 0.75
 const COPY_POSE_STRENGTH = 0.75;
 /** Source-locked copy: the photo's own pose and hands, held firmly. */
-const COPY_LOCK_POSE_STRENGTH = 0.9;
+// 0.9 held the photo's hand keypoints so hard the hands came out as thumb-like lumps (boat, 2 Nov)
+const COPY_LOCK_POSE_STRENGTH = 0.85;
 /** Source-locked copy (testing switch, or SIENNA_COPY_SOURCE_LOCK=on): nothing about the photo's garment is adapted. */
 export function copySourceLocked(req: GenerateRequest): boolean {
   return req.params.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on';
