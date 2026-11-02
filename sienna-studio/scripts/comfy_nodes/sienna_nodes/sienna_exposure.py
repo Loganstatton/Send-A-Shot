@@ -81,6 +81,34 @@ class ChestCropDetector:
         return dets
 
 
+# Cover-up (Copy Photo): where the nipple sits inside NudeNet's exposed-breast box, as a share of the box (its centre a
+# little below the box's middle), and the patch's radius. Copying a micro top onto Sienna's own figure put a nipple just
+# beside the photo's tiny cup on every try of the boat photo (1 Nov: 3 of 3 tries, scores 0.79-0.83, the photo itself
+# scored covered); the patch is redrawn as fabric instead of throwing the copy away.
+COVER_CENTRE = (0.5, 0.55)
+COVER_RADIUS = 0.3
+
+
+def cover_mask(detections: List[Dict], width: int, height: int, threshold: float = DEFAULT_THRESHOLD,
+               radius: float = COVER_RADIUS):
+    """float32 (height, width) mask, 1 inside an ellipse over the nipple of every exposed breast NudeNet found at or above
+    threshold, 0 elsewhere (all 0 when none): the area a cover-up pass redraws as fabric."""
+    import cv2
+    import numpy as np
+
+    m = np.zeros((height, width), np.float32)
+    for d in detections:
+        if d.get("class") != "FEMALE_BREAST_EXPOSED" or float(d.get("score", 0)) < threshold:
+            continue
+        x, y, w, h = (float(v) for v in d.get("box") or (0, 0, 0, 0))
+        if w <= 0 or h <= 0:
+            continue
+        cx, cy = int(round(x + COVER_CENTRE[0] * w)), int(round(y + COVER_CENTRE[1] * h))
+        axes = (max(2, int(round(radius * w))), max(2, int(round(radius * h))))
+        cv2.ellipse(m, (cx, cy), axes, 0, 0, 360, 1.0, -1)
+    return m
+
+
 def detector():
     """The NudeNet detector (with the chest-crop second look), loaded once; None (with detector_error()) if nudenet isn't installed."""
     global _detector, _error

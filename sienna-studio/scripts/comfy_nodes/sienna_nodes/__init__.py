@@ -339,6 +339,51 @@ class SiennaExposureCheck:
         return {"ui": {"text": [text]}, "result": (text,)}
 
 
+class SiennaCoverMask:
+    """Copy Photo cover-up: a mask over each nipple NudeNet finds showing (empty when none), for a pass that redraws
+    that patch as the garment's fabric. The top check still runs afterwards on the result."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"image": ("IMAGE",), "threshold": ("FLOAT", {"default": DEFAULT_THRESHOLD, "min": 0.05, "max": 0.95, "step": 0.05})}}
+
+    RETURN_TYPES = ("MASK", "STRING")
+    RETURN_NAMES = ("mask", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image, threshold):
+        import os
+        import tempfile
+
+        from .sienna_exposure import cover_mask
+
+        h, w = int(image.shape[1]), int(image.shape[2])
+        mask = np.zeros((h, w), np.float32)
+        info = {"covered": 0}
+        det = detector()
+        if det is None:
+            info["error"] = detector_error()
+        else:
+            rgb = (np.clip(image[0, ..., :3].detach().cpu().numpy(), 0, 1) * 255).astype(np.uint8)
+            fd, path = tempfile.mkstemp(suffix=".png")
+            os.close(fd)
+            try:
+                cv2.imwrite(path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+                dets = det.detect(path)
+                mask = cover_mask(dets, w, h, threshold)
+                hits = [d for d in dets if d.get("class") == "FEMALE_BREAST_EXPOSED" and float(d.get("score", 0)) >= threshold]
+                info = {"covered": len(hits), "scores": [round(float(d["score"]), 3) for d in hits], "pixels": int((mask > 0.5).sum())}
+            except Exception as e:  # never lose the photo over the cover-up: an empty mask changes nothing
+                info["error"] = f"{type(e).__name__}: {e}"[:300]
+            finally:
+                os.remove(path)
+        text = json.dumps(info)
+        print(f"[sienna] cover-up: {text}", flush=True)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(mask)[None, ...], text)}
+
+
 class SiennaFaceCheck:
     """Cosine similarity of the main face to Sienna's approved-face embedding (the app redoes photos below threshold)."""
 
@@ -706,6 +751,7 @@ class SiennaFillGaps:
         return (res,)
 
 NODE_CLASS_MAPPINGS = {
+    "SiennaCoverMask": SiennaCoverMask,
     "SiennaFillGaps": SiennaFillGaps,
     "SiennaCopyColours": SiennaCopyColours,
     "SiennaPoseRetarget": SiennaPoseRetarget,
@@ -726,6 +772,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaCoverMask": "Sienna Cover Mask (copy)",
     "SiennaFillGaps": "Sienna Fill Gaps",
     "SiennaCopyColours": "Sienna Copy Colours",
     "SiennaPoseRetarget": "Sienna Pose Retarget",

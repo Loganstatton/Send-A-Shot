@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { addCopyColours, garmentLines } from './keep-scene';
+import { addCopyColours, addCoverUp, COVER, garmentLines } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -112,6 +112,28 @@ describe('addCopyColours', () => {
   });
   it('does nothing without a keep-scene redraw', () => {
     expect(addCopyColours(graph())).toBeNull();
+  });
+});
+
+describe('addCoverUp', () => {
+  it('redraws only where a nipple shows, as the top fabric, before SaveImage and the colour step', () => {
+    const kept = addKeepScene(graph(), { width: 776 })!;
+    const saveId = Object.keys(kept).find((id) => kept[id].class_type === 'SaveImage')!;
+    const before = kept[saveId].inputs.images;
+    const g = addCoverUp(kept, { top: 'tiny white micro string bikini top', threshold: 0.25 })!;
+    expect(g[`${P}covmask`].class_type).toBe('SiennaCoverMask');
+    expect(g[`${P}covmask`].inputs).toMatchObject({ image: before, threshold: 0.25 });
+    expect(g[`${P}covnoise`].inputs.mask).toEqual([`${P}covgrow`, 0]);
+    expect(g[`${P}covks`].inputs).toMatchObject({ denoise: COVER.denoise, positive: [`${P}covpos`, 0], negative: [`${P}covneg`, 0], model: kept['40'].inputs.model });
+    expect(String(g[`${P}covpos`].inputs.text)).toMatch(/^tiny white micro string bikini top, \(opaque solid fabric cup/);
+    expect(String(g[`${P}covneg`].inputs.text)).toMatch(/nipple/);
+    expect(g[`${P}cover`].inputs).toMatchObject({ destination: before, source: [`${P}covdec`, 0], mask: [`${P}covsoft`, 0] });
+    expect(g[saveId].inputs.images).toEqual([`${P}cover`, 0]);
+    // the colour step then reads the covered photo
+    expect(addCopyColours(g)![`${P}colours`].inputs.image).toEqual([`${P}cover`, 0]);
+  });
+  it('does nothing without a keep-scene redraw', () => {
+    expect(addCoverUp(graph(), { top: 'bikini top', threshold: 0.25 })).toBeNull();
   });
 });
 

@@ -41,7 +41,7 @@ import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, PO
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addCopyColours, addKeepScene, COPY_COLOURS_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
+import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
 import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { recordLessons } from './copy-lessons';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
@@ -774,6 +774,14 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
     detailPass = reason ? { status: 'skipped', reason } : { status: 'on', style: dp.style, file, strength, denoise, ...(quality.hires ? { hires: true } : {}) };
     if (reason) warnings.push(`Close-up detail skipped — ${reason}.`);
+  }
+
+  // ── Copy Photo: fabric over a nipple showing beside a copied micro top (before the colours, so they match it) ──
+  if (p.keepScene && outfitHasTop(req.fields.outfit) && process.env.SIENNA_COPY_COVER !== 'off') {
+    const has = await backend.nodeInfo(COVER_MASK_CLASS, true).catch(() => null);
+    const top = req.fields.outfit.split(',')[0].trim();
+    const covered = has ? addCoverUp(graph, { top, threshold: COPY_EXPOSURE_THRESHOLD }) : null;
+    if (covered) graph = covered;
   }
 
   // ── Copy Photo: the outfit's and skin's colours from the photo's pixels, the last change before the checks ──

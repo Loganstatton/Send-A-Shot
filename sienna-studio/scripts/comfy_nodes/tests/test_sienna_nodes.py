@@ -415,6 +415,19 @@ def test_exposure_summary_flags_exposed_breasts_above_threshold_only():
     assert ex.summarize(via_crop) == {"exposed": True, "score": 0.71, "classes": ["FEMALE_BREAST_EXPOSED"], "crop": True}
 
 
+def test_cover_mask_covers_each_exposed_nipple_only():
+    dets = [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.8, "box": [100, 200, 100, 100]},
+            {"class": "FEMALE_BREAST_EXPOSED", "score": 0.1, "box": [300, 200, 100, 100]},   # below threshold
+            {"class": "FEMALE_BREAST_COVERED", "score": 0.9, "box": [400, 200, 100, 100]}]
+    m = ex.cover_mask(dets, 600, 500, threshold=0.25)
+    assert m.shape == (500, 600) and m.dtype == np.float32
+    assert m[255, 150] == 1.0                                   # nipple: box centre, a little low
+    assert m[205, 150] == 0.0 and m[255, 105] == 0.0            # the rest of the breast stays as drawn
+    assert m[255, 350] == 0.0 and m[255, 450] == 0.0            # faint hit and covered breast untouched
+    assert 0.2 < m[200:300, 100:200].mean() < 0.35              # an ellipse of radius 0.3 of the box
+    assert not ex.cover_mask([], 600, 500).any()
+
+
 def test_exposure_chest_crop_box_pads_covered_breasts_and_stays_in_frame():
     dets = [{"class": "FEMALE_BREAST_COVERED", "score": 0.7, "box": [300, 600, 100, 80]},
             {"class": "FEMALE_BREAST_COVERED", "score": 0.6, "box": [450, 610, 100, 80]},

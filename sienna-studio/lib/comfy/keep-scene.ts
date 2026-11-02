@@ -324,6 +324,49 @@ export function addKeepScene(
   return g;
 }
 
+/**
+ * Cover-up: a nipple showing beside a copied micro top is redrawn as the top's fabric instead of the whole copy being
+ * thrown away. The photo's tiny cups traced onto Sienna's own figure missed her nipples on every try of the boat photo
+ * (1 Nov: 3 of 3 tries scored 0.79-0.83 while the photo itself scored covered). SiennaCoverMask marks a small ellipse
+ * over each nipple NudeNet finds (nothing when none); only that patch is redrawn, with a fabric-only prompt, and the
+ * top check still runs on the result.
+ */
+export const COVER_MASK_CLASS = 'SiennaCoverMask';
+export const COVER = { denoise: 0.75, steps: 24, grow: 6 } as const;
+export const COVER_NEGATIVE = 'nipple, nipples, areola, bare breast, exposed breast, see-through, sheer, mesh, transparent, hole, gap, strings';
+/** The graph with the cover-up before SaveImage (and before the colour step, which then matches its colour), or null
+ * without a keep-scene redraw in it. `top` names the garment, e.g. "tiny white micro string bikini top". */
+export function addCoverUp(graph: ComfyGraph, opts: { top: string; threshold: number }): ComfyGraph | null {
+  const p = KEEP_SCENE_PREFIX;
+  const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
+  const samplerId = Object.keys(graph).find((id) => graph[id].class_type === 'KSampler' && isRef(graph[id].inputs.latent_image) && (graph[id].inputs.latent_image as Ref)[0] === `${p}noise`);
+  if (!saveId || !samplerId) return null;
+  const decodeId = Object.keys(graph).find((id) => graph[id].class_type === 'VAEDecode' && isRef(graph[id].inputs.samples) && (graph[id].inputs.samples as Ref)[0] === samplerId);
+  const image = graph[saveId].inputs.images;
+  const k = graph[samplerId].inputs;
+  const vae = decodeId ? graph[decodeId].inputs.vae : null;
+  const clip = clipOf(graph, k.positive);
+  if (!isRef(image) || !isRef(vae) || !clip) return null;
+  const g: ComfyGraph = { ...graph };
+  g[`${p}covmask`] = { class_type: COVER_MASK_CLASS, inputs: { image, threshold: opts.threshold }, _meta: { title: 'Keep scene: where a nipple shows' } };
+  g[`${p}covgrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}covmask`, 0], expand: COVER.grow, tapered_corners: true } };
+  g[`${p}covenc`] = { class_type: 'VAEEncode', inputs: { pixels: image, vae } };
+  g[`${p}covnoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}covenc`, 0], mask: [`${p}covgrow`, 0] } };
+  g[`${p}covpos`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: `${opts.top}, (opaque solid fabric cup fully covering the nipple and areola:1.4), smooth fabric, natural skin, photo` } };
+  g[`${p}covneg`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: COVER_NEGATIVE } };
+  g[`${p}covks`] = {
+    class_type: 'KSampler',
+    inputs: { model: k.model, positive: [`${p}covpos`, 0], negative: [`${p}covneg`, 0], latent_image: [`${p}covnoise`, 0], seed: k.seed, steps: COVER.steps, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: COVER.denoise },
+    _meta: { title: 'Keep scene: cover-up (fabric over a showing nipple)' },
+  };
+  g[`${p}covdec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}covks`, 0], vae } };
+  g[`${p}covsoft`] = { class_type: SOFT_SEAM_CLASS, inputs: { mask: [`${p}covgrow`, 0], kernel_size: 9, sigma: 3 } };
+  // an empty mask (nothing showing) leaves the photo exactly as it was
+  g[`${p}cover`] = { class_type: 'ImageCompositeMasked', inputs: { destination: image, source: [`${p}covdec`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}covsoft`, 0] } };
+  g[saveId] = { ...g[saveId], inputs: { ...g[saveId].inputs, images: [`${p}cover`, 0] } };
+  return g;
+}
+
 /** The copy's outfit and skin colours taken from the photo's pixels (SiennaCopyColours): words drifted them — a purple
  * bikini drawn royal blue, a pale woman under grey light drawn deeply bronzed (1 Nov). */
 export const COPY_COLOURS_CLASS = 'SiennaCopyColours';
