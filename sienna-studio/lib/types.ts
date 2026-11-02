@@ -194,6 +194,8 @@ export interface GenerationParams {
   copyFaceDenoise?: number;
   /** Benchmark: a source-locked copy's face-reference weight (unset: faceStrength). */
   copyFaceWeight?: number;
+  /** Benchmark: InstantID weight on a source-locked copy's face pass (0 off; unset: SIENNA_COPY_INSTANTID). */
+  copyInstantId?: number;
   hiresScale?: number;
   hiresDenoise?: number;
   /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */
