@@ -661,6 +661,27 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     }
   }
 
+  // ── Source-locked copies: both of her approved face photos in the face reference, not one (the boat copies' faces
+  // scored 0.64-0.74 from hers with one reference, 2 Nov). Her other face photos are the square ones among her
+  // references; the full-body one is left out.
+  if (p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on') {
+    const loadId = bindings.face_reference_image?.[0]?.nodeId;
+    const extra = req.siennaLock && loadId && faceReference
+      ? [character.faceReference, ...character.secondaryReferences].find((i) => i && i.id !== faceReference.id && i.file !== faceReference.file && i.width && i.height && Math.abs(i.width / i.height - 1) < 0.1)
+      : undefined;
+    const users = loadId ? Object.keys(graph).filter((id) => /^IPAdapter(Advanced|FaceID)$/.test(graph[id].class_type) && isLink(graph[id].inputs.image) && graph[id].inputs.image[0] === loadId) : [];
+    if (extra && users.length) {
+      try {
+        const name = await upload(extra);
+        graph.face_ref2 = { class_type: 'LoadImage', inputs: { image: name }, _meta: { title: 'Her second face photo' } };
+        graph.face_refs = { class_type: 'ImageBatch', inputs: { image1: [loadId!, 0], image2: ['face_ref2', 0] }, _meta: { title: 'Her face photos together' } };
+        for (const id of users) graph[id] = { ...graph[id], inputs: { ...graph[id].inputs, image: ['face_refs', 0] } };
+      } catch {
+        /* one face photo, as before */
+      }
+    }
+  }
+
   // ── Copy Photo, keep-scene: the uploaded photo stays the picture; only the person (and app overlays) is redrawn ──
   if (p.keepScene && wanted.init_image) {
     let ui = false;
