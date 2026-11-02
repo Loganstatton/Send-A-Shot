@@ -81,7 +81,7 @@ export function addKeepPerson(
   g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: [`${p}noise`, 0], denoise } };
   rewire([decodeId, 0], [`${p}paste`, 0], `${p}paste`);
   // her face and hands were already refined in the earlier photo: the touch-up passes would only change them
-  for (const id of Object.keys(g).filter((id) => g[id].class_type === 'FaceDetailer' && isRef(g[id].inputs.image))) {
+  for (const id of Object.keys(g).filter((id) => (g[id].class_type === 'FaceDetailer' || g[id].class_type === 'DetailerForEach') && isRef(g[id].inputs.image))) {
     rewire([id, 0], g[id].inputs.image as Ref, id);
     delete g[id];
   }
@@ -134,7 +134,7 @@ export function addImageRedraw(graph: ComfyGraph, init: string, denoise: number,
     latent = [`${p}noise`, 0];
   }
   g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: latent, denoise } };
-  for (const id of Object.keys(g).filter((id) => g[id].class_type === 'FaceDetailer' && isRef(g[id].inputs.image))) {
+  for (const id of Object.keys(g).filter((id) => (g[id].class_type === 'FaceDetailer' || g[id].class_type === 'DetailerForEach') && isRef(g[id].inputs.image))) {
     const src = g[id].inputs.image as Ref;
     for (const node of Object.values(g)) for (const [k, v] of Object.entries(node.inputs)) if (isRef(v) && v[0] === id && v[1] === 0) node.inputs[k] = src;
     delete g[id];

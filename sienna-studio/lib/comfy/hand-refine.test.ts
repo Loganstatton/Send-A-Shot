@@ -22,3 +22,24 @@ describe('addHandRefine', () => {
     expect(addHandRefine(graph, 'nope')).toBeNull();
   });
 });
+
+describe('hand pass following the photo’s hand (source lock)', () => {
+  it('detects hands as SEGS, gives each the photo’s cropped hand skeleton, and redraws them', async () => {
+    const { addHandRefine, poseControl, HAND_REFINE_ID } = await import('./hand-refine');
+    const g = {
+      ...graph,
+      '21': { class_type: 'ControlNetLoader', inputs: { control_net_name: 'sdxl_openpose.safetensors' } },
+      '23': { class_type: 'DWPreprocessor', inputs: { image: ['30', 0] } },
+      '22': { class_type: 'ControlNetApplyAdvanced', inputs: { control_net: ['21', 0], image: ['23', 0], positive: ['3', 0], negative: ['4', 0], strength: 0.85 } },
+    } as ComfyGraph;
+    const pose = poseControl(g)!;
+    expect(pose).toEqual({ controlNet: ['21', 0], image: ['23', 0] });
+    const out = addHandRefine(g, '51', { denoise: 0.55, pose })!;
+    expect(out.hand_segs).toMatchObject({ class_type: 'BboxDetectorSEGS', inputs: { bbox_detector: ['hand_detector', 0] } });
+    expect(out.hand_pose).toMatchObject({ class_type: 'ImpactControlNetApplySEGS', inputs: { segs: ['hand_segs', 0], control_net: ['21', 0], control_image: ['23', 0] } });
+    expect(out[HAND_REFINE_ID]).toMatchObject({ class_type: 'DetailerForEach', inputs: { segs: ['hand_pose', 0], denoise: 0.55, model: g['51'].inputs.model } });
+    const save = Object.values(out).find((n) => n.class_type === 'SaveImage')!;
+    expect(save.inputs.images).toEqual([HAND_REFINE_ID, 0]);
+    expect(poseControl(graph)).toBeNull();
+  });
+});
