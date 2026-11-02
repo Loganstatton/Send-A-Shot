@@ -198,3 +198,8 @@ export function dropStudEarrings(text: string): { text: string; dropped: boolean
 
 /** Wording that places a garment over the nipples (covered), not a description of nudity. */
 export const COVERED_NIPPLE_RE = /\b(?:centred|centered|sitting|sits|placed)\s+(?:over|on)\s+(?:the|her|each|both)?\s*nipples?(?:\s+and\s+areolas?)?|\b(?:covering|covers|cover|hiding|hides)\s+(?:only\s+)?(?:the|her|each|both)?\s*nipples?(?:\s+and\s+areolas?)?/gi;
+
+/** The reader's own refusal ("I can't write a recreation description for this photo…"): never a description. */
+export const READER_DECLINED_RE = /\b(I\s+can(?:'|’)?t|I\s+cannot|I\s+won(?:'|’)?t|I(?:'|’)m\s+not\s+able|I\s+am\s+not\s+able|unable\s+to)\b[^.]{0,120}\b(describe|recreat\w*|help|write|provide|assist)/i;
+/** A checker verdict that the photo must not be delivered (it saw nudity it couldn't grade). */
+export const UNDELIVERABLE_RE = /\b(fully nude|nude|naked|topless|explicit|should not be delivered|must not be delivered)\b/i;

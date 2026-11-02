@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COVERED_NIPPLE_RE, bustPhrases, bustWords, dropEyewear, dropStudEarrings, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
+import { COVERED_NIPPLE_RE, READER_DECLINED_RE, UNDELIVERABLE_RE, bustPhrases, bustWords, dropEyewear, dropStudEarrings, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
 import { NUDE_RE } from './ai-prompts';
 
 describe('copyUserText', () => {
@@ -115,5 +115,17 @@ describe('COVERED_NIPPLE_RE', () => {
     expect(NUDE_RE.test(strip('small cups covering only the nipples and areolas'))).toBe(false);
     expect(NUDE_RE.test(strip('topless, nipples visible'))).toBe(true);
     expect(NUDE_RE.test(strip('cups centred over the nipple, one nipple showing'))).toBe(true);
+  });
+});
+
+describe('copy refusals', () => {
+  it('recognises the reader declining a photo', () => {
+    expect(READER_DECLINED_RE.test("I can't write a recreation description for this photo. It's a sexually explicit image of a real person.")).toBe(true);
+    expect(READER_DECLINED_RE.test('I cannot help recreate this image.')).toBe(true);
+    expect(READER_DECLINED_RE.test('Tiny white micro string bikini top, thin strings, standing on a boat')).toBe(false);
+  });
+  it('recognises a checker verdict that the photo must not be delivered', () => {
+    expect(UNDELIVERABLE_RE.test('The returned photo is fully nude, sexually explicit content. This output should not be delivered.')).toBe(true);
+    expect(UNDELIVERABLE_RE.test('the AI check timed out')).toBe(false);
   });
 });

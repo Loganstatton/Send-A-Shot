@@ -40,6 +40,7 @@ import { COPY_READING_NOTE } from '../copy-photo';
 import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, POSE_GUIDES, POSE_PRESET_LABELS, POSE_PRESET_PROMPTS, posePreset, presetOutfitPrompt, presetThongPack } from '../pose-presets';
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
+import { UNDELIVERABLE_RE } from '../copy-photo';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
 import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, HAND_CHECK_CLASS, HAND_CHECK_NODE_ID, handCheckNode, parseHandCheck, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
 import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
@@ -1221,7 +1222,15 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
               const { bytes, mime } = await backend.fetchImage(state.images[0]);
               const v = await aiCheck(rec.simple.copy?.text ?? rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime, undefined, rec.simple.ai?.lean, {}, checkRules(rec.fields, rec.params.fixes ?? fixesFromEnv(process.env.SIENNA_FIXES)));
               latest.aiStatus = v.status;
-              if (v.status === 'unavailable') latest.aiReason = v.reason;
+              if (v.status === 'unavailable') {
+                latest.aiReason = v.reason;
+                // a checker that saw nudity it couldn't grade is not a pass: a nude copy of a clothed photo was kept
+                // after the checker said it "should not be delivered" (boat, 2 Nov)
+                if (rec.simple?.copy && UNDELIVERABLE_RE.test(v.reason ?? '')) {
+                  latest.exposed = true;
+                  latest.score = Math.max(latest.score, 1);
+                }
+              }
               else {
                 const g = v.graded;
                 const major = g.issues.filter((i) => i.major);

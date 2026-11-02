@@ -1,6 +1,6 @@
 import 'server-only';
 import { NUDE_RE } from '../ai-prompts';
-import { COVERED_NIPPLE_RE, bustPhrases, bustWords, COPY_EYEWEAR_AVOID, copyKeepsEyewear, dropEyewear, dropStudEarrings, COPY_BODY_PACKS, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
+import { COVERED_NIPPLE_RE, READER_DECLINED_RE, UNDELIVERABLE_RE, bustPhrases, bustWords, COPY_EYEWEAR_AVOID, copyKeepsEyewear, dropEyewear, dropStudEarrings, COPY_BODY_PACKS, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
 import { buildGarmentIsolationGraph, GARMENT_ISOLATE_NODE, OUTFIT_PREVIEW_NODE } from '../outfit';
 import { parseExposure } from '../exposure';
 import { interpretPrompt } from '../interpret';
@@ -19,6 +19,10 @@ import { adultContentAllowed, getComfyUrl, getSettings, mimeFromBytes, readImage
 const GATE_TIMEOUT_MS = 4 * 60_000;
 // 0.85 kept her hand on the bikini string but threw her head back (the photo's sunglasses confuse the head points): 0.75
 const COPY_POSE_STRENGTH = 0.75;
+/** A copy that must not be made (the record shows the message; nothing is generated). */
+export class CopyRefused extends Error {}
+export const COPY_DECLINED = 'Copy not made: the photo reader declined to describe this photo, so nothing was generated.';
+export const COPY_UNREAD = 'Copy not made: nothing could be read from this photo’s clothing, and a copy without it isn’t allowed.';
 /** Source-locked copy: the photo's own pose and hands, held firmly. */
 // 0.9 held the photo's hand keypoints so hard the hands came out as thumb-like lumps (boat, 2 Nov)
 const COPY_LOCK_POSE_STRENGTH = 0.85;
@@ -101,6 +105,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   let nudePhoto = true;
   let error: string | undefined;
   let aiFailed: string | undefined;
+  let declined = false;
   let bustAnswer: { size: string; gap: string } | undefined;
   try {
     const g = await gate(req);
@@ -108,14 +113,21 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
     if (aiEnabled() && !nudePhoto && !NUDE_RE.test(copy.userText)) {
       const { bytes, mime } = await readImage(req.images.poseImage.file);
       const d = await aiDescribePhoto(bytes, mime);
-      if ('description' in d) [description, by, bustAnswer] = [d.description, 'ai', d.bust];
+      if ('description' in d && READER_DECLINED_RE.test(d.description)) declined = true;
+      else if ('description' in d) [description, by, bustAnswer] = [d.description, 'ai', d.bust];
       else aiFailed = d.failed;
     }
+    // a declined photo is not copied at all: its refusal was once taken for the description, and with no outfit to
+    // check a nude copy was made of a clothed photo (boat, 2 Nov)
+    if (declined) throw new CopyRefused(COPY_DECLINED);
     if (!description && g.caption) [description, by] = [g.caption, 'gpu-caption'];
   } catch (e: any) {
+    if (e instanceof CopyRefused) throw e;
     error = `The photo couldn’t be read (${e?.message ?? e}): only its pose was copied.`;
     console.warn(`[copy-photo] ${req.images.poseImage.file}: ${e?.message ?? e}`);
   }
+  // a clothed photo that couldn't be read is not copied: with no outfit there is nothing to keep her covered
+  if (!description && !nudePhoto) throw new CopyRefused(COPY_UNREAD);
   if (!description) {
     return {
       ...req,
@@ -232,6 +244,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
       garmentNote = `The outfit couldn’t be cut out of the photo (${e?.message ?? e}): it follows the description only.`;
     }
   }
+  if (!nudePhoto && !it.fields.outfit.trim()) throw new CopyRefused(COPY_UNREAD);
   return {
     ...req,
     fields: it.fields,
