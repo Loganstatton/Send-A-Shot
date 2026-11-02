@@ -179,9 +179,13 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   // a see-through top is copied as an opaque one: the top check rejects any nipple showing through, so every try of a
   // sheer copy was thrown away (boat photo, 1 Nov)
   let sheerNote = '';
-  if (!locked && /\b(sheer|see-through|transparent)\b/i.test(it.fields.outfit)) {
-    it.fields.outfit = it.fields.outfit.replace(/,?\s*\b(?:slightly |semi-?|very |thin,? )?(?:sheer|see-through|transparent)\b(?:\s+white)?/gi, (m) => (/white/i.test(m) ? ' white' : '')).replace(/\s{2,}/g, ' ').trim();
-    sheerNote = 'The photo’s top is see-through; the copy’s is opaque, as see-through tops showing nipples aren’t allowed.';
+  // (source-locked too, but said plainly: a see-through top can't pass the coverage check; copied as see-through, the boat
+  // top showed the areolas through the fabric and a mesh texture spread over her stomach, 2 Nov)
+  if (/\b(sheer|see-through|transparent)\b/i.test(it.fields.outfit)) {
+    it.fields.outfit = it.fields.outfit.replace(/\b(?:sheer|see-through|transparent)\s+mesh\s+/gi, '').replace(/,?\s*\b(?:slightly |semi-?|very |thin,? )?(?:sheer|see-through|transparent)\b(?:\s+white)?/gi, (m) => (/white/i.test(m) ? ' white' : '')).replace(/\s{2,}/g, ' ').trim();
+    sheerNote = locked
+      ? 'Changed from your photo: its top is see-through, the copy’s is opaque. A see-through top can’t pass the coverage check; everything else about the garment is kept.'
+      : 'The photo’s top is see-through; the copy’s is opaque, as see-through tops showing nipples aren’t allowed.';
   }
   // what earlier copies kept getting wrong, avoided here too (never something this photo shows)
   const learned = process.env.SIENNA_COPY_LESSONS === 'off' ? [] : lessonsFor(await readLessons(), `${description} ${copy.userText}`);

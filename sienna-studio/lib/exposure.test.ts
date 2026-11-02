@@ -197,3 +197,15 @@ describe('pickAttempt with closeness', () => {
     expect(pickAttempt([far, near, mk(0.5)])).toBe(near);
   });
 });
+
+describe('aiSawExposure: see-through fabric', () => {
+  it('counts areolas showing through the fabric, even when the cups cover the nipples', () => {
+    expect(aiSawExposure(['outfit: The cups cover the nipples, but the sheer fabric lets the areolas show through, as the semi-transparent design implies.'])).toBe(true);
+    expect(aiSawExposure(['outfit: nipples visible through the thin white mesh'])).toBe(true);
+    expect(aiSawExposure(['outfit: areolas faintly seen through the see-through cups'])).toBe(true);
+  });
+  it('still passes a covered top', () => {
+    expect(aiSawExposure(['outfit: the cups fully cover the nipples; the fabric is opaque'])).toBe(false);
+    expect(aiSawExposure(['outfit: sheer cups, but nothing shows through them'])).toBe(false);
+  });
+});

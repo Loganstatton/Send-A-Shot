@@ -351,9 +351,13 @@ export function exposureWarning(attempts: ExposureAttempt[], kept: ExposureAttem
 /** The AI check saw a nipple or areola outside the clothing: a narrow cup's edge that NudeNet scored 0 (1 Nov). Read
  * from its issues; statements that they are covered, or asking for coverage, don't count. */
 const AI_EXPOSED_RE = /\b(nipples?|areolae?|areolas?)\b[^.;]*\b(visible|showing|exposed|peek\w*|uncovered|outside|slip\w*|out of)\b|\b(visible|exposed|uncovered|showing)\b[^.;]*\b(nipples?|areolae?|areolas?)\b/i;
+// a nipple or areola seen THROUGH the fabric is exposure even when the same sentence says the cups cover them: "The cups
+// cover the nipples, but the sheer fabric lets the areolas show through" was kept as a minor note (boat copy, 2 Nov)
+const AI_THROUGH_RE = /\b(nipples?|areolae?|areolas?)\b[^.;]*\b(show(s|ing)?|visible|seen|outlined)\s+through\b|\b(nipples?|areolae?|areolas?)\b[^.;]*\bthrough\s+(the\s+)?(sheer|mesh|thin|see-through|transparent|semi-transparent)\b|\b(sheer|mesh|see-through|transparent|semi-transparent)\b[^.;]*\b(nipples?|areolae?|areolas?)\b[^.;]*\b(show\w*|visible|seen|outlined)\b/i;
 const AI_COVERED_RE = /\b(fully covered|covered by|cover(ing|s)? (the |her |both )?(nipples?|areolae?)|not visible|no (visible )?(nipples?|areolae?))\b/i;
 export function aiSawExposure(issues: string[] | undefined): boolean {
   return (issues ?? []).some((issue) => {
+    if (AI_THROUGH_RE.test(issue)) return true;
     // corrections read "what it should be (not what it was)": the part after "(not" is what the photo shows
     const seen = issue.match(/\(not ([^)]*)\)/)?.[1];
     if (seen !== undefined) return AI_EXPOSED_RE.test(seen) || /\b(nipples?|areolae?|areolas?)\b/i.test(seen);
