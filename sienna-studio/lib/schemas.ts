@@ -144,6 +144,8 @@ export const simpleCreateSchema = z.object({
       copySourceLock: z.boolean().optional(),
       /** benchmark: the depth guide on a source-locked copy on or off (SIENNA_COPY_LOCK_DEPTH ignored) */
       copyLockDepth: z.boolean().optional(),
+      /** benchmark: a source-locked copy's face-pass denoise */
+      copyFaceDenoise: z.number().min(0.2).max(0.7).optional(),
       detailPass: z.union([z.literal('off'), z.object({ style: z.enum(['peach', 'butterfly', 'lotte']), strength: z.number().min(0.2).max(0.9).optional(), denoise: z.number().min(0.2).max(0.75).optional() })]).optional(),
       /** benchmark: the hi-res refinement pass on (the photo upscaled and resampled before the face, hand and detail passes) */
       hires: z.object({ scale: z.number().min(1.1).max(2), denoise: z.number().min(0.1).max(0.5).optional() }).optional(),

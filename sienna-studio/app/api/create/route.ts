@@ -144,6 +144,7 @@ export const POST = handle(async (req: Request) => {
       ...(body.test?.copyTwoPass !== undefined ? { copyTwoPass: body.test.copyTwoPass } : {}),
       ...(body.test?.copySourceLock !== undefined ? { copySourceLock: body.test.copySourceLock } : {}),
       ...(body.test?.copyLockDepth !== undefined ? { copyLockDepth: body.test.copyLockDepth } : {}),
+      ...(body.test?.copyFaceDenoise !== undefined ? { copyFaceDenoise: body.test.copyFaceDenoise } : {}),
     },
     images: {
       initImage: ref && edit ? ref : null,

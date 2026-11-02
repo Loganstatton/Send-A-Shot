@@ -97,7 +97,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   const keepScene = process.env.SIENNA_COPY_SCENE !== 'off';
   // the pose guide held harder than a normal request's 0.65: her hands went elsewhere (behind her back, under her breast)
   // where the photo's pulled the bikini string at her hip (1 Nov)
-  const scene = keepScene ? { ...sceneSize(ref.width ?? 0, ref.height ?? 0), keepScene: true, denoise: 1, hires: false, controlStrength: copySourceLocked(req) ? COPY_LOCK_POSE_STRENGTH : COPY_POSE_STRENGTH, ...(copySourceLocked(req) ? { faceRefineDenoise: COPY_LOCK_FACE_DENOISE } : {}) } : {};
+  const scene = keepScene ? { ...sceneSize(ref.width ?? 0, ref.height ?? 0), keepScene: true, denoise: 1, hires: false, controlStrength: copySourceLocked(req) ? COPY_LOCK_POSE_STRENGTH : COPY_POSE_STRENGTH, ...(copySourceLocked(req) ? { faceRefineDenoise: req.params.copyFaceDenoise ?? COPY_LOCK_FACE_DENOISE } : {}) } : {};
   const sceneImages = keepScene ? { initImage: ref } : {};
   const sceneNote = keepScene ? ['The photo itself is kept as the picture; only the person in it (and any app buttons or text on a screenshot) is redrawn, as Sienna.'] : [];
   let description = '';

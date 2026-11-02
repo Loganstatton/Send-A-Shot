@@ -190,6 +190,8 @@ export interface GenerationParams {
   copySourceLock?: boolean;
   /** Benchmark: the depth guide on a source-locked copy (unset: SIENNA_COPY_LOCK_DEPTH). */
   copyLockDepth?: boolean;
+  /** Benchmark: a source-locked copy's face-pass denoise (unset: 0.4). */
+  copyFaceDenoise?: number;
   hiresScale?: number;
   hiresDenoise?: number;
   /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */
