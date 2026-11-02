@@ -129,7 +129,7 @@ describe('addCoverUp', () => {
     expect(g[`${P}covenc`].inputs.pixels).toEqual([`${P}covmask`, 2]); // painted the top's colour first
     expect(g[`${P}covnoise`].inputs.mask).toEqual([`${P}covgrow`, 0]);
     expect(g[`${P}covks`].inputs).toMatchObject({ denoise: COVER.filledDenoise, positive: [`${P}covpos`, 0], negative: [`${P}covneg`, 0], model: kept['40'].inputs.model });
-    expect(String(g[`${P}covpos`].inputs.text)).toMatch(/^tiny white micro string bikini top, \(opaque solid fabric cup/);
+    expect(String(g[`${P}covpos`].inputs.text)).toMatch(/^tiny white micro string bikini top, \(thin smooth opaque fabric lying flat/);
     expect(String(g[`${P}covneg`].inputs.text)).toMatch(/nipple/);
     expect(g[`${P}cover`].inputs).toMatchObject({ destination: before, source: [`${P}covdec`, 0], mask: [`${P}covsoft`, 0] });
     expect(g[saveId].inputs.images).toEqual([`${P}cover2`, 0]);

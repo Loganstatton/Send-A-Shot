@@ -334,7 +334,7 @@ export function addKeepScene(
 export const COVER_MASK_CLASS = 'SiennaCoverMask';
 // filled with the garment's colour first, the redraw only adds fabric texture (0.5); without a known colour it has to
 // redraw more (0.75 alone kept the nipple's dark spot on every try, 2 Nov)
-export const COVER = { denoise: 0.75, filledDenoise: 0.5, steps: 24, grow: 6, radius: 0.3, secondRadius: 0.38 } as const;
+export const COVER = { denoise: 0.75, filledDenoise: 0.5, steps: 24, grow: 6, radius: 0.3, secondRadius: 0.3 } as const;
 /** Garment colour words → the fill colour (most specific first). */
 const COVER_COLOURS: [RegExp, string][] = [
   [/\bhot pink|fuchsia|magenta\b/, '#e0287a'], [/\b(baby|light|pastel) pink\b/, '#f2b6c8'], [/\bpink\b/, '#e98aa9'],
@@ -349,7 +349,9 @@ export function coverColour(top: string): string {
   const t = top.toLowerCase();
   return COVER_COLOURS.find(([re]) => re.test(t))?.[1] ?? '';
 }
-export const COVER_NEGATIVE = 'nipple, nipples, areola, bare breast, exposed breast, see-through, sheer, mesh, transparent, hole, gap, strings';
+// "fabric cup" drew moulded seashell cups (pasties with ridges, then big shells with a bow over both breasts, round 47,
+// 2 Nov): the patch is described as thin flat fabric, and shells and padding are kept out
+export const COVER_NEGATIVE = 'nipple, nipples, areola, bare breast, exposed breast, see-through, sheer, mesh, transparent, hole, gap, strings, seashell, shell bikini, scalloped, moulded cup, padded cup, bow, ribbon, ornament, brooch';
 /** The graph with the cover-up before SaveImage (and before the colour step, which then matches its colour), or null
  * without a keep-scene redraw in it. `top` names the garment, e.g. "tiny white micro string bikini top". */
 export function addCoverUp(graph: ComfyGraph, opts: { top: string; threshold: number }): ComfyGraph | null {
@@ -365,7 +367,7 @@ export function addCoverUp(graph: ComfyGraph, opts: { top: string; threshold: nu
   if (!isRef(image) || !isRef(vae) || !clip) return null;
   const g: ComfyGraph = { ...graph };
   const fill = coverColour(opts.top);
-  g[`${p}covpos`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: `${opts.top}, (opaque solid fabric cup fully covering the nipple and areola:1.4), smooth fabric, natural skin, photo` } };
+  g[`${p}covpos`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: `${opts.top}, (thin smooth opaque fabric lying flat on the skin over the nipple:1.35), part of the same small bikini triangle, natural skin, photo` } };
   g[`${p}covneg`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: COVER_NEGATIVE } };
   // Round 1 covers the areola found by colour; round 2 checks again and covers whatever still shows with a larger
   // patch at the breast's middle (the colour search took the crease under a breast for the nipple once, 2 Nov).
