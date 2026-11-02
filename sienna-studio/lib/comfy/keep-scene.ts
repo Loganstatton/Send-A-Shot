@@ -27,8 +27,9 @@ export const UI_TOUCH_DENOISE = 0.5;
 export const GAP_FILL_CLASS = 'SiennaFillGaps';
 /** The detail pass: her body only, at 1.5x, lightly (0.3 keeps the shapes, the cups and her face; it adds texture). */
 export const DETAIL = { scale: 1.5, denoise: 0.3, steps: 20 } as const;
-/** Source-locked copies: a little more detail (skin, hair strands, fabric) where it can't move the garment. */
-export const LOCK_DETAIL_DENOISE = 0.35;
+/** Source-locked copies' detail pass: 0.35 bared a nipple beside the photo's tiny cups on every boat try (scores
+ * 0.77-0.80, 2 Nov), where 0.3 passed 7 of 7; it stays at 0.3. */
+export const LOCK_DETAIL_DENOISE = 0.3;
 // 0.5 left the inpainted gap's smear visible (a bright patch beside her face, a blurred tub edge by her hip, 1 Nov)
 export const GAP_TOUCH_DENOISE = 0.7;
 export const GAP_SCENE_POSITIVE = 'empty background, the scene only, photo texture';

@@ -197,10 +197,10 @@ describe('source-locked copy', () => {
     expect(g[`${P}silimg`]).toBeUndefined();
     expect(g[`${P}bodyonly`].inputs.destination).toEqual([`${P}bodylines`, 0]);
   });
-  it('adds a little more detail, still off the garment', () => {
+  it('keeps the detail pass at its safe strength, off the garment', () => {
     const g = addKeepScene(graph(), { width: 800, height: 1296, softSeam: true, detail: true, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true, sourceLock: true } })!;
     expect(g[`${P}detks`].inputs.denoise).toBe(LOCK_DETAIL_DENOISE);
-    expect(LOCK_DETAIL_DENOISE).toBeGreaterThan(DETAIL.denoise);
+    expect(LOCK_DETAIL_DENOISE).toBe(DETAIL.denoise);
     expect(g[`${P}detkeep`].inputs.mask).toEqual([`${P}gmask`, 0]);
   });
   it('never runs the two-pass garment redraw', () => {
