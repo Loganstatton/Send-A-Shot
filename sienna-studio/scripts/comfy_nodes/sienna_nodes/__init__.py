@@ -824,7 +824,68 @@ class SiennaFillGaps:
             res = image
         return (res,)
 
+class SiennaFaceUpright:
+    """Copy Photo: the picture turned round her face until her eyes are level, for the face pass (a face on its side
+    came out less like Sienna, 2 Nov). A face level within 12 degrees, or none found, passes through unturned. The plan
+    (JSON) goes to SiennaFaceTurnBack (sienna_face_upright.py)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"image": ("IMAGE",)}}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "plan")
+    FUNCTION = "run"
+    CATEGORY = "sienna"
+
+    def run(self, image):
+        import os
+
+        import folder_paths
+        from . import sienna_face_upright as fu
+
+        img = image[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+        try:
+            m = sienna_face.models(os.path.join(folder_paths.models_dir, "sienna"))
+            p = fu.upright_plan(img, m[0]) if m else {"turned": False, "size": [img.shape[1], img.shape[0]], "reason": "no face detector"}
+            out = fu.turn(img, p)
+        except Exception as e:  # never block the photo over this
+            p, out = {"turned": False, "size": [img.shape[1], img.shape[0]], "reason": f"{type(e).__name__}: {e}"[:200]}, img
+        return (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None], json.dumps(p))
+
+
+class SiennaFaceTurnBack:
+    """Copy Photo: what the face pass changed on the upright picture, turned back and pasted on the original (nothing
+    else is resampled). Unturned plans pass the face pass's picture straight through."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"original": ("IMAGE",), "upright": ("IMAGE",), "processed": ("IMAGE",), "plan": ("STRING", {"forceInput": True})}}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, original, upright, processed, plan):
+        from . import sienna_face_upright as fu
+
+        orig = original[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+        try:
+            out, info = fu.turn_back(orig, upright[0].detach().cpu().numpy().astype(np.float32)[..., :3],
+                                     processed[0].detach().cpu().numpy().astype(np.float32)[..., :3], json.loads(plan))
+            info["plan"] = {k: v for k, v in json.loads(plan).items() if k != "M"}
+        except Exception as e:  # never lose the photo: the face pass's own picture if it is the right size
+            pr = processed[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+            out, info = (pr if pr.shape == orig.shape else orig), {"pasted": False, "error": f"{type(e).__name__}: {e}"[:200]}
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None], text)}
+
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaFaceUpright": SiennaFaceUpright,
+    "SiennaFaceTurnBack": SiennaFaceTurnBack,
     "SiennaHandCheck": SiennaHandCheck,
     "SiennaWarpGarment": SiennaWarpGarment,
     "SiennaCoverMask": SiennaCoverMask,
@@ -848,6 +909,8 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaFaceUpright": "Sienna Face Upright (copy)",
+    "SiennaFaceTurnBack": "Sienna Face Turn Back (copy)",
     "SiennaHandCheck": "Sienna Hand Check (copy)",
     "SiennaWarpGarment": "Sienna Warp Garment (copy)",
     "SiennaCoverMask": "Sienna Cover Mask (copy)",

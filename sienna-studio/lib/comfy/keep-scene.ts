@@ -521,6 +521,33 @@ export function parseHandCheck(texts: string[] | undefined): { ok: boolean; phot
   }
 }
 
+/** The face pass run on her face turned upright (SiennaFaceUpright → face pass → SiennaFaceTurnBack): a head on its
+ * side came out less like Sienna, 0.34-0.65 against 0.71-0.77 upright (2 Nov). Only what the face pass changed is
+ * turned back and pasted; a level face passes straight through. */
+export const FACE_UPRIGHT_CLASSES = ['SiennaFaceUpright', 'SiennaFaceTurnBack'] as const;
+export const FACE_TURN_BACK_NODE_ID = 'fu_back';
+/** The graph with the face pass `refineId` wrapped in the upright turn, every reader of its picture rewired to the
+ * turned-back one; null when there is no such face pass. */
+export function addFaceUpright(graph: ComfyGraph, refineId: string): ComfyGraph | null {
+  const face = graph[refineId];
+  const input = face?.inputs.image;
+  if (!face || !isRef(input) || graph.fu_up) return null;
+  const out: ComfyGraph = {};
+  for (const [id, node] of Object.entries(graph)) {
+    const inputs: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node.inputs)) inputs[k] = isRef(v) && v[0] === refineId && v[1] === 0 ? [FACE_TURN_BACK_NODE_ID, 0] : v;
+    out[id] = { ...node, inputs: inputs as ComfyGraph[string]['inputs'] };
+  }
+  out[refineId] = { ...face, inputs: { ...face.inputs, image: ['fu_up', 0] } };
+  out.fu_up = { class_type: FACE_UPRIGHT_CLASSES[0], inputs: { image: input }, _meta: { title: 'Face pass: her face turned upright' } };
+  out[FACE_TURN_BACK_NODE_ID] = {
+    class_type: FACE_UPRIGHT_CLASSES[1],
+    inputs: { original: input, upright: ['fu_up', 0], processed: [refineId, 0], plan: ['fu_up', 1] },
+    _meta: { title: 'Face pass: turned back and pasted' },
+  };
+  return out;
+}
+
 /** The copy's outfit and skin colours taken from the photo's pixels (SiennaCopyColours): words drifted them — a purple
  * bikini drawn royal blue, a pale woman under grey light drawn deeply bronzed (1 Nov). */
 export const COPY_COLOURS_CLASS = 'SiennaCopyColours';

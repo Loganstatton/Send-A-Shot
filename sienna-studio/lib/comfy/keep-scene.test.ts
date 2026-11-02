@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { addCopyColours, COPY_COLOURS_LOCAL, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, handCheckNode, parseHandCheck, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
+import { addCopyColours, addFaceUpright, COPY_COLOURS_LOCAL, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, handCheckNode, parseHandCheck, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -283,5 +283,22 @@ describe('source-locked cut-outs', () => {
     const plain = addKeepScene(graph(), { width: 800, height: 1296, garment: { phrases: ['crop top'], controlnet: 'u.safetensors', body: true, sourceLock: true } })!;
     expect(plain[`${P}patlines`]).toBeUndefined();
     expect(plain[`${P}cnapply`].inputs.image).toEqual([`${P}lines`, 0]);
+  });
+});
+
+describe('face pass on an upright face', () => {
+  it('turns the picture before the face pass and every reader takes the turned-back picture', () => {
+    const g = addCopyColours(addKeepScene(graph(), { width: 776 })!)!;
+    const refineId = Object.keys(g).find((id) => g[id].class_type === 'FaceDetailer')!;
+    const input = g[refineId].inputs.image;
+    const readers = Object.keys(g).filter((id) => Object.values(g[id].inputs).some((v) => Array.isArray(v) && v[0] === refineId && v[1] === 0));
+    expect(readers.length).toBeGreaterThan(0);
+    const u = addFaceUpright(g, refineId)!;
+    expect(u.fu_up).toMatchObject({ class_type: 'SiennaFaceUpright', inputs: { image: input } });
+    expect(u[refineId].inputs.image).toEqual(['fu_up', 0]);
+    expect(u.fu_back).toMatchObject({ class_type: 'SiennaFaceTurnBack', inputs: { original: input, upright: ['fu_up', 0], processed: [refineId, 0], plan: ['fu_up', 1] } });
+    for (const id of readers) expect(Object.values(u[id].inputs)).toContainEqual(['fu_back', 0]);
+    expect(addFaceUpright(u, refineId)).toBeNull(); // never twice
+    expect(addFaceUpright(g, 'nope')).toBeNull();
   });
 });

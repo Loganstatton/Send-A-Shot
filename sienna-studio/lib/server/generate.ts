@@ -42,7 +42,7 @@ import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { UNDELIVERABLE_RE } from '../copy-photo';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COPY_COLOURS_LOCAL, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, HAND_CHECK_CLASS, HAND_CHECK_NODE_ID, handCheckNode, parseHandCheck, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
+import { addCopyColours, addCoverUp, addFaceUpright, addKeepScene, FACE_UPRIGHT_CLASSES, COPY_COLOURS_CLASS, COPY_COLOURS_LOCAL, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, HAND_CHECK_CLASS, HAND_CHECK_NODE_ID, handCheckNode, parseHandCheck, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
 import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 /** Source-locked copies' hand pass (0.5 left thumb-like lumps; 0.6 broke a good hand in the 21 Oct A/B). */
 const COPY_LOCK_HAND_DENOISE = 0.55;
@@ -824,6 +824,13 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     const coloured = has ? addCopyColours(graph, locked ? { local: COPY_COLOURS_LOCAL } : {}) : null;
     if (coloured) graph = coloured;
     else if (!has && graph[`${KEEP_SCENE_PREFIX}person`]) warnings.push('Copy Photo: the GPU server has no colour step yet (SiennaCopyColours) — outfit and skin colours follow the description only.');
+  }
+
+  // ── Copy Photo, source-locked: the face pass on her face turned upright (a head on its side came out less like her) ──
+  if (p.keepScene && (p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on') && process.env.SIENNA_COPY_FACE_UPRIGHT !== 'off' && faceRefine?.status === 'on' && refineId && graph[refineId]) {
+    const missing = await Promise.all(FACE_UPRIGHT_CLASSES.map((c) => backend.nodeInfo(c, true).catch(() => null)));
+    const upright = missing.every(Boolean) ? addFaceUpright(graph, refineId) : null;
+    if (upright) graph = upright;
   }
 
   // ── Photo checks (retries happen in doRefresh): top check when the outfit has a top, face check with Sienna Lock ──

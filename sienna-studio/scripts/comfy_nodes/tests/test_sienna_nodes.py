@@ -1014,3 +1014,29 @@ def test_fill_gaps_uses_background_not_her():
     assert abs(out[60, 78] - np.array([0.2, 0.5, 0.8])).max() < 0.08  # the rail is gone, water continues
     assert np.allclose(out[60, 50], img[60, 50])  # Sienna untouched
     assert np.allclose(out[5, 5], img[5, 5], atol=1e-6)
+
+
+def test_face_upright_levels_a_tilted_face_and_pastes_back_only_the_face_pass():
+    import sienna_face_upright as fu
+
+    # YuNet layout: x, y, w, h, right eye, left eye, nose, mouth corners; eyes on a line rising 30 degrees to the right
+    face = [100, 100, 80, 80, 120, 150, 120 + 40 * np.cos(np.radians(30)), 150 - 40 * np.sin(np.radians(30)), 140, 160, 125, 175, 155, 165]
+    assert abs(fu.roll_of(face) + 30) < 0.5
+    assert not fu.plan((300, 400), face[:4] + [120, 150, 160, 151] + face[8:])["turned"]  # nearly level
+    assert not fu.plan((300, 400), None)["turned"]
+    p = fu.plan((300, 400), face)
+    assert p["turned"] and p["canvas"][0] >= 300 and p["canvas"][1] >= 400
+    rng = np.random.default_rng(5)
+    img = rng.random((400, 300, 3)).astype(np.float32)
+    up = fu.turn(img, p)
+    proc = up.copy()
+    cx, cy = (np.asarray(p["M"]) @ np.array([140, 140, 1.0])).astype(int)  # the face centre on the turned picture
+    proc[cy - 20:cy + 20, cx - 20:cx + 20] = 0.5  # what the face pass changed
+    out, info = fu.turn_back(img, up, proc, p)
+    assert info["pasted"]
+    assert abs(float(out[140, 140].mean()) - 0.5) < 0.02  # the face came back where it was
+    assert np.array_equal(out[:40], img[:40]) and np.array_equal(out[-40:], img[-40:])  # the rest untouched
+    # an unturned plan passes the face pass's picture through
+    q = fu.plan((300, 400), None)
+    same, info = fu.turn_back(img, img, img * 0.5, q)
+    assert not info["pasted"] and np.allclose(same, img * 0.5)
