@@ -195,3 +195,6 @@ export function dropStudEarrings(text: string): { text: string; dropped: boolean
   const kept = parts.filter((p) => !STUD_RE.test(p));
   return { text: kept.join(',').replace(/^\s*,\s*|\s*,\s*$/g, '').trim(), dropped: kept.length < parts.length };
 }
+
+/** Wording that places a garment over the nipples (covered), not a description of nudity. */
+export const COVERED_NIPPLE_RE = /\b(?:centred|centered|sitting|sits|placed)\s+(?:over|on)\s+(?:the|her|each|both)?\s*nipples?(?:\s+and\s+areolas?)?|\b(?:covering|covers|cover|hiding|hides)\s+(?:only\s+)?(?:the|her|each|both)?\s*nipples?(?:\s+and\s+areolas?)?/gi;

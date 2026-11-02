@@ -248,19 +248,8 @@ export function addKeepScene(
         _meta: { title: 'Keep scene: her figure’s outline (no head)' },
       };
       lines = [`${p}bodylines`, 0];
-      if (lock) {
-        // her silhouette's own outline, from the person mask (no skin texture, no tattoos), head left out
-        g[`${p}silimg`] = { class_type: 'MaskToImage', inputs: { mask: [`${p}person`, 0] } };
-        g[`${p}silcanny`] = { class_type: 'Canny', inputs: { image: [`${p}silimg`, 0], low_threshold: 0.15, high_threshold: 0.4 } };
-        g[`${p}silmask0`] = { class_type: 'ImageToMask', inputs: { image: [`${p}silcanny`, 0], channel: 'red' } };
-        g[`${p}silmask`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}silmask0`, 0], source: [`${p}body`, 0], x: 0, y: 0, operation: 'multiply' } };
-        g[`${p}bodysil`] = {
-          class_type: 'ImageCompositeMasked',
-          inputs: { destination: lines, source: [`${p}silcanny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}silmask`, 0] },
-          _meta: { title: 'Keep scene: her silhouette from the photo (source lock)' },
-        };
-        lines = [`${p}bodysil`, 0];
-      }
+      // (a silhouette outline from the person mask was tried for source-locked copies: it drew a glowing edge round
+      // her and didn't raise the silhouette match, 0.90 either way, 2 Nov)
     }
     // garment and figure are separate guides: in one image at 0.9 the photo's wider thighs and hips put their outline
     // on Sienna's slimmer legs and it was drawn as yellow strings down her thigh and round her hip (1 Nov); the figure

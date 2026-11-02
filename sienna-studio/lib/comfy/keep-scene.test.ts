@@ -192,11 +192,10 @@ describe('source-locked copy', () => {
     expect(g[`${P}cndapply`].inputs).toMatchObject({ strength: SOURCE_LOCK.depth.strength, end_percent: SOURCE_LOCK.depth.end });
     expect(g[`${P}bodyblur`].inputs.sigma).toBe(SOURCE_LOCK.blurSigma);
   });
-  it('adds her silhouette from the photo person mask, head left out', () => {
+  it('adds no silhouette outline (it drew a glowing edge round her)', () => {
     const g = locked();
-    expect(g[`${P}silimg`].inputs.mask).toEqual([`${P}person`, 0]);
-    expect(g[`${P}silmask`].inputs).toMatchObject({ source: [`${P}body`, 0], operation: 'multiply' });
-    expect(g[`${P}bodyonly`].inputs.destination).toEqual([`${P}bodysil`, 0]);
+    expect(g[`${P}silimg`]).toBeUndefined();
+    expect(g[`${P}bodyonly`].inputs.destination).toEqual([`${P}bodylines`, 0]);
   });
   it('never runs the two-pass garment redraw', () => {
     expect(locked()[`${P}bks`]).toBeUndefined();

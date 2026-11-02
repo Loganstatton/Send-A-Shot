@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { bustPhrases, bustWords, dropEyewear, dropStudEarrings, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
+import { COVERED_NIPPLE_RE, bustPhrases, bustWords, dropEyewear, dropStudEarrings, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, copyGarmentPhrases, copyPhotoEnabled, copyRequestText, copyUserText } from './copy-photo';
+import { NUDE_RE } from './ai-prompts';
 
 describe('copyUserText', () => {
   it('drops the copy instruction itself', () => {
@@ -104,5 +105,15 @@ describe('copyGarmentPhrases bottoms', () => {
     expect(copyGarmentPhrases('white tiny triangle bikini top, white tiny string micro bikini bottom with very small front panel')).toEqual(['bikini top', 'bikini bottom']);
     expect(copyGarmentPhrases('hot pink low-rise tie-side bikini bottoms, hot pink bikini top')).toContain('bikini bottom');
     expect(copyGarmentPhrases('black lace bra and matching panties')).toEqual(['bra', 'panties']);
+  });
+});
+
+describe('COVERED_NIPPLE_RE', () => {
+  it('removes wording that puts a garment over the nipples, never wording about bare ones', () => {
+    const strip = (t: string) => t.replace(COVERED_NIPPLE_RE, '');
+    expect(NUDE_RE.test(strip('tiny cups, each centred over the nipple, inner curves bare'))).toBe(false);
+    expect(NUDE_RE.test(strip('small cups covering only the nipples and areolas'))).toBe(false);
+    expect(NUDE_RE.test(strip('topless, nipples visible'))).toBe(true);
+    expect(NUDE_RE.test(strip('cups centred over the nipple, one nipple showing'))).toBe(true);
   });
 });

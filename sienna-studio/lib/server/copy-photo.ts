@@ -1,6 +1,6 @@
 import 'server-only';
 import { NUDE_RE } from '../ai-prompts';
-import { bustPhrases, bustWords, COPY_EYEWEAR_AVOID, copyKeepsEyewear, dropEyewear, dropStudEarrings, COPY_BODY_PACKS, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
+import { COVERED_NIPPLE_RE, bustPhrases, bustWords, COPY_EYEWEAR_AVOID, copyKeepsEyewear, dropEyewear, dropStudEarrings, COPY_BODY_PACKS, buildCopyGateGraph, cleanCaption, COPY_CAPTION_NODE, COPY_EXPOSURE_NODE, COPY_GARMENT_STRENGTH, COPY_WHY, copyGarmentPhrases, copyRequestText } from '../copy-photo';
 import { buildGarmentIsolationGraph, GARMENT_ISOLATE_NODE, OUTFIT_PREVIEW_NODE } from '../outfit';
 import { parseExposure } from '../exposure';
 import { interpretPrompt } from '../interpret';
@@ -131,7 +131,11 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   it.reference = { mode: 'pose', denoise: null, why: COPY_WHY };
   it.notes.push(COPY_WHY);
   // the AI reader never gets nudity; the GPU caption of a nude photo goes through the rule-based reader
-  const aiOk = aiEnabled() && !NUDE_RE.test(text) && !nudePhoto;
+  // a locked copy's description says where the photo's cups sit ("centred over the nipple"): covered, not nudity. That
+  // wording switched the checker off for every boat copy, so a thumb-like hand was never caught (2 Nov). The photo's own
+  // nudity check (nudePhoto) still applies, and each copy must pass the top check before the checker sees it.
+  const gateText = copySourceLocked(req) ? text.replace(COVERED_NIPPLE_RE, '') : text;
+  const aiOk = aiEnabled() && !NUDE_RE.test(gateText) && !nudePhoto;
   let aiRan = false;
   if (aiOk) {
     const guides = offeredGuides(process.env.SIENNA_POSE_GUIDE === 'true');
