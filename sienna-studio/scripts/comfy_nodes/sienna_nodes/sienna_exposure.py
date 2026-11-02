@@ -81,18 +81,51 @@ class ChestCropDetector:
         return dets
 
 
-# Cover-up (Copy Photo): where the nipple sits inside NudeNet's exposed-breast box, as a share of the box (its centre a
-# little below the box's middle), and the patch's radius. Copying a micro top onto Sienna's own figure put a nipple just
-# beside the photo's tiny cup on every try of the boat photo (1 Nov: 3 of 3 tries, scores 0.79-0.83, the photo itself
-# scored covered); the patch is redrawn as fabric instead of throwing the copy away.
+# Cover-up (Copy Photo). Copying a micro top onto Sienna's own figure put a nipple just beside the photo's tiny cup on
+# every try of the boat photo (1 Nov: 3 of 3 tries, scores 0.79-0.83, the photo itself scored covered); that patch is
+# redrawn as fabric instead of throwing the copy away. First version (2 Nov): an ellipse at the middle of NudeNet's
+# breast box, redrawn at 0.75 from the photo — every try still failed (the checker: nipples at the breasts' outer
+# edges, outside the cups; and a partial redraw keeps the dark spot's shape). So the nipple is found by colour (the
+# areola: darker and redder than the breast's own skin), and the patch is first filled with the garment's colour, so
+# the redraw only adds fabric texture.
 COVER_CENTRE = (0.5, 0.55)
 COVER_RADIUS = 0.3
 
 
+def _areola(img: "np.ndarray", box) -> "Optional[Tuple[float, float, float]]":
+    """(cx, cy, r) of the areola inside a breast box of a float RGB 0..1 image: the largest patch clearly darker and
+    redder than the box's median skin (not bluer, so a pink or red cup isn't taken for it); None if none is found."""
+    import cv2
+    import numpy as np
+
+    H, W = img.shape[:2]
+    x, y, w, h = (int(round(float(v))) for v in box)
+    x0, y0, x1, y1 = max(0, x), max(0, y), min(W, x + w), min(H, y + h)
+    if x1 - x0 < 8 or y1 - y0 < 8:
+        return None
+    crop = np.round(np.clip(img[y0:y1, x0:x1, :3], 0, 1) * 255).astype(np.uint8)
+    lab = cv2.cvtColor(crop, cv2.COLOR_RGB2LAB).astype(np.float32)
+    L, A, B = lab[..., 0], lab[..., 1], lab[..., 2]
+    mL, mA, mB = (float(np.median(c)) for c in (L, A, B))
+    cand = ((L < mL - 10) & (A > mA + 3) & (B > mB - 8)).astype(np.uint8)
+    k = max(1, int(min(x1 - x0, y1 - y0) * 0.03))
+    cand = cv2.morphologyEx(cand, cv2.MORPH_OPEN, np.ones((k, k), np.uint8))
+    n, lbl, stats, cents = cv2.connectedComponentsWithStats(cand)
+    if n <= 1:
+        return None
+    i = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    area = float(stats[i, cv2.CC_STAT_AREA])
+    if area < 0.004 * (x1 - x0) * (y1 - y0):
+        return None
+    return float(cents[i][0] + x0), float(cents[i][1] + y0), float(np.sqrt(area / np.pi))
+
+
 def cover_mask(detections: List[Dict], width: int, height: int, threshold: float = DEFAULT_THRESHOLD,
-               radius: float = COVER_RADIUS):
-    """float32 (height, width) mask, 1 inside an ellipse over the nipple of every exposed breast NudeNet found at or above
-    threshold, 0 elsewhere (all 0 when none): the area a cover-up pass redraws as fabric."""
+               radius: float = COVER_RADIUS, image=None):
+    """float32 (height, width) mask, 1 over the nipple of every exposed breast NudeNet found at or above threshold, 0
+    elsewhere (all 0 when none): the area a cover-up pass redraws as fabric. With the image, the areola found by colour
+    (a circle 1.8x its size, at least 0.18 of the box); otherwise, or when none is found, an ellipse of `radius` of the
+    box a little below its middle."""
     import cv2
     import numpy as np
 
@@ -103,10 +136,34 @@ def cover_mask(detections: List[Dict], width: int, height: int, threshold: float
         x, y, w, h = (float(v) for v in d.get("box") or (0, 0, 0, 0))
         if w <= 0 or h <= 0:
             continue
-        cx, cy = int(round(x + COVER_CENTRE[0] * w)), int(round(y + COVER_CENTRE[1] * h))
-        axes = (max(2, int(round(radius * w))), max(2, int(round(radius * h))))
-        cv2.ellipse(m, (cx, cy), axes, 0, 0, 360, 1.0, -1)
+        found = _areola(image, (x, y, w, h)) if image is not None else None
+        if found:
+            cx, cy, r = found
+            rr = max(1.8 * r, 0.18 * min(w, h))
+            cv2.circle(m, (int(round(cx)), int(round(cy))), max(2, int(round(rr))), 1.0, -1)
+        else:
+            cx, cy = int(round(x + COVER_CENTRE[0] * w)), int(round(y + COVER_CENTRE[1] * h))
+            cv2.ellipse(m, (cx, cy), (max(2, int(round(radius * w))), max(2, int(round(radius * h)))), 0, 0, 360, 1.0, -1)
     return m
+
+
+def fill_patch(image, mask, rgb, keep_shading: float = 0.25):
+    """The image with the mask's area painted the garment's colour (float RGB 0..1), keeping a little of the photo's
+    light and shade so the redraw reads it as fabric on a curve; soft edge. The redraw over it then only adds texture
+    (redrawn straight from the photo, the nipple's dark spot came back)."""
+    import cv2
+    import numpy as np
+
+    img = image[..., :3].astype(np.float32)
+    m = np.asarray(mask, np.float32)
+    if not (m > 0.5).any():
+        return img
+    lum = img.mean(axis=2, keepdims=True)
+    mean = float(lum[m > 0.5].mean()) + 1e-3
+    colour = np.asarray(rgb, np.float32).reshape(1, 1, 3)
+    patch = np.clip(colour * ((1 - keep_shading) + keep_shading * lum / mean), 0, 1)
+    w = cv2.GaussianBlur(m, (0, 0), 2)[..., None]
+    return np.clip(img * (1 - w) + patch * w, 0, 1).astype(np.float32)
 
 
 def detector():

@@ -428,6 +428,42 @@ def test_cover_mask_covers_each_exposed_nipple_only():
     assert not ex.cover_mask([], 600, 500).any()
 
 
+def _breast(nip=(170, 240), cup=None, cup_rgb=(1.0, 1.0, 1.0)):
+    """A 600x500 skin image with one darker, redder areola at nip (x, y) and optionally a cup rectangle."""
+    import cv2
+    img = np.full((500, 600, 3), (0.86, 0.68, 0.56), np.float32)
+    cv2.circle(img, nip, 12, (0.62, 0.38, 0.33), -1)
+    if cup:
+        x0, y0, x1, y1 = cup
+        img[y0:y1, x0:x1] = cup_rgb
+    return img
+
+
+def test_cover_mask_finds_the_areola_by_colour_off_the_box_centre():
+    img = _breast(nip=(178, 245), cup=(120, 230, 150, 290))             # nipple near the outer edge, cup inward
+    dets = [{"class": "FEMALE_BREAST_EXPOSED", "score": 0.8, "box": [100, 200, 100, 100]}]
+    m = ex.cover_mask(dets, 600, 500, threshold=0.25, image=img)
+    assert m[245, 178] == 1.0 and m[245, 190] == 1.0                      # the whole areola and a margin
+    assert m[205, 105] == 0.0                                            # not the whole breast
+    # a hot pink cup is not taken for the areola
+    pink = _breast(nip=(178, 245), cup=(110, 230, 150, 290), cup_rgb=(0.9, 0.16, 0.48))
+    m2 = ex.cover_mask(dets, 600, 500, threshold=0.25, image=pink)
+    assert m2[245, 178] == 1.0
+    # nothing found by colour: the ellipse below the box's middle
+    plain = np.full((500, 600, 3), (0.86, 0.68, 0.56), np.float32)
+    assert ex.cover_mask(dets, 600, 500, threshold=0.25, image=plain)[255, 150] == 1.0
+
+
+def test_fill_patch_paints_the_garment_colour_only_inside_the_mask():
+    img = _breast()
+    m = np.zeros((500, 600), np.float32)
+    m[220:260, 150:190] = 1
+    out = ex.fill_patch(img, m, (1.0, 1.0, 1.0))
+    assert out[240, 170].min() > 0.8                                     # the areola is now white fabric
+    assert np.allclose(out[100, 400], img[100, 400])                     # elsewhere untouched
+    assert np.allclose(ex.fill_patch(img, np.zeros_like(m), (1, 1, 1)), img)
+
+
 def test_exposure_chest_crop_box_pads_covered_breasts_and_stays_in_frame():
     dets = [{"class": "FEMALE_BREAST_COVERED", "score": 0.7, "box": [300, 600, 100, 80]},
             {"class": "FEMALE_BREAST_COVERED", "score": 0.6, "box": [450, 610, 100, 80]},

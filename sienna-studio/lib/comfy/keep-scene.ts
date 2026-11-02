@@ -332,7 +332,23 @@ export function addKeepScene(
  * top check still runs on the result.
  */
 export const COVER_MASK_CLASS = 'SiennaCoverMask';
-export const COVER = { denoise: 0.75, steps: 24, grow: 6 } as const;
+// filled with the garment's colour first, the redraw only adds fabric texture (0.5); without a known colour it has to
+// redraw more (0.75 alone kept the nipple's dark spot on every try, 2 Nov)
+export const COVER = { denoise: 0.75, filledDenoise: 0.5, steps: 24, grow: 6 } as const;
+/** Garment colour words → the fill colour (most specific first). */
+const COVER_COLOURS: [RegExp, string][] = [
+  [/\bhot pink|fuchsia|magenta\b/, '#e0287a'], [/\b(baby|light|pastel) pink\b/, '#f2b6c8'], [/\bpink\b/, '#e98aa9'],
+  [/\bwhite|ivory\b/, '#f2f1ee'], [/\bcream\b/, '#efe6d2'], [/\bblack\b/, '#161616'], [/\bred\b/, '#b3161e'],
+  [/\b(neon|lime) green\b/, '#9be12a'], [/\b(sage|olive) green\b/, '#8c9a6e'], [/\bgreen\b/, '#2f8a46'],
+  [/\b(navy|dark) blue\b/, '#1d2a4d'], [/\b(baby|light|sky) blue\b/, '#9cc8ec'], [/\bblue\b/, '#2f5fb3'],
+  [/\byellow\b/, '#f2d23c'], [/\borange\b/, '#f0802a'], [/\b(purple|violet|lilac|lavender)\b/, '#8a5cc2'],
+  [/\b(beige|nude|tan)\b/, '#d8b896'], [/\bbrown\b/, '#6b4430'], [/\b(grey|gray|silver)\b/, '#a3a3a3'], [/\bgold\b/, '#d4af37'],
+];
+/** The fill colour for a garment phrase, or '' when it names none. */
+export function coverColour(top: string): string {
+  const t = top.toLowerCase();
+  return COVER_COLOURS.find(([re]) => re.test(t))?.[1] ?? '';
+}
 export const COVER_NEGATIVE = 'nipple, nipples, areola, bare breast, exposed breast, see-through, sheer, mesh, transparent, hole, gap, strings';
 /** The graph with the cover-up before SaveImage (and before the colour step, which then matches its colour), or null
  * without a keep-scene redraw in it. `top` names the garment, e.g. "tiny white micro string bikini top". */
@@ -348,15 +364,16 @@ export function addCoverUp(graph: ComfyGraph, opts: { top: string; threshold: nu
   const clip = clipOf(graph, k.positive);
   if (!isRef(image) || !isRef(vae) || !clip) return null;
   const g: ComfyGraph = { ...graph };
-  g[`${p}covmask`] = { class_type: COVER_MASK_CLASS, inputs: { image, threshold: opts.threshold }, _meta: { title: 'Keep scene: where a nipple shows' } };
+  const fill = coverColour(opts.top);
+  g[`${p}covmask`] = { class_type: COVER_MASK_CLASS, inputs: { image, threshold: opts.threshold, fill }, _meta: { title: 'Keep scene: where a nipple shows' } };
   g[`${p}covgrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}covmask`, 0], expand: COVER.grow, tapered_corners: true } };
-  g[`${p}covenc`] = { class_type: 'VAEEncode', inputs: { pixels: image, vae } };
+  g[`${p}covenc`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}covmask`, 2], vae } };
   g[`${p}covnoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}covenc`, 0], mask: [`${p}covgrow`, 0] } };
   g[`${p}covpos`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: `${opts.top}, (opaque solid fabric cup fully covering the nipple and areola:1.4), smooth fabric, natural skin, photo` } };
   g[`${p}covneg`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: COVER_NEGATIVE } };
   g[`${p}covks`] = {
     class_type: 'KSampler',
-    inputs: { model: k.model, positive: [`${p}covpos`, 0], negative: [`${p}covneg`, 0], latent_image: [`${p}covnoise`, 0], seed: k.seed, steps: COVER.steps, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: COVER.denoise },
+    inputs: { model: k.model, positive: [`${p}covpos`, 0], negative: [`${p}covneg`, 0], latent_image: [`${p}covnoise`, 0], seed: k.seed, steps: COVER.steps, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: fill ? COVER.filledDenoise : COVER.denoise },
     _meta: { title: 'Keep scene: cover-up (fabric over a showing nipple)' },
   };
   g[`${p}covdec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}covks`, 0], vae } };

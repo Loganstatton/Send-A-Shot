@@ -340,48 +340,57 @@ class SiennaExposureCheck:
 
 
 class SiennaCoverMask:
-    """Copy Photo cover-up: a mask over each nipple NudeNet finds showing (empty when none), for a pass that redraws
-    that patch as the garment's fabric. The top check still runs afterwards on the result."""
+    """Copy Photo cover-up: a mask over each nipple NudeNet finds showing (empty when none), and the image with that
+    patch painted the garment's colour (`fill`, hex; '' leaves it), for a light pass that redraws it as fabric. The top
+    check still runs afterwards on the result."""
 
     @classmethod
     def INPUT_TYPES(cls):
-        return {"required": {"image": ("IMAGE",), "threshold": ("FLOAT", {"default": DEFAULT_THRESHOLD, "min": 0.05, "max": 0.95, "step": 0.05})}}
+        return {"required": {"image": ("IMAGE",), "threshold": ("FLOAT", {"default": DEFAULT_THRESHOLD, "min": 0.05, "max": 0.95, "step": 0.05})},
+                "optional": {"fill": ("STRING", {"default": ""})}}
 
-    RETURN_TYPES = ("MASK", "STRING")
-    RETURN_NAMES = ("mask", "report")
+    RETURN_TYPES = ("MASK", "STRING", "IMAGE")
+    RETURN_NAMES = ("mask", "report", "filled")
     FUNCTION = "run"
     OUTPUT_NODE = True
     CATEGORY = "sienna"
 
-    def run(self, image, threshold):
+    def run(self, image, threshold, fill=""):
         import os
         import tempfile
 
-        from .sienna_exposure import cover_mask
+        from .sienna_exposure import cover_mask, fill_patch
 
         h, w = int(image.shape[1]), int(image.shape[2])
+        img = image[0, ..., :3].detach().cpu().numpy().astype(np.float32)
         mask = np.zeros((h, w), np.float32)
+        filled = img
         info = {"covered": 0}
         det = detector()
         if det is None:
             info["error"] = detector_error()
         else:
-            rgb = (np.clip(image[0, ..., :3].detach().cpu().numpy(), 0, 1) * 255).astype(np.uint8)
+            rgb = (np.clip(img, 0, 1) * 255).astype(np.uint8)
             fd, path = tempfile.mkstemp(suffix=".png")
             os.close(fd)
             try:
                 cv2.imwrite(path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
                 dets = det.detect(path)
-                mask = cover_mask(dets, w, h, threshold)
+                mask = cover_mask(dets, w, h, threshold, image=img)
                 hits = [d for d in dets if d.get("class") == "FEMALE_BREAST_EXPOSED" and float(d.get("score", 0)) >= threshold]
                 info = {"covered": len(hits), "scores": [round(float(d["score"]), 3) for d in hits], "pixels": int((mask > 0.5).sum())}
+                hexs = (fill or "").strip().lstrip("#")
+                if len(hexs) == 6 and mask.any():
+                    filled = fill_patch(img, mask, [int(hexs[i:i + 2], 16) / 255 for i in (0, 2, 4)])
+                    info["filled"] = "#" + hexs
             except Exception as e:  # never lose the photo over the cover-up: an empty mask changes nothing
                 info["error"] = f"{type(e).__name__}: {e}"[:300]
             finally:
                 os.remove(path)
         text = json.dumps(info)
         print(f"[sienna] cover-up: {text}", flush=True)
-        return {"ui": {"text": [text]}, "result": (torch.from_numpy(mask)[None, ...], text)}
+        out = torch.from_numpy(np.ascontiguousarray(filled, np.float32))[None, ...]
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(mask)[None, ...], text, out)}
 
 
 class SiennaFaceCheck:
