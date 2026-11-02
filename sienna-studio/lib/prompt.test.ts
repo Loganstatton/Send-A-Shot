@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CHARACTER, EMPTY_FIELDS } from './defaults';
 import { buildPrompt, colourDriftNegative, joinParts } from './prompt';
+import { copyTraits } from './prompt';
 
 const character = { ...DEFAULT_CHARACTER, triggerToken: 'sienna_v1', loraFilename: 'sienna_v1.safetensors' };
 
@@ -391,5 +392,13 @@ describe('copy mode underboob', () => {
   it('asks for the breasts to hang below the under-string when the photo shows it', () => {
     const r = buildPrompt({ fields: { ...EMPTY_FIELDS, outfit: 'yellow micro bikini top, inner and outer curves and undersides largely bare' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
     expect(r.positive).toContain('hanging below the thin under-bust string');
+  });
+});
+
+describe('copyTraits for a source-locked copy', () => {
+  it('drops her body-shape traits but keeps hair, face and freckles', () => {
+    const t = 'dark-brown hair with lighter caramel ends, light freckles across nose and cheeks, slim toned waist with defined abs, curvy hips';
+    expect(copyTraits(t, 'a bikini', true)).toBe('dark-brown hair with lighter caramel ends, light freckles across nose and cheeks');
+    expect(copyTraits(t, 'a bikini')).toContain('defined abs');
   });
 });

@@ -164,7 +164,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   // the AI's fixed answers win over its prose (the prose said "pressed close" for a bust with a clear gap, 1 Nov)
   const BUST_TALK = /[^,]*\b(breasts?|bust|cleavage)\b[^,]*/gi;
   if (bustAnswer) {
-    const w = bustWords(bustAnswer);
+    const w = bustWords(bustAnswer, { sourceLock: copySourceLocked(req) });
     for (const k of ['outfit', 'bodyPresentation'] as const)
       it.fields[k] = it.fields[k].replace(BUST_TALK, (m) => (/\b(bikini|cups?|top|bra|strings?|fabric|ring|straps?|cover)/i.test(m) ? m.replace(/,?\s*(deep cleavage|cleavage line)\b/gi, '') : '')).replace(/(,\s*){2,}/g, ', ').replace(/^,\s*|,\s*$/g, '');
     it.fields.bodyPresentation = [it.fields.bodyPresentation, w.positive].filter(Boolean).join(', ');
@@ -172,7 +172,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   }
   // what the AI checker grades against: the same bust as the prompt, not the prose it replaced
   const checkText = bustAnswer
-    ? `${text.replace(BUST_TALK, (m) => (/\b(bikini|cups?|top|bra|strings?|fabric|ring|straps?|cover)/i.test(m) ? m : '')).replace(/(,\s*){2,}/g, ', ')}. Her bust: ${bustWords(bustAnswer).positive.replace(/[()]|:[\d.]+/g, '')}.`
+    ? `${text.replace(BUST_TALK, (m) => (/\b(bikini|cups?|top|bra|strings?|fabric|ring|straps?|cover)/i.test(m) ? m : '')).replace(/(,\s*){2,}/g, ', ')}. Her bust: ${bustWords(bustAnswer, { sourceLock: copySourceLocked(req) }).positive.replace(/[()]|:[\d.]+/g, '')}.`
     : text;
   if (!bustAnswer) {
     const bust = bustPhrases(description).filter((b) => !it.fields.bodyPresentation.toLowerCase().includes(b.toLowerCase()));

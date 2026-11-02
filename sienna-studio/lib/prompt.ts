@@ -126,13 +126,17 @@ const CLOSE_FRAMING_NEGATIVE: Record<Exclude<CloseFraming, null>, string> = {
  */
 const HAIRSTYLE_RE = /\b(bun|top-?knot|ponytail|pony tail|braids?|updo|up-do|pulled back|slicked back|tied up|tied back|pigtails|claw clip|chignon|bob|pixie)\b/i;
 const BUST_SIZE_RE = /\b(?:small|medium|large|huge|big|full|heavy|ample|modest)\s+(?:(?:round|natural|soft|perky)\s+)*(?:breasts|bust|chest)\b|\bbreasts (?:set|sitting) (?:wide|close)/i;
-export function copyTraits(traits: string, request: string): string {
+/** Her profile's body-shape traits ("slim toned waist with defined abs", "curvy hips"): a source-locked copy takes the
+ * photo's body instead (the owner, 2 Nov: the source decides the body silhouette). */
+const BODY_SHAPE_TRAIT_RE = /\b(waist|abs|hips|figure|physique|toned|curvy|slim|athletic|butt|glutes|thighs|legs|stomach|belly|hourglass)\b/i;
+export function copyTraits(traits: string, request: string, sourceLock = false): string {
   const style = HAIRSTYLE_RE.test(request);
   const bust = BUST_SIZE_RE.test(request);
   return traits
     .split(',')
     .map((p) => p.trim())
     .filter((p) => p && !(bust && /\b(breasts|bust|chest)\b/i.test(p)))
+    .filter((p) => !(sourceLock && BODY_SHAPE_TRAIT_RE.test(p) && !/\b(hair|face|eyes?|freckles?|skin)\b/i.test(p)))
     .map((p) => (style && /\bhair\b/i.test(p) ? p.replace(/\b(long|short|wavy|curly|straight|loose)\s+/gi, '') : p))
     .map((p) => (/\b(breasts|bust)\b/i.test(p) ? p.replace(/^\((.*):[\d.]+\)$/, '$1') : p))
     .join(', ');
@@ -431,7 +435,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     f.setting,
     f.lighting,
     f.extra,
-    ...(frame || copy ? identityFor(inFrame(copy ? copyTraits(traits.rest, [f.outfit, f.pose, f.bodyPresentation, f.expression, f.extra].join(' ')) : traits.rest, frame)) : identity),
+    ...(frame || copy ? identityFor(inFrame(copy ? copyTraits(traits.rest, [f.outfit, f.pose, f.bodyPresentation, f.expression, f.extra].join(' '), sourceLock) : traits.rest, frame)) : identity),
     camera,
     realism,
     siennaLock && !faceAway ? traits.eyes : '',

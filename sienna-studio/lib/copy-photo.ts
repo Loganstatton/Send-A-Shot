@@ -154,13 +154,14 @@ export function bustPhrases(description: string): string[] {
 
 /** The fixed bust answers as prompt words (positive, avoid). A gap gets weight and its opposite goes to Avoid: the
  * Sienna LoRA's own figure leans to a pushed-together bust. */
-export function bustWords(b: { size: string; gap: string; height?: string }): { positive: string; avoid: string } {
+export function bustWords(b: { size: string; gap: string; height?: string }, opts: { sourceLock?: boolean } = {}): { positive: string; avoid: string } {
   const size = b.size && b.size !== 'not visible' ? `${b.size} natural breasts` : '';
   // where they sit: her LoRA draws them high and round with a cleavage starting near the collarbones (1 Nov). Weighted
   // gently: a 1.4 "short cleavage" push pulled the nipples out of narrow cups on every try (1 Nov)
-  // both the same size: one came out much smaller than the other where the photo's matched (1 Nov)
-  const even = size ? '(both breasts the same size and shape:1.1)' : '';
-  const evenAvoid = size ? 'uneven breasts, one breast smaller than the other' : '';
+  // both the same size: one came out much smaller than the other where the photo's matched (1 Nov). Not for a
+  // source-locked copy: the photo's own shapes decide, and lying on her side they are stacked and differ (2 Nov)
+  const even = size && !opts.sourceLock ? '(both breasts the same size and shape:1.1)' : '';
+  const evenAvoid = size && !opts.sourceLock ? 'uneven breasts, one breast smaller than the other' : '';
   const low = b.height?.startsWith('sitting low');
   const lowPositive = low ? '(breasts sitting low on the chest, fullness in the lower half, natural teardrop shape:1.2)' : '';
   const lowAvoid = low ? 'perky breasts sitting high on the chest, high round breasts, cleavage starting near the collarbones' : '';

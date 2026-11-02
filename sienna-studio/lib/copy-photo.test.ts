@@ -73,6 +73,8 @@ describe('bustWords', () => {
   });
   it('says nothing about a gap that isn’t there', () => {
     expect(bustWords({ size: 'large', gap: 'touching all the way down' })).toEqual({ positive: 'large natural breasts, (both breasts the same size and shape:1.1), breasts close together with a cleavage line', avoid: 'uneven breasts, one breast smaller than the other' });
+    // a source-locked copy keeps the photo's own shapes: no evenness push
+    expect(bustWords({ size: 'large', gap: 'touching all the way down' }, { sourceLock: true })).toEqual({ positive: 'large natural breasts, breasts close together with a cleavage line', avoid: '' });
     expect(bustWords({ size: 'not visible', gap: 'not visible' })).toEqual({ positive: '', avoid: '' });
   });
   it('asks for a low-sitting bust only when the photo has one', () => {

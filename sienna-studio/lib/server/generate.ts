@@ -707,14 +707,18 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
         ]);
         if (cns.includes(UNION_CN_FILE) && !missing.length) {
           const body = process.env.SIENNA_COPY_BODY_LINES !== 'off';
-          // the first depth preprocessor the server has (its model downloads on first use)
+          const sourceLock = p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on';
+          // the first depth preprocessor the server has (its model downloads on first use). Off for ordinary copies (it
+          // darkened skin and drifted the face, 31 Oct); on for source-locked ones, whose colour step puts her skin tone
+          // back and whose face pass redraws the face: without it the copy's bust ignored how the photo's sat and hung
+          // (heavy and low, stacked when she lies on her side; 2 Nov, the owner's marked comparisons)
+          const wantDepth = sourceLock ? process.env.SIENNA_COPY_LOCK_DEPTH !== 'off' : process.env.SIENNA_COPY_BODY_DEPTH !== 'off';
           let depth: DepthNode | undefined;
-          if (body && process.env.SIENNA_COPY_BODY_DEPTH !== 'off') for (const d of DEPTH_NODES) if (!depth && (await backend.nodeInfo(d).catch(() => null))) depth = d;
+          if ((body || sourceLock) && wantDepth) for (const d of DEPTH_NODES) if (!depth && (await backend.nodeInfo(d, true).catch(() => null))) depth = d;
           // body first, garment second (testing until benchmarked): needs the warp node on the GPU server
           const wantTwo = p.copyTwoPass ?? process.env.SIENNA_COPY_TWO_PASS === 'on';
           const twoPass = wantTwo && !!(await backend.nodeInfo(WARP_GARMENT_CLASS, true).catch(() => null));
           if (wantTwo && !twoPass) warnings.push('Copy Photo: two-pass copy asked for, but the GPU server has no SiennaWarpGarment yet — one pass used.');
-          const sourceLock = p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on';
           const pattern = sourceLock && /\b(cut-?outs?|lattice|criss-?cross\w*|caged|strappy|keyhole|lace-?up|cage)\b/i.test(req.fields.outfit);
           garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body: body || sourceLock, depth, ...(twoPass && !sourceLock ? { twoPass } : {}), ...(sourceLock ? { sourceLock } : {}), ...(pattern ? { pattern } : {}) };
         }
