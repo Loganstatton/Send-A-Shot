@@ -64,8 +64,9 @@ export const BODY_DEPTH = { strength: 0.6, end: 0.6 } as const;
  */
 // First run (2 Nov, boat): a 1.5% redraw region put her edge on the blend seam (a cyan glow of the water round her), and
 // guides held to 85-90% of the steps over-cooked the colour (orange skin, red hair, airbrushed); the shape is set in
-// the first part of sampling, so the guides now let go earlier and the region is the normal one
-export const SOURCE_LOCK = { grow: KEEP_SCENE_GROW, garment: { strength: 1.0, end: 0.8 }, body: { strength: 0.85, end: 0.7 }, depth: { strength: 0.8, end: 0.6 }, blurSigma: 0.8 } as const;
+// the first part of sampling, so the guides now let go earlier and the region is the normal one. The garment outline at
+// 1.0 to 80% (2 Nov) bared a nipple on 7 of 12 boat tries (0 of 7 at 0.9 to 75%) and matched the cups no better
+export const SOURCE_LOCK = { grow: KEEP_SCENE_GROW, garment: { strength: 0.9, end: 0.75 }, body: { strength: 0.85, end: 0.7 }, depth: { strength: 0.8, end: 0.6 }, blurSigma: 0.8 } as const;
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
 export const UNION_CN_FILE = 'xinsir_union_promax.safetensors';
