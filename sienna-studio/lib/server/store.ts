@@ -53,12 +53,12 @@ async function readJson<T>(file: string): Promise<T | null> {
   }
 }
 
-async function writeJsonAtomic(file: string, data: unknown) {
+async function writeJsonAtomic(file: string, data: unknown, compact = false) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   await withSpace(async () => {
     try {
-      await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+      await fs.writeFile(tmp, compact ? JSON.stringify(data) : JSON.stringify(data, null, 2));
     } catch (e) {
       await fs.rm(tmp, { force: true }); // a half-written copy only takes the space a retry needs
       throw e;
@@ -145,7 +145,8 @@ async function saveConfig(doc: ConfigDoc) {
 
 async function saveHistory(list: GenerationRecord[]) {
   cache.history = list;
-  await writeJsonAtomic(HISTORY_FILE, list);
+  // compact: every record carries its whole workflow graph, and indenting it roughly doubled the file (2 Nov)
+  await writeJsonAtomic(HISTORY_FILE, list, true);
 }
 
 const now = () => new Date().toISOString();
@@ -362,14 +363,16 @@ export function deleteRecord(id: string, deleteFiles = true): Promise<void> {
     const list = await loadHistory();
     const rec = list.find((r) => r.id === id);
     const rest = list.filter((r) => r.id !== id);
-    await saveHistory(rest);
+    // its files go first: on a full disk the shorter history could not be written until something was freed (2 Nov)
     if (rec && deleteFiles) {
       // a file still used elsewhere stays: re-runs share a driving video, a photo can be a body reference, and a
       // record's file names come partly from the client (a video's poster), so never trust them to be its own alone
       const inUse = referencedFiles(rest);
       referencedFiles((await loadConfig()).character, inUse);
-      for (const f of new Set(ownedFiles(rec))) if (!inUse.has(f)) await fs.rm(path.join(IMAGES_DIR, f), { force: true });
+      const own = [...ownedFiles(rec), ...[rec.initImage?.file, rec.poseImage?.file].filter((f): f is string => !!f && /^up_/.test(f) && SAFE_FILE_RE.test(f))];
+      for (const f of new Set(own)) if (!inUse.has(f)) await fs.rm(path.join(IMAGES_DIR, f), { force: true });
     }
+    await saveHistory(rest);
   });
 }
 
