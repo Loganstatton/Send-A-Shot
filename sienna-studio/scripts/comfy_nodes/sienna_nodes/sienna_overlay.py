@@ -173,6 +173,38 @@ def _backing(rgb: np.ndarray, part: np.ndarray, box: Tuple[int, int, int, int]) 
     return out
 
 
+UI_LABEL_SAT = 0.45   # a coloured label behind words ("Made with Edits": purple into orange) is this saturated
+UI_LABEL_INSIDE = 0.5  # ... and at least this share of it lies in the words' box
+
+
+def _label(rgb: np.ndarray, box: Tuple[int, int, int, int]) -> np.ndarray:
+    """The whole coloured label round a line of words: its rounded orange end stuck out past the words' box and was
+    left as an orange smudge on a hot tub's rim (2 Nov). Saturated pieces near the box that lie mostly inside it,
+    grown a little for their soft edge; skin or a towel running past the box is not taken."""
+    import cv2
+
+    h, w = rgb.shape[:2]
+    y0, y1, x0, x1 = box
+    reach = max(8, y1 - y0)
+    Y0, Y1, X0, X1 = max(0, y0 - reach // 2), min(h, y1 + reach // 2), max(0, x0 - reach), min(w, x1 + reach)
+    win = rgb[Y0:Y1, X0:X1]
+    sat = (win.max(-1) - win.min(-1)) / np.maximum(win.max(-1), 1e-3)
+    col = ((sat > UI_LABEL_SAT) & (win.max(-1) > 0.4)).astype(np.uint8)
+    inside = np.zeros(col.shape, bool)
+    inside[y0 - Y0:y1 - Y0, x0 - X0:x1 - X0] = True
+    n, lab = cv2.connectedComponents(col, connectivity=8)
+    out = np.zeros((h, w), bool)
+    if n <= 1:
+        return out
+    total = np.bincount(lab.ravel(), minlength=n)
+    within = np.bincount(lab[inside].ravel(), minlength=n)
+    keep = (within >= UI_LABEL_INSIDE * total) & (total >= 20)
+    keep[0] = False
+    if keep.any():
+        out[Y0:Y1, X0:X1] = cv2.dilate(keep[lab].astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    return out
+
+
 def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
     """img: (H, W, 3) float 0..1 → (mask HxW bool of app overlays to repaint, report)."""
     import cv2
@@ -219,7 +251,9 @@ def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
             # pill behind "Made with Edits", icon fills (31 Oct: the avatar and a dark smudge stayed in the copies)
             pad_y = max(8, int(0.6 * bh))
             left = int(UI_AVATAR * w) if level >= UI_WHITE else 6
-            mask[max(0, y0 - pad_y):min(h, y0 + bh + pad_y), max(0, x0 - left):min(w, x0 + bw + 6)] = True
+            box = (max(0, y0 - pad_y), min(h, y0 + bh + pad_y), max(0, x0 - left), min(w, x0 + bw + 6))
+            mask[box[0]:box[1], box[2]:box[3]] = True
+            mask |= _label(rgb, box)
     share = float(mask.mean())
     report = {"ui_share": round(share, 4), "parts": parts}
     if share > UI_MAX_MASK:
