@@ -27,6 +27,8 @@ export const UI_TOUCH_DENOISE = 0.5;
 export const GAP_FILL_CLASS = 'SiennaFillGaps';
 /** The detail pass: her body only, at 1.5x, lightly (0.3 keeps the shapes, the cups and her face; it adds texture). */
 export const DETAIL = { scale: 1.5, denoise: 0.3, steps: 20 } as const;
+/** Source-locked copies: a little more detail (skin, hair strands, fabric) where it can't move the garment. */
+export const LOCK_DETAIL_DENOISE = 0.35;
 // 0.5 left the inpainted gap's smear visible (a bright patch beside her face, a blurred tub edge by her hip, 1 Nov)
 export const GAP_TOUCH_DENOISE = 0.7;
 export const GAP_SCENE_POSITIVE = 'empty background, the scene only, photo texture';
@@ -62,7 +64,7 @@ export const BODY_DEPTH = { strength: 0.6, end: 0.6 } as const;
 // First run (2 Nov, boat): a 1.5% redraw region put her edge on the blend seam (a cyan glow of the water round her), and
 // guides held to 85-90% of the steps over-cooked the colour (orange skin, red hair, airbrushed); the shape is set in
 // the first part of sampling, so the guides now let go earlier and the region is the normal one
-export const SOURCE_LOCK = { grow: KEEP_SCENE_GROW, garment: { strength: 0.9, end: 0.75 }, body: { strength: 0.85, end: 0.7 }, depth: { strength: 0.8, end: 0.6 }, blurSigma: 0.8 } as const;
+export const SOURCE_LOCK = { grow: KEEP_SCENE_GROW, garment: { strength: 1.0, end: 0.8 }, body: { strength: 0.85, end: 0.7 }, depth: { strength: 0.8, end: 0.6 }, blurSigma: 0.8 } as const;
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
 export const UNION_CN_FILE = 'xinsir_union_promax.safetensors';
@@ -337,7 +339,7 @@ export function addKeepScene(
     g[`${p}detnoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}detenc`, 0], mask: [`${p}detmask`, 0] } };
     g[`${p}detks`] = {
       class_type: 'KSampler',
-      inputs: { model: k.model, positive: k.positive, negative: k.negative, latent_image: [`${p}detnoise`, 0], seed: k.seed, steps: DETAIL.steps, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: DETAIL.denoise },
+      inputs: { model: k.model, positive: k.positive, negative: k.negative, latent_image: [`${p}detnoise`, 0], seed: k.seed, steps: DETAIL.steps, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: lock ? LOCK_DETAIL_DENOISE : DETAIL.denoise },
       _meta: { title: 'Keep scene: detail pass on her (1.5x)' },
     };
     g[`${p}detdec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}detks`, 0], vae: g[decodeId].inputs.vae } };

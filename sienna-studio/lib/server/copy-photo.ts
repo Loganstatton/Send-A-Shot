@@ -22,6 +22,8 @@ const COPY_POSE_STRENGTH = 0.75;
 /** Source-locked copy: the photo's own pose and hands, held firmly. */
 // 0.9 held the photo's hand keypoints so hard the hands came out as thumb-like lumps (boat, 2 Nov)
 const COPY_LOCK_POSE_STRENGTH = 0.85;
+/** Source-locked copies' face pass: at 0.3 the face stayed 0.64-0.68 from hers and the hair near-black (boat, 2 Nov). */
+const COPY_LOCK_FACE_DENOISE = 0.4;
 /** Source-locked copy (testing switch, or SIENNA_COPY_SOURCE_LOCK=on): nothing about the photo's garment is adapted. */
 export function copySourceLocked(req: GenerateRequest): boolean {
   return req.params.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on';
@@ -91,7 +93,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   const keepScene = process.env.SIENNA_COPY_SCENE !== 'off';
   // the pose guide held harder than a normal request's 0.65: her hands went elsewhere (behind her back, under her breast)
   // where the photo's pulled the bikini string at her hip (1 Nov)
-  const scene = keepScene ? { ...sceneSize(ref.width ?? 0, ref.height ?? 0), keepScene: true, denoise: 1, hires: false, controlStrength: copySourceLocked(req) ? COPY_LOCK_POSE_STRENGTH : COPY_POSE_STRENGTH } : {};
+  const scene = keepScene ? { ...sceneSize(ref.width ?? 0, ref.height ?? 0), keepScene: true, denoise: 1, hires: false, controlStrength: copySourceLocked(req) ? COPY_LOCK_POSE_STRENGTH : COPY_POSE_STRENGTH, ...(copySourceLocked(req) ? { faceRefineDenoise: COPY_LOCK_FACE_DENOISE } : {}) } : {};
   const sceneImages = keepScene ? { initImage: ref } : {};
   const sceneNote = keepScene ? ['The photo itself is kept as the picture; only the person in it (and any app buttons or text on a screenshot) is redrawn, as Sienna.'] : [];
   let description = '';
@@ -131,10 +133,11 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   it.reference = { mode: 'pose', denoise: null, why: COPY_WHY };
   it.notes.push(COPY_WHY);
   // the AI reader never gets nudity; the GPU caption of a nude photo goes through the rule-based reader
-  // a locked copy's description says where the photo's cups sit ("centred over the nipple"): covered, not nudity. That
-  // wording switched the checker off for every boat copy, so a thumb-like hand was never caught (2 Nov). The photo's own
-  // nudity check (nudePhoto) still applies, and each copy must pass the top check before the checker sees it.
-  const gateText = copySourceLocked(req) ? text.replace(COVERED_NIPPLE_RE, '') : text;
+  // a copy's description says where the photo's cups sit ("centred over the nipple"): covered, not nudity. That
+  // wording switched the checker off for every boat copy, so a thumb-like hand was never caught and nothing was learned
+  // (2 Nov). The photo's own nudity check (nudePhoto) still applies, and each copy must pass the top check before the
+  // checker sees it.
+  const gateText = text.replace(COVERED_NIPPLE_RE, '');
   const aiOk = aiEnabled() && !NUDE_RE.test(gateText) && !nudePhoto;
   let aiRan = false;
   if (aiOk) {

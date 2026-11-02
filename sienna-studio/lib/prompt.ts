@@ -188,7 +188,13 @@ const COPY_SHEER_RE = /\b(mesh|lace|fishnet)\b/i;
 const COPY_COVER_POSITIVE = '(each cup centred over the nipple, fully covering the nipple and areola:1.35)';
 const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulders, hair worn down';
 /** Source-locked copies: colours the strong guides drifted to (red hair, orange skin, a glowing outline, 2 Nov). */
-const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body';
+// (black too: with only red avoided, the boat copies' hair went near-black and straight, 2 Nov)
+/** Her hair phrase from the profile ("long dark-brown wavy hair with lighter caramel ends"), weighted; '' if none. */
+function lockHairColour(traits: string): string {
+  const h = traits.split(',').map((t) => t.trim()).find((t) => /\bhair\b/i.test(t) && !/[()]/.test(t));
+  return h ? `(${h}:1.25)` : '';
+}
+const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, jet-black hair, black hair, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body';
 function weighHairstyle(text: string): string {
   const h = copyHairstyle(text);
   return h ? text.replace(h.phrase, `(${h.phrase}:1.3)`) : text;
@@ -402,6 +408,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy ? weighHairstyle(f.bodyPresentation) : f.bodyPresentation,
     // narrow copied cups left her nipples at the cup edges (1 Nov): in copy mode a top always covers them
     copy && !sourceLock && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
+    // her own hair colour, firmly: the photo's hair guided the redraw toward its colour
+    copy && sourceLock && siennaLock ? lockHairColour(character.appearanceTraits) : '',
     // the photo's breasts hung below the under-bust string; the copy's ended at it (1 Nov)
     copy && /\b(hangs?|hanging|showing|visible)\b[^,]*\bbelow the (thin )?(under-?(bust|band)? ?)?(string|band)\b|\bunderside[s]? (largely |mostly )?bare\b|\bunderboob\b/i.test(`${f.outfit}, ${f.bodyPresentation}`) ? '(lower curve of each breast hanging below the thin under-bust string:1.2)' : '',
     // a wet micro bikini was drawn see-through on every try (1 Nov): opaque unless the photo's garment is sheer

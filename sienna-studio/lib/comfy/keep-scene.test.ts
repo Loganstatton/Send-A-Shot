@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { addCopyColours, addCoverUp, COVER, coverColour, GARMENT_PASS, garmentLines, KEEP_SCENE_GROW, SOURCE_LOCK } from './keep-scene';
+import { addCopyColours, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -196,6 +196,12 @@ describe('source-locked copy', () => {
     const g = locked();
     expect(g[`${P}silimg`]).toBeUndefined();
     expect(g[`${P}bodyonly`].inputs.destination).toEqual([`${P}bodylines`, 0]);
+  });
+  it('adds a little more detail, still off the garment', () => {
+    const g = addKeepScene(graph(), { width: 800, height: 1296, softSeam: true, detail: true, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true, sourceLock: true } })!;
+    expect(g[`${P}detks`].inputs.denoise).toBe(LOCK_DETAIL_DENOISE);
+    expect(LOCK_DETAIL_DENOISE).toBeGreaterThan(DETAIL.denoise);
+    expect(g[`${P}detkeep`].inputs.mask).toEqual([`${P}gmask`, 0]);
   });
   it('never runs the two-pass garment redraw', () => {
     expect(locked()[`${P}bks`]).toBeUndefined();

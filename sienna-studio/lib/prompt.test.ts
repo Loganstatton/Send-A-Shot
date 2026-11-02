@@ -289,6 +289,10 @@ describe('copy mode (Copy Photo)', () => {
     expect(locked).toMatch(/cups toward the outer sides/);
     const neg = buildPrompt({ fields: f, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true, sourceLock: true }).negative;
     expect(neg).toMatch(/auburn hair/);
+    expect(neg).toMatch(/jet-black hair/);
+    // her own hair colour, weighted, from her profile
+    expect(locked).toMatch(/\(long dark-brown wavy hair with lighter caramel ends:1\.25\)/);
+    expect(plain).not.toMatch(/caramel ends:1\.25/);
     expect(buildPrompt({ fields: f, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true }).negative).not.toMatch(/auburn hair/);
   });
   it('takes the photo’s hairstyle and bust size over her profile defaults, keeping her hair colour', () => {
