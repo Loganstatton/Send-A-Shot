@@ -188,6 +188,8 @@ export interface GenerationParams {
   copyTwoPass?: boolean;
   /** Copy Photo: source-locked copy, everything held to the photo (testing switch; SIENNA_COPY_SOURCE_LOCK=on for all). */
   copySourceLock?: boolean;
+  /** Benchmark: the depth guide on a source-locked copy (unset: SIENNA_COPY_LOCK_DEPTH). */
+  copyLockDepth?: boolean;
   hiresScale?: number;
   hiresDenoise?: number;
   /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */

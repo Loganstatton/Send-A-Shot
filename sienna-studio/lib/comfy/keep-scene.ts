@@ -262,7 +262,9 @@ export function addKeepScene(
       // blurred a little first: the soft edges of fine detail (a tattoo on her side, skin texture) were drawn onto Sienna
       // as brown lines (1 Nov); a stronger blur (sigma 3) also lost the bikini cups' edges and every try drew the cups
       // see-through or as bare strings, so it stays light
-      g[`${p}bodyblur`] = { class_type: 'ImageBlur', inputs: { image: scene, blur_radius: lock ? 2 : 3, sigma: lock ? SOURCE_LOCK.blurSigma : 1.5 } };
+      // traced from the photo with its app overlays painted out: the raw photo's "Made with Edits" label, where it
+      // overlapped her arm, came back as a purple "Mad" pill in the copy (2 Nov)
+      g[`${p}bodyblur`] = { class_type: 'ImageBlur', inputs: { image: backdrop, blur_radius: lock ? 2 : 3, sigma: lock ? SOURCE_LOCK.blurSigma : 1.5 } };
       g[`${p}softcanny`] = { class_type: 'Canny', inputs: { image: [`${p}bodyblur`, 0], low_threshold: 0.08, high_threshold: 0.25 } };
       g[`${p}bodylines`] = {
         class_type: 'ImageCompositeMasked',
@@ -285,7 +287,7 @@ export function addKeepScene(
     if (lock && opts.garment.pattern) {
       // cut-outs, lattice, criss-cross straps: the outline alone drew a plain top over a lattice cut-out (lying selfie,
       // 2 Nov), so the garment's own edges inside it are traced too (the photo, lightly blurred, inside the garment only)
-      g[`${p}patblur`] = { class_type: 'ImageBlur', inputs: { image: scene, blur_radius: 2, sigma: 1 } };
+      g[`${p}patblur`] = { class_type: 'ImageBlur', inputs: { image: backdrop, blur_radius: 2, sigma: 1 } };
       g[`${p}patcanny`] = { class_type: 'Canny', inputs: { image: [`${p}patblur`, 0], low_threshold: 0.12, high_threshold: 0.3 } };
       g[`${p}patin`] = { class_type: 'GrowMask', inputs: { mask: garment!, expand: -2, tapered_corners: true } };
       g[`${p}patlines`] = {
@@ -328,7 +330,7 @@ export function addKeepScene(
       condNeg = [`${p}cnbody`, 1];
     }
     if (opts.garment.body && opts.garment.depth) {
-      g[`${p}depth`] = { class_type: opts.garment.depth, inputs: { image: scene, ...DEPTH_INPUTS[opts.garment.depth] }, _meta: { title: 'Keep scene: depth of the photo' } };
+      g[`${p}depth`] = { class_type: opts.garment.depth, inputs: { image: backdrop, ...DEPTH_INPUTS[opts.garment.depth] }, _meta: { title: 'Keep scene: depth of the photo' } };
       g[`${p}depthblack`] = { class_type: 'EmptyImage', inputs: { width: opts.width, height: opts.height, batch_size: 1, color: 0 } };
       g[`${p}bodydepth`] = {
         class_type: 'ImageCompositeMasked',

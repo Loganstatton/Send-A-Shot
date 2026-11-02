@@ -712,7 +712,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
           // darkened skin and drifted the face, 31 Oct); on for source-locked ones, whose colour step puts her skin tone
           // back and whose face pass redraws the face: without it the copy's bust ignored how the photo's sat and hung
           // (heavy and low, stacked when she lies on her side; 2 Nov, the owner's marked comparisons)
-          const wantDepth = sourceLock ? process.env.SIENNA_COPY_LOCK_DEPTH !== 'off' : process.env.SIENNA_COPY_BODY_DEPTH !== 'off';
+          const wantDepth = sourceLock ? (p.copyLockDepth ?? process.env.SIENNA_COPY_LOCK_DEPTH !== 'off') : process.env.SIENNA_COPY_BODY_DEPTH !== 'off';
           let depth: DepthNode | undefined;
           if ((body || sourceLock) && wantDepth) for (const d of DEPTH_NODES) if (!depth && (await backend.nodeInfo(d, true).catch(() => null))) depth = d;
           // body first, garment second (testing until benchmarked): needs the warp node on the GPU server
