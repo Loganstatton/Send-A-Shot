@@ -570,10 +570,9 @@ export function addFaceUpright(graph: ComfyGraph, refineId: string): ComfyGraph 
  * bikini drawn royal blue, a pale woman under grey light drawn deeply bronzed (1 Nov). */
 export const COPY_COLOURS_CLASS = 'SiennaCopyColours';
 export const COPY_COLOURS = { clothes: 1.0, skin: 0.8 } as const;
-/** Source-locked copies: each piece of the garment matched on its own (a raised sleeve drawn blue on a grey top, 2 Nov).
- * Off: it left a blue fringe round the sleeves and turned one piece khaki (2 Nov); the colour start (LOCK_COLOUR_PRIOR)
- * keeps the garment's colour instead. */
-export const COPY_COLOURS_LOCAL = 0;
+/** Source-locked copies: the garment's hue matched place by place to the photo's, its edge included (a raised sleeve
+ * drawn blue or beige on a grey top, 2 Nov; the per-piece version before it left a blue fringe). */
+export const COPY_COLOURS_LOCAL = 1.0;
 /** The graph with the colour step as the last change before SaveImage, or null without a keep-scene redraw in it. */
 export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin?: number; local?: number } = {}): ComfyGraph | null {
   const p = KEEP_SCENE_PREFIX;

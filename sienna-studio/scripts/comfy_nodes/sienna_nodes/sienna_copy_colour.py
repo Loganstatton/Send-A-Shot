@@ -62,6 +62,7 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
     weight = np.zeros(m.shape, np.float32)
     info: Dict = {"changed": False}
     # skin is her face and body together, so they stay one tone (a bronzed face on a pale body would look pasted on)
+    local_ms = None
     for name, cls, strength in (("clothes", (CLOTHES,), clothes), ("skin", (BODY_SKIN, FACE_SKIN), skin)):
         if strength <= 0:
             continue
@@ -79,6 +80,7 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
             k = max(3, int(GARMENT_REACH * m.shape[1])) | 1
             garment = np.asarray(photo_region, np.float32) > 0.5
             near = cv2.dilate(garment.astype(np.uint8), np.ones((k, k), np.uint8)) > 0
+            local_ms = ms
             if local > 0:
                 # the photo's other clothing pieces of the garment's colour (a raised sleeve cut off from the top by her
                 # hair), never foam or a towel of another colour; the copy's arm may sit a little off, so they reach
@@ -86,6 +88,7 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
                 extra = _same_garment(photo_classes[CLOTHES] > 0.5, garment, a)
                 if extra.any():
                     near |= cv2.dilate(extra.astype(np.uint8), np.ones((2 * k + 1, 2 * k + 1), np.uint8)) > 0
+                    local_ms = ms | extra
                     info["garment_pieces_added"] = int(extra.sum())
             mr &= near
         if name == "clothes" and ms.any() and mr.any():
@@ -107,20 +110,13 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
         mu_s = mu_r + shift
         lab[mr] = (b[mr] - mu_r) * scale + mu_s
         if name == "clothes" and local > 0:
-            # each separate piece of the copy's garment (a sleeve, the body of the top) onto the photo's colour by its
-            # own median, so a piece drawn bluer than the rest ends the same grey
-            n, comp = cv2.connectedComponents(mr.astype(np.uint8), connectivity=8)
-            pieces = 0
-            for i in range(1, n):
-                sel = comp == i
-                if sel.sum() < MIN_PIXELS:
-                    continue
-                own = mu_s - np.median(b[sel], axis=0)
-                own[0] = float(np.clip(own[0], -MAX_L_SHIFT, MAX_L_SHIFT))
-                sh = shift + float(local) * (own - shift)
-                lab[sel] = (b[sel] - mu_r) * scale + mu_r + sh
-                pieces += 1
-            info["clothes_pieces"] = pieces
+            # place by place: the copy's garment hue moved onto the photo's garment hue round the same spot (a sleeve
+            # drawn blue on a grey top, 2 Nov), its own shading and texture kept; where the photo has no garment near
+            # (her arm sits a little elsewhere) each separate piece is moved onto the photo garment's overall hue
+            local_lab, reach = _local_hue(a, b, local_ms if photo_region is not None else ms, mr, mu_s, float(local))
+            lab = np.where(reach[..., None], local_lab, lab)
+            weight = np.maximum(weight, np.where(reach, strength, 0).astype(np.float32))
+            info["clothes_local"] = round(float(local), 2)
         weight[mr] = strength
         info[name] = {"shift_lab": [round(float(x), 1) for x in (mu_s - mu_r)], "pixels": int(mr.sum()), "strength": strength}
         info["changed"] = True
@@ -162,6 +158,41 @@ def _same_garment(clothes: np.ndarray, garment: np.ndarray, lab: np.ndarray) -> 
         if float(np.hypot(d[1], d[2])) <= SAME_GARMENT_DE and abs(float(d[0])) <= SAME_GARMENT_DL:
             out |= sel
     return out
+
+
+LOCAL_SIGMA = 0.05    # the neighbourhood a local hue is read over (share of the width)
+LOCAL_MIN = 0.12      # how much of that neighbourhood must be garment for its hue to count
+LOCAL_EDGE = 0.006    # the copy's garment grown by this share of the width: its soft edge is recoloured too (the
+                      # per-piece version left a blue fringe round the sleeves, 2 Nov)
+
+
+def _local_hue(a: np.ndarray, b: np.ndarray, ms: np.ndarray, mr: np.ndarray, target: np.ndarray, local: float):
+    """LAB image with the copy's garment hue (a, b) moved onto the photo's, place by place, and the grown garment
+    region it applies to. Lightness is untouched (folds, shading)."""
+    h, w = mr.shape
+    sig = max(2.0, LOCAL_SIGMA * w)
+    blur = lambda x: cv2.GaussianBlur(x.astype(np.float32), (0, 0), sig)
+    wp, wr = blur(ms), blur(mr)
+    k = max(3, int(LOCAL_EDGE * w)) | 1
+    reach = cv2.dilate(mr.astype(np.uint8), np.ones((k, k), np.uint8)) > 0
+    # each piece's own hue, for the places the photo has no garment near
+    n, comp = cv2.connectedComponents(reach.astype(np.uint8), connectivity=8)
+    piece = np.zeros((h, w, 2), np.float32)
+    for i in range(1, n):
+        sel = comp == i
+        core = sel & mr
+        src = b[core] if core.sum() >= MIN_PIXELS else b[sel]
+        piece[sel] = np.median(src[:, 1:], axis=0)
+    out = b.copy()
+    conf = np.clip(np.minimum(wp, wr) / LOCAL_MIN, 0, 1)
+    for c in (1, 2):
+        photo_local = blur(a[..., c] * ms) / np.maximum(wp, 1e-4)
+        copy_local = blur(b[..., c] * mr) / np.maximum(wr, 1e-4)
+        local_shift = photo_local - copy_local
+        piece_shift = target[c] - piece[..., c - 1]
+        shift = conf * local_shift + (1 - conf) * piece_shift
+        out[..., c] = np.where(reach, b[..., c] + local * shift, b[..., c])
+    return out, reach
 
 
 def fill_gaps(img: np.ndarray, gap: np.ndarray, avoid: np.ndarray, scale: float = 0.5) -> np.ndarray:

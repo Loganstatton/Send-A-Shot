@@ -178,6 +178,7 @@ def _backing(rgb: np.ndarray, part: np.ndarray, box: Tuple[int, int, int, int]) 
 
 
 UI_LABEL_SAT = 0.45   # a coloured label behind words ("Made with Edits": purple into orange) is this saturated
+UI_PILL_SAT = 0.6     # an app label found on its own is at least this saturated
 UI_LABEL_INSIDE = 0.5  # ... and at least this share of it lies in the words' box
 
 
@@ -205,7 +206,39 @@ def _label(rgb: np.ndarray, box: Tuple[int, int, int, int]) -> np.ndarray:
     keep = (within >= UI_LABEL_INSIDE * total) & (total >= 20)
     keep[0] = False
     if keep.any():
-        out[Y0:Y1, X0:X1] = cv2.dilate(keep[lab].astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+        # grown well past its soft edge: a rim left behind was smeared into a pink-orange blob by the paint-out, and the
+        # overlay touch-up then drew a new label there (2 Nov)
+        k = max(5, (y1 - y0) // 4) | 1
+        out[Y0:Y1, X0:X1] = cv2.dilate(keep[lab].astype(np.uint8), np.ones((k, k), np.uint8)) > 0
+    return out
+
+
+def _pills(rgb: np.ndarray) -> np.ndarray:
+    """Coloured app labels found on their own ("Made with Edits": a purple-to-orange pill with light words), along the
+    top or bottom band: the words on it are too faint at the working size for the stroke test (2 Nov). A pill is one
+    saturated blob, wide and short, filling most of its box, with lighter writing inside."""
+    import cv2
+
+    h, w = rgb.shape[:2]
+    top, _, bottom = UI_ZONE
+    sat = (rgb.max(-1) - rgb.min(-1)) / np.maximum(rgb.max(-1), 1e-3)
+    # brighter colour than skin: at the label threshold the pill and the tanned arm beside it were one blob (2 Nov)
+    col = ((sat > UI_PILL_SAT) & (rgb.max(-1) > 0.4)).astype(np.uint8)
+    col = cv2.morphologyEx(col, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))  # the writing's holes
+    n, lab, stats, cent = cv2.connectedComponentsWithStats(col, 8)
+    out = np.zeros((h, w), bool)
+    for i in range(1, n):
+        x0, y0, bw, bh, area = (int(v) for v in stats[i])
+        cy = cent[i][1]
+        if not (cy < top * h or cy > bottom * h):
+            continue
+        if not (0.012 * h <= bh <= 0.06 * h and bw >= 2.5 * bh and area >= 0.55 * bw * bh):
+            continue
+        inside = rgb[y0:y0 + bh, x0:x0 + bw]
+        if float((inside.min(-1) > 0.7).mean()) < 0.03:
+            continue  # no writing on it: a towel's stripe, a swimsuit band
+        k = max(5, bh // 3) | 1
+        out |= cv2.dilate((lab == i).astype(np.uint8), np.ones((k, k), np.uint8)) > 0
     return out
 
 
@@ -254,10 +287,16 @@ def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
             # the whole element, not only its white strokes: the coloured profile picture left of a username, the dark
             # pill behind "Made with Edits", icon fills (31 Oct: the avatar and a dark smudge stayed in the copies)
             pad_y = max(8, int(0.6 * bh))
-            left = int(UI_AVATAR * w) if level >= UI_WHITE else 6
-            box = (max(0, y0 - pad_y), min(h, y0 + bh + pad_y), max(0, x0 - left), min(w, x0 + bw + 6))
+            left = int(UI_AVATAR * w) if level >= UI_WHITE else max(6, bh)  # a see-through line's first letter ("S")
+            # to the right, room for a verified badge after a username (a white disc the stroke test drops as broad, 2 Nov)
+            right_pad = max(6, int(1.4 * bh)) if level >= UI_WHITE else 6
+            box = (max(0, y0 - pad_y), min(h, y0 + bh + pad_y), max(0, x0 - left), min(w, x0 + bw + right_pad))
             mask[box[0]:box[1], box[2]:box[3]] = True
             mask |= _label(rgb, box)
+    pills = _pills(rgb)
+    if pills.any():
+        mask |= pills
+        parts += 1
     share = float(mask.mean())
     report = {"ui_share": round(share, 4), "parts": parts}
     if share > UI_MAX_MASK:
