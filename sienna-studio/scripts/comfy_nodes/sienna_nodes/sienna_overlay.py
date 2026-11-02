@@ -128,7 +128,7 @@ UI_AVATAR = 0.13     # a username's profile picture sits up to this share of the
 UI_DENSITY = 0.06
 UI_LINE = 0.06        # a caption line or username is at most this share of the height
 UI_BACKING_TOL = 0.08  # a button's disc or pill: one flat colour round its icon (max channel difference)
-UI_BACKING_STD = 0.05
+UI_BACKING_SHARE = 0.6  # ... over at least this share of the ring round its icon
 UI_LETTER_H = 0.008   # ... and a letter at least this share of the height tall (coping glints were 1-8 px)
 UI_LETTERS = 3       # outside the button column an element is words: at least this many separate strokes
 
@@ -159,13 +159,17 @@ def _backing(rgb: np.ndarray, part: np.ndarray, box: Tuple[int, int, int, int]) 
     if near.sum() < 10:
         return np.zeros_like(part)
     ring = win[near]
-    if float(ring.std(0).max()) > UI_BACKING_STD:
+    # most of the ring one colour (its inner edge is the glyph's soft antialiasing, so a plain spread is too strict:
+    # the speaker button's disc measured 0.2 at the working size, 2 Nov)
+    if float((np.abs(ring - np.median(ring, 0)).max(-1) < 1.5 * UI_BACKING_TOL).mean()) < UI_BACKING_SHARE:
         return np.zeros_like(part)
     same = (np.abs(win - np.median(ring, 0)).max(-1) < UI_BACKING_TOL) | sub
     n, lab = cv2.connectedComponents(same.astype(np.uint8), connectivity=8)
     ids = np.unique(lab[sub & same])
     region = np.isin(lab, ids[ids > 0])
-    if region.mean() > 0.85 or region.sum() > 6 * max(1, sub.sum()) * 4:
+    border = np.concatenate([region[0], region[-1], region[:, 0], region[:, -1]])
+    # a disc or pill is enclosed: scenery of one colour (sky, a tub's edge, foliage) runs out of the window (2 Nov)
+    if region.mean() > 0.85 or region.sum() > 6 * max(1, sub.sum()) * 4 or float(border.mean()) > 0.1:
         return np.zeros_like(part)
     region = cv2.morphologyEx(region.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)).astype(bool)
     out = np.zeros_like(part)

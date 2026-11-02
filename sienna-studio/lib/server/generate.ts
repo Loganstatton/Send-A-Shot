@@ -825,7 +825,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   if (p.keepScene && process.env.SIENNA_COPY_COLOURS !== 'off') {
     const has = await backend.nodeInfo(COPY_COLOURS_CLASS, true).catch(() => null);
     const locked = !!(p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on');
-    const coloured = has ? addCopyColours(graph, locked ? { local: COPY_COLOURS_LOCAL } : {}) : null;
+    const coloured = has ? addCopyColours(graph, locked && COPY_COLOURS_LOCAL ? { local: COPY_COLOURS_LOCAL } : {}) : null;
     if (coloured) graph = coloured;
     else if (!has && graph[`${KEEP_SCENE_PREFIX}person`]) warnings.push('Copy Photo: the GPU server has no colour step yet (SiennaCopyColours) — outfit and skin colours follow the description only.');
   }

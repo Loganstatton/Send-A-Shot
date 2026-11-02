@@ -68,6 +68,8 @@ export const BODY_DEPTH = { strength: 0.6, end: 0.6 } as const;
 // 1.0 to 80% (2 Nov) bared a nipple on 7 of 12 boat tries (0 of 7 at 0.9 to 75%) and matched the cups no better. The
 // figure's outline at 0.85 was drawn as a glowing edge along her arms and body (hot tub, lying selfie, 2 Nov): 0.65.
 // Blurred as for normal copies (1.5): barely blurred, it traced the other woman's tattoo onto Sienna (hot tub, 2 Nov)
+/** Source lock's start: the photo blurred twice (ImageBlur's largest radius and sigma) and redrawn at this denoise. */
+export const LOCK_COLOUR_PRIOR = { radius: 31, sigma: 10, denoise: 0.9 } as const;
 export const SOURCE_LOCK = { grow: KEEP_SCENE_GROW, garment: { strength: 0.9, end: 0.75 }, body: { strength: 0.65, end: 0.7 }, depth: { strength: 0.8, end: 0.6 }, blurSigma: 1.5 } as const;
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
@@ -136,6 +138,20 @@ export function addKeepScene(
       redraw = [`${p}union`, 0];
     }
   }
+  // Source lock: the redraw starts from the photo's colours, blurred until only colour patches are left (no shapes, no
+  // skin detail), at a little under full denoise. From pure noise the colours came from words alone: a grey knit
+  // sleeve drawn periwinkle, a blue pillow invented by her waist, red-orange hair (2 Nov).
+  if (lock) {
+    const blur = { blur_radius: LOCK_COLOUR_PRIOR.radius, sigma: LOCK_COLOUR_PRIOR.sigma };
+    g[`${p}prior1`] = { class_type: 'ImageBlur', inputs: { image: g[encodeId].inputs.pixels, ...blur } };
+    g[`${p}prior2`] = { class_type: 'ImageBlur', inputs: { image: [`${p}prior1`, 0], ...blur } };
+    g[`${p}prior`] = {
+      class_type: 'ImageCompositeMasked',
+      inputs: { destination: g[encodeId].inputs.pixels, source: [`${p}prior2`, 0], x: 0, y: 0, resize_source: false, mask: redraw },
+      _meta: { title: 'Keep scene: the photo’s colours, blurred, as the start' },
+    };
+    g[encodeId].inputs.pixels = [`${p}prior`, 0];
+  }
   g[`${p}noise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [encodeId, 0], mask: redraw }, _meta: { title: 'Keep scene: redraw only her' } };
   // What stays redrawn: where the new Sienna actually is (found again in the result), where the other person was, and
   // the overlays. The rest of the margin goes back to the photo, so nothing can be invented round her (a cushion under
@@ -160,7 +176,7 @@ export function addKeepScene(
     inputs: { destination: [decodeId, 0], source: backdrop, x: 0, y: 0, resize_source: false, mask: [opts.softSeam !== false ? `${p}soft` : `${p}keep`, 0] },
     _meta: { title: 'Keep scene: the photo, pixel for pixel, around her' },
   };
-  g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: [`${p}noise`, 0], denoise: 1 } };
+  g[samplerId] = { ...g[samplerId], inputs: { ...g[samplerId].inputs, latent_image: [`${p}noise`, 0], denoise: lock ? LOCK_COLOUR_PRIOR.denoise : 1 } };
   // Painted-out overlays get a light second pass of their own: the plain fill smeared on foamy water (blue streaks,
   // 1 Nov), and at this strength the fill's shapes stay, so no letters can come back.
   let finalImage: Ref = [`${p}paste`, 0];
@@ -552,9 +568,10 @@ export function addFaceUpright(graph: ComfyGraph, refineId: string): ComfyGraph 
  * bikini drawn royal blue, a pale woman under grey light drawn deeply bronzed (1 Nov). */
 export const COPY_COLOURS_CLASS = 'SiennaCopyColours';
 export const COPY_COLOURS = { clothes: 1.0, skin: 0.8 } as const;
-/** Source-locked copies: each piece of the garment matched on its own, and pieces of the photo's garment the garment
- * finder missed counted (a raised sleeve drawn blue on a grey top, 2 Nov). */
-export const COPY_COLOURS_LOCAL = 1.0;
+/** Source-locked copies: each piece of the garment matched on its own (a raised sleeve drawn blue on a grey top, 2 Nov).
+ * Off: it left a blue fringe round the sleeves and turned one piece khaki (2 Nov); the colour start (LOCK_COLOUR_PRIOR)
+ * keeps the garment's colour instead. */
+export const COPY_COLOURS_LOCAL = 0;
 /** The graph with the colour step as the last change before SaveImage, or null without a keep-scene redraw in it. */
 export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin?: number; local?: number } = {}): ComfyGraph | null {
   const p = KEEP_SCENE_PREFIX;

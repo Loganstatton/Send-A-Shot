@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { addCopyColours, addFaceUpright, COPY_COLOURS_LOCAL, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, handCheckNode, parseHandCheck, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
+import { addCopyColours, addFaceUpright, COPY_COLOURS_LOCAL, LOCK_COLOUR_PRIOR, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, handCheckNode, parseHandCheck, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -113,7 +113,7 @@ describe('addCopyColours', () => {
   it('matches each garment piece on its own for a source-locked copy only', () => {
     const kept = addKeepScene(graph(), { width: 776 })!;
     expect(addCopyColours(kept)![`${P}colours`].inputs).not.toHaveProperty('local');
-    expect(addCopyColours(kept, { local: COPY_COLOURS_LOCAL })![`${P}colours`].inputs.local).toBe(1);
+    expect(addCopyColours(kept, { local: 1 })![`${P}colours`].inputs.local).toBe(1);
   });
   it('does nothing without a keep-scene redraw', () => {
     expect(addCopyColours(graph())).toBeNull();
@@ -196,6 +196,19 @@ describe('source-locked copy', () => {
     expect(g[`${P}cnbody`].inputs).toMatchObject({ strength: SOURCE_LOCK.body.strength, end_percent: SOURCE_LOCK.body.end });
     expect(g[`${P}cndapply`].inputs).toMatchObject({ strength: SOURCE_LOCK.depth.strength, end_percent: SOURCE_LOCK.depth.end });
     expect(g[`${P}bodyblur`].inputs.sigma).toBe(SOURCE_LOCK.blurSigma);
+  });
+  it('starts from the photo’s blurred colours inside her region, a little under full denoise', () => {
+    const g = locked();
+    const sampler = Object.values(g).find((n) => n.class_type === 'KSampler' && Array.isArray(n.inputs.latent_image) && n.inputs.latent_image[0] === `${P}noise`)!;
+    expect(sampler.inputs.denoise).toBe(LOCK_COLOUR_PRIOR.denoise);
+    const enc = g[(g[`${P}noise`].inputs.samples as [string, number])[0]];
+    expect(enc.inputs.pixels).toEqual([`${P}prior`, 0]);
+    expect(g[`${P}prior`].inputs).toMatchObject({ source: [`${P}prior2`, 0], mask: g[`${P}noise`].inputs.mask });
+    expect(g[`${P}prior1`].inputs).toMatchObject({ blur_radius: 31, sigma: 10 });
+    // an ordinary copy still starts from noise
+    const plain = addKeepScene(graph(), { width: 800, height: 1296 })!;
+    expect(plain[`${P}prior`]).toBeUndefined();
+    expect(Object.values(plain).find((n) => n.class_type === 'KSampler' && Array.isArray(n.inputs.latent_image) && n.inputs.latent_image[0] === `${P}noise`)!.inputs.denoise).toBe(1);
   });
   it('adds no silhouette outline (it drew a glowing edge round her)', () => {
     const g = locked();
