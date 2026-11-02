@@ -194,7 +194,7 @@ function lockHairColour(traits: string): string {
   const h = traits.split(',').map((t) => t.trim()).find((t) => /\bhair\b/i.test(t) && !/[()]/.test(t));
   return h ? `(${h}:1.25)` : '';
 }
-const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, jet-black hair, black hair, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body';
+const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, jet-black hair, black hair, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body, tattoo, tattoos';
 function weighHairstyle(text: string): string {
   const h = copyHairstyle(text);
   return h ? text.replace(h.phrase, `(${h.phrase}:1.3)`) : text;
