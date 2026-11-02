@@ -294,7 +294,16 @@ export function addKeepScene(
     const [w, h] = [opts.width, opts.height];
     g[`${p}detup`] = { class_type: 'ImageScale', inputs: { image: finalImage, upscale_method: 'lanczos', width: r8(w * DETAIL.scale), height: r8(h * DETAIL.scale), crop: 'disabled' } };
     g[`${p}detenc`] = { class_type: 'VAEEncode', inputs: { pixels: [`${p}detup`, 0], vae: g[decodeId].inputs.vae } };
-    g[`${p}detmask`] = { class_type: 'GrowMask', inputs: { mask: [`${p}new`, 0], expand: 6, tapered_corners: true } };
+    g[`${p}detmask0`] = { class_type: 'GrowMask', inputs: { mask: [`${p}new`, 0], expand: 6, tapered_corners: true } };
+    let detMask: Ref = [`${p}detmask0`, 0];
+    // never over the garment or just round it: at tiny cups the pass turned a cup's edge into a bare nipple and every
+    // try of the boat copy was thrown away (1 Nov); the cups keep the main redraw's coverage
+    if (g[`${p}gmask`]) {
+      g[`${p}detkeep`] = { class_type: 'GrowMask', inputs: { mask: [`${p}gmask`, 0], expand: Math.round(w * 0.03), tapered_corners: true } };
+      g[`${p}detmaskg`] = { class_type: 'MaskComposite', inputs: { destination: detMask, source: [`${p}detkeep`, 0], x: 0, y: 0, operation: 'subtract' } };
+      detMask = [`${p}detmaskg`, 0];
+    }
+    g[`${p}detmask`] = { class_type: 'GrowMask', inputs: { mask: detMask, expand: 0, tapered_corners: true } };
     g[`${p}detnoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}detenc`, 0], mask: [`${p}detmask`, 0] } };
     g[`${p}detks`] = {
       class_type: 'KSampler',

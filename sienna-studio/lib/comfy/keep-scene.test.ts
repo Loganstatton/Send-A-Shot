@@ -145,9 +145,17 @@ describe('addKeepScene detail pass', () => {
     const g = addKeepScene(graph(), { width: 776, height: 1296, detail: true, softSeam: true })!;
     expect(g[`${P}detup`].inputs).toMatchObject({ width: 1168, height: 1944 });
     expect(g[`${P}detks`].inputs.denoise).toBe(0.3);
-    expect(g[`${P}detmask`].inputs.mask).toEqual([`${P}new`, 0]);
+    expect(g[`${P}detmask0`].inputs.mask).toEqual([`${P}new`, 0]);
     expect(g[`${P}detdown`].inputs).toMatchObject({ width: 776, height: 1296 });
     const readers = Object.entries(g).filter(([id, n]) => !id.startsWith(P) && Object.values(n.inputs).some((v) => JSON.stringify(v) === JSON.stringify([`${P}detfix`, 0])));
     expect(readers.length).toBeGreaterThan(0);
+  });
+});
+
+describe('detail pass keeps off the garment', () => {
+  it('subtracts the garment (grown) from the detail mask', () => {
+    const g = addKeepScene(graph(), { width: 776, height: 1296, detail: true, softSeam: true, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors' } })!;
+    expect(g[`${P}detmaskg`].inputs).toMatchObject({ source: [`${P}detkeep`, 0], operation: 'subtract' });
+    expect(g[`${P}detmask`].inputs.mask).toEqual([`${P}detmaskg`, 0]);
   });
 });
