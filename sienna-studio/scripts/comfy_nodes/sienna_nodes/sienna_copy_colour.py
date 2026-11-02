@@ -15,7 +15,9 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-BODY_SKIN, FACE_SKIN, CLOTHES = 2, 3, 4
+HAIR, BODY_SKIN, FACE_SKIN, CLOTHES = 1, 2, 3, 4
+# how far past the photo's garment (share of the width) the copy's clothes may be recoloured
+GARMENT_REACH = 0.05
 MIN_PIXELS = 200
 # Sienna's skin in OpenCV 8-bit LAB, the median over eight of her accepted copies (bed, gym, mirror, backless, towel,
 # implied, two hot tubs; 1 Nov): its hue (a, b) is fixed; its lightness follows the scene's light and is only pulled
@@ -66,6 +68,12 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
             if name == "clothes" and ms.sum() < MIN_PIXELS:
                 ms = cv2.erode(pr.astype(np.uint8), np.ones((7, 7), np.uint8)) > 0
         mr = m & np.logical_or.reduce([image_classes[c] > 0.5 for c in cls])
+        if name == "clothes" and photo_region is not None:
+            # only clothes in and near the photo's garment: the segmenter called her legs in bubbling water "clothes" and
+            # they were dyed the bikini's green, with a green glow at her hip (hot-tub copy, 2 Nov)
+            k = max(3, int(GARMENT_REACH * m.shape[1])) | 1
+            near = cv2.dilate((np.asarray(photo_region, np.float32) > 0.5).astype(np.uint8), np.ones((k, k), np.uint8)) > 0
+            mr &= near
         if name == "clothes" and ms.any() and mr.any():
             # closeness to the photo: how much the copy's garment overlaps the photo's (intersection over union)
             info["garment_iou"] = round(float((ms & mr).sum()) / float((ms | mr).sum()), 3)
@@ -93,6 +101,9 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
     if feather > 0:  # no hard edge where a class ends (cup edge, skin by the hair)
         k = 2 * feather + 1
         weight = cv2.GaussianBlur(weight, (k, k), feather / 2)
+    # never her hair: the feathered skin shift bled orange into the strands round her face (red-tinted hair, 2 Nov)
+    hair = (np.asarray(image_classes[HAIR], np.float32) > 0.5).astype(np.float32)
+    weight = weight * (1 - cv2.GaussianBlur(hair, (0, 0), 1.5))
     w = np.clip(weight, 0, 1)[..., None]
     return np.clip(out * (1 - w) + rgb * w, 0, 1).astype(np.float32), info
 

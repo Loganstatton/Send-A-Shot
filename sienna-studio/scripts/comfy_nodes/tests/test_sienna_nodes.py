@@ -907,6 +907,32 @@ def test_copy_colours_moves_garment_to_photo_colour():
     assert np.array_equal(out[20, 20], copy[20, 20])
 
 
+def test_copy_colours_keeps_off_legs_far_from_the_garment_and_off_her_hair():
+    import sienna_copy_colour as cc
+
+    h, w = 300, 200
+    photo = np.full((h, w, 3), 0.5, np.float32)
+    photo[50:90, 60:140] = (0.1, 0.6, 0.3)  # green top
+    copy = np.full((h, w, 3), 0.5, np.float32)
+    copy[50:90, 60:140] = (0.2, 0.3, 0.8)  # blue top (to be made green)
+    copy[200:280, 60:140] = (0.85, 0.65, 0.5)  # her legs, which the segmenter wrongly calls clothes
+    copy[10:45, 60:140] = (0.35, 0.2, 0.12)  # her hair, right above the skin
+    pc = [np.zeros((h, w), np.float32) for _ in range(6)]
+    pc[4][50:90, 60:140] = 1
+    ic = [np.zeros((h, w), np.float32) for _ in range(6)]
+    ic[4][50:90, 60:140] = 1
+    ic[4][200:280, 60:140] = 1  # legs as "clothes"
+    ic[1][10:45, 60:140] = 1  # hair
+    ic[2][45:50, 60:140] = 1  # a strip of skin next to the hair
+    region = np.ones((h, w), np.float32)
+    garment = np.zeros((h, w), np.float32)
+    garment[50:90, 60:140] = 1
+    out, info = cc.copy_colours(photo, copy, region, pc, ic, clothes=1.0, skin=0.8, feather=12, photo_region=garment)
+    assert out[70, 100][1] > out[70, 100][2]                       # the top turned green
+    assert np.abs(out[240, 100] - copy[240, 100]).max() < 0.02     # the legs did not
+    assert np.abs(out[20, 100] - copy[20, 100]).max() < 0.02       # nor did her hair
+
+
 def test_copy_colours_without_segmenter_changes_nothing():
     import sienna_copy_colour as cc
 
