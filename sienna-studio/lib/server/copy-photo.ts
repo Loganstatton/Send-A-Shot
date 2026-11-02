@@ -19,6 +19,12 @@ import { adultContentAllowed, getComfyUrl, getSettings, mimeFromBytes, readImage
 const GATE_TIMEOUT_MS = 4 * 60_000;
 // 0.85 kept her hand on the bikini string but threw her head back (the photo's sunglasses confuse the head points): 0.75
 const COPY_POSE_STRENGTH = 0.75;
+/** Source-locked copy: the photo's own pose and hands, held firmly. */
+const COPY_LOCK_POSE_STRENGTH = 0.9;
+/** Source-locked copy (testing switch, or SIENNA_COPY_SOURCE_LOCK=on): nothing about the photo's garment is adapted. */
+export function copySourceLocked(req: GenerateRequest): boolean {
+  return req.params.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on';
+}
 // the Natural skin pack's tested strength (above 0.4 her face starts to change)
 const COPY_SKIN_PACK = 0.3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -84,7 +90,7 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   const keepScene = process.env.SIENNA_COPY_SCENE !== 'off';
   // the pose guide held harder than a normal request's 0.65: her hands went elsewhere (behind her back, under her breast)
   // where the photo's pulled the bikini string at her hip (1 Nov)
-  const scene = keepScene ? { ...sceneSize(ref.width ?? 0, ref.height ?? 0), keepScene: true, denoise: 1, hires: false, controlStrength: COPY_POSE_STRENGTH } : {};
+  const scene = keepScene ? { ...sceneSize(ref.width ?? 0, ref.height ?? 0), keepScene: true, denoise: 1, hires: false, controlStrength: copySourceLocked(req) ? COPY_LOCK_POSE_STRENGTH : COPY_POSE_STRENGTH } : {};
   const sceneImages = keepScene ? { initImage: ref } : {};
   const sceneNote = keepScene ? ['The photo itself is kept as the picture; only the person in it (and any app buttons or text on a screenshot) is redrawn, as Sienna.'] : [];
   let description = '';
@@ -158,12 +164,14 @@ export async function readCopyPhoto(req: GenerateRequest): Promise<GenerateReque
   const microTop = /\b(micro|tiny|very small|sliver|narrow)\b[^,]*\b(cups?|top|triangles?)\b/i.test(it.fields.outfit);
   // a cup is always centred over the nipple: "cups set slightly toward the outer sides" left the nipples bare on every
   // try of the boat copy (1 Nov)
+  // (source-locked: the photo's cups stay where they are; if that bares a nipple the copy is rejected, never redesigned)
+  const locked = copySourceLocked(req);
   for (const k of ['outfit', 'bodyPresentation'] as const)
-    it.fields[k] = it.fields[k].replace(/,?\s*[^,]*\bcups?\b[^,]*\b(?:toward|towards|to|on)\s+the\s+(?:outer|inner)\s+(?:sides?|edges?)\b[^,]*/gi, '').replace(/^,\s*/, '').trim();
+    if (!locked) it.fields[k] = it.fields[k].replace(/,?\s*[^,]*\bcups?\b[^,]*\b(?:toward|towards|to|on)\s+the\s+(?:outer|inner)\s+(?:sides?|edges?)\b[^,]*/gi, '').replace(/^,\s*/, '').trim();
   // a see-through top is copied as an opaque one: the top check rejects any nipple showing through, so every try of a
   // sheer copy was thrown away (boat photo, 1 Nov)
   let sheerNote = '';
-  if (/\b(sheer|see-through|transparent)\b/i.test(it.fields.outfit)) {
+  if (!locked && /\b(sheer|see-through|transparent)\b/i.test(it.fields.outfit)) {
     it.fields.outfit = it.fields.outfit.replace(/,?\s*\b(?:slightly |semi-?|very |thin,? )?(?:sheer|see-through|transparent)\b(?:\s+white)?/gi, (m) => (/white/i.test(m) ? ' white' : '')).replace(/\s{2,}/g, ' ').trim();
     sheerNote = 'The photo’s top is see-through; the copy’s is opaque, as see-through tops showing nipples aren’t allowed.';
   }

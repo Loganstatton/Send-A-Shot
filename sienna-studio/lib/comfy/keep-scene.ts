@@ -53,6 +53,13 @@ const DEPTH_INPUTS: Record<DepthNode, Record<string, unknown>> = {
 /** The depth of her figure (no head): where the bust touches and where it separates is shading, not edges, so the
  * outline missed it and her cleavage ran long where the photo's was short (1 Nov). */
 export const BODY_DEPTH = { strength: 0.6, end: 0.6 } as const;
+/**
+ * Source-locked copy (testing; the owner, 2 Nov: "the output should be nearly identical to the uploaded photograph,
+ * with Sienna replacing the original subject"). The person is still drawn new (no pixel of the other woman is kept),
+ * but locked to the photo: a tighter redraw region, her silhouette's own outline (from the person mask, no texture),
+ * the figure's lines unblurred, and every guide held almost to the end of sampling.
+ */
+export const SOURCE_LOCK = { grow: 0.015, garment: { strength: 0.9, end: 0.85 }, body: { strength: 0.85, end: 0.9 }, depth: { strength: 0.8, end: 0.8 }, blurSigma: 0.8 } as const;
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
 export const UNION_CN_FILE = 'xinsir_union_promax.safetensors';
@@ -89,7 +96,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; detail?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode; twoPass?: boolean } },
+  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; detail?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode; twoPass?: boolean; sourceLock?: boolean } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -103,7 +110,8 @@ export function addKeepScene(
   const p = KEEP_SCENE_PREFIX;
   g[`${p}segm`] = { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: PERSON_SEGM_FILE } };
   g[`${p}person`] = { class_type: 'SegmDetectorCombined_v2', inputs: { segm_detector: [`${p}segm`, 1], image: scene, threshold: 0.3, dilation: 0 }, _meta: { title: 'Keep scene: the person' } };
-  g[`${p}grow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}person`, 0], expand: Math.round(opts.width * KEEP_SCENE_GROW), tapered_corners: true }, _meta: { title: 'Keep scene: room for Sienna' } };
+  const lock = !!opts.garment?.sourceLock;
+  g[`${p}grow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}person`, 0], expand: Math.round(opts.width * (lock ? SOURCE_LOCK.grow : KEEP_SCENE_GROW)), tapered_corners: true }, _meta: { title: 'Keep scene: room for Sienna' } };
   let redraw: Ref = [`${p}grow`, 0];
   // the photo as pasted back round her: with uiPaint, the overlays already painted out from the pixels round them (the
   // image model wrote fake letters where it redrew them, 1 Nov), so only she is redrawn
@@ -229,7 +237,7 @@ export function addKeepScene(
       // blurred a little first: the soft edges of fine detail (a tattoo on her side, skin texture) were drawn onto Sienna
       // as brown lines (1 Nov); a stronger blur (sigma 3) also lost the bikini cups' edges and every try drew the cups
       // see-through or as bare strings, so it stays light
-      g[`${p}bodyblur`] = { class_type: 'ImageBlur', inputs: { image: scene, blur_radius: 3, sigma: 1.5 } };
+      g[`${p}bodyblur`] = { class_type: 'ImageBlur', inputs: { image: scene, blur_radius: lock ? 2 : 3, sigma: lock ? SOURCE_LOCK.blurSigma : 1.5 } };
       g[`${p}softcanny`] = { class_type: 'Canny', inputs: { image: [`${p}bodyblur`, 0], low_threshold: 0.08, high_threshold: 0.25 } };
       g[`${p}bodylines`] = {
         class_type: 'ImageCompositeMasked',
@@ -237,6 +245,19 @@ export function addKeepScene(
         _meta: { title: 'Keep scene: her figure’s outline (no head)' },
       };
       lines = [`${p}bodylines`, 0];
+      if (lock) {
+        // her silhouette's own outline, from the person mask (no skin texture, no tattoos), head left out
+        g[`${p}silimg`] = { class_type: 'MaskToImage', inputs: { mask: [`${p}person`, 0] } };
+        g[`${p}silcanny`] = { class_type: 'Canny', inputs: { image: [`${p}silimg`, 0], low_threshold: 0.15, high_threshold: 0.4 } };
+        g[`${p}silmask0`] = { class_type: 'ImageToMask', inputs: { image: [`${p}silcanny`, 0], channel: 'red' } };
+        g[`${p}silmask`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}silmask0`, 0], source: [`${p}body`, 0], x: 0, y: 0, operation: 'multiply' } };
+        g[`${p}bodysil`] = {
+          class_type: 'ImageCompositeMasked',
+          inputs: { destination: lines, source: [`${p}silcanny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}silmask`, 0] },
+          _meta: { title: 'Keep scene: her silhouette from the photo (source lock)' },
+        };
+        lines = [`${p}bodysil`, 0];
+      }
     }
     // garment and figure are separate guides: in one image at 0.9 the photo's wider thighs and hips put their outline
     // on Sienna's slimmer legs and it was drawn as yellow strings down her thigh and round her hip (1 Nov); the figure
@@ -249,12 +270,12 @@ export function addKeepScene(
     };
     g[`${p}cn`] = { class_type: 'ControlNetLoader', inputs: { control_net_name: opts.garment.controlnet } };
     g[`${p}cntype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'canny/lineart/anime_lineart/mlsd' } };
-    const lineSet = garmentLines();
+    const lineSet = lock ? SOURCE_LOCK.garment : garmentLines();
     // Body first, garment second (SIENNA_COPY_TWO_PASS / test.copyTwoPass): the first pass draws her without the
     // photo's garment outline (the garment in words only), so her own bust and waist come from her LoRA and the
     // depth guide; the outline is then fitted to her body in pass B below. Needs a DWPose node to copy.
     const poseTpl = Object.values(g).find((n) => n.class_type === 'DWPreprocessor');
-    const twoPass = !!opts.garment.twoPass && !!poseTpl && isRef(g[decodeId].inputs.vae);
+    const twoPass = !lock && !!opts.garment.twoPass && !!poseTpl && isRef(g[decodeId].inputs.vae);
     let cond: Ref;
     let condNeg: Ref;
     if (twoPass) {
@@ -274,7 +295,7 @@ export function addKeepScene(
       g[`${p}bodyonly`] = { class_type: 'ImageCompositeMasked', inputs: { destination: bodyLines, source: [`${p}black`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] } };
       g[`${p}cnbody`] = {
         class_type: 'ControlNetApplyAdvanced',
-        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cntype`, 0], image: [`${p}bodyonly`, 0], strength: BODY_LINES.strength, start_percent: 0, end_percent: BODY_LINES.end },
+        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cntype`, 0], image: [`${p}bodyonly`, 0], strength: lock ? SOURCE_LOCK.body.strength : BODY_LINES.strength, start_percent: 0, end_percent: lock ? SOURCE_LOCK.body.end : BODY_LINES.end },
         _meta: { title: 'Keep scene: follow her figure’s outline (lightly)' },
       };
       cond = [`${p}cnbody`, 0];
@@ -291,7 +312,7 @@ export function addKeepScene(
       g[`${p}cndtype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'depth' } };
       g[`${p}cndapply`] = {
         class_type: 'ControlNetApplyAdvanced',
-        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cndtype`, 0], image: [`${p}bodydepth`, 0], strength: BODY_DEPTH.strength, start_percent: 0, end_percent: BODY_DEPTH.end },
+        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cndtype`, 0], image: [`${p}bodydepth`, 0], strength: lock ? SOURCE_LOCK.depth.strength : BODY_DEPTH.strength, start_percent: 0, end_percent: lock ? SOURCE_LOCK.depth.end : BODY_DEPTH.end },
         _meta: { title: 'Keep scene: follow her figure’s depth' },
       };
       cond = [`${p}cndapply`, 0];

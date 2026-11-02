@@ -141,6 +141,7 @@ export const simpleCreateSchema = z.object({
       figurePass: z.object({ file: z.enum(['pack_1883628.safetensors']), strength: z.number().min(0.3).max(0.9), denoise: z.number().min(0.3).max(0.8), style: z.enum(['fuller']).optional(), enlarge: z.number().min(0).max(0.35).optional() }).optional(),
       /** close-up detail pass (24 Oct, lib/comfy/detail-pass.ts): nude / bottomless requests in adult mode only; 'off' turns SIENNA_DETAIL off */
       copyTwoPass: z.boolean().optional(),
+      copySourceLock: z.boolean().optional(),
       detailPass: z.union([z.literal('off'), z.object({ style: z.enum(['peach', 'butterfly', 'lotte']), strength: z.number().min(0.2).max(0.9).optional(), denoise: z.number().min(0.2).max(0.75).optional() })]).optional(),
       /** benchmark: the hi-res refinement pass on (the photo upscaled and resampled before the face, hand and detail passes) */
       hires: z.object({ scale: z.number().min(1.1).max(2), denoise: z.number().min(0.1).max(0.5).optional() }).optional(),

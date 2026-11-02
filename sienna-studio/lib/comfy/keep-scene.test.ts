@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { addCopyColours, addCoverUp, COVER, coverColour, GARMENT_PASS, garmentLines } from './keep-scene';
+import { addCopyColours, addCoverUp, COVER, coverColour, GARMENT_PASS, garmentLines, KEEP_SCENE_GROW, SOURCE_LOCK } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -178,6 +178,28 @@ describe('two-pass copy (body first, garment second)', () => {
     const g = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors' } })!;
     expect(g[`${P}cnapply`]).toBeDefined();
     expect(g[`${P}bks`]).toBeUndefined();
+  });
+});
+
+describe('source-locked copy', () => {
+  const locked = () => addKeepScene(graph(), { width: 800, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true, depth: 'DepthAnythingV2Preprocessor', sourceLock: true, twoPass: true } })!;
+  it('holds every guide to the photo, almost to the end, in a tighter region', () => {
+    const g = locked();
+    expect(g[`${P}grow`].inputs.expand).toBe(Math.round(800 * SOURCE_LOCK.grow));
+    expect(SOURCE_LOCK.grow).toBeLessThan(KEEP_SCENE_GROW);
+    expect(g[`${P}cnapply`].inputs).toMatchObject({ strength: SOURCE_LOCK.garment.strength, end_percent: SOURCE_LOCK.garment.end });
+    expect(g[`${P}cnbody`].inputs).toMatchObject({ strength: SOURCE_LOCK.body.strength, end_percent: SOURCE_LOCK.body.end });
+    expect(g[`${P}cndapply`].inputs).toMatchObject({ strength: SOURCE_LOCK.depth.strength, end_percent: SOURCE_LOCK.depth.end });
+    expect(g[`${P}bodyblur`].inputs.sigma).toBe(SOURCE_LOCK.blurSigma);
+  });
+  it('adds her silhouette from the photo person mask, head left out', () => {
+    const g = locked();
+    expect(g[`${P}silimg`].inputs.mask).toEqual([`${P}person`, 0]);
+    expect(g[`${P}silmask`].inputs).toMatchObject({ source: [`${P}body`, 0], operation: 'multiply' });
+    expect(g[`${P}bodyonly`].inputs.destination).toEqual([`${P}bodysil`, 0]);
+  });
+  it('never runs the two-pass garment redraw', () => {
+    expect(locked()[`${P}bks`]).toBeUndefined();
   });
 });
 

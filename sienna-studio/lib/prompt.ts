@@ -18,6 +18,8 @@ export interface BuildPromptInput {
   closeFrame?: boolean;
   /** Copy Photo: the photo's hairstyle, bust size and expression win over her profile's defaults (copyTraits). */
   copy?: boolean;
+  /** Copy Photo, source-locked: no wording that moves or reshapes the photo's garment. */
+  sourceLock?: boolean;
   character: CharacterProfile;
   siennaLock: boolean;
   contentMode: ContentMode;
@@ -283,7 +285,7 @@ const OUTDOOR_SCENE_RE = /\b(beach|ocean|sea|lake|river|forest|woods|park|street
 const LIGHT_WORDS_RE = /\b(lighting|light|lit|sunlight|sunlit|daylight|lamp|lamplight|candlelight|neon|golden hour|sunset|sunrise|backlit|flash)\b/i;
 const NON_PHONE_CAMERA_RE = /\b(dslr|mirrorless|film camera|35mm film|medium format|professional (camera|photographer|photo ?shoot)|studio (photo|shoot|portrait)|canon|nikon|sony a\d|leica|hasselblad)\b/i;
 
-export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1, coverStomach = false, fixes = [], closeFrame = false, copy = false }: BuildPromptInput): BuiltPrompt {
+export function buildPrompt({ fields, character, siennaLock, contentMode, cleanup = false, poseGuide, version = 1, coverStomach = false, fixes = [], closeFrame = false, copy = false, sourceLock = false }: BuildPromptInput): BuiltPrompt {
   const warnings: string[] = [];
   const effectiveFields = { ...fields };
 
@@ -397,7 +399,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     poseGuide === undefined ? '' : f.pose,
     copy ? weighHairstyle(f.bodyPresentation) : f.bodyPresentation,
     // narrow copied cups left her nipples at the cup edges (1 Nov): in copy mode a top always covers them
-    copy && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
+    copy && !sourceLock && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
     // the photo's breasts hung below the under-bust string; the copy's ended at it (1 Nov)
     copy && /\b(hangs?|hanging|showing|visible)\b[^,]*\bbelow the (thin )?(under-?(bust|band)? ?)?(string|band)\b|\bunderside[s]? (largely |mostly )?bare\b|\bunderboob\b/i.test(`${f.outfit}, ${f.bodyPresentation}`) ? '(lower curve of each breast hanging below the thin under-bust string:1.2)' : '',
     // a wet micro bikini was drawn see-through on every try (1 Nov): opaque unless the photo's garment is sheer

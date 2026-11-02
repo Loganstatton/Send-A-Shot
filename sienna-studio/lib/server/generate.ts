@@ -263,6 +263,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     fixes,
     closeFrame: !!req.simple?.copy || process.env.SIENNA_CLOSE_FRAMING === 'true',
     copy: !!req.simple?.copy,
+    sourceLock: !!req.simple?.copy && (req.params.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on'),
   });
   if (built.blocked.length) {
     throw new GenerationError(
@@ -689,7 +690,8 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
           const wantTwo = p.copyTwoPass ?? process.env.SIENNA_COPY_TWO_PASS === 'on';
           const twoPass = wantTwo && !!(await backend.nodeInfo(WARP_GARMENT_CLASS, true).catch(() => null));
           if (wantTwo && !twoPass) warnings.push('Copy Photo: two-pass copy asked for, but the GPU server has no SiennaWarpGarment yet — one pass used.');
-          garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body, depth, ...(twoPass ? { twoPass } : {}) };
+          const sourceLock = p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on';
+          garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body: body || sourceLock, depth, ...(twoPass && !sourceLock ? { twoPass } : {}), ...(sourceLock ? { sourceLock } : {}) };
         }
         else warnings.push(`Copy Photo: the garment’s outline wasn’t used — the GPU server is missing ${cns.includes(UNION_CN_FILE) ? describeMissing(missing) : UNION_CN_FILE}.`);
       } catch {
@@ -1284,7 +1286,9 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
             // Never hand over a photo with a nipple showing when the outfit has a top.
             return patchRecord(id, {
               status: 'error',
-              error: `Top check: all ${attempts.length} attempts showed a nipple, so no photo was kept. Generate again (new seed) or lower the style-pack strength.`,
+              error: rec.params.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on'
+                ? `Exact copy not possible: with the photo’s own top, a nipple showed on all ${attempts.length} tries, so no photo was kept. The source-locked copy never changes the garment to cover it.`
+                : `Top check: all ${attempts.length} attempts showed a nipple, so no photo was kept. Generate again (new seed) or lower the style-pack strength.`,
               exposureGuard: { ...guard, attempts },
               completedAt: new Date().toISOString(),
               queuePosition: 0,

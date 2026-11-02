@@ -280,6 +280,14 @@ describe('close framing (Copy Photo)', () => {
 });
 
 describe('copy mode (Copy Photo)', () => {
+  it('source-locked copies add no wording that moves the photo cups', () => {
+    const f = { ...EMPTY_FIELDS, outfit: 'tiny white micro string bikini top, cups toward the outer sides' };
+    const plain = buildPrompt({ fields: f, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true }).positive;
+    const locked = buildPrompt({ fields: f, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true, sourceLock: true }).positive;
+    expect(plain).toMatch(/centred over the nipple/);
+    expect(locked).not.toMatch(/centred over the nipple/);
+    expect(locked).toMatch(/cups toward the outer sides/);
+  });
   it('takes the photo’s hairstyle and bust size over her profile defaults, keeping her hair colour', () => {
     const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'hair pulled back into a high messy top-knot bun, very large breasts', expression: 'neutral, lips parted mid-sentence' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
     expect(r.positive).toContain('dark-brown hair with lighter caramel ends');

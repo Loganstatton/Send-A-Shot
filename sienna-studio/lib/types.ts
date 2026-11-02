@@ -186,6 +186,8 @@ export interface GenerationParams {
   keepSceneGarment?: string[];
   /** Copy Photo: body first, garment second (testing switch; SIENNA_COPY_TWO_PASS=on for all). */
   copyTwoPass?: boolean;
+  /** Copy Photo: source-locked copy, everything held to the photo (testing switch; SIENNA_COPY_SOURCE_LOCK=on for all). */
+  copySourceLock?: boolean;
   hiresScale?: number;
   hiresDenoise?: number;
   /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */
