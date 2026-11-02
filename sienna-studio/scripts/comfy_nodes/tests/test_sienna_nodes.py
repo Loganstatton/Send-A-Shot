@@ -10,6 +10,7 @@ from sienna_crop import chin_crop, topmost_face_band  # noqa: E402
 import sienna_body as sb  # noqa: E402
 import sienna_redraw as rd  # noqa: E402
 import sienna_exposure as ex  # noqa: E402
+import sienna_garment_warp as gw  # noqa: E402
 import sienna_face as sf  # noqa: E402
 from sienna_garment import garment_composite  # noqa: E402
 from sienna_pose import (  # noqa: E402
@@ -471,6 +472,33 @@ def test_fill_patch_paints_the_garment_colour_only_inside_the_mask():
     assert out[240, 170].min() > 0.8                                     # the areola is now white fabric
     assert np.allclose(out[100, 400], img[100, 400])                     # elsewhere untouched
     assert np.allclose(ex.fill_patch(img, np.zeros_like(m), (1, 1, 1)), img)
+
+
+def _openpose(points, w=600, h=1000, normalized=True):
+    flat = []
+    for p in points:
+        flat += ([p[0] / w, p[1] / h, 1.0] if normalized else [p[0], p[1], 1.0]) if p else [0.0, 0.0, 0.0]
+    return {"canvas_width": w, "canvas_height": h, "people": [{"pose_keypoints_2d": flat}]}
+
+
+def test_garment_warp_moves_the_photo_garment_onto_her_torso():
+    import cv2
+    photo = standing()
+    her = [None if p is None else (p[0] + 40, p[1] * 1.1) for p in photo]   # she stands 40 px right, torso 10% longer
+    mask = np.zeros((H, W), np.float32)
+    cv2.rectangle(mask, (260, 260), (340, 300), 1.0, -1)                    # a top across the chest
+    out, info = gw.warp_mask(mask, _openpose(photo), _openpose(her, normalized=False))
+    assert info["warped"] is True
+    ys, xs = np.nonzero(out > 0.5)
+    assert abs(xs.mean() - 340) < 3 and abs(ys.mean() - 308) < 4           # moved right and down with her chest
+    assert 0.9 < (out > 0.5).sum() / (mask > 0.5).sum() < 1.25              # same garment, scaled with her
+    # no body found: the photo's mask unchanged, with the reason
+    same, why = gw.warp_mask(mask, {"people": []}, _openpose(her))
+    assert np.array_equal(same, mask) and why["warped"] is False
+    # an implausible match (a torso three times the size) is refused, not applied
+    huge = [None if p is None else (p[0] * 3, p[1] * 3) for p in photo]
+    kept, why2 = gw.warp_mask(mask, _openpose(photo), _openpose(huge, normalized=False))
+    assert why2["warped"] is False and np.array_equal(kept, mask)
 
 
 def test_exposure_chest_crop_box_pads_covered_breasts_and_stays_in_frame():

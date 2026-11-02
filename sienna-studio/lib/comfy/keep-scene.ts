@@ -89,7 +89,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; detail?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } },
+  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; detail?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode; twoPass?: boolean } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -250,21 +250,35 @@ export function addKeepScene(
     g[`${p}cn`] = { class_type: 'ControlNetLoader', inputs: { control_net_name: opts.garment.controlnet } };
     g[`${p}cntype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'canny/lineart/anime_lineart/mlsd' } };
     const lineSet = garmentLines();
-    g[`${p}cnapply`] = {
-      class_type: 'ControlNetApplyAdvanced',
-      inputs: { positive: g[samplerId].inputs.positive, negative: g[samplerId].inputs.negative, control_net: [`${p}cntype`, 0], image: [`${p}lines`, 0], strength: lineSet.strength, start_percent: 0, end_percent: lineSet.end },
-      _meta: { title: 'Keep scene: follow the garment’s outline' },
-    };
-    let cond: Ref = [`${p}cnapply`, 0];
+    // Body first, garment second (SIENNA_COPY_TWO_PASS / test.copyTwoPass): the first pass draws her without the
+    // photo's garment outline (the garment in words only), so her own bust and waist come from her LoRA and the
+    // depth guide; the outline is then fitted to her body in pass B below. Needs a DWPose node to copy.
+    const poseTpl = Object.values(g).find((n) => n.class_type === 'DWPreprocessor');
+    const twoPass = !!opts.garment.twoPass && !!poseTpl && isRef(g[decodeId].inputs.vae);
+    let cond: Ref;
+    let condNeg: Ref;
+    if (twoPass) {
+      cond = g[samplerId].inputs.positive as Ref;
+      condNeg = g[samplerId].inputs.negative as Ref;
+    } else {
+      g[`${p}cnapply`] = {
+        class_type: 'ControlNetApplyAdvanced',
+        inputs: { positive: g[samplerId].inputs.positive, negative: g[samplerId].inputs.negative, control_net: [`${p}cntype`, 0], image: [`${p}lines`, 0], strength: lineSet.strength, start_percent: 0, end_percent: lineSet.end },
+        _meta: { title: 'Keep scene: follow the garment’s outline' },
+      };
+      cond = [`${p}cnapply`, 0];
+      condNeg = [`${p}cnapply`, 1];
+    }
     if (bodyLines) {
       // the figure without the garment area (the garment guide has it)
       g[`${p}bodyonly`] = { class_type: 'ImageCompositeMasked', inputs: { destination: bodyLines, source: [`${p}black`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] } };
       g[`${p}cnbody`] = {
         class_type: 'ControlNetApplyAdvanced',
-        inputs: { positive: cond, negative: [cond[0], 1], control_net: [`${p}cntype`, 0], image: [`${p}bodyonly`, 0], strength: BODY_LINES.strength, start_percent: 0, end_percent: BODY_LINES.end },
+        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cntype`, 0], image: [`${p}bodyonly`, 0], strength: BODY_LINES.strength, start_percent: 0, end_percent: BODY_LINES.end },
         _meta: { title: 'Keep scene: follow her figure’s outline (lightly)' },
       };
       cond = [`${p}cnbody`, 0];
+      condNeg = [`${p}cnbody`, 1];
     }
     if (opts.garment.body && opts.garment.depth) {
       g[`${p}depth`] = { class_type: opts.garment.depth, inputs: { image: scene, ...DEPTH_INPUTS[opts.garment.depth] }, _meta: { title: 'Keep scene: depth of the photo' } };
@@ -277,13 +291,15 @@ export function addKeepScene(
       g[`${p}cndtype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'depth' } };
       g[`${p}cndapply`] = {
         class_type: 'ControlNetApplyAdvanced',
-        inputs: { positive: cond, negative: [cond[0], 1], control_net: [`${p}cndtype`, 0], image: [`${p}bodydepth`, 0], strength: BODY_DEPTH.strength, start_percent: 0, end_percent: BODY_DEPTH.end },
+        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cndtype`, 0], image: [`${p}bodydepth`, 0], strength: BODY_DEPTH.strength, start_percent: 0, end_percent: BODY_DEPTH.end },
         _meta: { title: 'Keep scene: follow her figure’s depth' },
       };
       cond = [`${p}cndapply`, 0];
+      condNeg = [`${p}cndapply`, 1];
     }
     g[samplerId].inputs.positive = cond;
-    g[samplerId].inputs.negative = [cond[0], 1];
+    g[samplerId].inputs.negative = condNeg;
+    if (twoPass) finalImage = addGarmentPass(g, { samplerId, decodeId, scene, image: finalImage, phrases: gp, width: opts.width, poseInputs: poseTpl!.inputs, cond, condNeg });
   }
   // Detail pass: her body redrawn lightly at 1.5x and scaled back, for real skin texture and detail (the owner,
   // 1 Nov: the copies' body looked airbrushed). Same conditioning as the redraw (her prompt, pose and outline guides);
@@ -299,7 +315,8 @@ export function addKeepScene(
     // never over the garment or just round it: at tiny cups the pass turned a cup's edge into a bare nipple and every
     // try of the boat copy was thrown away (1 Nov); the cups keep the main redraw's coverage
     if (g[`${p}gmask`]) {
-      g[`${p}detkeep`] = { class_type: 'GrowMask', inputs: { mask: [`${p}gmask`, 0], expand: Math.round(w * 0.03), tapered_corners: true } };
+      // (two-pass: the garment where it now sits on her, not where it sat in the photo)
+      g[`${p}detkeep`] = { class_type: 'GrowMask', inputs: { mask: [g[`${p}bmask`] ? `${p}bmask` : `${p}gmask`, 0], expand: Math.round(w * 0.03), tapered_corners: true } };
       g[`${p}detmaskg`] = { class_type: 'MaskComposite', inputs: { destination: detMask, source: [`${p}detkeep`, 0], x: 0, y: 0, operation: 'subtract' } };
       detMask = [`${p}detmaskg`, 0];
     }
@@ -322,6 +339,64 @@ export function addKeepScene(
     for (const [k, v] of Object.entries(node.inputs)) if (isRef(v) && v[0] === decodeId && v[1] === 0) node.inputs[k] = finalImage;
   }
   return g;
+}
+
+/** Pass B of the two-pass copy: the garment fitted to her body. */
+export const GARMENT_PASS = { denoise: 0.75, steps: 30, lines: 0.75, end: 0.6 } as const;
+export const WARP_GARMENT_CLASS = 'SiennaWarpGarment';
+function addGarmentPass(
+  g: ComfyGraph,
+  o: { samplerId: string; decodeId: string; scene: Ref; image: Ref; phrases: string[]; width: number; poseInputs: Record<string, unknown>; cond: Ref; condNeg: Ref },
+): Ref {
+  const p = KEEP_SCENE_PREFIX;
+  const k = g[o.samplerId].inputs;
+  const vae = g[o.decodeId].inputs.vae;
+  // where the garment sat on the photo's torso, moved onto hers (DWPose on the photo and on pass A)
+  g[`${p}ppose`] = { class_type: 'DWPreprocessor', inputs: { ...o.poseInputs, image: o.scene }, _meta: { title: 'Keep scene: the photo’s pose (for the garment)' } };
+  g[`${p}hpose`] = { class_type: 'DWPreprocessor', inputs: { ...o.poseInputs, image: o.image }, _meta: { title: 'Keep scene: her pose after pass A' } };
+  g[`${p}gwarp`] = { class_type: WARP_GARMENT_CLASS, inputs: { mask: [`${p}gonher`, 0], photo_pose: [`${p}ppose`, 1], her_pose: [`${p}hpose`, 1] }, _meta: { title: 'Keep scene: the photo’s garment moved onto her' } };
+  // and where pass A drew her garment, so none of it is left outside the redraw
+  let herG: Ref | null = null;
+  o.phrases.forEach((phrase, i) => {
+    g[`${p}hseg${i}`] = {
+      class_type: 'Florence2Run',
+      inputs: { image: o.image, florence2_model: [`${p}fl`, 0], text_input: phrase, task: 'referring_expression_segmentation', fill_mask: true, keep_model_loaded: i < o.phrases.length - 1, max_new_tokens: 1024, num_beams: 3, do_sample: false, seed: 1 },
+      _meta: { title: `Keep scene: her ${phrase} after pass A` },
+    };
+    if (!herG) herG = [`${p}hseg${i}`, 1];
+    else {
+      g[`${p}hsegadd${i}`] = { class_type: 'MaskComposite', inputs: { destination: herG, source: [`${p}hseg${i}`, 1], x: 0, y: 0, operation: 'add' } };
+      herG = [`${p}hsegadd${i}`, 0];
+    }
+  });
+  g[`${p}bunion`] = herG
+    ? { class_type: 'MaskComposite', inputs: { destination: [`${p}gwarp`, 0], source: herG, x: 0, y: 0, operation: 'add' } }
+    : { class_type: 'GrowMask', inputs: { mask: [`${p}gwarp`, 0], expand: 0, tapered_corners: true } };
+  // only on her
+  g[`${p}bher`] = { class_type: 'GrowMask', inputs: { mask: [`${p}new`, 0], expand: Math.round(o.width * 0.02), tapered_corners: true } };
+  g[`${p}bon`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}bunion`, 0], source: [`${p}bher`, 0], x: 0, y: 0, operation: 'multiply' } };
+  g[`${p}bmask`] = { class_type: 'GrowMask', inputs: { mask: [`${p}bon`, 0], expand: Math.round(o.width * 0.03), tapered_corners: true }, _meta: { title: 'Keep scene: pass B region (her garment)' } };
+  // the moved garment's outline as the guide
+  g[`${p}bgimage`] = { class_type: 'MaskToImage', inputs: { mask: [`${p}gwarp`, 0] } };
+  g[`${p}bcanny`] = { class_type: 'Canny', inputs: { image: [`${p}bgimage`, 0], low_threshold: 0.15, high_threshold: 0.4 } };
+  g[`${p}bgrow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}gwarp`, 0], expand: 6, tapered_corners: true } };
+  g[`${p}blines`] = { class_type: 'ImageCompositeMasked', inputs: { destination: [`${p}black`, 0], source: [`${p}bcanny`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}bgrow`, 0] } };
+  g[`${p}bcn`] = {
+    class_type: 'ControlNetApplyAdvanced',
+    inputs: { positive: o.cond, negative: o.condNeg, control_net: [`${p}cntype`, 0], image: [`${p}blines`, 0], strength: GARMENT_PASS.lines, start_percent: 0, end_percent: GARMENT_PASS.end },
+    _meta: { title: 'Keep scene: pass B follows the garment fitted to her' },
+  };
+  g[`${p}benc`] = { class_type: 'VAEEncode', inputs: { pixels: o.image, vae } };
+  g[`${p}bnoise`] = { class_type: 'SetLatentNoiseMask', inputs: { samples: [`${p}benc`, 0], mask: [`${p}bmask`, 0] } };
+  g[`${p}bks`] = {
+    class_type: 'KSampler',
+    inputs: { model: k.model, positive: [`${p}bcn`, 0], negative: [`${p}bcn`, 1], latent_image: [`${p}bnoise`, 0], seed: k.seed, steps: GARMENT_PASS.steps, cfg: k.cfg, sampler_name: k.sampler_name, scheduler: k.scheduler, denoise: GARMENT_PASS.denoise },
+    _meta: { title: 'Keep scene: pass B (garment on her body)' },
+  };
+  g[`${p}bdec`] = { class_type: 'VAEDecode', inputs: { samples: [`${p}bks`, 0], vae } };
+  g[`${p}bsoft`] = { class_type: SOFT_SEAM_CLASS, inputs: { mask: [`${p}bmask`, 0], kernel_size: 15, sigma: 5 } };
+  g[`${p}bfix`] = { class_type: 'ImageCompositeMasked', inputs: { destination: o.image, source: [`${p}bdec`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}bsoft`, 0] } };
+  return [`${p}bfix`, 0];
 }
 
 /**

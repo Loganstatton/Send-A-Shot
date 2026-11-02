@@ -141,6 +141,7 @@ export const POST = handle(async (req: Request) => {
       ...(body.test?.noFigurePass ? { noFigurePass: true } : {}),
       ...(body.test?.hires ? { hires: true, hiresScale: body.test.hires.scale, ...(body.test.hires.denoise ? { hiresDenoise: body.test.hires.denoise } : {}) } : {}),
       ...(body.test?.detailPass ? { detailPass: body.test.detailPass } : {}),
+      ...(body.test?.copyTwoPass !== undefined ? { copyTwoPass: body.test.copyTwoPass } : {}),
     },
     images: {
       initImage: ref && edit ? ref : null,

@@ -41,7 +41,7 @@ import { CAMERA_ANGLE_RE, matchPosePreset, NOT_STANDING_RE, presetFitsCamera, PO
 import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE } from '../comfy/keep-scene';
+import { addCopyColours, addCoverUp, addKeepScene, COPY_COLOURS_CLASS, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
 import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_REFINE_DENOISE } from '../comfy/hand-refine';
 import { recordLessons } from './copy-lessons';
 import { backgroundFixes, buildCorrection, pickFixes } from '../corrections';
@@ -672,7 +672,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
       /* can't ask: leave the overlays, hard seam */
     }
     // the garment's outline needs the union ControlNet file and the Florence-2 / canny nodes on the GPU server
-    let garment: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode } | undefined;
+    let garment: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode; twoPass?: boolean } | undefined;
     if (p.keepSceneGarment?.length) {
       try {
         const [cns, missing] = await Promise.all([
@@ -685,7 +685,11 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
           // the first depth preprocessor the server has (its model downloads on first use)
           let depth: DepthNode | undefined;
           if (body && process.env.SIENNA_COPY_BODY_DEPTH !== 'off') for (const d of DEPTH_NODES) if (!depth && (await backend.nodeInfo(d).catch(() => null))) depth = d;
-          garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body, depth };
+          // body first, garment second (testing until benchmarked): needs the warp node on the GPU server
+          const wantTwo = p.copyTwoPass ?? process.env.SIENNA_COPY_TWO_PASS === 'on';
+          const twoPass = wantTwo && !!(await backend.nodeInfo(WARP_GARMENT_CLASS, true).catch(() => null));
+          if (wantTwo && !twoPass) warnings.push('Copy Photo: two-pass copy asked for, but the GPU server has no SiennaWarpGarment yet — one pass used.');
+          garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body, depth, ...(twoPass ? { twoPass } : {}) };
         }
         else warnings.push(`Copy Photo: the garment’s outline wasn’t used — the GPU server is missing ${cns.includes(UNION_CN_FILE) ? describeMissing(missing) : UNION_CN_FILE}.`);
       } catch {

@@ -396,6 +396,35 @@ class SiennaCoverMask:
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(mask)[None, ...], text, out)}
 
 
+class SiennaWarpGarment:
+    """Copy Photo, body first and garment second: the photo's garment mask moved from the photo's torso (DWPose neck,
+    shoulders, hips) onto Sienna's in the first-pass result (sienna_garment_warp.py). On any failure the mask comes
+    back unchanged and the report says why."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"mask": ("MASK",), "photo_pose": ("POSE_KEYPOINT",), "her_pose": ("POSE_KEYPOINT",)}}
+
+    RETURN_TYPES = ("MASK", "STRING")
+    RETURN_NAMES = ("mask", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, mask, photo_pose, her_pose):
+        from .sienna_garment_warp import warp_mask
+
+        m = (mask[0] if mask.dim() == 3 else mask).detach().cpu().numpy().astype(np.float32)
+        first = lambda p: p[0] if isinstance(p, list) and p else p
+        try:
+            out, info = warp_mask(m, first(photo_pose), first(her_pose))
+        except Exception as e:  # never lose the copy over the warp: the photo's own mask is used
+            out, info = m, {"warped": False, "error": f"{type(e).__name__}: {e}"[:300]}
+        text = json.dumps(info)
+        print(f"[sienna] garment warp: {text}", flush=True)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...], text)}
+
+
 class SiennaFaceCheck:
     """Cosine similarity of the main face to Sienna's approved-face embedding (the app redoes photos below threshold)."""
 
@@ -763,6 +792,7 @@ class SiennaFillGaps:
         return (res,)
 
 NODE_CLASS_MAPPINGS = {
+    "SiennaWarpGarment": SiennaWarpGarment,
     "SiennaCoverMask": SiennaCoverMask,
     "SiennaFillGaps": SiennaFillGaps,
     "SiennaCopyColours": SiennaCopyColours,
@@ -784,6 +814,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaWarpGarment": "Sienna Warp Garment (copy)",
     "SiennaCoverMask": "Sienna Cover Mask (copy)",
     "SiennaFillGaps": "Sienna Fill Gaps",
     "SiennaCopyColours": "Sienna Copy Colours",

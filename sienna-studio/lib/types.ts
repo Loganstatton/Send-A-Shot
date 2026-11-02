@@ -184,6 +184,8 @@ export interface GenerationParams {
   keepScene?: boolean;
   /** Copy Photo, keep-scene: garment pieces whose outline in the photo guides the redraw (Florence-2 phrases). */
   keepSceneGarment?: string[];
+  /** Copy Photo: body first, garment second (testing switch; SIENNA_COPY_TWO_PASS=on for all). */
+  copyTwoPass?: boolean;
   hiresScale?: number;
   hiresDenoise?: number;
   /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */

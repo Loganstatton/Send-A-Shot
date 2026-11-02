@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { addCopyColours, addCoverUp, COVER, coverColour, garmentLines } from './keep-scene';
+import { addCopyColours, addCoverUp, COVER, coverColour, GARMENT_PASS, garmentLines } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -147,6 +147,37 @@ describe('addCoverUp', () => {
   });
   it('does nothing without a keep-scene redraw', () => {
     expect(addCoverUp(graph(), { top: 'bikini top', threshold: 0.25 })).toBeNull();
+  });
+});
+
+describe('two-pass copy (body first, garment second)', () => {
+  const two = () => addKeepScene(graph(), { width: 776, height: 1296, softSeam: true, detail: true, garment: { phrases: ['bikini top', 'bikini bottom'], controlnet: 'u.safetensors', body: true, depth: 'DepthAnythingV2Preprocessor', twoPass: true } })!;
+  it('draws her first without the photo garment outline', () => {
+    const g = two();
+    expect(g[`${P}cnapply`]).toBeUndefined();
+    // her figure and depth still guide pass A, chained from the original conditioning
+    expect(g[`${P}cnbody`].inputs.positive).toEqual(graph()['40'].inputs.positive);
+    expect(g['40'].inputs.positive).toEqual([`${P}cndapply`, 0]);
+    expect(g['40'].inputs.negative).toEqual([`${P}cndapply`, 1]);
+  });
+  it('then redraws only her garment, its outline moved onto her body', () => {
+    const g = two();
+    expect(g[`${P}gwarp`].class_type).toBe('SiennaWarpGarment');
+    expect(g[`${P}gwarp`].inputs).toMatchObject({ mask: [`${P}gonher`, 0], photo_pose: [`${P}ppose`, 1], her_pose: [`${P}hpose`, 1] });
+    expect(g[`${P}ppose`].class_type).toBe('DWPreprocessor');
+    expect(g[`${P}hpose`].inputs.image).toEqual(g[`${P}benc`].inputs.pixels); // her pose read on pass A's result
+    expect(g[`${P}hseg1`].inputs.text_input).toBe('bikini bottom');
+    expect(g[`${P}bnoise`].inputs.mask).toEqual([`${P}bmask`, 0]);
+    expect(g[`${P}bks`].inputs).toMatchObject({ denoise: GARMENT_PASS.denoise, positive: [`${P}bcn`, 0], negative: [`${P}bcn`, 1] });
+    expect(g[`${P}bcn`].inputs).toMatchObject({ positive: [`${P}cndapply`, 0], image: [`${P}blines`, 0], strength: GARMENT_PASS.lines });
+    // the detail pass keeps off the garment where it now sits, and works on the pass-B result
+    expect(g[`${P}detkeep`].inputs.mask).toEqual([`${P}bmask`, 0]);
+    expect(g[`${P}detup`].inputs.image).toEqual([`${P}bfix`, 0]);
+  });
+  it('is one pass when not asked for', () => {
+    const g = addKeepScene(graph(), { width: 776, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors' } })!;
+    expect(g[`${P}cnapply`]).toBeDefined();
+    expect(g[`${P}bks`]).toBeUndefined();
   });
 });
 
