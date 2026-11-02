@@ -202,6 +202,18 @@ export function checkUser(request: string, rules: readonly string[] = []): strin
   return `Request:\n${request}\n\nGrade this photo against every requirement of the request.${extra}`;
 }
 
+/** Source-locked Copy Photo: the checker sees the photo being copied beside the copy and grades the copy against it.
+ * Before (2 Nov) it saw only the copy and the written description, so a copy whose cups were bigger, whose bust sat
+ * higher and rounder, whose bikini front was a larger pouch, or whose hand lay flat instead of draping over the rim
+ * still matched the words and passed, and the owner kept finding the same differences. */
+export const SOURCE_MATCH_RULE = `source: the FIRST image is the photo being copied. It shows a different, real woman: never grade or describe her face, hair, skin tone or identity (the copy shows Sienna by design), and ignore app buttons or text on it. The SECOND image is the copy to grade. Add these requirements and grade each by comparing the two images side by side, part by part:
+- "body shape as in the source photo": major if the bust clearly differs in how it sits and hangs (heavy and low against high and round; resting one above the other when she lies on her side; spilling out round small cups at the side or underneath), or the waist, stomach or hips clearly differ
+- "garment shapes as in the source photo": major if any garment's cut clearly differs: a cup's size against the breast and how much of it the cup covers, cut-out openings (their size, position and what shows through them), a bottom's front panel (its size, shape and how low it sits), strings, ties, sleeves and hems
+- "hands as in the source photo": major if a hand rests somewhere else, its fingers are clearly arranged differently (flat against draped over an edge, open against gripping), or it holds something the source hand doesn't
+- "pose and camera as in the source photo": major if the body's angle, a limb's position, the head's tilt or the camera angle clearly differ
+- "scene as in the source photo": major if an object was added, removed or changed
+For minor and major, "observed" names the difference ("copy's cups cover the whole breast; the source's cover only the centre"), and "emphasize" describes the source photo's version in image-prompt words.`;
+
 /** A garment meant to cover her lower body or chest that doesn't (the micro + string bikini in D3, 22 Oct) is a
  * clothing failure, never a pass. */
 export const COVERAGE_RULE = 'clothing: add the requirement "garments cover her as the outfit intends" — major if her genitals or nipples are visible where the requested garments should cover them (bottoms too small or pulled aside, a top slipping off); met otherwise.';

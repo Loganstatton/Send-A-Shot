@@ -1232,7 +1232,10 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
           if (!latest.exposed && rec.simple?.ai?.check && aiEnabled() && state.images[0]) {
             try {
               const { bytes, mime } = await backend.fetchImage(state.images[0]);
-              const v = await aiCheck(rec.simple.copy?.text ?? rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime, undefined, rec.simple.ai?.lean, {}, checkRules(rec.fields, rec.params.fixes ?? fixesFromEnv(process.env.SIENNA_FIXES)));
+              // source-locked copies are graded against the photo itself, not only its description (2 Nov)
+              const locked = !!rec.simple.copy && !!rec.params.keepScene && (rec.params.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on');
+              const source = locked && rec.initImage && process.env.SIENNA_COPY_CHECK_SOURCE !== 'off' ? await readImage(rec.initImage.file).catch(() => undefined) : undefined;
+              const v = await aiCheck(rec.simple.copy?.text ?? rec.simple.prompt, bytes, mimeFromBytes(bytes) ?? mime, undefined, rec.simple.ai?.lean, {}, checkRules(rec.fields, rec.params.fixes ?? fixesFromEnv(process.env.SIENNA_FIXES)), source);
               latest.aiStatus = v.status;
               if (v.status === 'unavailable') {
                 latest.aiReason = v.reason;

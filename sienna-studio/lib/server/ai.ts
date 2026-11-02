@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { aiCost, maxCallCost, CHECK_SYSTEM, CHECK_SYSTEM_LEAN, CheckSchema, checkUser, gradeCheck, readerSystem, readerUser, ReadSchema, type CheckResult, type Graded, type ReadResult } from '../ai-prompts';
+import { aiCost, maxCallCost, CHECK_SYSTEM, CHECK_SYSTEM_LEAN, CheckSchema, SOURCE_MATCH_RULE, checkUser, gradeCheck, readerSystem, readerUser, ReadSchema, type CheckResult, type Graded, type ReadResult } from '../ai-prompts';
 import { DATA_DIR } from './store';
 import { z } from 'zod/v4';
 import { DESCRIBE_SYSTEM, describeUser } from '../copy-photo';
@@ -191,14 +191,22 @@ export async function aiCheck(
   lean = false,
   limits: { maxTokens?: number; capUsd?: number } = {},
   rules: readonly string[] = [],
+  /** Source-locked copies: the photo being copied, shown first and graded against (SOURCE_MATCH_RULE). */
+  source?: { bytes: Buffer; mime: string },
 ): Promise<CheckOutcome> {
-  const media = (['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
+  const kind = (m: string) => (['image/png', 'image/jpeg', 'image/webp'].includes(m) ? m : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
+  const copy = { type: 'image' as const, source: { type: 'base64' as const, media_type: kind(mime), data: image.toString('base64') } };
   const a = await ask<CheckResult>(
     lean ? CHECK_SYSTEM_LEAN : CHECK_SYSTEM,
-    [
-      { type: 'image', source: { type: 'base64', media_type: media, data: image.toString('base64') } },
-      { type: 'text', text: checkUser(request, rules) },
-    ],
+    source
+      ? [
+          { type: 'text', text: 'First image: the photo being copied (a different, real woman; never judge her identity).' },
+          { type: 'image', source: { type: 'base64', media_type: kind(source.mime), data: source.bytes.toString('base64') } },
+          { type: 'text', text: 'Second image: the copy to grade.' },
+          copy,
+          { type: 'text', text: checkUser(request, [...rules, SOURCE_MATCH_RULE]) },
+        ]
+      : [copy, { type: 'text', text: checkUser(request, rules) }],
     CheckSchema,
     effort,
     // one entry per requirement: a long request needs room

@@ -343,3 +343,13 @@ describe('image redraw graph', () => {
     expect(addImageRedraw(g, 'sienna/init.png', 0.15)!['40'].inputs.latent_image).toEqual(['rd_encode', 0]);
   });
 });
+
+describe('SOURCE_MATCH_RULE', () => {
+  it('grades a locked copy against the photo part by part, never the other woman’s identity', async () => {
+    const { SOURCE_MATCH_RULE, checkUser } = await import('./ai-prompts');
+    for (const r of ['body shape as in the source photo', 'garment shapes as in the source photo', 'hands as in the source photo', 'pose and camera as in the source photo', 'scene as in the source photo'])
+      expect(SOURCE_MATCH_RULE).toContain(r);
+    expect(SOURCE_MATCH_RULE).toMatch(/never grade or describe her face, hair, skin tone or identity/);
+    expect(checkUser('a bikini', [SOURCE_MATCH_RULE])).toContain('FIRST image is the photo being copied');
+  });
+});
