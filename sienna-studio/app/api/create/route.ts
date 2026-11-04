@@ -10,7 +10,8 @@ import { startGeneration } from '@/lib/server/generate';
 import { availability, outfitEditEnabled, startOutfitEdit } from '@/lib/server/outfit-edit';
 import { wakePhotoGpu } from '@/lib/server/photo-gpu-wake';
 import { handle, json, parseBody } from '@/lib/server/http';
-import { adultContentAllowed, getSettings, listHistory, patchRecord } from '@/lib/server/store';
+import { adultContentAllowed, getSettings, listHistory, patchRecord, readImage, storeImage } from '@/lib/server/store';
+import { trimAppBars } from '@/lib/server/app-bars';
 import { PROMPT_FIELD_KEYS, type GenerateRequest, type PromptFields } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -25,11 +26,11 @@ export const dynamic = 'force-dynamic';
 export const POST = handle(async (req: Request) => {
   const body = await parseBody(req, simpleCreateSchema);
   const settings = await getSettings();
-  const ref = body.reference;
+  let ref = body.reference;
   const it = interpretPrompt(body.prompt, { hasReference: !!ref, adultAllowed: adultContentAllowed(), defaultMode: settings.contentMode });
   // Editing one of the studio's own photos: start from that photo's description and change only what is asked
   // ("change her top to a red tank top" alone would let img2img redraw her shorts too, and say nothing of the scene)
-  const source = ref && it.reference.mode !== 'none' && it.reference.mode !== 'pose' ? (await listHistory()).find((r) => r.images?.some((i) => i.file === ref.file)) : undefined;
+  const source = ref && it.reference.mode !== 'none' && it.reference.mode !== 'pose' ? (await listHistory()).find((r) => r.images?.some((i) => i.file === ref?.file)) : undefined;
   // A garment swap on a studio photo goes to Edit Outfit with the change in words: it redraws only the clothing
   // region with Qwen-Image-Edit. Live test: whole-photo img2img (0.5 and 0.62) kept a gray top gray when asked for
   // a red one, and at 0.5 also redrew her shorts.
@@ -84,6 +85,14 @@ export const POST = handle(async (req: Request) => {
     it.notes = it.notes.filter((n) => n !== it.reference.why);
     it.reference = { mode: 'pose', denoise: null, why: copy ? COPY_WHY : 'Reference photo from outside the studio: only her pose is copied — face, hair, body and the picture itself are all Sienna’s.' };
     it.notes.push(it.reference.why);
+  }
+  // a screenshot's dark app bar ("Add comment…") cut off first: it was kept, pixel for pixel, under the copy (4 Nov)
+  if (copy && ref) {
+    const trimmed = await readImage(ref.file).then((r) => trimAppBars(r.bytes)).catch(() => null);
+    if (trimmed) {
+      ref = await storeImage(trimmed.bytes, trimmed.mime, 'up', 'app bar cut off');
+      it.notes.push('The screenshot’s app bar was cut off before copying.');
+    }
   }
   const copyText = copy ? copyUserText(body.prompt) : '';
   // The AI reader (when ANTHROPIC_API_KEY is set): Claude files the description into short SDXL phrases, picks packs
