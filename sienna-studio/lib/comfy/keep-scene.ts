@@ -390,6 +390,12 @@ export function addKeepScene(
     g[`${p}detfix`] = { class_type: 'ImageCompositeMasked', inputs: { destination: finalImage, source: [`${p}detdown`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}detsoft`, 0] } };
     finalImage = [`${p}detfix`, 0];
   }
+  // never her head: the gap fill paints scenery where the photo's woman was and Sienna isn't found, and when the person
+  // finder missed Sienna's head the copy came back headless, sky and trees where her face should be (hot tub, 4 Nov)
+  if (g[`${p}gapgrow`] && g[`${p}face`]) {
+    g[`${p}gapnohead`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}gapin`, 0], source: [`${p}face`, 0], x: 0, y: 0, operation: 'subtract' }, _meta: { title: 'Keep scene: the gap, never her head' } };
+    g[`${p}gapgrow`] = { ...g[`${p}gapgrow`], inputs: { ...g[`${p}gapgrow`].inputs, mask: [`${p}gapnohead`, 0] } };
+  }
   for (const [id, node] of Object.entries(g)) {
     // the paste and the person-finder read the raw redraw; the overlay touch-up reads the paste
     if (id === `${p}paste` || id === `${p}new`) continue;

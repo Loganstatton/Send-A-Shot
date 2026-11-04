@@ -262,6 +262,11 @@ describe('addKeepScene gap fill', () => {
   it('is off unless asked', () => {
     expect(addKeepScene(graph(), { width: 776 })![`${P}gapfill`]).toBeUndefined();
   });
+  it('never fills over the photo’s head area (a missed head came back as sky and trees)', () => {
+    const g = addKeepScene(graph(), { width: 776, height: 1296, gapFill: true, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true } })!;
+    expect(g[`${P}gapnohead`].inputs).toMatchObject({ destination: [`${P}gapin`, 0], source: [`${P}face`, 0], operation: 'subtract' });
+    expect(g[`${P}gapgrow`].inputs.mask).toEqual([`${P}gapnohead`, 0]);
+  });
 });
 
 describe('addKeepScene detail pass', () => {
