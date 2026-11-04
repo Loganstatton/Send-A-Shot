@@ -18,7 +18,10 @@ try:
 except ImportError:  # imported as a top-level module by the tests
     from sienna_pose import draw_hand, to_points
 
-MIN_POINTS = 12       # a photo hand needs this many of its 21 points found
+MIN_POINTS = 15       # a photo hand needs this many of its 21 points found confidently
+MIN_CONF = 0.4        # ... at this confidence (DWPose already drops points under 0.3 and may write 1.0 for the rest): a hand
+                      # half hidden round a string gave a guessed skeleton and stiff, curled fingers (hot tub, 4 Nov); such
+                      # a hand gets the plain pass
 MIN_OVERLAP = 0.5     # share of the smaller box inside the other
 SIZE_RANGE = (0.5, 1.8)  # the photo hand's size against the found hand's (square root of the areas' ratio)
 
@@ -35,8 +38,10 @@ def photo_hands(pose: Optional[Sequence[Dict]], size: Tuple[int, int]) -> List[L
     out = []
     for person in frame.get("people") or []:
         for key in ("hand_left_keypoints_2d", "hand_right_keypoints_2d"):
-            pts = to_points(person.get(key), cw, ch)
-            if sum(p is not None for p in pts) < MIN_POINTS:
+            flat = list(person.get(key) or [])
+            pts = to_points(flat, cw, ch)
+            conf = [flat[i + 2] for i in range(0, len(flat) - 2, 3)]
+            if sum(1 for p, c in zip(pts, conf) if p is not None and c >= MIN_CONF) < MIN_POINTS:
                 continue
             out.append([None if p is None else (p[0] * w / cw, p[1] * h / ch) for p in pts])
     return out
