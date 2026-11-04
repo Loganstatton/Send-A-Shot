@@ -295,6 +295,9 @@ describe('copy mode (Copy Photo)', () => {
     expect(locked).toMatch(/\(long dark-brown wavy hair with lighter soft light-brown ends:1\.25\)/);
     expect(locked).not.toMatch(/caramel/);
     expect(neg).toMatch(/copper hair/);
+    // her eyes held too, with natural makeup (icy blue eyes under heavy liner, 4 Nov)
+    expect(locked).toMatch(/\(natural hazel-green eyes, natural soft makeup:1\.2\)/);
+    expect(neg).toMatch(/heavy black eyeliner/);
     expect(plain).not.toMatch(/caramel ends:1\.25/);
     expect(buildPrompt({ fields: f, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true }).negative).not.toMatch(/auburn hair/);
   });

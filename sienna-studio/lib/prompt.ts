@@ -195,15 +195,20 @@ const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulder
 // (black too: with only red avoided, the boat copies' hair went near-black and straight, 2 Nov)
 /** Her hair phrase from the profile ("long dark-brown wavy hair with lighter caramel ends"), weighted; '' if none. */
 function lockHairColour(traits: string): string {
-  const h = traits.split(',').map((t) => t.trim()).find((t) => /\bhair\b/i.test(t) && !/[()]/.test(t));
-  return h ? `(${coolHair(h)}:1.25)` : '';
+  const parts = traits.split(',').map((t) => t.trim());
+  const h = parts.find((t) => /\bhair\b/i.test(t) && !/[()]/.test(t));
+  // her eye colour too: locked copies drew icy blue eyes under heavy black liner, and the face check fell to 0.54-0.59
+  // on the cut-out (4 Nov); her reference photos show hazel-green eyes and natural makeup
+  const e = parts.find((t) => /\beyes?\b/i.test(t) && /\b(hazel|green|brown|blue|grey|gray|amber)\b/i.test(t) && !/[()]/.test(t));
+  const eyes = e ? e.replace(/\s+with\b.*$/i, '').trim() : '';
+  return [h ? `(${coolHair(h)}:1.25)` : '', eyes ? `(${eyes}, natural soft makeup:1.2)` : ''].filter(Boolean).join(', ');
 }
 /** "Caramel" ends drew copper-orange lengths and a ginger ponytail on locked copies (4 Nov); her reference photos show
  * dark-brown hair with only softly lighter, cool brown ends. */
 export function coolHair(text: string): string {
   return text.replace(/\b(warm\s+)?(caramel|honey|golden)(-brown|\s+brown)?\b/gi, 'soft light-brown');
 }
-const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, copper hair, orange hair, reddish-brown hair, strawberry blonde hair, jet-black hair, black hair, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body, tattoo, tattoos';
+const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, copper hair, orange hair, reddish-brown hair, strawberry blonde hair, jet-black hair, black hair, icy blue eyes, heavy black eyeliner, winged eyeliner, dramatic eye makeup, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body, tattoo, tattoos';
 function weighHairstyle(text: string): string {
   const h = copyHairstyle(text);
   return h ? text.replace(h.phrase, `(${h.phrase}:1.3)`) : text;
