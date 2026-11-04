@@ -7,6 +7,27 @@ import { aiCost, maxCallCost, CHECK_SYSTEM, CHECK_SYSTEM_LEAN, CheckSchema, SOUR
 import { DATA_DIR } from './store';
 import { z } from 'zod/v4';
 import { DESCRIBE_SYSTEM, describeUser } from '../copy-photo';
+import sharp from 'sharp';
+
+/** The longest side and size a photo is sent to Claude at: a phone screenshot saved as PNG was 13.6 MB in base64,
+ * over the API's 10 MB limit, so the reader failed and the copy was built from the GPU's rough caption (wrong pose,
+ * no bust or wet skin, 4 Nov). Claude scales anything over ~1.15 MP down anyway, so nothing it would see is lost. */
+export const AI_IMAGE_SIDE = 1568;
+const AI_IMAGE_BYTES = 3_500_000;
+
+/** The photo as Claude should get it: unchanged when it is small enough, else a high-quality JPEG with its longest side
+ * at AI_IMAGE_SIDE (EXIF rotation applied). Never throws: on any failure the original comes back. */
+export async function fitForAi(bytes: Buffer, mime: string): Promise<{ bytes: Buffer; mime: string }> {
+  try {
+    const meta = await sharp(bytes).metadata();
+    const side = Math.max(meta.width ?? 0, meta.height ?? 0);
+    if (bytes.length <= AI_IMAGE_BYTES && side <= AI_IMAGE_SIDE * 1.5) return { bytes, mime };
+    const out = await sharp(bytes).rotate().resize({ width: AI_IMAGE_SIDE, height: AI_IMAGE_SIDE, fit: 'inside', withoutEnlargement: true }).flatten({ background: '#ffffff' }).jpeg({ quality: 90 }).toBuffer();
+    return { bytes: out, mime: 'image/jpeg' };
+  } catch {
+    return { bytes, mime };
+  }
+}
 
 /**
  * Simple Mode's AI reader and checker (Claude). On only when ANTHROPIC_API_KEY is set; every failure — no key,
@@ -154,7 +175,8 @@ export type BustAnswer = { size: z.infer<typeof DescribeSchema>['bust_size']; ga
  * Copy Photo: the uploaded photo described for the recreation (outfit cut and coverage, pose, framing, setting,
  * light). Only for photos NudeNet found nothing exposed in; null on any failure (the caller uses the GPU caption).
  */
-export async function aiDescribePhoto(image: Buffer, mime: string): Promise<{ description: string; bust: BustAnswer; usd: number } | { failed: string }> {
+export async function aiDescribePhoto(original: Buffer, originalMime: string): Promise<{ description: string; bust: BustAnswer; usd: number } | { failed: string }> {
+  const { bytes: image, mime } = await fitForAi(original, originalMime);
   const media = (['image/png', 'image/jpeg', 'image/webp'].includes(mime) ? mime : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
   const a = await ask<z.infer<typeof DescribeSchema>>(
     DESCRIBE_SYSTEM,
@@ -192,8 +214,12 @@ export async function aiCheck(
   limits: { maxTokens?: number; capUsd?: number } = {},
   rules: readonly string[] = [],
   /** Source-locked copies: the photo being copied, shown first and graded against (SOURCE_MATCH_RULE). */
-  source?: { bytes: Buffer; mime: string },
+  sourcePhoto?: { bytes: Buffer; mime: string },
 ): Promise<CheckOutcome> {
+  const fitted = await fitForAi(image, mime);
+  image = fitted.bytes;
+  mime = fitted.mime;
+  const source = sourcePhoto ? await fitForAi(sourcePhoto.bytes, sourcePhoto.mime) : undefined;
   const kind = (m: string) => (['image/png', 'image/jpeg', 'image/webp'].includes(m) ? m : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
   const copy = { type: 'image' as const, source: { type: 'base64' as const, media_type: kind(mime), data: image.toString('base64') } };
   const a = await ask<CheckResult>(

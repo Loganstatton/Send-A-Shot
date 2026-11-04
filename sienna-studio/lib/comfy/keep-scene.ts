@@ -73,6 +73,9 @@ export const BODY_DEPTH = { strength: 0.6, end: 0.6 } as const;
  * (black-bra copy, 4 Nov); limited to the garment, the rest would start from her own pixels. The colour step's
  * place-by-place garment hue (COPY_COLOURS_LOCAL) puts the garment's colour right instead. */
 export const LOCK_COLOUR_PRIOR = { enabled: false, radius: 31, sigma: 10, denoise: 0.9 } as const;
+/** Stronger body hold (testing): the guides held to nearly the end, so the model's habits (a smaller, higher bust,
+ * toned abs, cups covering more) can't take over in the last steps (yellow hot-tub copy, 4 Nov). */
+export const SOURCE_LOCK_HOLD = { garment: { strength: 0.9, end: 0.85 }, body: { strength: 0.75, end: 0.85 }, depth: { strength: 0.85, end: 0.85 } } as const;
 export const SOURCE_LOCK = { grow: KEEP_SCENE_GROW, garment: { strength: 0.9, end: 0.75 }, body: { strength: 0.65, end: 0.7 }, depth: { strength: 0.8, end: 0.6 }, blurSigma: 1.5 } as const;
 export const SOFT_SEAM_CLASS = 'ImpactGaussianBlurMask';
 /** xinsir ControlNet Union SDXL (ProMax), Apache-2.0: its canny/lineart mode traces the photo's garment edges. */
@@ -110,7 +113,7 @@ export function sceneSize(w: number, h: number, pixels = 1_000_000): { width: nu
  */
 export function addKeepScene(
   graph: ComfyGraph,
-  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; detail?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode; twoPass?: boolean; sourceLock?: boolean; pattern?: boolean } },
+  opts: { width: number; height?: number; uiMask?: boolean; uiPaint?: boolean; softSeam?: boolean; gapFill?: boolean; gapScene?: string; detail?: boolean; garment?: { phrases: string[]; controlnet: string; body?: boolean; depth?: DepthNode; twoPass?: boolean; sourceLock?: boolean; pattern?: boolean; hold?: boolean } },
 ): ComfyGraph | null {
   if (Object.values(graph).some((n) => n.class_type === 'ImageScaleBy')) return null; // the hi-res pass would resample the scene
   const g: ComfyGraph = structuredClone(graph);
@@ -125,6 +128,8 @@ export function addKeepScene(
   g[`${p}segm`] = { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: PERSON_SEGM_FILE } };
   g[`${p}person`] = { class_type: 'SegmDetectorCombined_v2', inputs: { segm_detector: [`${p}segm`, 1], image: scene, threshold: 0.3, dilation: 0 }, _meta: { title: 'Keep scene: the person' } };
   const lock = !!opts.garment?.sourceLock;
+  // the locked guides' strengths: the stronger body hold when asked for (testing)
+  const LK = lock && opts.garment?.hold ? { ...SOURCE_LOCK, ...SOURCE_LOCK_HOLD } : SOURCE_LOCK;
   g[`${p}grow`] = { class_type: 'GrowMask', inputs: { mask: [`${p}person`, 0], expand: Math.round(opts.width * (lock ? SOURCE_LOCK.grow : KEEP_SCENE_GROW)), tapered_corners: true }, _meta: { title: 'Keep scene: room for Sienna' } };
   let redraw: Ref = [`${p}grow`, 0];
   // the photo as pasted back round her: with uiPaint, the overlays already painted out from the pixels round them (the
@@ -301,7 +306,7 @@ export function addKeepScene(
     }
     g[`${p}cn`] = { class_type: 'ControlNetLoader', inputs: { control_net_name: opts.garment.controlnet } };
     g[`${p}cntype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'canny/lineart/anime_lineart/mlsd' } };
-    const lineSet = lock ? SOURCE_LOCK.garment : garmentLines();
+    const lineSet = lock ? LK.garment : garmentLines();
     // Body first, garment second (SIENNA_COPY_TWO_PASS / test.copyTwoPass): the first pass draws her without the
     // photo's garment outline (the garment in words only), so her own bust and waist come from her LoRA and the
     // depth guide; the outline is then fitted to her body in pass B below. Needs a DWPose node to copy.
@@ -326,7 +331,7 @@ export function addKeepScene(
       g[`${p}bodyonly`] = { class_type: 'ImageCompositeMasked', inputs: { destination: bodyLines, source: [`${p}black`, 0], x: 0, y: 0, resize_source: false, mask: [`${p}gmask`, 0] } };
       g[`${p}cnbody`] = {
         class_type: 'ControlNetApplyAdvanced',
-        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cntype`, 0], image: [`${p}bodyonly`, 0], strength: lock ? SOURCE_LOCK.body.strength : BODY_LINES.strength, start_percent: 0, end_percent: lock ? SOURCE_LOCK.body.end : BODY_LINES.end },
+        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cntype`, 0], image: [`${p}bodyonly`, 0], strength: lock ? LK.body.strength : BODY_LINES.strength, start_percent: 0, end_percent: lock ? LK.body.end : BODY_LINES.end },
         _meta: { title: 'Keep scene: follow her figure’s outline (lightly)' },
       };
       cond = [`${p}cnbody`, 0];
@@ -343,7 +348,7 @@ export function addKeepScene(
       g[`${p}cndtype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'depth' } };
       g[`${p}cndapply`] = {
         class_type: 'ControlNetApplyAdvanced',
-        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cndtype`, 0], image: [`${p}bodydepth`, 0], strength: lock ? SOURCE_LOCK.depth.strength : BODY_DEPTH.strength, start_percent: 0, end_percent: lock ? SOURCE_LOCK.depth.end : BODY_DEPTH.end },
+        inputs: { positive: cond, negative: condNeg, control_net: [`${p}cndtype`, 0], image: [`${p}bodydepth`, 0], strength: lock ? LK.depth.strength : BODY_DEPTH.strength, start_percent: 0, end_percent: lock ? LK.depth.end : BODY_DEPTH.end },
         _meta: { title: 'Keep scene: follow her figure’s depth' },
       };
       cond = [`${p}cndapply`, 0];

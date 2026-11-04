@@ -147,6 +147,7 @@ export const POST = handle(async (req: Request) => {
       ...(body.test?.copyFaceDenoise !== undefined ? { copyFaceDenoise: body.test.copyFaceDenoise } : {}),
       ...(body.test?.copyFaceWeight !== undefined ? { copyFaceWeight: body.test.copyFaceWeight } : {}),
       ...(body.test?.copyInstantId !== undefined ? { copyInstantId: body.test.copyInstantId } : {}),
+      ...(body.test?.copyBodyHold !== undefined ? { copyBodyHold: body.test.copyBodyHold } : {}),
     },
     images: {
       initImage: ref && edit ? ref : null,

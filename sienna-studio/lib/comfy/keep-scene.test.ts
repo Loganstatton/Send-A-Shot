@@ -204,6 +204,13 @@ describe('source-locked copy', () => {
     expect(sampler.inputs.denoise).toBe(1);
     expect(g[`${P}prior`]).toBeUndefined();
   });
+  it('holds the guides longer with the stronger body hold', async () => {
+    const { SOURCE_LOCK_HOLD } = await import('./keep-scene');
+    const g = addKeepScene(graph(), { width: 800, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true, depth: 'DepthAnythingV2Preprocessor', sourceLock: true, hold: true } })!;
+    expect(g[`${P}cnapply`].inputs).toMatchObject({ strength: SOURCE_LOCK_HOLD.garment.strength, end_percent: SOURCE_LOCK_HOLD.garment.end });
+    expect(g[`${P}cnbody`].inputs).toMatchObject({ strength: SOURCE_LOCK_HOLD.body.strength, end_percent: SOURCE_LOCK_HOLD.body.end });
+    expect(g[`${P}cndapply`].inputs).toMatchObject({ strength: SOURCE_LOCK_HOLD.depth.strength, end_percent: SOURCE_LOCK_HOLD.depth.end });
+  });
   it('adds no silhouette outline (it drew a glowing edge round her)', () => {
     const g = locked();
     expect(g[`${P}silimg`]).toBeUndefined();

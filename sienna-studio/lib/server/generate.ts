@@ -721,7 +721,7 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
           const twoPass = wantTwo && !!(await backend.nodeInfo(WARP_GARMENT_CLASS, true).catch(() => null));
           if (wantTwo && !twoPass) warnings.push('Copy Photo: two-pass copy asked for, but the GPU server has no SiennaWarpGarment yet — one pass used.');
           const pattern = sourceLock && /\b(cut-?outs?|lattice|criss-?cross\w*|caged|strappy|keyhole|lace-?up|cage)\b/i.test(req.fields.outfit);
-          garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body: body || sourceLock, depth, ...(twoPass && !sourceLock ? { twoPass } : {}), ...(sourceLock ? { sourceLock } : {}), ...(pattern ? { pattern } : {}) };
+          garment = { phrases: p.keepSceneGarment, controlnet: UNION_CN_FILE, body: body || sourceLock, depth, ...(twoPass && !sourceLock ? { twoPass } : {}), ...(sourceLock ? { sourceLock } : {}), ...(pattern ? { pattern } : {}), ...(sourceLock && (p.copyBodyHold ?? process.env.SIENNA_COPY_BODY_HOLD === 'on') ? { hold: true } : {}) };
         }
         else warnings.push(`Copy Photo: the garment’s outline wasn’t used — the GPU server is missing ${cns.includes(UNION_CN_FILE) ? describeMissing(missing) : UNION_CN_FILE}.`);
       } catch {
