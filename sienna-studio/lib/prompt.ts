@@ -233,14 +233,15 @@ export function copyDetailParts(f: { outfit: string; bodyPresentation: string; e
   if (wet) pos.push('(wet skin with small water droplets beading on it, natural wet sheen:1.2)');
   else neg.push('oiled skin, greasy shine');
   if (hasTop && RUCHED_RE.test(f.outfit)) pos.push('(ruched gathered fabric on the cups:1.15)');
-  if (hasTop && !KNOT_TOP_RE.test(f.outfit)) neg.push('knot-front bikini top, tied knot between the cups, bow on the top');
+  // weighted: her LoRA drew a knot at the cups' centre and defined abs on every try at plain weight (hot tub, 4 Nov)
+  if (hasTop && !KNOT_TOP_RE.test(f.outfit)) neg.push('(knot-front bikini top, tied knot between the cups, bow on the top:1.3)');
   if (THIN_STRING_RE.test(f.outfit)) {
     pos.push('(very thin string ties:1.15)');
     neg.push('thick straps, wide straps');
   }
   if (sourceLock && !ABS_RE.test(all)) {
-    pos.push('soft natural stomach');
-    neg.push('(defined abs, six-pack, muscular stomach:1.2)');
+    pos.push('(soft smooth natural stomach:1.2)');
+    neg.push('(defined abs, six-pack, muscular stomach, toned midriff:1.35)');
   }
   return { positive: pos.join(', '), negative: neg.join(', '), wet };
 }

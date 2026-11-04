@@ -18,6 +18,9 @@ import numpy as np
 HAIR, BODY_SKIN, FACE_SKIN, CLOTHES = 1, 2, 3, 4
 # how far past the photo's garment (share of the width) the copy's clothes may be recoloured
 GARMENT_REACH = 0.05
+# source-locked copies: she lies where the photo's woman did, so the garment is recoloured only right at the photo's
+# garment (0.05 dyed her arm beside the cup orange, hot tub 4 Nov)
+GARMENT_REACH_LOCK = 0.012
 MIN_PIXELS = 200
 # Sienna's skin in OpenCV 8-bit LAB, the median over eight of her accepted copies (bed, gym, mirror, backless, towel,
 # implied, two hot tubs; 1 Nov): its hue (a, b) is fixed; its lightness follows the scene's light and is only pulled
@@ -81,6 +84,7 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
     info: Dict = {"changed": False}
     # skin is her face and body together, so they stay one tone (a bronzed face on a pale body would look pasted on)
     local_ms = None
+    clothes_done = np.zeros(m.shape, bool)
     for name, cls, strength in (("clothes", (CLOTHES,), clothes), ("skin", (BODY_SKIN, FACE_SKIN), skin)):
         if strength <= 0:
             continue
@@ -96,7 +100,7 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
         if name == "clothes" and photo_region is not None:
             # only clothes in and near the photo's garment: the segmenter called her legs in bubbling water "clothes" and
             # they were dyed the bikini's green, with a green glow at her hip (hot-tub copy, 2 Nov)
-            k = max(3, int(GARMENT_REACH * m.shape[1])) | 1
+            k = max(3, int((GARMENT_REACH_LOCK if local > 0 else GARMENT_REACH) * m.shape[1])) | 1
             garment = np.asarray(photo_region, np.float32) > 0.5
             near = cv2.dilate(garment.astype(np.uint8), np.ones((k, k), np.uint8)) > 0
             local_ms = ms
@@ -134,7 +138,14 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
         shift = mu_s - mu_r
         shift[0] = float(np.clip(shift[0], -MAX_L_SHIFT, MAX_L_SHIFT))
         mu_s = mu_r + shift
-        lab[mr] = (b[mr] - mu_r) * scale + mu_s
+        apply = mr
+        if name == "skin" and local > 0:
+            # one smooth shift over all of her that isn't garment or hair, not just the pixels the segmenter called skin:
+            # its patchy map left grey-blue and orange patches on her stomach and side (hot tub, 4 Nov)
+            hair = cv2.dilate((image_classes[HAIR] > 0.5).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+            cl = cv2.dilate(clothes_done.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+            apply = m & ~cl & ~hair
+        lab[apply] = (b[apply] - mu_r) * scale + mu_s
         if name == "clothes" and local > 0:
             # place by place: the copy's garment hue moved onto the photo's garment hue round the same spot (a sleeve
             # drawn blue on a grey top, 2 Nov), its own shading and texture kept; where the photo has no garment near
@@ -145,7 +156,9 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
             lab = np.where(reach[..., None], local_lab, lab)
             weight = np.maximum(weight, np.where(reach, strength, 0).astype(np.float32))
             info["clothes_local"] = round(float(local), 2)
-        weight[mr] = strength
+        weight[apply] = strength
+        if name == "clothes":
+            clothes_done = mr | (weight > 0)
         info[name] = {"shift_lab": [round(float(x), 1) for x in (mu_s - mu_r)], "pixels": int(mr.sum()), "strength": strength}
         info["changed"] = True
     if not info["changed"]:
@@ -303,7 +316,8 @@ def shade_match(a: np.ndarray, b: np.ndarray, region: np.ndarray, photo_classes:
     d = np.clip(d, -SHADE_MAX, SHADE_MAX)
     reach = np.maximum(conf, np.clip(wide_den / SHADE_MIN, 0, 1))
     # only on her skin and clothes: across the region's edge it greyed the foam round her knee (hot tub, 4 Nov)
-    body = (image_classes[BODY_SKIN] > 0.5) | (image_classes[CLOTHES] > 0.5)
+    # all of her but face and hair, not the segmenter's patchy skin and clothes classes (patches, hot tub 4 Nov)
+    body = np.ones(m.shape, bool)
     # and inside her outline: her edge never sits exactly on the photo woman's, whose own dark edge drew a grey-blue rim
     # down the copy's thigh and back (hot tub, 4 Nov)
     e = max(3, int(SHADE_EDGE * w)) | 1
