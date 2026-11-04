@@ -486,7 +486,12 @@ export function coverColour(top: string): string {
 export const COVER_NEGATIVE = 'nipple, nipples, areola, bare breast, exposed breast, see-through, sheer, mesh, transparent, hole, gap, strings, seashell, shell bikini, scalloped, moulded cup, padded cup, bow, ribbon, ornament, brooch';
 /** The graph with the cover-up before SaveImage (and before the colour step, which then matches its colour), or null
  * without a keep-scene redraw in it. `top` names the garment, e.g. "tiny white micro string bikini top". */
-export function addCoverUp(graph: ComfyGraph, opts: { top: string; threshold: number }): ComfyGraph | null {
+/** Source-locked copies: a nipple drawn at the narrow cup's edge is redrawn as her breast's bare skin, never as fabric,
+ * so the photo's garment keeps its size (the photo shows no nipple there: it is under the cup). The cup's own pixels
+ * are never painted; the top check still runs on the result. */
+export const SKIN_COVER_POSITIVE = '(smooth bare breast skin, natural skin texture, soft natural shading:1.25), photo';
+export const SKIN_COVER_NEGATIVE = 'nipple, nipples, areola, dark spot, fabric patch, extra fabric, cloth, bikini, strings, see-through';
+export function addCoverUp(graph: ComfyGraph, opts: { top: string; threshold: number; skin?: boolean }): ComfyGraph | null {
   const p = KEEP_SCENE_PREFIX;
   const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
   const samplerId = Object.keys(graph).find((id) => graph[id].class_type === 'KSampler' && isRef(graph[id].inputs.latent_image) && (graph[id].inputs.latent_image as Ref)[0] === `${p}noise`);
@@ -498,9 +503,9 @@ export function addCoverUp(graph: ComfyGraph, opts: { top: string; threshold: nu
   const clip = clipOf(graph, k.positive);
   if (!isRef(image) || !isRef(vae) || !clip) return null;
   const g: ComfyGraph = { ...graph };
-  const fill = coverColour(opts.top);
-  g[`${p}covpos`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: `${opts.top}, (thin smooth opaque fabric lying flat on the skin over the nipple:1.35), part of the same small bikini triangle, natural skin, photo` } };
-  g[`${p}covneg`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: COVER_NEGATIVE } };
+  const fill = opts.skin ? `skin${coverColour(opts.top) ? `:${coverColour(opts.top)}` : ''}` : coverColour(opts.top);
+  g[`${p}covpos`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: opts.skin ? SKIN_COVER_POSITIVE : `${opts.top}, (thin smooth opaque fabric lying flat on the skin over the nipple:1.35), part of the same small bikini triangle, natural skin, photo` } };
+  g[`${p}covneg`] = { class_type: 'CLIPTextEncode', inputs: { clip, text: opts.skin ? SKIN_COVER_NEGATIVE : COVER_NEGATIVE } };
   // Round 1 covers the areola found by colour; round 2 checks again and covers whatever still shows with a larger
   // patch at the breast's middle (the colour search took the crease under a breast for the nipple once, 2 Nov).
   const round = (s: string, from: Ref, locate: boolean, radius: number): Ref => {

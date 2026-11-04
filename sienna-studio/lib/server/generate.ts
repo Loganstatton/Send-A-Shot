@@ -822,10 +822,15 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   }
 
   // ── Copy Photo: fabric over a nipple showing beside a copied micro top (before the colours, so they match it) ──
-  if (p.keepScene && outfitHasTop(req.fields.outfit) && process.env.SIENNA_COPY_COVER !== 'off') {
+  // Source-locked copies never get fabric (the garment keeps the photo's size): a nipple drawn at the cup's edge is
+  // redrawn as bare breast skin instead (SIENNA_COPY_SKIN_COVER=off turns that off), where the GPU server has it.
+  const lockedCopy = !!req.simple?.copy && (p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on');
+  const skinCover = lockedCopy && process.env.SIENNA_COPY_SKIN_COVER !== 'off';
+  if (p.keepScene && outfitHasTop(req.fields.outfit) && (skinCover || (!lockedCopy && process.env.SIENNA_COPY_COVER !== 'off'))) {
     const has = await backend.nodeInfo(COVER_MASK_CLASS, true).catch(() => null);
+    const skinOk = !skinCover || JSON.stringify(has ?? {}).includes('skin');
     const top = req.fields.outfit.split(',')[0].trim();
-    const covered = has ? addCoverUp(graph, { top, threshold: COPY_EXPOSURE_THRESHOLD }) : null;
+    const covered = has && skinOk ? addCoverUp(graph, { top, threshold: COPY_EXPOSURE_THRESHOLD, ...(skinCover ? { skin: true } : {}) }) : null;
     if (covered) graph = covered;
   }
 

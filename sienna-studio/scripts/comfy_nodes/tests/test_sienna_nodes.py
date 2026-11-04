@@ -1092,3 +1092,22 @@ def test_garment_recolour_never_dyes_skin_coloured_pixels():
     assert sk[1, 1] and not sk[0, 0]
     nude = np.tile(np.array([[160, 147, 156]], np.float32), (300, 1))
     assert cc._skinlike(b, nude) is None  # a skin-coloured garment: no guard
+
+
+def test_skin_cover_keeps_the_cup_and_takes_the_skin_round_the_patch():
+    import cv2
+    import sienna_exposure as ex
+
+    h, w = 80, 80
+    skin = np.array([0.86, 0.66, 0.56], np.float32)
+    yellow = np.array([0.85, 0.7, 0.1], np.float32)
+    img = np.tile(skin, (h, w, 1))
+    img[20:60, 20:40] = yellow                       # the cup, left of the patch centre
+    img[35:45, 40:50] = (0.6, 0.35, 0.33)            # a nipple drawn at its edge
+    mask = np.zeros((h, w), np.float32)
+    cv2.circle(mask, (42, 40), 10, 1.0, -1)
+    keep, colour = ex.skin_patch(img, mask, tuple(yellow))
+    assert keep[40, 45] == 1 and keep[40, 35] == 0   # the nipple painted, the cup never
+    assert np.abs(np.asarray(colour) - skin).max() < 0.05
+    out = ex.fill_patch(img, keep, colour, keep_shading=0.5)
+    assert np.abs(out[40, 45] - skin).max() < 0.12 and np.allclose(out[40, 25], yellow, atol=0.02)

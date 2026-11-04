@@ -344,6 +344,9 @@ class SiennaCoverMask:
     patch painted the garment's colour (`fill`, hex; '' leaves it), for a light pass that redraws it as fabric. The top
     check still runs afterwards on the result."""
 
+    # read by the studio (object_info): this version also paints her own skin ("skin" fill)
+    DESCRIPTION = "Cover-up mask: fabric fill (hex) or skin fill (skin / skin:#rrggbb)."
+
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {"image": ("IMAGE",), "threshold": ("FLOAT", {"default": DEFAULT_THRESHOLD, "min": 0.05, "max": 0.95, "step": 0.05})},
@@ -383,7 +386,14 @@ class SiennaCoverMask:
                 hits = [d for d in dets if d.get("class") == "FEMALE_BREAST_EXPOSED" and float(d.get("score", 0)) >= threshold]
                 info = {"covered": len(hits), "scores": [round(float(d["score"]), 3) for d in hits], "pixels": int((mask > 0.5).sum())}
                 hexs = (fill or "").strip().lstrip("#")
-                if len(hexs) == 6 and mask.any():
+                if hexs.startswith("skin") and mask.any():
+                    # "skin" or "skin:#rrggbb" (the top's colour): her own skin over the nipple, never the cup
+                    from .sienna_exposure import skin_patch
+                    g = hexs.split(":", 1)[1].strip().lstrip("#") if ":" in hexs else ""
+                    mask, colour = skin_patch(img, mask, [int(g[i:i + 2], 16) / 255 for i in (0, 2, 4)] if len(g) == 6 else None)
+                    filled = fill_patch(img, mask, colour, keep_shading=0.5)
+                    info.update({"filled": "skin", "pixels": int((mask > 0.5).sum())})
+                elif len(hexs) == 6 and mask.any():
                     filled = fill_patch(img, mask, [int(hexs[i:i + 2], 16) / 255 for i in (0, 2, 4)])
                     info["filled"] = "#" + hexs
             except Exception as e:  # never lose the photo over the cover-up: an empty mask changes nothing

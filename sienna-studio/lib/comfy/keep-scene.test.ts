@@ -126,6 +126,13 @@ describe('addCopyColours', () => {
 });
 
 describe('addCoverUp', () => {
+  it('paints her skin, never fabric, on a source-locked copy', () => {
+    const kept = addKeepScene(graph(), { width: 776 })!;
+    const g = addCoverUp(kept, { top: 'tiny yellow micro bikini top', threshold: 0.25, skin: true })!;
+    expect(g[`${P}covmask`].inputs.fill).toMatch(/^skin/);
+    expect(String(g[`${P}covpos`].inputs.text)).toContain('bare breast skin');
+    expect(String(g[`${P}covpos`].inputs.text)).not.toContain('fabric');
+  });
   it('redraws only where a nipple shows, as the top fabric, before SaveImage and the colour step', () => {
     const kept = addKeepScene(graph(), { width: 776 })!;
     const saveId = Object.keys(kept).find((id) => kept[id].class_type === 'SaveImage')!;

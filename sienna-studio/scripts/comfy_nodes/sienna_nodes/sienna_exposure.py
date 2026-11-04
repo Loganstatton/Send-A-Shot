@@ -175,6 +175,36 @@ def fill_patch(image, mask, rgb, keep_shading: float = 0.25):
     return np.clip(img * (1 - w) + patch * w, 0, 1).astype(np.float32)
 
 
+# Source-locked copies: a nipple drawn at the edge of the photo's narrow cup is painted over as her breast's own skin, not
+# fabric, so the photo's garment is never made bigger (the owner: report it rather than change the design). The photo
+# shows no nipple there (it is under the cup); the top check still runs on the result.
+SKIN_FALLBACK = (0.86, 0.68, 0.58)
+SKIN_NEAR_AB = 20.0   # a ring pixel within this hue distance (8-bit LAB a, b) of Sienna's skin is skin
+GARMENT_NEAR_AB = 18.0  # a patch pixel this near the top's own colour is the cup: never painted
+
+
+def skin_patch(image, mask, garment_rgb=None):
+    """(mask without the cup's own pixels, the breast's skin colour round the patch) for a skin cover-up (float RGB)."""
+    import cv2
+    import numpy as np
+
+    img = np.clip(image[..., :3].astype(np.float32), 0, 1)
+    m = np.asarray(mask, np.float32) > 0.5
+    if not m.any():
+        return mask, SKIN_FALLBACK
+    lab = cv2.cvtColor(np.round(img * 255).astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+    keep = m.copy()
+    if garment_rgb is not None:
+        g = cv2.cvtColor(np.round(np.asarray(garment_rgb, np.float32).reshape(1, 1, 3) * 255).astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)[0, 0]
+        cup = np.hypot(lab[..., 1] - g[1], lab[..., 2] - g[2]) < GARMENT_NEAR_AB
+        keep &= ~cup
+    k = max(5, int(np.sqrt(m.sum()) * 0.6)) | 1
+    ring = (cv2.dilate(m.astype(np.uint8), np.ones((k, k), np.uint8)) > 0) & ~m
+    skin = ring & (np.hypot(lab[..., 1] - 145.0, lab[..., 2] - 150.0) < SKIN_NEAR_AB)
+    colour = tuple(float(c) for c in np.median(img[skin], axis=0)) if skin.sum() >= 20 else SKIN_FALLBACK
+    return keep.astype(np.float32), colour
+
+
 def detector():
     """The NudeNet detector (with the chest-crop second look), loaded once; None (with detector_error()) if nudenet isn't installed."""
     global _detector, _error
