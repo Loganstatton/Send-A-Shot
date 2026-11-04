@@ -196,9 +196,14 @@ const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulder
 /** Her hair phrase from the profile ("long dark-brown wavy hair with lighter caramel ends"), weighted; '' if none. */
 function lockHairColour(traits: string): string {
   const h = traits.split(',').map((t) => t.trim()).find((t) => /\bhair\b/i.test(t) && !/[()]/.test(t));
-  return h ? `(${h}:1.25)` : '';
+  return h ? `(${coolHair(h)}:1.25)` : '';
 }
-const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, jet-black hair, black hair, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body, tattoo, tattoos';
+/** "Caramel" ends drew copper-orange lengths and a ginger ponytail on locked copies (4 Nov); her reference photos show
+ * dark-brown hair with only softly lighter, cool brown ends. */
+export function coolHair(text: string): string {
+  return text.replace(/\b(warm\s+)?(caramel|honey|golden)(-brown|\s+brown)?\b/gi, 'soft light-brown');
+}
+const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, copper hair, orange hair, reddish-brown hair, strawberry blonde hair, jet-black hair, black hair, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body, tattoo, tattoos';
 function weighHairstyle(text: string): string {
   const h = copyHairstyle(text);
   return h ? text.replace(h.phrase, `(${h.phrase}:1.3)`) : text;
@@ -435,7 +440,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     f.setting,
     f.lighting,
     f.extra,
-    ...(frame || copy ? identityFor(inFrame(copy ? copyTraits(traits.rest, [f.outfit, f.pose, f.bodyPresentation, f.expression, f.extra].join(' '), sourceLock) : traits.rest, frame)) : identity),
+    ...(frame || copy ? identityFor(inFrame(copy ? (sourceLock ? coolHair : (t: string) => t)(copyTraits(traits.rest, [f.outfit, f.pose, f.bodyPresentation, f.expression, f.extra].join(' '), sourceLock)) : traits.rest, frame)) : identity),
     camera,
     realism,
     siennaLock && !faceAway ? traits.eyes : '',

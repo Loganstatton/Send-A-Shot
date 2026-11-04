@@ -291,8 +291,10 @@ describe('copy mode (Copy Photo)', () => {
     const neg = buildPrompt({ fields: f, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true, sourceLock: true }).negative;
     expect(neg).toMatch(/auburn hair/);
     expect(neg).toMatch(/jet-black hair/);
-    // her own hair colour, weighted, from her profile
-    expect(locked).toMatch(/\(long dark-brown wavy hair with lighter caramel ends:1\.25\)/);
+    // her own hair colour, weighted, from her profile, with cool ends (caramel drew copper lengths, 4 Nov)
+    expect(locked).toMatch(/\(long dark-brown wavy hair with lighter soft light-brown ends:1\.25\)/);
+    expect(locked).not.toMatch(/caramel/);
+    expect(neg).toMatch(/copper hair/);
     expect(plain).not.toMatch(/caramel ends:1\.25/);
     expect(buildPrompt({ fields: f, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true }).negative).not.toMatch(/auburn hair/);
   });
@@ -400,5 +402,13 @@ describe('copyTraits for a source-locked copy', () => {
     const t = 'dark-brown hair with lighter caramel ends, light freckles across nose and cheeks, slim toned waist with defined abs, curvy hips';
     expect(copyTraits(t, 'a bikini', true)).toBe('dark-brown hair with lighter caramel ends, light freckles across nose and cheeks');
     expect(copyTraits(t, 'a bikini')).toContain('defined abs');
+  });
+});
+
+describe('coolHair', () => {
+  it('turns caramel ends into soft light-brown ends', async () => {
+    const { coolHair } = await import('./prompt');
+    expect(coolHair('long dark-brown wavy hair with lighter caramel ends')).toBe('long dark-brown wavy hair with lighter soft light-brown ends');
+    expect(coolHair('dark-brown hair')).toBe('dark-brown hair');
   });
 });
