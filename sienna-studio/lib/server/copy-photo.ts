@@ -26,8 +26,9 @@ export const COPY_UNREAD = 'Copy not made: nothing could be read from this photo
 /** Source-locked copy: the photo's own pose and hands, held firmly. */
 // 0.9 held the photo's hand keypoints so hard the hands came out as thumb-like lumps (boat, 2 Nov)
 const COPY_LOCK_POSE_STRENGTH = 0.85;
-/** Source-locked copies' face pass: at 0.3 the face stayed 0.64-0.68 from hers and the hair near-black (boat, 2 Nov). */
-const COPY_LOCK_FACE_DENOISE = 0.4;
+/** Source-locked copies' face pass: at 0.3 the face stayed 0.64-0.68 from hers and the hair near-black (boat, 2 Nov);
+ * 0.4 -> 0.6 lifted her face 0.58 -> 0.68 (cut-out) and 0.69 -> 0.77 (pink) with the outfit unchanged (4 Nov). */
+const COPY_LOCK_FACE_DENOISE = 0.6;
 /** Source-locked copy (testing switch, or SIENNA_COPY_SOURCE_LOCK=on): nothing about the photo's garment is adapted. */
 export function copySourceLocked(req: GenerateRequest): boolean {
   return req.params.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on';

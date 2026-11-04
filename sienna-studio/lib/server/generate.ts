@@ -751,7 +751,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     // source-locked copies: a firmer hand pass (the locked pose drew thumb-like lumps at 0.5, 2 Nov)
     const lockHands = !!req.simple?.copy && (p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on');
     // ... and each hand follows the photo's own hand skeleton (a hand draped over the rim came back flat, 2 Nov)
-    const pose = lockHands && process.env.SIENNA_COPY_HAND_POSE !== 'off' ? poseControl(graph) : null;
+    // off by default (opt in with SIENNA_COPY_HAND_POSE=on): where her arm sat a little off the photo's, the photo's hand was
+    // drawn as a separate, oversized hand in a square patch on her hip and chest (pink copy, 4 Nov)
+    const pose = lockHands && process.env.SIENNA_COPY_HAND_POSE === 'on' ? poseControl(graph) : null;
     const poseOk = pose && (await Promise.all(HAND_POSE_CLASSES.map((c) => backend.nodeInfo(c).catch(() => null)))).every(Boolean);
     const withHands = reason ? null : addHandRefine(graph, refineId, { denoise: p.handRefineDenoise ?? (lockHands ? COPY_LOCK_HAND_DENOISE : undefined), prompt: p.keepScene ? copyHandPrompt(req.fields.pose) : undefined, ...(pose && poseOk ? { pose } : {}) });
     if (withHands) {
