@@ -1111,3 +1111,15 @@ def test_skin_cover_keeps_the_cup_and_takes_the_skin_round_the_patch():
     assert np.abs(np.asarray(colour) - skin).max() < 0.05
     out = ex.fill_patch(img, keep, colour, keep_shading=0.5)
     assert np.abs(out[40, 45] - skin).max() < 0.12 and np.allclose(out[40, 25], yellow, atol=0.02)
+
+
+def test_skin_saturation_follows_the_photos_light_only_downward():
+    import sienna_copy_colour as cc
+
+    cls = [np.zeros((40, 40), np.float32) for _ in range(6)]
+    cls[2][:] = 1
+    grey = np.zeros((40, 40, 3), np.float32); grey[...] = (100, 138, 142)   # overcast, muted skin
+    a, b = cc._skin_ab_in_light(grey, cls)
+    assert 136 < a < 142 and 140 < b < 146
+    vivid = np.zeros((40, 40, 3), np.float32); vivid[...] = (150, 160, 170)  # sunny, very saturated
+    assert cc._skin_ab_in_light(vivid, cls) == cc.SIENNA_SKIN_AB

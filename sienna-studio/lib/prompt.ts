@@ -194,9 +194,12 @@ const COPY_UPDO_NEGATIVE = 'long loose hair down, hair falling over her shoulder
 /** Source-locked copies: colours the strong guides drifted to (red hair, orange skin, a glowing outline, 2 Nov). */
 // (black too: with only red avoided, the boat copies' hair went near-black and straight, 2 Nov)
 /** Her hair phrase from the profile ("long dark-brown wavy hair with lighter caramel ends"), weighted; '' if none. */
-function lockHairColour(traits: string): string {
+export function lockHairColour(traits: string, updo = false): string {
   const parts = traits.split(',').map((t) => t.trim());
-  const h = parts.find((t) => /\bhair\b/i.test(t) && !/[()]/.test(t));
+  const found = parts.find((t) => /\bhair\b/i.test(t) && !/[()]/.test(t));
+  // the colour only when the photo's hair is up: "(long dark-brown wavy hair:1.25)" against "(hair slicked back into a
+  // bun:1.3)" and "hair worn down" in the negative drew no head at all, on every try (hot tub, 4 Nov)
+  const h = found && updo ? found.replace(/\b(long|short|medium-length|shoulder-length|waist-length|wavy|curly|straight|loose|flowing|voluminous)\s+/gi, '').replace(/\s{2,}/g, ' ').trim() : found;
   // her eye colour too: locked copies drew icy blue eyes under heavy black liner, and the face check fell to 0.54-0.59
   // on the cut-out (4 Nov); her reference photos show hazel-green eyes and natural makeup
   const e = parts.find((t) => /\beyes?\b/i.test(t) && /\b(hazel|green|brown|blue|grey|gray|amber)\b/i.test(t) && !/[()]/.test(t));
@@ -455,7 +458,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     // narrow copied cups left her nipples at the cup edges (1 Nov): in copy mode a top always covers them
     copy && !sourceLock && outfitHasTop(f.outfit) ? COPY_COVER_POSITIVE : '',
     // her own hair colour, firmly: the photo's hair guided the redraw toward its colour
-    copy && sourceLock && siennaLock ? lockHairColour(character.appearanceTraits) : '',
+    copy && sourceLock && siennaLock ? lockHairColour(character.appearanceTraits, !!copyHairstyle(`${f.bodyPresentation}, ${f.extra}`)?.up) : '',
     // the photo's breasts hung below the under-bust string; the copy's ended at it (1 Nov)
     copy && /\b(hangs?|hanging|showing|visible)\b[^,]*\bbelow the (thin )?(under-?(bust|band)? ?)?(string|band)\b|\bunderside[s]? (largely |mostly )?bare\b|\bunderboob\b/i.test(`${f.outfit}, ${f.bodyPresentation}`) ? '(lower curve of each breast hanging below the thin under-bust string:1.2)' : '',
     // a wet micro bikini was drawn see-through on every try (1 Nov): opaque unless the photo's garment is sheer

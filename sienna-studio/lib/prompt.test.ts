@@ -435,3 +435,14 @@ describe('copyDetailParts (owner, hot tub 4 Nov: "I want details")', () => {
     expect(copyDetailParts({ outfit: 'grey dress', bodyPresentation: '', extra: '' }, false, false).negative).not.toContain('abs');
   });
 });
+
+describe('lockHairColour with the photo’s hair up', () => {
+  it('keeps her colour but drops long and wavy, which fought the bun (headless copies, 4 Nov)', async () => {
+    const { lockHairColour } = await import('./prompt');
+    const traits = 'sienna_v1 woman, long dark-brown wavy hair with lighter caramel ends, light freckles, hazel-green eyes';
+    expect(lockHairColour(traits)).toContain('long dark-brown wavy hair');
+    const up = lockHairColour(traits, true);
+    expect(up).toContain('dark-brown hair with lighter soft light-brown ends');
+    expect(up).not.toMatch(/\blong\b|\bwavy\b/);
+  });
+});

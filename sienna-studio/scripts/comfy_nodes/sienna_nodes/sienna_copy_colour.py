@@ -34,6 +34,21 @@ def _lab(img: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(np.round(np.clip(img[..., :3], 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
 
 
+# Sienna's hue always, but her skin's saturation follows the photo's light, only ever down: under overcast shade her
+# full warm colour at the photo's darker level read as orange (hot tub, 4 Nov: the photo's skin chroma 17, hers 28)
+SKIN_CHROMA_MIN = 0.65
+
+
+def _skin_ab_in_light(photo_lab: np.ndarray, photo_classes) -> Tuple[float, float]:
+    sk = np.asarray(SIENNA_SKIN_AB, np.float32) - 128.0
+    m = (photo_classes[BODY_SKIN] > 0.5) | (photo_classes[FACE_SKIN] > 0.5)
+    if m.sum() < MIN_PIXELS:
+        return SIENNA_SKIN_AB
+    c = float(np.hypot(*(np.median(photo_lab[m][:, 1:], axis=0) - 128.0)))
+    k = float(np.clip(c / float(np.hypot(*sk)), SKIN_CHROMA_MIN, 1.0))
+    return tuple(float(v) for v in 128.0 + k * sk)
+
+
 def _robust(px: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Median and a spread from the 16th-84th percentiles (one sigma for normal data), per LAB channel."""
     lo, med, hi = np.percentile(px, [16, 50, 84], axis=0)
@@ -110,7 +125,7 @@ def copy_colours(photo: np.ndarray, image: np.ndarray, region: np.ndarray, photo
             continue
         mu_r, sd_r = _robust(b[mr])
         if name == "skin":  # Sienna's own tone, in this scene's light
-            mu_s = np.array([np.clip(mu_r[0], *SIENNA_SKIN_L), *SIENNA_SKIN_AB], np.float32)
+            mu_s = np.array([np.clip(mu_r[0], *SIENNA_SKIN_L), *_skin_ab_in_light(a, photo_classes)], np.float32)
             scale = np.ones(3, np.float32)
         else:
             mu_s, sd_s = _robust(a[ms])
