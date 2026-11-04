@@ -423,7 +423,7 @@ describe('copyDetailParts (owner, hot tub 4 Nov: "I want details")', () => {
     expect(wet.positive).toContain('water droplets');
     expect(wet.positive).toContain('ruched');
     expect(wet.positive).toContain('thin string');
-    expect(wet.positive).toContain('soft natural stomach');
+    expect(wet.positive).toContain('soft smooth natural stomach');
     expect(wet.negative).not.toContain('greasy shine');
     expect(wet.negative).toContain('knot-front');
     expect(wet.negative).toContain('defined abs');
