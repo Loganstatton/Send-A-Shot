@@ -197,18 +197,12 @@ describe('source-locked copy', () => {
     expect(g[`${P}cndapply`].inputs).toMatchObject({ strength: SOURCE_LOCK.depth.strength, end_percent: SOURCE_LOCK.depth.end });
     expect(g[`${P}bodyblur`].inputs.sigma).toBe(SOURCE_LOCK.blurSigma);
   });
-  it('starts from the photo’s blurred colours inside her region, a little under full denoise', () => {
+  it('starts from noise, not the photo’s colours (a blonde photo gave her ginger hair)', () => {
     const g = locked();
     const sampler = Object.values(g).find((n) => n.class_type === 'KSampler' && Array.isArray(n.inputs.latent_image) && n.inputs.latent_image[0] === `${P}noise`)!;
-    expect(sampler.inputs.denoise).toBe(LOCK_COLOUR_PRIOR.denoise);
-    const enc = g[(g[`${P}noise`].inputs.samples as [string, number])[0]];
-    expect(enc.inputs.pixels).toEqual([`${P}prior`, 0]);
-    expect(g[`${P}prior`].inputs).toMatchObject({ source: [`${P}prior2`, 0], mask: g[`${P}noise`].inputs.mask });
-    expect(g[`${P}prior1`].inputs).toMatchObject({ blur_radius: 31, sigma: 10 });
-    // an ordinary copy still starts from noise
-    const plain = addKeepScene(graph(), { width: 800, height: 1296 })!;
-    expect(plain[`${P}prior`]).toBeUndefined();
-    expect(Object.values(plain).find((n) => n.class_type === 'KSampler' && Array.isArray(n.inputs.latent_image) && n.inputs.latent_image[0] === `${P}noise`)!.inputs.denoise).toBe(1);
+    expect(LOCK_COLOUR_PRIOR.enabled).toBe(false);
+    expect(sampler.inputs.denoise).toBe(1);
+    expect(g[`${P}prior`]).toBeUndefined();
   });
   it('adds no silhouette outline (it drew a glowing edge round her)', () => {
     const g = locked();
