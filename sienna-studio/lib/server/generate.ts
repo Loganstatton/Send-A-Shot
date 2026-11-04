@@ -42,9 +42,9 @@ import { presetImage } from './pose-preset';
 import { aiCheck, aiEnabled } from './ai';
 import { UNDELIVERABLE_RE } from '../copy-photo';
 import { addKeepPerson, stripKeepPerson } from '../comfy/keep-person';
-import { addCopyColours, addCoverUp, addFaceUpright, addKeepScene, FACE_UPRIGHT_CLASSES, COPY_COLOURS_CLASS, COPY_COLOURS_LOCAL, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, HAND_CHECK_CLASS, HAND_CHECK_NODE_ID, handCheckNode, parseHandCheck, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
+import { addCopyColours, addCoverUp, COPY_SHADE, addFaceUpright, addKeepScene, FACE_UPRIGHT_CLASSES, COPY_COLOURS_CLASS, COPY_COLOURS_LOCAL, COVER_MASK_CLASS, DEPTH_NODES, GAP_FILL_CLASS, KEEP_SCENE_PREFIX, type DepthNode, GARMENT_LINES_CLASSES, HAND_CHECK_CLASS, HAND_CHECK_NODE_ID, handCheckNode, parseHandCheck, SOFT_SEAM_CLASS, UI_MASK_CLASS, UNION_CN_FILE, WARP_GARMENT_CLASS } from '../comfy/keep-scene';
 import { addInstantIdFacePass, INSTANTID_CLASSES, INSTANTID_CONTROLNET, INSTANTID_FILE } from '../comfy/instantid';
-import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_POSE_CLASSES, HAND_REFINE_DENOISE, poseControl } from '../comfy/hand-refine';
+import { addHandRefine, copyHandPrompt, HAND_DETECTOR_MODEL, HAND_MATCH_CLASS, HAND_POSE_CLASSES, HAND_REFINE_DENOISE, poseControl } from '../comfy/hand-refine';
 /** Source-locked copies' hand pass (0.5 left thumb-like lumps; 0.6 broke a good hand in the 21 Oct A/B). */
 const COPY_LOCK_HAND_DENOISE = 0.55;
 import { recordLessons } from './copy-lessons';
@@ -751,14 +751,16 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
     // source-locked copies: a firmer hand pass (the locked pose drew thumb-like lumps at 0.5, 2 Nov)
     const lockHands = !!req.simple?.copy && (p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on');
     // ... and each hand follows the photo's own hand skeleton (a hand draped over the rim came back flat, 2 Nov)
-    // off by default (opt in with SIENNA_COPY_HAND_POSE=on): where her arm sat a little off the photo's, the photo's hand was
-    // drawn as a separate, oversized hand in a square patch on her hip and chest (pink copy, 4 Nov)
-    const pose = lockHands && process.env.SIENNA_COPY_HAND_POSE === 'on' ? poseControl(graph) : null;
-    const poseOk = pose && (await Promise.all(HAND_POSE_CLASSES.map((c) => backend.nodeInfo(c).catch(() => null)))).every(Boolean);
+    // but only the hands that line up with one of the photo's (SiennaHandPoseMatch): guiding every hand drew the photo's
+    // hand, oversized, in a square patch where her arm sat a little off (pink copy, 4 Nov). Without that node on the GPU
+    // server every hand gets the plain pass (which left a six-fingered hand, hot tub, 4 Nov). SIENNA_COPY_HAND_POSE=off
+    // turns it off.
+    const pose = lockHands && (p.copyHandPose ?? process.env.SIENNA_COPY_HAND_POSE !== 'off') ? poseControl(graph) : null;
+    const poseOk = pose && (await Promise.all([...HAND_POSE_CLASSES, HAND_MATCH_CLASS].map((c) => backend.nodeInfo(c).catch(() => null)))).every(Boolean);
     const withHands = reason ? null : addHandRefine(graph, refineId, { denoise: p.handRefineDenoise ?? (lockHands ? COPY_LOCK_HAND_DENOISE : undefined), prompt: p.keepScene ? copyHandPrompt(req.fields.pose) : undefined, ...(pose && poseOk ? { pose } : {}) });
     if (withHands) {
       graph = withHands;
-      handRefine = { status: 'on', denoise: p.handRefineDenoise ?? (lockHands ? COPY_LOCK_HAND_DENOISE : HAND_REFINE_DENOISE) };
+      handRefine = { status: 'on', denoise: p.handRefineDenoise ?? (lockHands ? COPY_LOCK_HAND_DENOISE : HAND_REFINE_DENOISE), ...(pose && poseOk ? { guided: true } : {}) };
     } else {
       handRefine = { status: 'skipped', reason: reason ?? 'no face pass to copy settings from' };
       if (reason) warnings.push(`Hand touch-up skipped — ${reason}.`);
@@ -831,7 +833,9 @@ export async function prepareGeneration(req: GenerateRequest, opts: { dryRun?: b
   if (p.keepScene && process.env.SIENNA_COPY_COLOURS !== 'off') {
     const has = await backend.nodeInfo(COPY_COLOURS_CLASS, true).catch(() => null);
     const locked = !!(p.copySourceLock ?? process.env.SIENNA_COPY_SOURCE_LOCK === 'on');
-    const coloured = has ? addCopyColours(graph, locked && COPY_COLOURS_LOCAL ? { local: COPY_COLOURS_LOCAL } : {}) : null;
+    // the photo's light and shade too, where the GPU server's colour step has it
+    const shade = locked && JSON.stringify(has ?? {}).includes('"shade"') ? (p.copyShade ?? (process.env.SIENNA_COPY_SHADE === 'off' ? 0 : COPY_SHADE)) : 0;
+    const coloured = has ? addCopyColours(graph, locked ? { ...(COPY_COLOURS_LOCAL ? { local: COPY_COLOURS_LOCAL } : {}), ...(shade > 0 ? { shade } : {}) } : {}) : null;
     if (coloured) graph = coloured;
     else if (!has && graph[`${KEEP_SCENE_PREFIX}person`]) warnings.push('Copy Photo: the GPU server has no colour step yet (SiennaCopyColours) — outfit and skin colours follow the description only.');
   }

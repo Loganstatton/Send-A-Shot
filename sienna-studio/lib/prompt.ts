@@ -208,6 +208,37 @@ function lockHairColour(traits: string): string {
 export function coolHair(text: string): string {
   return text.replace(/\b(warm\s+)?(caramel|honey|golden)(-brown|\s+brown)?\b/gi, 'soft light-brown');
 }
+/**
+ * Copy Photo detail the owner marked missing (hot tub, 4 Nov: "this is what I mean by I want details"): the photo's
+ * narrow ruched cups came out as wide smooth cups with a knot at the centre, its thin strings as thick straps, its wet
+ * skin with droplets as dry matte skin, its soft stomach with defined abs. Each part is asked for only when the photo's
+ * description shows it, and its opposite kept out.
+ */
+const WET_RE = /\b(wet|glisten\w*|droplets?|dripping|beads? of water|water beading)\b/i;
+const RUCHED_RE = /\b(ruched|gathered|scrunch\w*|shirred)\b/i;
+const KNOT_TOP_RE = /\b(knot\w*|bow|tie-?front|tied (at|in) the (front|centre|center|middle))\b/i;
+const THIN_STRING_RE = /\b(thin|skinny|string|spaghetti)\b[^,]*\b(strings?|ties?|straps?)\b/i;
+const ABS_RE = /\b(abs|six-?pack|muscular|athletic|defined stomach|toned stomach|toned midriff)\b/i;
+export function copyDetailParts(f: { outfit: string; bodyPresentation: string; extra: string }, sourceLock: boolean, hasTop: boolean): { positive: string; negative: string; wet: boolean } {
+  const all = `${f.outfit}, ${f.bodyPresentation}, ${f.extra}`;
+  const wet = WET_RE.test(all);
+  const pos: string[] = [];
+  const neg: string[] = [];
+  if (wet) pos.push('(wet skin with small water droplets beading on it, natural wet sheen:1.2)');
+  else neg.push('oiled skin, greasy shine');
+  if (hasTop && RUCHED_RE.test(f.outfit)) pos.push('(ruched gathered fabric on the cups:1.15)');
+  if (hasTop && !KNOT_TOP_RE.test(f.outfit)) neg.push('knot-front bikini top, tied knot between the cups, bow on the top');
+  if (THIN_STRING_RE.test(f.outfit)) {
+    pos.push('(very thin string ties:1.15)');
+    neg.push('thick straps, wide straps');
+  }
+  if (sourceLock && !ABS_RE.test(all)) {
+    pos.push('soft natural stomach');
+    neg.push('(defined abs, six-pack, muscular stomach:1.2)');
+  }
+  return { positive: pos.join(', '), negative: neg.join(', '), wet };
+}
+
 const SOURCE_LOCK_NEGATIVE = 'red hair, ginger hair, auburn hair, copper hair, orange hair, reddish-brown hair, strawberry blonde hair, jet-black hair, black hair, icy blue eyes, heavy black eyeliner, winged eyeliner, dramatic eye makeup, orange skin, spray tan, fake tan, oversaturated skin, glowing outline, halo around body, tattoo, tattoos';
 function weighHairstyle(text: string): string {
   const h = copyHairstyle(text);
@@ -405,6 +436,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
   const cover = coverParts(f.outfit, coverStomach);
   // cheeky shorts are left to the request's own words unless fix cheeky is on (it reshaped her in testing)
   const shorts = hasFix(fixes, 'shorts') || hasFix(fixes, 'cheeky') ? shortsParts(f.outfit, hasFix(fixes, 'cheeky')) : { fit: '', negative: '' };
+  const detail = copy ? copyDetailParts(f, sourceLock, outfitHasTop(f.outfit)) : null;
   const positive = joinParts([
     rear ? REAR_VIEW : '',
     faceAway ? FACE_AWAY : '',
@@ -429,6 +461,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     // a wet micro bikini was drawn see-through on every try (1 Nov): opaque unless the photo's garment is sheer
     copy && outfitHasTop(f.outfit) && !COPY_SHEER_RE.test(f.outfit) ? '(solid opaque fabric cups:1.2)' : '',
     copy ? 'her natural light-tan skin' : '',
+    detail?.positive ?? '',
     // a real body, not an airbrushed one: the owner marked the copy's smooth, perfectly round bust and body (1 Nov)
     copy ? `(realistic natural body with real skin texture and fine pores${COPY_MICRO_TOP_RE.test(f.outfit) ? '' : ', natural soft breast shape with weight'}, natural shading and creases:1.15)` : '',
     // fingers pinching a string, not fists round it (boat copy, 1 Nov)
@@ -477,7 +510,8 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     // the cups drawn as bare string outlines and loose strings dangling at her side (1 Nov)
     copy && outfitHasTop(f.outfit) ? 'open cups, cupless string outline, empty string frame cups, dangling loose strings, extra strings' : '',
     // her own skin tone, not the photo's warm light: copies came out deeply bronzed and oily (1 Nov)
-    copy ? 'deep tan, bronzed skin, dark tanned skin, oiled skin, greasy shine' : '',
+    copy ? 'deep tan, bronzed skin, dark tanned skin' : '',
+    detail?.negative ?? '',
     copy ? copyNearColours(f.outfit) : '',
     copy ? 'cold blue colour cast, washed-out colours' : '',
     copy ? 'airbrushed body, smooth plastic skin, perfectly round spherical breasts, implant-looking breasts, CGI body, doll skin, clenched fists' : '',

@@ -581,8 +581,11 @@ export const COPY_COLOURS = { clothes: 1.0, skin: 0.8 } as const;
 /** Source-locked copies: the garment's hue matched place by place to the photo's, its edge included (a raised sleeve
  * drawn blue or beige on a grey top, 2 Nov; the per-piece version before it left a blue fringe). */
 export const COPY_COLOURS_LOCAL = 1.0;
+/** Source-locked copies: the photo's light and shade on her body (its pattern, never its level; never her face or hair).
+ * The copy came out evenly lit where the photo had hard umbrella shade on her hips and thighs (hot tub, 4 Nov). */
+export const COPY_SHADE = 0.8;
 /** The graph with the colour step as the last change before SaveImage, or null without a keep-scene redraw in it. */
-export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin?: number; local?: number } = {}): ComfyGraph | null {
+export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin?: number; local?: number; shade?: number } = {}): ComfyGraph | null {
   const p = KEEP_SCENE_PREFIX;
   const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
   const person = graph[`${p}person`];
@@ -603,6 +606,7 @@ export function addCopyColours(graph: ComfyGraph, opts: { clothes?: number; skin
         clothes: opts.clothes ?? COPY_COLOURS.clothes,
         skin: opts.skin ?? COPY_COLOURS.skin,
         ...(opts.local ? { local: opts.local } : {}),
+        ...(opts.shade ? { shade: opts.shade } : {}),
       },
       _meta: { title: 'Keep scene: outfit and skin colours from the photo' },
     },

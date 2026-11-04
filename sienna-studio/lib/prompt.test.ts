@@ -415,3 +415,23 @@ describe('coolHair', () => {
     expect(coolHair('dark-brown hair')).toBe('dark-brown hair');
   });
 });
+
+describe('copyDetailParts (owner, hot tub 4 Nov: "I want details")', () => {
+  it('asks for what the photo shows and keeps its opposite out', async () => {
+    const { copyDetailParts } = await import('./prompt');
+    const wet = copyDetailParts({ outfit: 'mustard micro bikini top with tall narrow ruched sliver cups, thin halter strings', bodyPresentation: 'wet glistening skin', extra: '' }, true, true);
+    expect(wet.positive).toContain('water droplets');
+    expect(wet.positive).toContain('ruched');
+    expect(wet.positive).toContain('thin string');
+    expect(wet.positive).toContain('soft natural stomach');
+    expect(wet.negative).not.toContain('greasy shine');
+    expect(wet.negative).toContain('knot-front');
+    expect(wet.negative).toContain('defined abs');
+    const dry = copyDetailParts({ outfit: 'black bikini top knotted at the front', bodyPresentation: 'toned stomach with visible abs', extra: '' }, true, true);
+    expect(dry.positive).not.toContain('droplets');
+    expect(dry.negative).toContain('greasy shine');
+    expect(dry.negative).not.toContain('knot-front');
+    expect(dry.negative).not.toContain('defined abs');
+    expect(copyDetailParts({ outfit: 'grey dress', bodyPresentation: '', extra: '' }, false, false).negative).not.toContain('abs');
+  });
+});

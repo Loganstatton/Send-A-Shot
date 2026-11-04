@@ -1040,3 +1040,55 @@ def test_face_upright_levels_a_tilted_face_and_pastes_back_only_the_face_pass():
     q = fu.plan((300, 400), None)
     same, info = fu.turn_back(img, img, img * 0.5, q)
     assert not info["pasted"] and np.allclose(same, img * 0.5)
+
+
+def test_hand_match_guides_only_hands_that_line_up_with_the_photos():
+    import sienna_hand_match as hm
+
+    def hand(x0, y0, s):  # 21 points spread over an s x s box
+        return [v for i in range(21) for v in (x0 + s * (i % 5) / 4, y0 + s * (i // 5) / 4, 1.0)]
+
+    # normalized DWPose output on a 200 x 100 canvas, read into a 400 x 200 picture
+    pose = [{"canvas_width": 200, "canvas_height": 100, "people": [
+        {"hand_left_keypoints_2d": [v / 200 if i % 3 == 0 else (v / 100 if i % 3 == 1 else v) for i, v in enumerate(hand(20, 20, 20))],
+         "hand_right_keypoints_2d": [0.0] * 63}]}]
+    hands = hm.photo_hands(pose, (400, 200))
+    assert len(hands) == 1  # the empty right hand is dropped
+    assert np.allclose(hm.box_of(hands[0]), (40, 40, 80, 80))
+    found = [(38, 36, 84, 82),    # the same hand
+             (200, 100, 240, 140),  # a hand elsewhere (her arm sits off the photo's)
+             (30, 30, 200, 190)]    # an oversized box round the photo's hand
+    pairs = hm.matches(found, [hm.box_of(h) for h in hands])
+    assert pairs == {0: 0}
+    img = hm.control_image([hands[0]], (400, 200))
+    assert img.shape == (200, 400, 3) and img[40:81, 40:81].any() and not img[:, 120:].any()
+    assert hm.matches(found, []) == {}
+
+
+def test_shade_match_takes_the_photos_shadow_pattern_but_not_its_level():
+    import sienna_copy_colour as cc
+
+    h, w = 120, 160
+    body = np.zeros((h, w), np.float32)
+    body[20:110, 40:120] = 1
+    classes = [1 - body, np.zeros_like(body), body, np.zeros_like(body), np.zeros_like(body), np.zeros_like(body)]
+    a = np.zeros((h, w, 3), np.float32); a[...] = (120, 145, 150)
+    a[70:110, 40:120, 0] = 90   # the photo: her lower half in shade, and she is darker overall than Sienna
+    b = np.zeros((h, w, 3), np.float32); b[...] = (160, 145, 150)  # the copy: evenly lit
+    L, wgt, info = cc.shade_match(a, b, body > 0.5, classes, classes, 1.0)
+    top, low = float(L[40, 80]), float(L[95, 80])
+    assert top - low > 15                      # the shade came across
+    assert abs(np.median(L[body > 0.5]) - 160) < 6  # her own level kept
+    assert wgt[5, 5] == 0 and wgt[60, 80] > 0.9   # never outside her body
+
+
+def test_garment_recolour_never_dyes_skin_coloured_pixels():
+    import sienna_copy_colour as cc
+
+    b = np.zeros((4, 4, 3), np.float32); b[...] = (150, 146, 151)   # Sienna's skin hue
+    b[0, 0] = (180, 135, 190)                                        # a mustard pixel
+    mustard = np.tile(np.array([[170, 136, 188]], np.float32), (300, 1))
+    sk = cc._skinlike(b, mustard)
+    assert sk[1, 1] and not sk[0, 0]
+    nude = np.tile(np.array([[160, 147, 156]], np.float32), (300, 1))
+    assert cc._skinlike(b, nude) is None  # a skin-coloured garment: no guard

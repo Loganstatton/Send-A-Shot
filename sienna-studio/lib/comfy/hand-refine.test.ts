@@ -33,13 +33,31 @@ describe('hand pass following the photo’s hand (source lock)', () => {
       '22': { class_type: 'ControlNetApplyAdvanced', inputs: { control_net: ['21', 0], image: ['23', 0], positive: ['3', 0], negative: ['4', 0], strength: 0.85 } },
     } as ComfyGraph;
     const pose = poseControl(g)!;
-    expect(pose).toEqual({ controlNet: ['21', 0], image: ['23', 0] });
-    const out = addHandRefine(g, '51', { denoise: 0.55, pose })!;
+    expect(pose).toEqual({ controlNet: ['21', 0], image: ['23', 0], keypoints: ['23', 1] });
+    const out = addHandRefine(g, '51', { denoise: 0.55, pose: { controlNet: pose.controlNet, image: pose.image } })!;
     expect(out.hand_segs).toMatchObject({ class_type: 'BboxDetectorSEGS', inputs: { bbox_detector: ['hand_detector', 0] } });
     expect(out.hand_pose).toMatchObject({ class_type: 'ImpactControlNetApplySEGS', inputs: { segs: ['hand_segs', 0], control_net: ['21', 0], control_image: ['23', 0] } });
     expect(out[HAND_REFINE_ID]).toMatchObject({ class_type: 'DetailerForEach', inputs: { segs: ['hand_pose', 0], denoise: 0.55, model: g['51'].inputs.model } });
     const save = Object.values(out).find((n) => n.class_type === 'SaveImage')!;
     expect(save.inputs.images).toEqual([HAND_REFINE_ID, 0]);
     expect(poseControl(graph)).toBeNull();
+  });
+});
+
+describe('hand pass following the photo’s hand only where they line up', () => {
+  it('splits the found hands: matched ones guided by the photo’s skeleton, the rest the plain pass', async () => {
+    const { addHandRefine, poseControl, HAND_REFINE_ID, HAND_MATCH_CLASS, HAND_GUIDED_DENOISE } = await import('./hand-refine');
+    const g = {
+      ...graph,
+      '21': { class_type: 'ControlNetLoader', inputs: { control_net_name: 'sdxl_openpose.safetensors' } },
+      '23': { class_type: 'DWPreprocessor', inputs: { image: ['30', 0] } },
+      '22': { class_type: 'ControlNetApplyAdvanced', inputs: { control_net: ['21', 0], image: ['23', 0], positive: ['3', 0], negative: ['4', 0], strength: 0.85 } },
+    } as ComfyGraph;
+    const out = addHandRefine(g, '51', { denoise: 0.55, pose: poseControl(g)! })!;
+    expect(out.hand_match).toMatchObject({ class_type: HAND_MATCH_CLASS, inputs: { segs: ['hand_segs', 0], pose_keypoint: ['23', 1], image: ['51', 0] } });
+    expect(out.hand_pose.inputs).toMatchObject({ segs: ['hand_match', 0], control_image: ['hand_match', 2] });
+    expect(out.hand_plain).toMatchObject({ class_type: 'DetailerForEach', inputs: { image: ['51', 0], segs: ['hand_match', 1], denoise: 0.55 } });
+    expect(out[HAND_REFINE_ID]).toMatchObject({ class_type: 'DetailerForEach', inputs: { image: ['hand_plain', 0], segs: ['hand_pose', 0], denoise: HAND_GUIDED_DENOISE } });
+    expect(Object.values(out).find((n) => n.class_type === 'SaveImage')!.inputs.images).toEqual([HAND_REFINE_ID, 0]);
   });
 });

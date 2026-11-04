@@ -756,7 +756,9 @@ class SiennaCopyColours:
                 "skin": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.05}),
             },
             # source-locked copies: the garment's colour matched place by place too (a blue sleeve on a grey top)
-            "optional": {"local": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05})},
+            # ... and the photo's light and shade on her body (umbrella shade, a darker hip)
+            "optional": {"local": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05}),
+                         "shade": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05})},
         }
 
     RETURN_TYPES = ("IMAGE", "STRING")
@@ -765,7 +767,7 @@ class SiennaCopyColours:
     OUTPUT_NODE = True
     CATEGORY = "sienna"
 
-    def run(self, photo, image, region, photo_region, clothes, skin, local=0.0):
+    def run(self, photo, image, region, photo_region, clothes, skin, local=0.0, shade=0.0):
         import cv2
         from . import sienna_copy_colour
         def to_mask(m, shape):
@@ -780,7 +782,8 @@ class SiennaCopyColours:
                 ph = cv2.resize(ph, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
             # in its own process: a segmenter crash inside ComfyUI took the whole GPU down (1 Nov)
             out, info = sienna_copy_colour.copy_colours_isolated(ph, img, to_mask(region, shape), to_mask(photo_region, shape),
-                                                                 float(clothes), float(skin), local=float(local))
+                                                                 float(clothes), float(skin), local=float(local),
+                                                                 shade=float(shade))
             res = torch.from_numpy(np.ascontiguousarray(out, np.float32))[None, ...]
             if image.shape[0] > 1:
                 info["batch_note"] = f"only the first of {image.shape[0]} photos was changed"
@@ -883,7 +886,44 @@ class SiennaFaceTurnBack:
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None], text)}
 
 
+class SiennaHandPoseMatch:
+    """Copy Photo: the found hands split into those that line up with one of the photo's hands (each guided by that
+    hand's skeleton, drawn here) and the rest (the plain hand pass). A six-fingered hand came out of the plain pass
+    (hot tub, 4 Nov); guiding every hand pasted the photo's hand where her arm sat elsewhere (pink, 4 Nov)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"segs": ("SEGS",), "pose_keypoint": ("POSE_KEYPOINT",), "image": ("IMAGE",)}}
+
+    RETURN_TYPES = ("SEGS", "SEGS", "IMAGE", "STRING")
+    RETURN_NAMES = ("guided", "plain", "control_image", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, segs, pose_keypoint, image):
+        from . import sienna_hand_match as hm
+
+        h, w = int(image.shape[1]), int(image.shape[2])
+        shape, items = segs[0], list(segs[1])
+        guided, plain, info = [], items, {"found": len(items)}
+        control = np.zeros((h, w, 3), np.uint8)
+        try:
+            hands = hm.photo_hands(pose_keypoint, (w, h))
+            pairs = hm.matches([tuple(float(v) for v in s.bbox) for s in items], [hm.box_of(x) for x in hands])
+            guided = [items[i] for i in sorted(pairs)]
+            plain = [s for i, s in enumerate(items) if i not in pairs]
+            control = hm.control_image([hands[j] for j in pairs.values()], (w, h))
+            info.update({"photo_hands": len(hands), "guided": len(guided)})
+        except Exception as e:  # never block the photo: every hand gets the plain pass
+            info["error"] = f"{type(e).__name__}: {e}"[:200]
+        text = json.dumps(info)
+        ctl = torch.from_numpy(control.astype(np.float32) / 255.0)[None]
+        return {"ui": {"text": [text]}, "result": ((shape, guided), (shape, plain), ctl, text)}
+
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaHandPoseMatch": SiennaHandPoseMatch,
     "SiennaFaceUpright": SiennaFaceUpright,
     "SiennaFaceTurnBack": SiennaFaceTurnBack,
     "SiennaHandCheck": SiennaHandCheck,
@@ -909,6 +949,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaHandPoseMatch": "Sienna Hand Pose Match (copy)",
     "SiennaFaceUpright": "Sienna Face Upright (copy)",
     "SiennaFaceTurnBack": "Sienna Face Turn Back (copy)",
     "SiennaHandCheck": "Sienna Hand Check (copy)",

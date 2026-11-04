@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sdxl from '../../workflows/examples/sienna-sdxl-production.json';
 import type { ComfyGraph } from '../types';
 import { addKeepScene, KEEP_SCENE_PREFIX as P, sceneSize } from './keep-scene';
-import { addCopyColours, addFaceUpright, COPY_COLOURS_LOCAL, LOCK_COLOUR_PRIOR, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, handCheckNode, parseHandCheck, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
+import { addCopyColours, addFaceUpright, COPY_COLOURS_LOCAL, COPY_SHADE, LOCK_COLOUR_PRIOR, addCoverUp, COVER, coverColour, DETAIL, GARMENT_PASS, handCheckNode, parseHandCheck, garmentLines, KEEP_SCENE_GROW, LOCK_DETAIL_DENOISE, SOURCE_LOCK } from './keep-scene';
 
 const graph = () => {
   const g = structuredClone(sdxl) as ComfyGraph;
@@ -114,6 +114,11 @@ describe('addCopyColours', () => {
     const kept = addKeepScene(graph(), { width: 776 })!;
     expect(addCopyColours(kept)![`${P}colours`].inputs).not.toHaveProperty('local');
     expect(addCopyColours(kept, { local: 1 })![`${P}colours`].inputs.local).toBe(1);
+  });
+  it('takes the photo’s light and shade only when asked (source-locked copies)', () => {
+    const kept = addKeepScene(graph(), { width: 776 })!;
+    expect(addCopyColours(kept)![`${P}colours`].inputs).not.toHaveProperty('shade');
+    expect(addCopyColours(kept, { local: 1, shade: COPY_SHADE })![`${P}colours`].inputs).toMatchObject({ local: 1, shade: COPY_SHADE });
   });
   it('does nothing without a keep-scene redraw', () => {
     expect(addCopyColours(graph())).toBeNull();

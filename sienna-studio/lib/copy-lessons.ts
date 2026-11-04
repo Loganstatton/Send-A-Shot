@@ -11,6 +11,20 @@ export type LessonBook = { lessons: Record<string, Lesson> };
 export const LESSON_MIN_COUNT = 3;
 export const LESSON_MAX_APPLIED = 8;
 
+/**
+ * What the owner marked wrong in copies, applied to every copy from the start (no need to be seen three times), each
+ * skipped like any lesson when the new photo's own description shows it. Hot tub, 4 Nov: "the top from my picture vs the
+ * one it generates … Sienna has 6 fingers"; "this is what I mean by I want details … you're teaching the model so that
+ * it learns what to do and what not to do next".
+ */
+export const OWNER_LESSONS: (Lesson & { always?: boolean })[] = [
+  // no photo shows these, and the photo's own "fingers pinching a string" must not switch them off
+  { phrase: 'six-fingered hand, extra fingers', aspect: 'anatomy', count: 99, lastSeen: '2026-11-04', always: true },
+  { phrase: 'knotted centre front', aspect: 'clothing', count: 99, lastSeen: '2026-11-04' },
+  { phrase: 'wide full-coverage cups', aspect: 'clothing', count: 99, lastSeen: '2026-11-04' },
+  { phrase: 'thick bikini straps', aspect: 'clothing', count: 99, lastSeen: '2026-11-04' },
+];
+
 const STOP = new Set(['with', 'from', 'that', 'this', 'into', 'over', 'under', 'than', 'very', 'like', 'look', 'looks', 'photo', 'image']);
 
 /** The avoid phrases of one checker fix, cleaned: lower case, no prompt weights, no "not …" clauses, short. */
@@ -44,12 +58,16 @@ const words = (t: string) => new Set((t.toLowerCase().match(/[a-z]{4,}/g) ?? [])
  */
 export function lessonsFor(book: LessonBook, description: string): Lesson[] {
   const desc = words(description);
-  return Object.values(book.lessons)
-    .filter((l) => l.count >= LESSON_MIN_COUNT)
-    .filter((l) => {
-      const w = [...words(l.phrase)];
-      return w.length > 0 && w.filter((x) => desc.has(x)).length / w.length < 0.5;
-    })
+  const fits = (l: Lesson) => {
+    const w = [...words(l.phrase)];
+    return w.length > 0 && w.filter((x) => desc.has(x)).length / w.length < 0.5;
+  };
+  const owner = OWNER_LESSONS.filter((l) => l.always || fits(l)).map(({ always: _a, ...l }) => l);
+  const ownPhrases = new Set(owner.map((l) => l.phrase));
+  const learned = Object.values(book.lessons)
+    .filter((l) => l.count >= LESSON_MIN_COUNT && !ownPhrases.has(l.phrase))
+    .filter(fits)
     .sort((a, b) => b.count - a.count || b.lastSeen.localeCompare(a.lastSeen))
     .slice(0, LESSON_MAX_APPLIED);
+  return [...owner, ...learned];
 }

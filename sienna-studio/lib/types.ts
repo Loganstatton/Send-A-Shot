@@ -198,6 +198,10 @@ export interface GenerationParams {
   copyInstantId?: number;
   /** Benchmark: the stronger body hold on a source-locked copy (unset: SIENNA_COPY_BODY_HOLD=on). */
   copyBodyHold?: boolean;
+  /** Testing: the photo's light and shade on a locked copy (0 off; default COPY_SHADE). */
+  copyShade?: number;
+  /** Testing: matched hands follow the photo's hand skeleton on a locked copy (unset: on unless SIENNA_COPY_HAND_POSE=off). */
+  copyHandPose?: boolean;
   hiresScale?: number;
   hiresDenoise?: number;
   /** LoRA strength in the refinement pass (lower lets the base model's photographic texture through). */
@@ -395,7 +399,7 @@ export interface GenerationRecord {
   prunedModules?: string[];
   /** Small-face refinement pass: whether it was in the graph and with which settings. */
   faceRefine?: { status: 'on' | 'off' | 'skipped'; denoise?: number; threshold?: number; reason?: string; siennaLoraOnly?: boolean; faceReferenceOnly?: boolean };
-  handRefine?: { status: 'on' | 'off' | 'skipped'; reason?: string; denoise?: number };
+  handRefine?: { status: 'on' | 'off' | 'skipped'; reason?: string; denoise?: number; guided?: boolean };
   /** Targeted figure pass (test requests only). */
   figurePass?: { status: 'on' | 'skipped'; reason?: string; file?: string; strength?: number; denoise?: number; style?: string; enlarge?: number };
   /** Close-up detail pass (nude / bottomless photos in adult mode). */

@@ -16,25 +16,53 @@ export const HAND_REFINE_DENOISE = 0.5; // 0.35 left stubby, merged fingers; 0.6
  * plain pass redrew fingers freely: a hand draped over a tub's rim came back flat on top of it (owner, 2 Nov). */
 export const HAND_POSE_CLASSES = ['BboxDetectorSEGS', 'ImpactControlNetApplySEGS', 'DetailerForEach'] as const;
 export const HAND_POSE_STRENGTH = 0.8;
+/** Only the found hands that line up with one of the photo's (SiennaHandPoseMatch) follow its skeleton; the rest get the
+ * plain pass. Guiding every hand pasted the photo's hand, oversized, where her arm sat a little off (pink, 4 Nov); the
+ * plain pass left a six-fingered hand on her stomach (hot tub, 4 Nov). */
+export const HAND_MATCH_CLASS = 'SiennaHandPoseMatch';
+/** A guided hand can be redrawn harder: the skeleton holds its five fingers (0.6 broke a good hand only unguided). */
+export const HAND_GUIDED_DENOISE = 0.6;
 type Ref = [string, number];
 /** The pose ControlNet of a graph (its loader and the DWPose image it reads), for the hand pass to reuse. */
-export function poseControl(graph: ComfyGraph): { controlNet: Ref; image: Ref } | null {
+export function poseControl(graph: ComfyGraph): { controlNet: Ref; image: Ref; keypoints: Ref } | null {
   for (const n of Object.values(graph)) {
     if (n.class_type !== 'ControlNetApplyAdvanced') continue;
     const img = n.inputs.image as Ref | undefined;
     const cn = n.inputs.control_net as Ref | undefined;
-    if (Array.isArray(img) && Array.isArray(cn) && graph[img[0]]?.class_type === 'DWPreprocessor' && graph[cn[0]]?.class_type === 'ControlNetLoader') return { controlNet: cn, image: img };
+    if (Array.isArray(img) && Array.isArray(cn) && graph[img[0]]?.class_type === 'DWPreprocessor' && graph[cn[0]]?.class_type === 'ControlNetLoader') return { controlNet: cn, image: img, keypoints: [img[0], 1] };
   }
   return null;
 }
 
 /** The graph with the hand pass added, or null if there is no face-refinement node or SaveImage to hook into. */
-export function addHandRefine(graph: ComfyGraph, faceRefineId: string, opts: { denoise?: number; prompt?: string; pose?: { controlNet: Ref; image: Ref; strength?: number } } = {}): ComfyGraph | null {
+export function addHandRefine(graph: ComfyGraph, faceRefineId: string, opts: { denoise?: number; prompt?: string; pose?: { controlNet: Ref; image: Ref; keypoints?: Ref; strength?: number; denoise?: number } } = {}): ComfyGraph | null {
   const face = graph[faceRefineId];
   const saveId = Object.keys(graph).find((id) => graph[id].class_type === 'SaveImage');
   if (!face || face.class_type !== 'FaceDetailer' || !saveId) return null;
   const image = graph[saveId].inputs.images;
   if (!Array.isArray(image)) return null;
+  if (opts.pose?.keypoints) {
+    const f = face.inputs;
+    const detail = (img: unknown, segs: Ref, denoise: number) => ({
+      image: img, segs, model: f.model, clip: f.clip, vae: f.vae, guide_size: 512, guide_size_for: true, max_size: 1024,
+      seed: f.seed, steps: 12, cfg: f.cfg, sampler_name: f.sampler_name, scheduler: f.scheduler, positive: f.positive, negative: f.negative,
+      denoise, feather: 8, noise_mask: true, force_inpaint: true, wildcard: opts.prompt ?? HAND_PROMPT, cycle: 1,
+    });
+    return {
+      ...graph,
+      [HAND_DETECTOR_ID]: { class_type: 'UltralyticsDetectorProvider', inputs: { model_name: HAND_DETECTOR_MODEL }, _meta: { title: 'Hand Detector' } },
+      hand_segs: { class_type: 'BboxDetectorSEGS', inputs: { bbox_detector: [HAND_DETECTOR_ID, 0], image, threshold: 0.4, dilation: 12, crop_factor: 2.5, drop_size: 24, labels: 'all' }, _meta: { title: 'Hands found' } },
+      hand_match: { class_type: HAND_MATCH_CLASS, inputs: { segs: ['hand_segs', 0], pose_keypoint: opts.pose.keypoints, image }, _meta: { title: 'Hands that line up with the photo’s' } },
+      hand_pose: {
+        class_type: 'ImpactControlNetApplySEGS',
+        inputs: { segs: ['hand_match', 0], control_net: opts.pose.controlNet, strength: opts.pose.strength ?? HAND_POSE_STRENGTH, control_image: ['hand_match', 2] },
+        _meta: { title: 'Each of those follows the photo’s hand' },
+      },
+      hand_plain: { class_type: 'DetailerForEach', inputs: detail(image, ['hand_match', 1], opts.denoise ?? HAND_REFINE_DENOISE), _meta: { title: 'Hand Refinement (other hands)' } },
+      [HAND_REFINE_ID]: { class_type: 'DetailerForEach', inputs: detail(['hand_plain', 0], ['hand_pose', 0], opts.pose.denoise ?? HAND_GUIDED_DENOISE), _meta: { title: 'Hand Refinement (photo’s hand pose)' } },
+      [saveId]: { ...graph[saveId], inputs: { ...graph[saveId].inputs, images: [HAND_REFINE_ID, 0] } },
+    };
+  }
   if (opts.pose) {
     const f = face.inputs;
     return {
