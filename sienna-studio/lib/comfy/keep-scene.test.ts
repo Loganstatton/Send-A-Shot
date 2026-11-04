@@ -200,6 +200,12 @@ describe('two-pass copy (body first, garment second)', () => {
 
 describe('source-locked copy', () => {
   const locked = () => addKeepScene(graph(), { width: 800, height: 1296, garment: { phrases: ['bikini top'], controlnet: 'u.safetensors', body: true, depth: 'DepthAnythingV2Preprocessor', sourceLock: true, twoPass: true } })!;
+  it('keeps a blurred shape of her head in the depth guide (black drew no head, then the back of one)', () => {
+    const g = locked();
+    expect(g[`${P}headzone`].inputs).toMatchObject({ destination: [`${P}person`, 0], source: [`${P}face`, 0], operation: 'multiply' });
+    expect(g[`${P}headdepth`].inputs).toMatchObject({ source: [`${P}headblur`, 0], mask: [`${P}headzone`, 0] });
+    expect(g[`${P}bodydepth`].inputs.destination).toEqual([`${P}headdepth`, 0]);
+  });
   it('holds every guide to the photo firmly, letting go before the colour is set', () => {
     const g = locked();
     // the normal region: a tighter one put her edge on the blend seam (a glow of the water round her)

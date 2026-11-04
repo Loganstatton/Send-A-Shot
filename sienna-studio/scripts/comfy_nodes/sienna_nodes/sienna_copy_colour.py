@@ -36,7 +36,7 @@ def _lab(img: np.ndarray) -> np.ndarray:
 
 # Sienna's hue always, but her skin's saturation follows the photo's light, only ever down: under overcast shade her
 # full warm colour at the photo's darker level read as orange (hot tub, 4 Nov: the photo's skin chroma 17, hers 28)
-SKIN_CHROMA_MIN = 0.65
+SKIN_CHROMA_MIN = 0.8  # 0.65 turned the skin at her outline grey-blue (hot tub, 4 Nov)
 
 
 def _skin_ab_in_light(photo_lab: np.ndarray, photo_classes) -> Tuple[float, float]:
@@ -260,7 +260,8 @@ def _local_hue(a: np.ndarray, b: np.ndarray, ms: np.ndarray, mr: np.ndarray, tar
 SHADE_SIGMA = 0.02    # the light and shade taken from the photo is this smooth (share of the width): umbrella shade,
                       # a darker hip, the shadow under the bust; never skin texture, pores or marks
 SHADE_WIDE = 4.0      # ... carried this many times further where the photo and the copy don't overlap
-SHADE_MAX = 24.0      # lightness moves at most this far (8-bit LAB)
+SHADE_MAX = 18.0      # lightness moves at most this far (8-bit LAB)
+SHADE_EDGE = 0.02     # the shade fades out this far inside her outline (share of the width)
 SHADE_MIN = 0.25      # how much of a neighbourhood must overlap for its own shading to count
 
 
@@ -303,7 +304,11 @@ def shade_match(a: np.ndarray, b: np.ndarray, region: np.ndarray, photo_classes:
     reach = np.maximum(conf, np.clip(wide_den / SHADE_MIN, 0, 1))
     # only on her skin and clothes: across the region's edge it greyed the foam round her knee (hot tub, 4 Nov)
     body = (image_classes[BODY_SKIN] > 0.5) | (image_classes[CLOTHES] > 0.5)
-    weight = blur((m & no_face_i & body).astype(np.float32), 2) * reach * float(strength)
+    # and inside her outline: her edge never sits exactly on the photo woman's, whose own dark edge drew a grey-blue rim
+    # down the copy's thigh and back (hot tub, 4 Nov)
+    e = max(3, int(SHADE_EDGE * w)) | 1
+    inner = cv2.erode((m & no_face_i & body).astype(np.uint8), np.ones((e, e), np.uint8)).astype(np.float32)
+    weight = blur(inner, e / 2) * reach * float(strength)
     info["moved_p90"] = round(float(np.percentile(np.abs(d[m]), 90)), 1) if m.any() else 0.0
     return np.clip(b[..., 0] + d, 0, 255), np.clip(weight, 0, 1), info
 

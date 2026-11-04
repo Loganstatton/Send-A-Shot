@@ -217,6 +217,9 @@ export function coolHair(text: string): string {
  * skin with droplets as dry matte skin, its soft stomach with defined abs. Each part is asked for only when the photo's
  * description shows it, and its opposite kept out.
  */
+/** The photo's face toward the camera ("head turned toward lens" missed "toward the lens", and the copy drew the back of
+ * her head, hot tub 4 Nov). */
+const FACES_CAMERA_RE = /\b(at (the )?(lens|camera)|towards? (the )?(lens|camera)|to (the )?lens|into (the )?(lens|camera))\b/i;
 const WET_RE = /\b(wet|glisten\w*|droplets?|dripping|beads? of water|water beading)\b/i;
 const RUCHED_RE = /\b(ruched|gathered|scrunch\w*|shirred)\b/i;
 const KNOT_TOP_RE = /\b(knot\w*|bow|tie-?front|tied (at|in) the (front|centre|center|middle))\b/i;
@@ -477,7 +480,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     // a neutral or talking face loses to her LoRA's smile at 1.2 (1 Nov): 1.4, and the smile goes to the negative
     // 1.4 gave a wide-open mouth and her head thrown back, looking away (1 Nov): 1.25
     copy && f.expression.trim() ? `(${f.expression.trim()}:${copyNoSmile(f.expression) ? 1.25 : 1.2})` : f.expression,
-    copy && /\b(at the (lens|camera)|toward the (lens|camera)|to the lens|into the camera)\b/i.test(`${f.pose} ${f.expression}`) ? '(face turned toward the camera, looking into the lens:1.35)' : '',
+    copy && FACES_CAMERA_RE.test(`${f.pose} ${f.expression}`) ? '(face turned toward the camera, looking into the lens:1.35)' : '',
     f.setting,
     f.lighting,
     f.extra,
@@ -524,7 +527,7 @@ export function buildPrompt({ fields, character, siennaLock, contentMode, cleanu
     copy && copyNoSmile(f.expression) ? 'smiling, smile, grin, showing teeth' : '',
     copy && /\b(parted|mid-?sentence|talking|speaking)\b/i.test(f.expression) ? 'mouth wide open, head thrown back, looking up at the sky' : '',
     // her head turned away in profile on one try in three (the photo's sunglasses confuse the pose's head points, 1 Nov)
-    copy && /\b(at the (lens|camera)|toward the (lens|camera)|to the lens|into the camera)\b/i.test(`${f.pose} ${f.expression}`) ? 'profile view, face turned away, looking away from the camera, back of the head' : '',
+    copy && FACES_CAMERA_RE.test(`${f.pose} ${f.expression}`) ? 'profile view, face turned away, looking away from the camera, back of the head' : '',
     // topless in the photo: no top invented (a bra strap appeared across a bare back, 1 Nov)
     copy && /\btopless\b/i.test(`${f.outfit} ${f.bodyPresentation}`) ? 'bra, bra strap, strap across her back, bikini top' : '',
     // accessories the photo doesn't have (a yellow hair tie appeared on her arm, 1 Nov)

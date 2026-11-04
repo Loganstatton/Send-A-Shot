@@ -446,3 +446,18 @@ describe('lockHairColour with the photo’s hair up', () => {
     expect(up).not.toMatch(/\blong\b|\bwavy\b/);
   });
 });
+
+describe('copy: face toward the camera', () => {
+  it('reads "head turned toward lens" without "the" (the copy drew the back of her head, 4 Nov)', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, pose: 'kneeling in hot tub, head turned toward lens' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true, sourceLock: true });
+    expect(r.positive).toContain('(face turned toward the camera, looking into the lens:1.35)');
+    expect(r.negative).toContain('back of the head');
+    const away = buildPrompt({ fields: { ...EMPTY_FIELDS, pose: 'kneeling, looking away over her shoulder' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true });
+    expect(away.positive).not.toContain('looking into the lens:1.35');
+  });
+  it('keeps only her hair colour when the photo has her hair up (long wavy against a bun drew no head)', () => {
+    const r = buildPrompt({ fields: { ...EMPTY_FIELDS, bodyPresentation: 'hair slicked back into a tight bun' }, character: DEFAULT_CHARACTER, siennaLock: true, contentMode: 'adult', copy: true, sourceLock: true });
+    expect(r.positive).not.toMatch(/\(long dark-brown wavy hair/);
+    expect(r.positive).toMatch(/\(dark-brown hair with lighter soft light-brown ends:1\.25\)/);
+  });
+});

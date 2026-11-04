@@ -340,9 +340,24 @@ export function addKeepScene(
     if (opts.garment.body && opts.garment.depth) {
       g[`${p}depth`] = { class_type: opts.garment.depth, inputs: { image: backdrop, ...DEPTH_INPUTS[opts.garment.depth] }, _meta: { title: 'Keep scene: depth of the photo' } };
       g[`${p}depthblack`] = { class_type: 'EmptyImage', inputs: { width: opts.width, height: opts.height, batch_size: 1, color: 0 } };
+      // Source-locked copies: her head as a heavily blurred shape (where it is and which way it faces, no features). Left
+      // black ("far away, nothing here") the photo's head came back missing, then as the back of a bun turned away from
+      // the camera, on every try (hot tub, 4 Nov).
+      let depthBase: Ref = [`${p}depthblack`, 0];
+      if (lock) {
+        g[`${p}headzone`] = { class_type: 'MaskComposite', inputs: { destination: [`${p}person`, 0], source: [`${p}face`, 0], x: 0, y: 0, operation: 'multiply' } };
+        g[`${p}headblur1`] = { class_type: 'ImageBlur', inputs: { image: [`${p}depth`, 0], blur_radius: 31, sigma: 10 } };
+        g[`${p}headblur`] = { class_type: 'ImageBlur', inputs: { image: [`${p}headblur1`, 0], blur_radius: 31, sigma: 10 } };
+        g[`${p}headdepth`] = {
+          class_type: 'ImageCompositeMasked',
+          inputs: { destination: depthBase, source: [`${p}headblur`, 0], x: 0, y: 0, resize_source: true, mask: [`${p}headzone`, 0] },
+          _meta: { title: 'Keep scene: her head’s place, blurred' },
+        };
+        depthBase = [`${p}headdepth`, 0];
+      }
       g[`${p}bodydepth`] = {
         class_type: 'ImageCompositeMasked',
-        inputs: { destination: [`${p}depthblack`, 0], source: [`${p}depth`, 0], x: 0, y: 0, resize_source: true, mask: [`${p}body`, 0] },
+        inputs: { destination: depthBase, source: [`${p}depth`, 0], x: 0, y: 0, resize_source: true, mask: [`${p}body`, 0] },
         _meta: { title: 'Keep scene: her figure’s depth (no head)' },
       };
       g[`${p}cndtype`] = { class_type: 'SetUnionControlNetType', inputs: { control_net: [`${p}cn`, 0], type: 'depth' } };
