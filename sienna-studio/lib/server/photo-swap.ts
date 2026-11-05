@@ -17,6 +17,7 @@ import { buildOutfitEditGraph, EDIT_NODES, FACE_DENOISE, type FaceRestoreSpec } 
 import { buildPrompt } from '../prompt';
 import { resolveLockedLora } from '../sienna-models';
 import { FACE_NODE_ID, faceNode } from '../identity';
+import { UI_MASK_CLASS } from '../comfy/keep-scene';
 import { EMPTY_FIELDS } from '../defaults';
 import type { ContentMode, GenerationRecord, StoredImage } from '../types';
 import { describeMissing, GenerationError, missingClasses } from './generate';
@@ -38,7 +39,7 @@ export const SWAP_PROMPT =
   "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, her long dark-brown hair colour and her light skin tone. Take nothing else " +
   'from Picture 2. Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing she is wearing or ' +
   'holding), her pose and head angle, her hands and fingers, her body shape, how her skin looks, the lighting and shadows, the background and the camera ' +
-  'framing. Her face is uncovered: no sunglasses or glasses. No tattoos. No text, icons or app interface.';
+  'framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface.';
 export const SWAP_NEGATIVE = 'different clothing, changed outfit, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
 
 export interface PhotoSwapRequest {
@@ -99,10 +100,18 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
 
   const photo = cleared.image;
   const sourceSize = { width: photo.width ?? 832, height: photo.height ?? 1216 };
+  const uiClean = backend.kind !== 'mock' && !!(await backend.nodeInfo(UI_MASK_CLASS).catch(() => null));
+  if (!uiClean) warnings.push('The GPU server has no app-overlay remover (SiennaUiMask): screenshot icons and text may stay.');
   const graphFor = (sourceName: string, referenceName: string) => {
     const g = buildOutfitEditGraph({ sourceName, sourceSize, referenceName, autoCrop: false, prompt: SWAP_PROMPT, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
     // the save node's prefix says what it is
     g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, filename_prefix: 'sienna/photo-swap' } };
+    // a screenshot's app overlays painted out first: the account's profile picture (her face) stayed in the corner
+    // of the first live swap, 5 Nov
+    if (uiClean) {
+      g.swap_ui = { class_type: UI_MASK_CLASS, inputs: { image: ['src', 0] }, _meta: { title: 'Photo Swap: app overlays painted out' } };
+      g.src_scale = { ...g.src_scale, inputs: { ...g.src_scale.inputs, image: ['swap_ui', 2] } };
+    }
     return g;
   };
   if (backend.kind !== 'mock') await preflight(backend, graphFor('probe.png', 'probe.png'), 'Photo Swap');
