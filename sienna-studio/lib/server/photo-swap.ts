@@ -16,7 +16,7 @@ import { EXPOSURE_NODE_ID, exposureNode } from '../exposure';
 import { buildOutfitEditGraph, EDIT_NODES, type FaceRestoreSpec } from '../outfit-edit';
 import { buildPrompt } from '../prompt';
 import { resolveLockedLora } from '../sienna-models';
-import { FACE_NODE_ID, faceNode } from '../identity';
+import { FACE_NODE_ID, faceNode, SIENNA_FACE_EMBEDDING } from '../identity';
 import { UI_MASK_CLASS } from '../comfy/keep-scene';
 import { EMPTY_FIELDS } from '../defaults';
 import type { ContentMode, GenerationRecord, StoredImage } from '../types';
@@ -78,6 +78,10 @@ export const HAIR_MASK_CLASS = 'SiennaHairMask';
  * scaled up to the photo's 3 MP, made her skin look plastic (owner, 5 Nov). Off with SIENNA_SWAP_TEXTURE=off. */
 export const TEXTURE_CLASS = 'SiennaPhotoTexture';
 export const SWAP_GRAIN = 0.01;
+/** Several swaps of the photo, the best one kept (SiennaPickSwap): the editor's seed moved her arms in 3 of 13 photos,
+ * put a sweater over a cami in 2 of 3 seeds, and took the face from 0.64 to 0.75 against Sienna (5 Nov). */
+export const PICK_CLASS = 'SiennaPickSwap';
+export const SWAP_CANDIDATES = 3;
 /** The hair texture pass (testing): the editor's hair is glossy and smooth; redrawn lightly by the photo checkpoint, cropped
  * and enlarged to the hair, it may get real strands. Shape and colour stay (low strength, noise mask on the hair only). */
 export const HAIR_DETAIL_PROMPT = 'long dark-brown hair with softly lighter brown ends, natural real hair texture, individual strands, fine flyaway hairs, matte, slightly messy, photo';
@@ -98,6 +102,8 @@ export interface PhotoSwapRequest {
   faceGuide?: number;
   /** Testing: natural skin texture asked for in the face redraw (SWAP_FACE_SKIN). */
   faceSkin?: boolean;
+  /** Testing: how many swaps to pick the best of (default SWAP_CANDIDATES; 1 = no pick). */
+  candidates?: number;
   /** Testing: where her hair goes (SWAP_HAIR_LINES). */
   hair?: SwapHairLine;
   /** Testing: a hair texture pass at this strength (SDXL photo checkpoint, hair mask only); off when unset. */
@@ -168,11 +174,31 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   if (req.hairDetail && !hairMask) warnings.push('Hair texture pass skipped: the GPU server lacks SiennaHairMask, MaskToSEGS or DetailerForEach.');
   const texture = process.env.SIENNA_SWAP_TEXTURE !== 'off' && backend.kind !== 'mock' && !!(await backend.nodeInfo(TEXTURE_CLASS).catch(() => null));
   if (!texture && process.env.SIENNA_SWAP_TEXTURE !== 'off' && backend.kind !== 'mock') warnings.push('The GPU server has no photo-texture step (SiennaPhotoTexture): skin and fabric may look smooth.');
+  const wantCandidates = Math.max(1, Math.min(4, Math.round(req.candidates ?? SWAP_CANDIDATES)));
+  const pickOk = wantCandidates > 1 && backend.kind !== 'mock' && !!(await backend.nodeInfo(PICK_CLASS).catch(() => null));
+  if (wantCandidates > 1 && !pickOk && backend.kind !== 'mock') warnings.push('The GPU server has no best-of-several step (SiennaPickSwap): one swap was made, as before.');
+  const candidates = pickOk ? wantCandidates : 1;
   if (!uiClean) warnings.push('The GPU server has no app-overlay remover (SiennaUiMask): screenshot icons and text may stay.');
   const graphFor = (sourceName: string, referenceName: string) => {
     const g = buildOutfitEditGraph({ sourceName, sourceSize, workMp: SWAP_WORK_MP, referenceName, autoCrop: false, prompt, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
     // the save node's prefix says what it is
     g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, filename_prefix: 'sienna/photo-swap' } };
+    // several swaps (seeds seed, seed+1, ...), the one that kept the photo best and looks most like her goes on
+    if (candidates > 1 && g.q_sample && g.q_decode && g.q_resize) {
+      let batch: [string, number] = ['q_decode', 0];
+      for (let k = 1; k < candidates; k++) {
+        g[`q_sample_${k}`] = { ...g.q_sample, inputs: { ...g.q_sample.inputs, seed: seed + k } };
+        g[`q_decode_${k}`] = { ...g.q_decode, inputs: { ...g.q_decode.inputs, samples: [`q_sample_${k}`, 0] } };
+        g[`swap_cands_${k}`] = { class_type: 'ImageBatch', inputs: { image1: batch, image2: [`q_decode_${k}`, 0] } };
+        batch = [`swap_cands_${k}`, 0];
+      }
+      g.swap_pick = {
+        class_type: PICK_CLASS,
+        inputs: { original: ['src_scale', 0], candidates: batch, reference: JSON.stringify(SIENNA_FACE_EMBEDDING) },
+        _meta: { title: `Photo Swap: the best of ${candidates} swaps` },
+      };
+      g.q_resize = { ...g.q_resize, inputs: { ...g.q_resize.inputs, image: ['swap_pick', 0] } };
+    }
     // (IP-Adapter Plus Face in this redraw, 0.8, overcooked the face: orange patches, a pasted box, 0.35 against Sienna,
     // lavender hot tub, 5 Nov; not used)
     // a screenshot's app overlays painted out first: the account's profile picture (her face) stayed in the corner

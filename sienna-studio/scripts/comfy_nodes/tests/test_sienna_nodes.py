@@ -1190,3 +1190,34 @@ def test_grain_is_fine_and_mild():
     g = st.grain(img, 0.01, seed=1)
     assert 0.005 < float((g - img).std()) < 0.02 and abs(float((g - img).mean())) < 0.002
     assert np.array_equal(st.grain(img, 0.0), img)
+
+
+def test_pick_swap_prefers_the_one_that_kept_the_arms_then_the_most_like_sienna():
+    import cv2
+    import sienna_pick as sp
+
+    h, w = 600, 400
+    photo = np.full((h, w, 3), 0.6, np.float32)
+    cv2.rectangle(photo, (40, 300), (90, 520), (0.9, 0.6, 0.45), -1)     # her arm
+    face = (170, 60, 60, 70)
+    same = photo.copy(); same[60:130, 170:230] = 0.3                     # a new face, arm kept
+    moved = same.copy(); moved[300:520, 40:90] = 0.6
+    cv2.rectangle(moved, (150, 330), (250, 380), (0.9, 0.6, 0.45), -1)  # the arm moved onto her chest
+    i, info = sp.pick(photo, [moved, same], face, [0.80, 0.70])
+    assert i == 1 and info["candidates"][0]["kept_photo"] is False      # more like her, but the arm moved
+    i, _ = sp.pick(photo, [same, same.copy()], face, [0.66, 0.75])
+    assert i == 1                                                        # both kept the photo: the more Sienna one
+    i, _ = sp.pick(photo, [same, same.copy()], face, [None, 0.5])
+    assert i == 1                                                        # no face found counts as least like her
+    assert sp.head_box(None, 400, 600) == (0, 0, 400, 200)
+
+
+def test_pick_swap_leaves_her_hair_out_of_the_change():
+    import sienna_pick as sp
+
+    o = np.full((100, 100, 3), 0.6, np.float32)
+    long_hair = o.copy(); long_hair[40:100, 0:30] = 0.2                  # her long hair over the photo's shoulder
+    cls_o = np.zeros((100, 100), np.uint8)
+    cls_c = cls_o.copy(); cls_c[40:100, 0:30] = sp.HAIR
+    assert sp.change(o, long_hair, (40, 5, 20, 20), cls_o, cls_c) < 0.03     # only its blurred edge
+    assert sp.change(o, long_hair, (40, 5, 20, 20)) > 0.1                # without the segmenter it counts

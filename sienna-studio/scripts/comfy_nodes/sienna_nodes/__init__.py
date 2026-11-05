@@ -1011,7 +1011,54 @@ class SiennaPhotoTexture:
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None], text)}
 
 
+class SiennaPickSwap:
+    """Photo Swap: of several swaps of the same photo, the one that changed the photo least outside her head and, among
+    those, looks most like Sienna (the editor's seed moved her arms in 3 of 13 photos, 5 Nov)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"original": ("IMAGE",), "candidates": ("IMAGE",), "reference": ("STRING", {"default": "[]", "multiline": True})}}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, original, candidates, reference):
+        import os
+
+        import cv2
+        import folder_paths
+        from . import sienna_pick
+
+        cands = [candidates[i].detach().cpu().numpy().astype(np.float32)[..., :3] for i in range(candidates.shape[0])]
+        orig = original[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+        try:
+            h, w = cands[0].shape[:2]
+            if orig.shape[:2] != (h, w):
+                orig = cv2.resize(orig, (w, h), interpolation=cv2.INTER_AREA)
+            bgr = lambda im: cv2.cvtColor((np.clip(im, 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)  # noqa: E731
+            m = sienna_face.models(os.path.join(folder_paths.models_dir, "sienna"))
+            box, sims = None, [None] * len(cands)
+            if m is not None:
+                of = sienna_face.faces(bgr(orig), *m)
+                box = sienna_face.rank_faces(of)[0]["box"] if of else None
+                try:
+                    ref = sienna_face.reference_embedding([json.loads(reference)])
+                except (ValueError, TypeError):
+                    ref = None
+                if ref is not None and ref.size:
+                    sims = [sienna_face.check(sienna_face.faces(bgr(c), *m), ref, 0.74, 0)["similarity"] for c in cands]
+            i, info = sienna_pick.pick(orig, cands, box, sims, sienna_pick.classes_isolated([orig, *cands]))
+        except Exception as e:  # never lose the swap: the first one
+            i, info = 0, {"picked": 0, "error": f"{type(e).__name__}: {e}"[:200]}
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (candidates[i:i + 1], text)}
+
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaPickSwap": SiennaPickSwap,
     "SiennaPhotoTexture": SiennaPhotoTexture,
     "SiennaHairMask": SiennaHairMask,
     "SiennaHairRecolour": SiennaHairRecolour,
@@ -1041,6 +1088,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaPickSwap": "Sienna Pick Swap (best of several)",
     "SiennaPhotoTexture": "Sienna Photo Texture (swap)",
     "SiennaHairMask": "Sienna Hair Mask (swap)",
     "SiennaHairRecolour": "Sienna Hair Recolour (swap)",

@@ -47,5 +47,8 @@ describe('Photo Swap', () => {
     expect(TEXTURE_CLASS).toBe('SiennaPhotoTexture');
     expect(SWAP_GRAIN).toBeGreaterThan(0);
     expect(SWAP_GRAIN).toBeLessThan(0.02);
+    const { PICK_CLASS, SWAP_CANDIDATES } = await import('./photo-swap');
+    expect(PICK_CLASS).toBe('SiennaPickSwap');
+    expect(SWAP_CANDIDATES).toBeGreaterThanOrEqual(2);
   });
 });
