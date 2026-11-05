@@ -33,6 +33,8 @@ export const SWAP_MIN_VRAM_GB = 32;
 /** The face redraw after the swap: its working size and strength. */
 export const SWAP_FACE_GUIDE = 768;
 export const SWAP_FACE_DENOISE = 0.5;
+/** IP-Adapter Plus Face weight in the face redraw (Create's face pass uses 0.8). */
+export const SWAP_FACE_IPA_WEIGHT = 0.8;
 
 /** Her whole face from picture 2, nothing of picture 1's; everything else kept (the wording the 5 Nov test used). */
 /** Her whole face from picture 2, nothing of picture 1's; everything else kept. No garment words: asked to keep
@@ -113,10 +115,22 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const sourceSize = { width: photo.width ?? 832, height: photo.height ?? 1216 };
   const uiClean = backend.kind !== 'mock' && !!(await backend.nodeInfo(UI_MASK_CLASS).catch(() => null));
   if (!uiClean) warnings.push('The GPU server has no app-overlay remover (SiennaUiMask): screenshot icons and text may stay.');
+  const ipaFace = backend.kind !== 'mock' && (await Promise.all(['IPAdapterUnifiedLoader', 'IPAdapterAdvanced'].map((c) => backend.nodeInfo(c).catch(() => null)))).every(Boolean);
   const graphFor = (sourceName: string, referenceName: string) => {
     const g = buildOutfitEditGraph({ sourceName, sourceSize, referenceName, autoCrop: false, prompt: SWAP_PROMPT, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
     // the save node's prefix says what it is
     g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, filename_prefix: 'sienna/photo-swap' } };
+    // the face redraw reads Sienna's reference photo too (IP-Adapter Plus Face, as Create's face pass): rebuilt sharper at
+    // 768 px from her LoRA alone, the face drifted from her (0.63 to 0.54 against Sienna, lavender hot tub, 5 Nov)
+    if (ipaFace && g.fr_detail && g.ref) {
+      g.swap_ipa_loader = { class_type: 'IPAdapterUnifiedLoader', inputs: { model: g.fr_detail.inputs.model, preset: 'PLUS FACE (portraits)' }, _meta: { title: 'Photo Swap: her face reference loader' } };
+      g.swap_ipa = {
+        class_type: 'IPAdapterAdvanced',
+        inputs: { model: ['swap_ipa_loader', 0], ipadapter: ['swap_ipa_loader', 1], image: ['ref', 0], weight: SWAP_FACE_IPA_WEIGHT, weight_type: 'linear', combine_embeds: 'concat', start_at: 0, end_at: 1, embeds_scaling: 'V only' },
+        _meta: { title: 'Photo Swap: her face from the reference (face redraw)' },
+      };
+      g.fr_detail = { ...g.fr_detail, inputs: { ...g.fr_detail.inputs, model: ['swap_ipa', 0] } };
+    }
     // a screenshot's app overlays painted out first: the account's profile picture (her face) stayed in the corner
     // of the first live swap, 5 Nov
     if (uiClean) {
