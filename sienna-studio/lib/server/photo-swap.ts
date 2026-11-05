@@ -53,6 +53,13 @@ export const SWAP_PROMPT =
   'and the camera framing. Her face is ' +
   'uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where Picture 1 has blurred or ' +
   'smudged patches (app buttons painted out), paint in the scene that belongs there, as sharp as the rest of the photo.';
+/** With the hair step on the GPU server: the editor keeps the photo's hair as it is (style and colour) and the hair step
+ * recolours it to Sienna's; drawn by the editor, her hair looked like a glossy wig however it was asked for (5 Nov). */
+export const SWAP_PROMPT_KEEP_HAIR = SWAP_PROMPT.replace(
+  /Her hair keeps Picture 1's hairstyle exactly \([^)]*\), only its colour changes to dark brown with softly lighter brown ends\. /,
+  'Her hair stays exactly as it is in Picture 1, the same strands, style and colour; only her face changes. ',
+);
+export const HAIR_CLASS = 'SiennaHairRecolour';
 /** Enough to give the painted-out patch texture, not enough to invent objects (0.8 drew rocks). */
 export const SWAP_SCENE_DENOISE = 0.55;
 export const SWAP_SCENE_POSITIVE = 'the same surface continued seamlessly, natural photo texture, sharp';
@@ -123,9 +130,11 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const photo = cleared.image;
   const sourceSize = { width: photo.width ?? 832, height: photo.height ?? 1216 };
   const uiClean = backend.kind !== 'mock' && !!(await backend.nodeInfo(UI_MASK_CLASS).catch(() => null));
+  const hairStep = backend.kind !== 'mock' && !!(await backend.nodeInfo(HAIR_CLASS).catch(() => null));
+  const prompt = hairStep ? SWAP_PROMPT_KEEP_HAIR : SWAP_PROMPT;
   if (!uiClean) warnings.push('The GPU server has no app-overlay remover (SiennaUiMask): screenshot icons and text may stay.');
   const graphFor = (sourceName: string, referenceName: string) => {
-    const g = buildOutfitEditGraph({ sourceName, sourceSize, workMp: SWAP_WORK_MP, referenceName, autoCrop: false, prompt: SWAP_PROMPT, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
+    const g = buildOutfitEditGraph({ sourceName, sourceSize, workMp: SWAP_WORK_MP, referenceName, autoCrop: false, prompt, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
     // the save node's prefix says what it is
     g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, filename_prefix: 'sienna/photo-swap' } };
     // (IP-Adapter Plus Face in this redraw, 0.8, overcooked the face: orange patches, a pasted box, 0.35 against Sienna,
@@ -155,6 +164,11 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
         });
         g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_uifix', 0] } };
       }
+    }
+    // the photo's own hair, recoloured to Sienna's (last, after the face redraw and the overlay repaint)
+    if (hairStep) {
+      g.swap_hair = { class_type: HAIR_CLASS, inputs: { image: g[EDIT_NODES.final].inputs.images, strength: 1 }, _meta: { title: 'Photo Swap: her hair recoloured (strands kept)' } };
+      g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_hair', 0] } };
     }
     return g;
   };
@@ -201,7 +215,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
     fields: { ...EMPTY_FIELDS },
     params: { ...d, seed, batchSize: 1, width: sourceSize.width, height: sourceSize.height },
     seed,
-    positivePrompt: SWAP_PROMPT,
+    positivePrompt: prompt,
     negativePrompt: SWAP_NEGATIVE,
     lora,
     faceReference: character.faceReference,

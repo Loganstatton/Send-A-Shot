@@ -1123,3 +1123,24 @@ def test_skin_saturation_follows_the_photos_light_only_downward():
     assert 136 < a < 142 and 140 < b < 146
     vivid = np.zeros((40, 40, 3), np.float32); vivid[...] = (150, 160, 170)  # sunny, very saturated
     assert cc._skin_ab_in_light(vivid, cls) == cc.SIENNA_SKIN_AB
+
+
+def test_hair_recolour_keeps_texture_and_moves_colour_onto_siennas():
+    import cv2
+    import sienna_hair as sh
+
+    h, w = 120, 80
+    rng = np.random.default_rng(1)
+    img = np.full((h, w, 3), 0.5, np.float32)
+    blonde = np.array([0.85, 0.78, 0.62], np.float32)
+    img[10:110, 20:60] = blonde + (rng.random((100, 40, 1)).astype(np.float32) - 0.5) * 0.2  # strands
+    conf = np.zeros((h, w), np.float32); conf[10:110, 20:60] = 0.95
+    out, info = sh.recolour(img, sh.hair_weight(conf))
+    assert info["changed"]
+    lab = cv2.cvtColor(np.round(out * 255).astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+    top, low = lab[20:30, 30:50, 0].mean(), lab[95:105, 30:50, 0].mean()
+    assert 35 < top < 65 and low > top             # dark brown roots, lighter ends
+    assert lab[30:90, 30:50, 0].std() > 4          # the strands' texture kept
+    assert np.allclose(out[0, 0], img[0, 0], atol=0.01)  # nothing outside the hair
+    same, info = sh.recolour(img, np.zeros((h, w), np.float32))
+    assert not info["changed"]

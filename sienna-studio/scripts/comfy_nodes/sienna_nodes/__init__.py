@@ -932,7 +932,34 @@ class SiennaHandPoseMatch:
         return {"ui": {"text": [text]}, "result": ((shape, guided), (shape, plain), ctl, text)}
 
 
+class SiennaHairRecolour:
+    """Photo Swap: the photo's own hair recoloured to Sienna's dark brown with lighter ends, its strands and highlights
+    kept (hair drawn by the editor looked like a glossy wig, 5 Nov)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"image": ("IMAGE",), "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05})}}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image, strength):
+        from . import sienna_hair
+
+        img = image[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+        try:
+            out, info = sienna_hair.recolour_isolated(img, float(strength))
+        except Exception as e:  # never lose the photo
+            out, info = img, {"changed": False, "error": f"{type(e).__name__}: {e}"[:200]}
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None], text)}
+
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaHairRecolour": SiennaHairRecolour,
     "SiennaHandPoseMatch": SiennaHandPoseMatch,
     "SiennaFaceUpright": SiennaFaceUpright,
     "SiennaFaceTurnBack": SiennaFaceTurnBack,
@@ -959,6 +986,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaHairRecolour": "Sienna Hair Recolour (swap)",
     "SiennaHandPoseMatch": "Sienna Hand Pose Match (copy)",
     "SiennaFaceUpright": "Sienna Face Upright (copy)",
     "SiennaFaceTurnBack": "Sienna Face Turn Back (copy)",

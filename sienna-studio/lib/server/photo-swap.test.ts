@@ -34,5 +34,9 @@ describe('Photo Swap', () => {
     expect(SWAP_PROMPT).toMatch(/her clothing exactly as it is/);
     expect(SWAP_PROMPT).not.toMatch(/strings|straps|bikini/);
     expect(SWAP_NEGATIVE).toMatch(/sunglasses/);
+    // with the hair step the editor keeps the photo's hair as it is
+    const { SWAP_PROMPT_KEEP_HAIR } = await import('./photo-swap');
+    expect(SWAP_PROMPT_KEEP_HAIR).toMatch(/Her hair stays exactly as it is in Picture 1/);
+    expect(SWAP_PROMPT_KEEP_HAIR).not.toMatch(/colour changes to dark brown/);
   });
 });
