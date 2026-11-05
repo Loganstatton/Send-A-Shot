@@ -958,7 +958,33 @@ class SiennaHairRecolour:
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None], text)}
 
 
+class SiennaHairMask:
+    """Photo Swap: the hair of a picture as a mask (MediaPipe hair class), for the hair texture pass."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"image": ("IMAGE",)}}
+
+    RETURN_TYPES = ("MASK", "STRING")
+    RETURN_NAMES = ("mask", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image):
+        from . import sienna_hair
+
+        img = image[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+        try:
+            m, info = sienna_hair.hair_mask_isolated(img)
+        except Exception as e:
+            m, info = np.zeros(img.shape[:2], np.float32), {"error": f"{type(e).__name__}: {e}"[:200]}
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(m, np.float32))[None], text)}
+
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaHairMask": SiennaHairMask,
     "SiennaHairRecolour": SiennaHairRecolour,
     "SiennaHandPoseMatch": SiennaHandPoseMatch,
     "SiennaFaceUpright": SiennaFaceUpright,
@@ -986,6 +1012,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaHairMask": "Sienna Hair Mask (swap)",
     "SiennaHairRecolour": "Sienna Hair Recolour (swap)",
     "SiennaHandPoseMatch": "Sienna Hand Pose Match (copy)",
     "SiennaFaceUpright": "Sienna Face Upright (copy)",

@@ -77,6 +77,29 @@ def recolour_isolated(img: np.ndarray, strength: float = 1.0, timeout: float = I
         return r["image"].astype(np.float32), json.loads(str(r["info"]))
 
 
+def hair_mask_isolated(img: np.ndarray, timeout: float = ISOLATED_TIMEOUT) -> Tuple[np.ndarray, Dict]:
+    """The hair mask (float 0..1, firm, slightly softened) of a float RGB picture, the segmenter in a child process; an
+    empty mask (and the reason) on any failure."""
+    import json
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    empty = np.zeros(img.shape[:2], np.float32)
+    with tempfile.TemporaryDirectory(prefix="sienna_hairmask_") as td:
+        inp, res = os.path.join(td, "in.npz"), os.path.join(td, "out.npz")
+        np.savez(inp, image=img[..., :3].astype(np.float32), mode=np.array("mask"))
+        try:
+            p = subprocess.run([sys.executable, os.path.abspath(__file__), inp, res], capture_output=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return empty, {"error": f"hair mask timed out after {timeout:.0f}s"}
+        if p.returncode != 0 or not os.path.exists(res):
+            return empty, {"error": f"hair mask failed (exit {p.returncode})"}
+        r = np.load(res, allow_pickle=False)
+        return r["mask"].astype(np.float32), json.loads(str(r["info"]))
+
+
 def _main(inp: str, res: str) -> None:
     import json
     import os
@@ -88,6 +111,11 @@ def _main(inp: str, res: str) -> None:
     d = np.load(inp, allow_pickle=False)
     img = d["image"]
     cls = segment_classes(img)
+    if "mode" in d.files and str(d["mode"]) == "mask":
+        m = hair_weight(cls[1]) if cls is not None else np.zeros(img.shape[:2], np.float32)
+        info = {"pixels": int((m > 0.5).sum())} if cls is not None else {"error": segmenter_error()}
+        np.savez(res, mask=m.astype(np.float32), info=np.array(json.dumps(info)))
+        return
     if cls is None:
         out, info = img, {"changed": False, "error": segmenter_error()}
     else:

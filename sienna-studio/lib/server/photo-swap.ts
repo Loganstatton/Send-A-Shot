@@ -57,6 +57,10 @@ export const SWAP_PROMPT_KEEP_HAIR = SWAP_PROMPT.replace(
   'Her hair stays exactly as it is in Picture 1, the same strands, style and colour; only her face changes. ',
 );
 export const HAIR_CLASS = 'SiennaHairRecolour';
+export const HAIR_MASK_CLASS = 'SiennaHairMask';
+/** The hair texture pass (testing): the editor's hair is glossy and smooth; redrawn lightly by the photo checkpoint, cropped
+ * and enlarged to the hair, it may get real strands. Shape and colour stay (low strength, noise mask on the hair only). */
+export const HAIR_DETAIL_PROMPT = 'long dark-brown hair with softly lighter brown ends, natural real hair texture, individual strands, fine flyaway hairs, matte, slightly messy, photo';
 /** Enough to give the painted-out patch texture, not enough to invent objects (0.8 drew rocks). */
 export const SWAP_SCENE_DENOISE = 0.55;
 export const SWAP_SCENE_POSITIVE = 'the same surface continued seamlessly, natural photo texture, sharp';
@@ -68,6 +72,8 @@ export interface PhotoSwapRequest {
   seed: number;
   /** Testing: the face redraw's strength (default SWAP_FACE_DENOISE). */
   faceDenoise?: number;
+  /** Testing: a hair texture pass at this strength (SDXL photo checkpoint, hair mask only); off when unset. */
+  hairDetail?: number;
 }
 
 /** Photo jobs still using the photo GPU. */
@@ -130,6 +136,8 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   // off unless SIENNA_SWAP_HAIR=on: the owner preferred the editor's own hair to the photo's hair recoloured (5 Nov)
   const hairStep = process.env.SIENNA_SWAP_HAIR === 'on' && backend.kind !== 'mock' && !!(await backend.nodeInfo(HAIR_CLASS).catch(() => null));
   const prompt = hairStep ? SWAP_PROMPT_KEEP_HAIR : SWAP_PROMPT;
+  const hairMask = !!req.hairDetail && backend.kind !== 'mock' && (await Promise.all([HAIR_MASK_CLASS, 'MaskToSEGS', 'DetailerForEach'].map((c) => backend.nodeInfo(c).catch(() => null)))).every(Boolean);
+  if (req.hairDetail && !hairMask) warnings.push('Hair texture pass skipped: the GPU server lacks SiennaHairMask, MaskToSEGS or DetailerForEach.');
   if (!uiClean) warnings.push('The GPU server has no app-overlay remover (SiennaUiMask): screenshot icons and text may stay.');
   const graphFor = (sourceName: string, referenceName: string) => {
     const g = buildOutfitEditGraph({ sourceName, sourceSize, workMp: SWAP_WORK_MP, referenceName, autoCrop: false, prompt, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
@@ -162,6 +170,25 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
         });
         g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_uifix', 0] } };
       }
+    }
+    // testing: the hair re-textured by the photo checkpoint, cropped to the hair and enlarged (DetailerForEach)
+    if (req.hairDetail && hairMask && g.fr_detail) {
+      const f = g.fr_detail.inputs;
+      const img = g[EDIT_NODES.final].inputs.images as [string, number];
+      Object.assign(g, {
+        swap_hm: { class_type: HAIR_MASK_CLASS, inputs: { image: img }, _meta: { title: 'Photo Swap: her hair (mask)' } },
+        swap_hsegs: { class_type: 'MaskToSEGS', inputs: { mask: ['swap_hm', 0], combined: true, crop_factor: 1.15, bbox_fill: false, drop_size: 30, contour_fill: false } },
+        swap_hdet: {
+          class_type: 'DetailerForEach',
+          inputs: {
+            image: img, segs: ['swap_hsegs', 0], model: f.model, clip: f.clip, vae: f.vae, guide_size: 1024, guide_size_for: true, max_size: 1536,
+            seed, steps: 24, cfg: 5, sampler_name: 'dpmpp_2m', scheduler: 'karras', positive: f.positive, negative: f.negative,
+            denoise: req.hairDetail, feather: 8, noise_mask: true, force_inpaint: true, wildcard: HAIR_DETAIL_PROMPT, cycle: 1,
+          },
+          _meta: { title: 'Photo Swap: hair texture (testing)' },
+        },
+      });
+      g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_hdet', 0] } };
     }
     // the photo's own hair, recoloured to Sienna's (last, after the face redraw and the overlay repaint)
     if (hairStep) {
