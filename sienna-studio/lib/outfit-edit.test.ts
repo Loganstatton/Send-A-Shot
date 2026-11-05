@@ -91,6 +91,10 @@ describe('defaults and result text', () => {
 describe('editSize', () => {
   it('keeps a ~1 MP source exactly (no Kontext stretch)', () => {
     expect(editSize(832, 1216)).toEqual({ width: 832, height: 1216 });
+    // Photo Swap's larger working size: a 1299x2435 photo drawn at about 1.6 MP
+    const big = editSize(1299, 2435, 1.6);
+    expect(Math.abs((big.width * big.height) / 1e6 - 1.6)).toBeLessThan(0.05);
+    expect(big.width % 16).toBe(0);
   });
   it('scales large sources to ~1 MP with the same aspect', () => {
     const s = editSize(1248, 1824);

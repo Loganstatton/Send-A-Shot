@@ -30,6 +30,9 @@ export const PHOTO_SWAP_WORKFLOW_ID = 'photo-swap-qwen';
 export const PHOTO_SWAP_WORKFLOW_NAME = 'Photo Swap · Qwen-Image-Edit-2511';
 /** Qwen-Image-Edit (2509) ran out of memory on the 24 GB RTX 4090 (18 Oct). */
 export const SWAP_MIN_VRAM_GB = 32;
+/** The editor's working size: at 1 MP a 3 MP photo was enlarged almost 2x afterwards and her hair came out smooth and
+ * painted, like a wig (5 Nov); 1.6 MP is near the top of what Qwen-Image was trained on. */
+export const SWAP_WORK_MP = 1.6;
 /** The face redraw after the swap: its working size and strength. */
 // 384 / 0.45 left a small face soft (0.63); 768 / 0.5 sharp but generic (0.54); 512 / 0.45 in between (5 Nov)
 export const SWAP_FACE_GUIDE = 512;
@@ -122,7 +125,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const uiClean = backend.kind !== 'mock' && !!(await backend.nodeInfo(UI_MASK_CLASS).catch(() => null));
   if (!uiClean) warnings.push('The GPU server has no app-overlay remover (SiennaUiMask): screenshot icons and text may stay.');
   const graphFor = (sourceName: string, referenceName: string) => {
-    const g = buildOutfitEditGraph({ sourceName, sourceSize, referenceName, autoCrop: false, prompt: SWAP_PROMPT, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
+    const g = buildOutfitEditGraph({ sourceName, sourceSize, workMp: SWAP_WORK_MP, referenceName, autoCrop: false, prompt: SWAP_PROMPT, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
     // the save node's prefix says what it is
     g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, filename_prefix: 'sienna/photo-swap' } };
     // (IP-Adapter Plus Face in this redraw, 0.8, overcooked the face: orange patches, a pasted box, 0.35 against Sienna,

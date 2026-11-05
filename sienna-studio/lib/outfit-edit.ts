@@ -333,11 +333,11 @@ export function resultOutfitText(scope: OutfitEditScope, description: string, or
  * vertical stretch that adds to Qwen's tendency to lengthen legs. The result is scaled back to the
  * source size afterwards.
  */
-export function editSize(width: number, height: number): { width: number; height: number } {
+export function editSize(width: number, height: number, targetMp = 1.0): { width: number; height: number } {
   const w0 = Math.max(64, width || 832);
   const h0 = Math.max(64, height || 1216);
   const mp = (w0 * h0) / 1e6;
-  const k = mp >= 0.75 && mp <= 1.3 ? 1 : Math.sqrt(1.0 / mp);
+  const k = mp >= 0.75 * targetMp && mp <= 1.3 * targetMp ? 1 : Math.sqrt(targetMp / mp);
   const r16 = (n: number) => Math.max(256, Math.round((n * k) / 16) * 16);
   return { width: r16(w0), height: r16(h0) };
 }
@@ -358,6 +358,8 @@ export interface FaceRestoreSpec {
 export interface EditGraphInput {
   sourceName: string;
   sourceSize: { width: number; height: number };
+  /** The editor's working size in megapixels (default 1; Photo Swap works larger for hair and skin detail). */
+  workMp?: number;
   /** null = no clothing photo (a described change): the editor gets the source image only. */
   referenceName: string | null;
   /** false when the clothing photo was already cropped by hand in the editor. */
@@ -382,7 +384,7 @@ export interface EditGraphInput {
 }
 
 export function buildOutfitEditGraph(i: EditGraphInput): ComfyGraph {
-  const work = editSize(i.sourceSize.width, i.sourceSize.height);
+  const work = editSize(i.sourceSize.width, i.sourceSize.height, i.workMp);
   const g: ComfyGraph = {
     src: { class_type: 'LoadImage', inputs: { image: i.sourceName }, _meta: { title: 'Source image' } },
     src_scale: {
