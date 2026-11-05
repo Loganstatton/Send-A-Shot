@@ -36,6 +36,9 @@ export const SWAP_WORK_MP = 1.0;
 // 384 / 0.45 left a small face soft (0.63); 768 / 0.5 sharp but generic (0.54); 512 / 0.45 in between (5 Nov)
 export const SWAP_FACE_GUIDE = 512;
 export const SWAP_FACE_DENOISE = 0.45;
+/** Testing: words for real skin in the face redraw ("face could be more detailed", owner, 5 Nov). */
+export const SWAP_FACE_SKIN = 'detailed natural skin texture, visible pores, fine facial hair, sharp eyes and eyelashes, raw photo';
+export const SWAP_FACE_SKIN_NEGATIVE = 'airbrushed, smooth plastic skin, waxy, beauty filter, blurry face';
 
 /** Her face and hair colour from picture 2, everything else kept. The wording the owner's favourite swaps were made with
  * (5 Nov); keeping the photo's hairstyle, a larger working size and the photo's hair recoloured were all tried and
@@ -77,6 +80,10 @@ export interface PhotoSwapRequest {
   seed: number;
   /** Testing: the face redraw's strength (default SWAP_FACE_DENOISE). */
   faceDenoise?: number;
+  /** Testing: the size the face is redrawn at (default SWAP_FACE_GUIDE). */
+  faceGuide?: number;
+  /** Testing: natural skin texture asked for in the face redraw (SWAP_FACE_SKIN). */
+  faceSkin?: boolean;
   /** Testing: a hair texture pass at this strength (SDXL photo checkpoint, hair mask only); off when unset. */
   hairDetail?: number;
 }
@@ -127,11 +134,11 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
         denoise: req.faceDenoise ?? SWAP_FACE_DENOISE,
         checkpoint: d.checkpoint || prod.checkpoint,
         lora: { name: lora.name, strength: lora.strength, clipStrength: lora.clipStrength },
-        positive: built.positive,
-        negative: built.negative,
-        // the face rebuilt at 768 px: the editor works at about 1 MP, so a small face in a large photo came back ~80 px wide
-        // and, scaled up, soft and smudged; at 384 the redraw could not sharpen it (lavender hot tub, 5 Nov)
-        detailerInputs: { ...prod.inputs, guide_size: SWAP_FACE_GUIDE, max_size: 1536 },
+        positive: req.faceSkin ? `${built.positive}, ${SWAP_FACE_SKIN}` : built.positive,
+        negative: req.faceSkin ? `${built.negative}, ${SWAP_FACE_SKIN_NEGATIVE}` : built.negative,
+        // the face rebuilt at 512 px: the editor works at about 1 MP, so a small face in a large photo came back ~80 px wide
+        // and, scaled up, soft and smudged; at 384 the redraw could not sharpen it, at 768 (0.5) it was sharp but generic (5 Nov)
+        detailerInputs: { ...prod.inputs, guide_size: req.faceGuide ?? SWAP_FACE_GUIDE, max_size: 1536 },
       }
     : null;
 
