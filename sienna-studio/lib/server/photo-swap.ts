@@ -83,7 +83,9 @@ export const HAIR_DETAIL_PROMPT = 'long dark-brown hair with softly lighter brow
 export const SWAP_SCENE_DENOISE = 0.55;
 export const SWAP_SCENE_POSITIVE = 'the same surface continued seamlessly, natural photo texture, sharp';
 export const SWAP_SCENE_NEGATIVE = 'text, letters, numbers, icons, logo, buttons, watermark, person, face, hand, rock, boulder, ice, crystal, object, blur, smudge';
-export const SWAP_NEGATIVE = 'different clothing, changed outfit, hair over her chest, hair in front of her shoulders, different pose, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
+/** No hair words here: with "hair over her chest, hair in front of her shoulders" the editor pulled her hair back into the
+ * car photo's slicked-back ponytail whatever the prompt said, and her face drifted towards the photo's woman (5 Nov). */
+export const SWAP_NEGATIVE = 'different clothing, changed outfit, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
 
 export interface PhotoSwapRequest {
   clearedId: string;
