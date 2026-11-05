@@ -37,18 +37,19 @@ export const SWAP_WORK_MP = 1.0;
 export const SWAP_FACE_GUIDE = 512;
 export const SWAP_FACE_DENOISE = 0.45;
 
-/** Her whole face from picture 2, nothing of picture 1's; everything else kept (the wording the 5 Nov test used). */
-/** Her whole face from picture 2, nothing of picture 1's; everything else kept. No garment words: asked to keep
- * "straps, strings and gathers", the editor put a bikini on a woman in a towel (5 Nov). */
 /** Her face and hair colour from picture 2, everything else kept. The wording the owner's favourite swaps were made with
  * (5 Nov); keeping the photo's hairstyle, a larger working size and the photo's hair recoloured were all tried and
- * judged worse. Mirrors are not mentioned: asked to change her reflection too, the editor invented a new mirror. */
+ * judged worse. No garment words: asked to keep "straps, strings and gathers", the editor put a bikini on a woman in a
+ * towel. Mirrors are not mentioned: asked to change her reflection too, the editor invented a new mirror.
+ * Her long hair falls behind her shoulders (owner, 5 Nov: drawn in front it hid her top), and her arms stay where they
+ * are: the cami photo came back with her arms moved and, twice in three seeds, a sweater in place of the cami. */
 export const SWAP_PROMPT =
   'Replace the woman in Picture 1 with the woman from Picture 2. Her whole face must be the face of the woman in Picture 2, with nothing of the face in ' +
   "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, her long dark-brown hair colour and her light skin tone. Take nothing else " +
-  'from Picture 2. Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing she is wearing or ' +
-  'holding), her pose and head angle, her hands and fingers, her body shape, how her skin looks, the lighting and shadows, the background and the camera ' +
-  'framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where ' +
+  'from Picture 2. Her long hair falls behind her shoulders, down her back; no hair hangs in front of her shoulders, chest or top. ' +
+  'Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing she is wearing or ' +
+  'holding, and cover nothing that is uncovered), her pose and head angle, where her arms and hands are (motion blur included), her hands and fingers, ' +
+  'her body shape, how her skin looks, the lighting and shadows, the background and the camera framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where ' +
   'Picture 1 has blurred or smudged patches (app buttons painted out), paint in the scene that belongs there, as sharp as the rest of the photo.';
 /** With the hair step on the GPU server: the editor keeps the photo's hair as it is (style and colour) and the hair step
  * recolours it to Sienna's; drawn by the editor, her hair looked like a glossy wig however it was asked for (5 Nov). */
@@ -65,7 +66,7 @@ export const HAIR_DETAIL_PROMPT = 'long dark-brown hair with softly lighter brow
 export const SWAP_SCENE_DENOISE = 0.55;
 export const SWAP_SCENE_POSITIVE = 'the same surface continued seamlessly, natural photo texture, sharp';
 export const SWAP_SCENE_NEGATIVE = 'text, letters, numbers, icons, logo, buttons, watermark, person, face, hand, rock, boulder, ice, crystal, object, blur, smudge';
-export const SWAP_NEGATIVE = 'different clothing, changed outfit, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
+export const SWAP_NEGATIVE = 'different clothing, changed outfit, hair over her chest, hair in front of her shoulders, different pose, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
 
 export interface PhotoSwapRequest {
   clearedId: string;
