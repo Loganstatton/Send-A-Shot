@@ -41,8 +41,11 @@ export const SWAP_PROMPT =
   'holding), her pose and head angle, her hands and fingers, her body shape, how her skin looks, the lighting and shadows, the background and the camera ' +
   'framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where Picture 1 has blurred or smudged ' +
   'patches (app buttons painted out), paint in the scene that belongs there, as sharp as the rest of the photo.';
-export const SWAP_SCENE_POSITIVE = 'the scene continued: water, foam, stone, trees, sky and surfaces as around it, sharp natural photo detail';
-export const SWAP_SCENE_NEGATIVE = 'text, letters, numbers, icons, logo, buttons, watermark, person, face, hand, blur, smudge';
+// no object words: "stone, trees" at 0.8 drew rocks and icy foam where the overlays were (5 Nov)
+/** Enough to give the painted-out patch texture, not enough to invent objects (0.8 drew rocks). */
+export const SWAP_SCENE_DENOISE = 0.55;
+export const SWAP_SCENE_POSITIVE = 'the same surface continued seamlessly, natural photo texture, sharp';
+export const SWAP_SCENE_NEGATIVE = 'text, letters, numbers, icons, logo, buttons, watermark, person, face, hand, rock, boulder, ice, crystal, object, blur, smudge';
 export const SWAP_NEGATIVE = 'different clothing, changed outfit, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
 
 export interface PhotoSwapRequest {
@@ -126,7 +129,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
           swap_uineg: { class_type: 'CLIPTextEncode', inputs: { clip: ['fr_ckpt', 1], text: SWAP_SCENE_NEGATIVE } },
           swap_uiks: {
             class_type: 'KSampler',
-            inputs: { model: ['fr_ckpt', 0], positive: ['swap_uipos', 0], negative: ['swap_uineg', 0], latent_image: ['swap_uinoise', 0], seed, steps: 20, cfg: 5, sampler_name: 'dpmpp_2m', scheduler: 'karras', denoise: 0.8 },
+            inputs: { model: ['fr_ckpt', 0], positive: ['swap_uipos', 0], negative: ['swap_uineg', 0], latent_image: ['swap_uinoise', 0], seed, steps: 20, cfg: 5, sampler_name: 'dpmpp_2m', scheduler: 'karras', denoise: SWAP_SCENE_DENOISE },
             _meta: { title: 'Photo Swap: painted-out overlays redrawn as the scene' },
           },
           swap_uidec: { class_type: 'VAEDecode', inputs: { samples: ['swap_uiks', 0], vae: ['fr_ckpt', 2] } },
