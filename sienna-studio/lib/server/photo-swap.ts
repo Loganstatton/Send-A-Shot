@@ -1,6 +1,6 @@
 /**
  * Photo Swap: a photo from the cleared library (a model the owner confirmed agreed to her photos being used with
- * Sienna's face) with Sienna in place of the woman in it. Qwen-Image-Edit-2509 takes the photo and Sienna's face
+ * Sienna's face) with Sienna in place of the woman in it. Qwen-Image-Edit-2511 takes the photo and Sienna's face
  * reference and keeps everything but her face and hair; Sienna's FaceDetailer (her LoRA) then redraws the face.
  *
  * Only cleared photos can be swapped: any other photo goes through Copy Photo, which redraws the whole person (the owner,
@@ -26,18 +26,20 @@ import { preflight } from './jobs';
 import { adultContentAllowed, getCharacter, getClearedPhoto, getComfyUrl, getSettings, listHistory, newId, readImage, saveRecord } from './store';
 
 export const PHOTO_SWAP_WORKFLOW_ID = 'photo-swap-qwen';
-export const PHOTO_SWAP_WORKFLOW_NAME = 'Photo Swap · Qwen-Image-Edit-2509';
-/** Qwen-Image-Edit-2509 ran out of memory on the 24 GB RTX 4090 (18 Oct). */
+export const PHOTO_SWAP_WORKFLOW_NAME = 'Photo Swap · Qwen-Image-Edit-2511';
+/** Qwen-Image-Edit (2509) ran out of memory on the 24 GB RTX 4090 (18 Oct). */
 export const SWAP_MIN_VRAM_GB = 32;
 
 /** Her whole face from picture 2, nothing of picture 1's; everything else kept (the wording the 5 Nov test used). */
+/** Her whole face from picture 2, nothing of picture 1's; everything else kept. No garment words: asked to keep
+ * "straps, strings and gathers", the editor put a bikini on a woman in a towel (5 Nov). */
 export const SWAP_PROMPT =
   'Replace the woman in Picture 1 with the woman from Picture 2. Her whole face must be the face of the woman in Picture 2, with nothing of the face in ' +
-  "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, her long dark-brown hair colour and her light skin tone. Keep everything else " +
-  'in Picture 1 exactly as it is: her pose and head angle, her hands and fingers, every detail of her clothing (shape, size, fabric, pattern, gathers, ' +
-  'straps, strings and colour), her body shape, how her skin looks in Picture 1, the lighting and shadows, the background and the camera framing. Her face ' +
-  'is uncovered: no sunglasses or glasses. No tattoos. No text, icons or app interface.';
-export const SWAP_NEGATIVE = 'sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
+  "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, her long dark-brown hair colour and her light skin tone. Take nothing else " +
+  'from Picture 2. Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing she is wearing or ' +
+  'holding), her pose and head angle, her hands and fingers, her body shape, how her skin looks, the lighting and shadows, the background and the camera ' +
+  'framing. Her face is uncovered: no sunglasses or glasses. No tattoos. No text, icons or app interface.';
+export const SWAP_NEGATIVE = 'different clothing, changed outfit, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
 
 export interface PhotoSwapRequest {
   clearedId: string;
@@ -85,7 +87,8 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const built = buildPrompt({ fields: { ...EMPTY_FIELDS }, character, siennaLock: true, contentMode });
   const faceRestore: FaceRestoreSpec | null = lora
     ? {
-        denoise: FACE_DENOISE.standard,
+        // the strong redraw: at the standard 0.3 the swapped face scored 0.54 against Sienna (0.74 needed), 5 Nov
+        denoise: FACE_DENOISE.strong,
         checkpoint: d.checkpoint || prod.checkpoint,
         lora: { name: lora.name, strength: lora.strength, clipStrength: lora.clipStrength },
         positive: built.positive,
@@ -165,7 +168,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
     swap: { clearedId: cleared.id, model: cleared.model },
     // the status polling and face check are Edit Outfit's
     outfitEdit: {
-      model: 'qwen-image-edit-2509',
+      model: 'qwen-image-edit-2511',
       sourceId: '',
       sourceImage: photo,
       imageIndex: 0,
@@ -175,7 +178,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
       crop: null,
       scope: 'full',
       footwear: 'keep',
-      face: faceRestore ? 'standard' : 'off',
+      face: faceRestore ? 'strong' : 'off',
       description: 'Photo Swap',
       originalOutfit: '',
     },

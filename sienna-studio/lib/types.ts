@@ -590,7 +590,7 @@ export interface SafeFrameReport {
 
 /** How an Edit Outfit result was made. The source record and its image are never modified. */
 export interface OutfitEditInfo {
-  model: 'qwen-image-edit-2509';
+  model: 'qwen-image-edit-2509' | 'qwen-image-edit-2511';
   sourceId: string;
   /** The image that was edited (belongs to the source record). */
   sourceImage: StoredImage;

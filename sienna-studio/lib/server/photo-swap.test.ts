@@ -22,7 +22,8 @@ describe('Photo Swap', () => {
   it('asks for her face from the reference only, and keeps everything else', async () => {
     const { SWAP_PROMPT, SWAP_NEGATIVE } = await import('./photo-swap');
     expect(SWAP_PROMPT).toMatch(/nothing of the face in Picture 1/);
-    expect(SWAP_PROMPT).toMatch(/every detail of her clothing/);
+    expect(SWAP_PROMPT).toMatch(/her clothing exactly as it is/);
+    expect(SWAP_PROMPT).not.toMatch(/strings|straps|bikini/);
     expect(SWAP_NEGATIVE).toMatch(/sunglasses/);
   });
 });

@@ -15,7 +15,7 @@
 #   - models/ultralytics/segm/person_yolov8m-seg.pt                    (Bingsu/adetailer)
 #   - models/LLM/Florence-2-large                                      (microsoft/Florence-2-large)
 # With --with-qwen-edit it also installs the optional Edit Outfit editor (~30 GB):
-#   - models/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors (Comfy-Org/Qwen-Image-Edit_ComfyUI)
+#   - models/diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors (Comfy-Org/Qwen-Image-Edit_ComfyUI)
 #   - models/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors          (Comfy-Org/Qwen-Image_ComfyUI)
 #   - models/vae/qwen_image_vae.safetensors                               (Comfy-Org/Qwen-Image_ComfyUI)
 #   - custom_nodes/sienna_nodes (SiennaChinCrop, SiennaGarmentRedrawMask + the experimental body-protection nodes)
@@ -46,7 +46,7 @@
 #   --with-pose        also install pose copying: comfyui_controlnet_aux (DWPose skeleton
 #                      extractor, minimal deps) + models/controlnet/sdxl_openpose.safetensors
 #                      (xinsir/controlnet-openpose-sdxl-1.0, ~2.5 GB)
-#   --with-qwen-edit   also install the optional Edit Outfit editor (Qwen-Image-Edit-2509 fp8, ~30 GB)
+#   --with-qwen-edit   also install the optional Edit Outfit editor (Qwen-Image-Edit-2511 fp8, ~30 GB)
 #   --with-wan-video   also install Video Studio: Wan2.2 image-to-video + Wan2.2 Animate (~62 GB)
 #   --with-wan-i2v     also install only Animate Image (Wan2.2 image-to-video 14B fp8 + 4-step LoRAs, text encoder, VAE, ~36 GB)
 #   --with-wan-animate also install only Copy Motion v1 (Wan2.2 Animate 14B fp8 + DWPose, ~27 GB)
@@ -280,7 +280,7 @@ if (( POSE )); then
   done
 fi
 
-# ── Edit Outfit (Qwen-Image-Edit-2509, optional) ──────────────────────────────
+# ── Edit Outfit (Qwen-Image-Edit-2511, optional) ──────────────────────────────
 # MediaPipe's multiclass selfie segmenter (Apache-2.0): tells hair, skin and clothes apart. Used by "Change only the
 # clothes" (garment-only redraw) and by Video Studio's safe framing and Lock Camera (finds her outline, hair included). Installed
 # without dependencies — it would pull opencv-contrib next to ComfyUI's opencv; what it needs at runtime is added here.
@@ -307,7 +307,7 @@ install_segmenter() {
 
 if (( QWEN )); then
   log "Edit Outfit model licenses (Hugging Face model cards)"
-  check_licenses "Comfy-Org/Qwen-Image-Edit_ComfyUI:apache-2.0" "Comfy-Org/Qwen-Image_ComfyUI:apache-2.0" "Qwen/Qwen-Image-Edit-2509:apache-2.0" \
+  check_licenses "Comfy-Org/Qwen-Image-Edit_ComfyUI:apache-2.0" "Comfy-Org/Qwen-Image_ComfyUI:apache-2.0" "Qwen/Qwen-Image-Edit-2511:apache-2.0" \
     "yzd-v/DWPose:apache-2.0" "Bingsu/adetailer:apache-2.0"
   # Body protection: pose (DWPose) and person masks. Same minimal install as --with-pose, without its ControlNet.
   install_repo comfyui_controlnet_aux https://github.com/Fannovel16/comfyui_controlnet_aux "$CNAUX_REF" noreqs
@@ -322,8 +322,8 @@ if (( QWEN )); then
     "$COMFYUI_DIR/models/vae/qwen_image_vae.safetensors" 200000000
   fetch_model "$HF/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" \
     "$COMFYUI_DIR/models/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" 9000000000
-  fetch_model "$HF/Comfy-Org/Qwen-Image-Edit_ComfyUI/resolve/main/split_files/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors" \
-    "$COMFYUI_DIR/models/diffusion_models/qwen_image_edit_2509_fp8_e4m3fn.safetensors" 20000000000
+  fetch_model "$HF/Comfy-Org/Qwen-Image-Edit_ComfyUI/resolve/main/split_files/diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors" \
+    "$COMFYUI_DIR/models/diffusion_models/qwen_image_edit_2511_fp8mixed.safetensors" 20000000000
 fi
 
 # ── Video Studio (Wan2.2, optional) ────────────────────────────────────────────

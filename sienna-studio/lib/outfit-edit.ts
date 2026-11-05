@@ -50,7 +50,8 @@ export const FACE_LABELS: Record<OutfitEditFace, string> = {
 export const FACE_DENOISE: Record<Exclude<OutfitEditFace, 'off'>, number> = { standard: 0.3, strong: 0.45 };
 
 export const QWEN_EDIT_FILES = {
-  unet: 'qwen_image_edit_2509_fp8_e4m3fn.safetensors',
+  // 2511 replaced 2509 on the drive (5 Nov): it keeps what it is not asked to change more faithfully
+  unet: 'qwen_image_edit_2511_fp8mixed.safetensors',
   clip: 'qwen_2.5_vl_7b_fp8_scaled.safetensors',
   vae: 'qwen_image_vae.safetensors',
 } as const;

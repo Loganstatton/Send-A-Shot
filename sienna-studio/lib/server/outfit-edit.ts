@@ -69,7 +69,7 @@ import {
 } from './store';
 
 export const OUTFIT_EDIT_WORKFLOW_ID = 'outfit-edit-qwen';
-export const OUTFIT_EDIT_WORKFLOW_NAME = 'Edit Outfit · Qwen-Image-Edit-2509';
+export const OUTFIT_EDIT_WORKFLOW_NAME = 'Edit Outfit · Qwen-Image-Edit-2511';
 
 export function outfitEditEnabled(): boolean {
   return process.env.SIENNA_OUTFIT_EDIT === 'true';
@@ -350,7 +350,7 @@ export async function startOutfitEdit(req: OutfitEditRequest): Promise<Generatio
     editFaceCheck: faceCheck,
     parentId: source.id,
     outfitEdit: {
-      model: 'qwen-image-edit-2509',
+      model: 'qwen-image-edit-2511',
       sourceId: source.id,
       sourceImage,
       imageIndex: req.imageIndex,
