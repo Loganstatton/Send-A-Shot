@@ -13,7 +13,7 @@ import 'server-only';
 import { ComfyError, createBackend } from '../comfy/client';
 import { MIN_CHARACTER_AGE } from '../defaults';
 import { EXPOSURE_NODE_ID, exposureNode } from '../exposure';
-import { buildOutfitEditGraph, EDIT_NODES, FACE_DENOISE, type FaceRestoreSpec } from '../outfit-edit';
+import { buildOutfitEditGraph, EDIT_NODES, type FaceRestoreSpec } from '../outfit-edit';
 import { buildPrompt } from '../prompt';
 import { resolveLockedLora } from '../sienna-models';
 import { FACE_NODE_ID, faceNode } from '../identity';
@@ -30,6 +30,9 @@ export const PHOTO_SWAP_WORKFLOW_ID = 'photo-swap-qwen';
 export const PHOTO_SWAP_WORKFLOW_NAME = 'Photo Swap · Qwen-Image-Edit-2511';
 /** Qwen-Image-Edit (2509) ran out of memory on the 24 GB RTX 4090 (18 Oct). */
 export const SWAP_MIN_VRAM_GB = 32;
+/** The face redraw after the swap: its working size and strength. */
+export const SWAP_FACE_GUIDE = 768;
+export const SWAP_FACE_DENOISE = 0.5;
 
 /** Her whole face from picture 2, nothing of picture 1's; everything else kept (the wording the 5 Nov test used). */
 /** Her whole face from picture 2, nothing of picture 1's; everything else kept. No garment words: asked to keep
@@ -95,12 +98,14 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const faceRestore: FaceRestoreSpec | null = lora
     ? {
         // the strong redraw: at the standard 0.3 the swapped face scored 0.54 against Sienna (0.74 needed), 5 Nov
-        denoise: FACE_DENOISE.strong,
+        denoise: SWAP_FACE_DENOISE,
         checkpoint: d.checkpoint || prod.checkpoint,
         lora: { name: lora.name, strength: lora.strength, clipStrength: lora.clipStrength },
         positive: built.positive,
         negative: built.negative,
-        detailerInputs: { ...prod.inputs, guide_size: Math.round(Math.min(2048, Math.max(64, d.faceRefineThreshold || 384))) },
+        // the face rebuilt at 768 px: the editor works at about 1 MP, so a small face in a large photo came back ~80 px wide
+        // and, scaled up, soft and smudged; at 384 the redraw could not sharpen it (lavender hot tub, 5 Nov)
+        detailerInputs: { ...prod.inputs, guide_size: SWAP_FACE_GUIDE, max_size: 1536 },
       }
     : null;
 
