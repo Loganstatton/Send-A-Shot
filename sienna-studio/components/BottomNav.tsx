@@ -8,6 +8,7 @@ import { cx } from './ui';
 const TABS = [
   { href: '/', label: 'Create', icon: '✦' },
   { href: '/gallery', label: 'Gallery', icon: '▦' },
+  { href: '/swap', label: 'Swap', icon: '⇄' },
   { href: '/video', label: 'Video', icon: '▶', video: true },
   { href: '/character', label: 'Sienna', icon: '◉' },
   { href: '/library', label: 'Library', icon: '☰' },

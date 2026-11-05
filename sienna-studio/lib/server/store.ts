@@ -15,13 +15,14 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { builtinPresets, DEFAULT_CHARACTER, DEFAULT_PARAMS, DEFAULT_SETTINGS } from '../defaults';
 import { builtinWorkflows, LEGACY_WORKFLOW_IDS } from '../comfy/builtin-workflows';
-import type { AppSettings, CharacterProfile, GenerationRecord, Preset, StoredImage, StoredVideo, WorkflowTemplate } from '../types';
+import type { AppSettings, CharacterProfile, ClearedPhoto, GenerationRecord, Preset, StoredImage, StoredVideo, WorkflowTemplate } from '../types';
 import { imageSize } from './png';
 
 export const DATA_DIR = path.resolve(process.env.DATA_DIR || './data');
 export const IMAGES_DIR = path.join(DATA_DIR, 'images');
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
+const CLEARED_FILE = path.join(DATA_DIR, 'cleared-photos.json');
 
 interface ConfigDoc {
   version: 1;
@@ -77,6 +78,7 @@ async function writeJsonAtomic(file: string, data: unknown, compact = false) {
 export async function pruneUnusedUploads(minAgeMs = 60 * 60_000): Promise<number> {
   const inUse = referencedFiles(cache.history ?? (await readJson<GenerationRecord[]>(HISTORY_FILE)) ?? []);
   referencedFiles(cache.config ?? (await readJson<ConfigDoc>(CONFIG_FILE)), inUse);
+  referencedFiles(await readJson<ClearedPhoto[]>(CLEARED_FILE), inUse);
   let freed = 0;
   const cutoff = Date.now() - minAgeMs;
   for (const [dir, test] of [[IMAGES_DIR, (f: string) => /^up_/.test(f) && SAFE_FILE_RE.test(f) && !inUse.has(f)], [DATA_DIR, (f: string) => f.endsWith('.tmp')]] as const) {
@@ -453,4 +455,39 @@ export function mimeFromBytes(buf: Buffer): string | null {
   if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
   if (buf.length > 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
   return null;
+}
+
+// ── Photo Swap: the cleared photo library ─────────────────────────────────────
+
+export async function listClearedPhotos(): Promise<ClearedPhoto[]> {
+  return (await readJson<ClearedPhoto[]>(CLEARED_FILE)) ?? [];
+}
+
+export async function getClearedPhoto(id: string): Promise<ClearedPhoto | null> {
+  return (await listClearedPhotos()).find((c) => c.id === id) ?? null;
+}
+
+/** Adds a photo to the library. The model's name or handle and the consent confirmation are both required. */
+export function addClearedPhoto(image: StoredImage, model: string, consent: boolean): Promise<ClearedPhoto> {
+  const name = model.trim().slice(0, 120);
+  if (!name) throw Object.assign(new Error('Enter the model’s name or handle.'), { status: 400 });
+  if (consent !== true) throw Object.assign(new Error('Confirm that she agreed to her photos being used with Sienna’s face.'), { status: 400 });
+  return withLock(async () => {
+    const list = await listClearedPhotos();
+    const item: ClearedPhoto = { id: newId('c'), image, model: name, consent: true, consentedAt: now() };
+    await writeJsonAtomic(CLEARED_FILE, [item, ...list]);
+    return item;
+  });
+}
+
+/** Removes a photo from the library and deletes its file. */
+export function deleteClearedPhoto(id: string): Promise<boolean> {
+  return withLock(async () => {
+    const list = await listClearedPhotos();
+    const item = list.find((c) => c.id === id);
+    if (!item) return false;
+    await writeJsonAtomic(CLEARED_FILE, list.filter((c) => c.id !== id));
+    if (SAFE_FILE_RE.test(item.image.file)) await fs.rm(path.join(IMAGES_DIR, item.image.file), { force: true });
+    return true;
+  });
 }

@@ -13,6 +13,20 @@ export interface StoredImage {
 
 export type ContentMode = 'sfw' | 'adult';
 
+/**
+ * Photo Swap: a photo of a real model the owner has confirmed agreed to her photos being used with Sienna's face.
+ * Only photos in this library can be swapped (the owner, 5 Nov: "all the people I use consent to it").
+ */
+export interface ClearedPhoto {
+  id: string;
+  image: StoredImage;
+  /** The model's name or handle. */
+  model: string;
+  /** The owner's confirmation that she agreed, and when it was given. */
+  consent: true;
+  consentedAt: string;
+}
+
 /** The persistent identity profile for the fictional character. */
 export interface CharacterProfile {
   name: string;
@@ -489,6 +503,8 @@ export interface GenerationRecord {
   simple?: SimpleRequestInfo;
   /** Set when this image was made by Edit Outfit (Qwen-Image-Edit) from another record's image. */
   outfitEdit?: OutfitEditInfo;
+  /** Photo Swap: the cleared photo and the model's name or handle. */
+  swap?: { clearedId: string; model: string };
   /** Set for Video Studio results: `images` holds the poster frame, the video is `video.result`. */
   video?: VideoInfo;
 }

@@ -222,9 +222,20 @@ export function photoPodStartCommand(c: PhotoGpuConfig): string {
   return [`(sleep ${Math.round(c.maxSessionMin * 60)}; runpodctl remove pod "$RUNPOD_POD_ID") >/dev/null 2>&1 &`, 'exec /start.sh'].join('\n');
 }
 
+/** GPU memory by RunPod GPU type (GB); null when unknown. Photo Swap's Qwen-Image-Edit runs out of memory on 24 GB. */
+export function gpuVramGb(type: string): number | null {
+  if (/\b(4090|3090|4080|A5000|L4)\b/i.test(type)) return 24;
+  if (/\b5090\b/.test(type)) return 32;
+  if (/\b(A6000|A40|L40S?|6000 Ada|PRO 5000)\b/i.test(type)) return 48;
+  if (/\b(A100|H100)\b/i.test(type)) return 80;
+  if (/\b(PRO 6000|H200|B200)\b/i.test(type)) return 96;
+  return null;
+}
+
 /** Request a pod in one location: the preferred GPU type alone, then any of the others. Throws with the reasons. */
-async function createPodAt(c: PhotoGpuConfig, loc: PhotoGpuLocation, name: string, attempts: string[]): Promise<{ pod: PodInfo; gpu: string }> {
-  const types = c.gpuTypes;
+async function createPodAt(c: PhotoGpuConfig, loc: PhotoGpuLocation, name: string, attempts: string[], minVramGb = 0): Promise<{ pod: PodInfo; gpu: string }> {
+  const types = minVramGb ? c.gpuTypes.filter((t) => (gpuVramGb(t) ?? 0) >= minVramGb) : c.gpuTypes;
+  if (!types.length) throw new GpuError(`none of the photo GPU types has ${minVramGb} GB (PHOTO_GPU_TYPES)`);
   const tiers = [types.slice(0, 1), types.slice(1)].filter((t) => t.length);
   for (const tier of tiers) {
     try {
@@ -264,10 +275,10 @@ async function createPodAt(c: PhotoGpuConfig, loc: PhotoGpuLocation, name: strin
 const locationOrder = (c: PhotoGpuConfig, from: number) => c.locations.map((_, i) => (from + i) % c.locations.length);
 
 /** Request a pod in the first location (from `from` on) that has a free GPU. Throws with every reason. */
-async function createPod(c: PhotoGpuConfig, name: string, attempts: string[], from = 0): Promise<{ pod: PodInfo; gpu: string; location: number }> {
+async function createPod(c: PhotoGpuConfig, name: string, attempts: string[], from = 0, minVramGb = 0): Promise<{ pod: PodInfo; gpu: string; location: number }> {
   for (const i of locationOrder(c, from)) {
     try {
-      return { ...(await createPodAt(c, c.locations[i], name, attempts)), location: i };
+      return { ...(await createPodAt(c, c.locations[i], name, attempts, minVramGb)), location: i };
     } catch (e: any) {
       if (e instanceof GpuError && e.status === 502) throw e;
     }
@@ -311,13 +322,25 @@ export async function photoGpuView(): Promise<PhotoGpuView> {
   };
 }
 
-/** Make sure a photo GPU exists (starting or ready). Never creates a second one. */
-export function ensurePhotoGpu(): Promise<PhotoGpuSession> {
+/**
+ * Make sure a photo GPU exists (starting or ready). Never creates a second one. `minVramGb` (Photo Swap): a GPU with at
+ * least that much memory; a smaller one that is running is replaced when `replaceIdle` (nothing else is using it), and
+ * otherwise the call fails with 409 so the caller can try again once it is free.
+ */
+export function ensurePhotoGpu(opts: { minVramGb?: number; replaceIdle?: boolean } = {}): Promise<PhotoGpuSession> {
+  const min = opts.minVramGb ?? 0;
   return withLock(async () => {
     const c = photoGpuConfig();
     if (!c) throw new GpuError('The on-demand photo GPU is not configured.', 500);
     let st = await load();
-    if (active(st.session) && st.session.status !== 'stopping') return st.session;
+    if (active(st.session) && st.session.status !== 'stopping') {
+      const vram = gpuVramGb(st.session.gpu);
+      if (!min || vram === null || vram >= min) return st.session;
+      if (!opts.replaceIdle) throw new GpuError(`The photo GPU running now has ${vram} GB; this needs ${min} GB. It will switch once the photos on it are finished — try again in a minute.`, 409);
+      await stopLocked(`replaced by a ${min} GB GPU for Photo Swap`);
+      st = await load();
+      if (st.session?.status === 'stopping') throw new GpuError('The previous photo GPU is still being shut down on RunPod — try again in a minute.', 503);
+    }
     // a session whose shutdown failed: finish stopping it first (its cost goes to the ledger, its pod is removed);
     // starting over it would lose the cost and could leave its pod running untracked
     if (st.session?.status === 'stopping') {
@@ -331,7 +354,11 @@ export function ensurePhotoGpu(): Promise<PhotoGpuSession> {
         402,
       );
     const now = new Date().toISOString();
-    const existing = await listPhotoPods(c);
+    // a pod too small for this request (one just stopped can still be listed) is stopped, never reused
+    const listed = await listPhotoPods(c);
+    const fits = (p: PodInfo) => !min || (gpuVramGb(p.machine?.gpuTypeId ?? '') ?? 0) >= min;
+    for (const p of listed.filter((p) => !fits(p))) await terminatePod(c, p.id).catch(() => {});
+    const existing = listed.filter(fits);
     if (existing.length) {
       // left over from before an app restart: reuse one, stop the rest
       const [keep, ...extra] = existing;
@@ -347,7 +374,7 @@ export function ensurePhotoGpu(): Promise<PhotoGpuSession> {
     const name = `${PHOTO_POD_PREFIX}-${Date.now().toString(36)}`;
     const attempts: string[] = [];
     try {
-      const { pod, gpu, location } = await createPod(c, name, attempts);
+      const { pod, gpu, location } = await createPod(c, name, attempts, 0, min);
       const t = new Date().toISOString();
       st.session = {
         podId: pod.id, name, gpu, rate: Number(pod.costPerHr) || c.estRate, url: c.urlTemplate.replace('{id}', pod.id), status: 'starting',

@@ -52,6 +52,7 @@ import { describeMissing, GenerationError, missingClasses } from './generate';
 import { photoGpuEnabled, touchPhotoGpu } from './photo-gpu';
 import { FACE_NODE_ID, faceNode, parseFace, singlePhotoIdentity } from '../identity';
 import { preflight } from './jobs';
+import { EXPOSURE_NODE_ID, parseExposure } from '../exposure';
 import {
   adultContentAllowed,
   experimentsEnabled,
@@ -176,7 +177,7 @@ const QWEN_CORE_NODES = ['TextEncodeQwenImageEditPlus', 'ModelSamplingAuraFlow',
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo));
 
 /** Static (non-link) inputs of the production workflow's FaceDetailer — "our existing Sienna FaceDetailer". */
-function productionDetailerInputs(): { inputs: Record<string, unknown>; checkpoint: string } {
+export function productionDetailerInputs(): { inputs: Record<string, unknown>; checkpoint: string } {
   const wf = builtinWorkflows().find((w) => w.id === PRIMARY_WORKFLOW_ID)!;
   const id = wf.bindings.face_refine_denoise?.[0]?.nodeId;
   const node = id ? wf.graph[id] : undefined;
@@ -431,6 +432,17 @@ async function doRefresh(id: string): Promise<GenerationRecord | null> {
     case 'done': {
       const finalRef = state.images.find((i) => i.nodeId === EDIT_NODES.final);
       if (!finalRef) return patchRecord(id, { status: 'error', error: 'The edit finished but produced no image.', completedAt: new Date().toISOString() });
+      // Photo Swap in SFW mode: a result showing nudity is not kept
+      if (rec.swap && rec.contentMode === 'sfw') {
+        const ex = parseExposure(state.texts?.[EXPOSURE_NODE_ID]);
+        if (!ex || !ex.available || ex.exposed) {
+          return patchRecord(id, {
+            status: 'error',
+            error: ex?.exposed ? 'The swapped photo shows nudity and SFW mode is on, so it was not kept.' : 'The nudity check did not run on the swapped photo, so it was not kept (SFW mode).',
+            completedAt: new Date().toISOString(),
+          });
+        }
+      }
       const fetchStore = async (ref: typeof finalRef, prefix: 'gen' | 'up', label?: string) => {
         const { bytes, mime } = await backend.fetchImage(ref);
         return storeImage(bytes, mimeFromBytes(bytes) ?? mime, prefix, label);

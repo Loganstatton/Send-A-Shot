@@ -24,3 +24,25 @@ describe('pruneUnusedUploads', () => {
     expect(await fs.readdir(dir)).not.toContain('history.json.1.2.tmp');
   });
 });
+
+describe('cleared photo library (Photo Swap)', () => {
+  it('needs her name or handle and the consent tick; removing a photo deletes its file', async () => {
+    vi.resetModules();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sienna-cleared-'));
+    process.env.DATA_DIR = dir;
+    const store = await import('./store');
+    const image = await store.storeImage(Buffer.from([0xff, 0xd8, 0xff, 0x00]), 'image/jpeg', 'ref', 'Cleared photo');
+    expect(() => store.addClearedPhoto(image, '  ', true)).toThrow(/name or handle/);
+    expect(() => store.addClearedPhoto(image, 'mia', false)).toThrow(/agreed/);
+    const item = await store.addClearedPhoto(image, '@mia.model', true);
+    expect(item).toMatchObject({ model: '@mia.model', consent: true });
+    expect((await store.listClearedPhotos()).map((c) => c.id)).toEqual([item.id]);
+    expect((await store.getClearedPhoto(item.id))?.image.file).toBe(image.file);
+    // never pruned as an unused upload
+    expect(await fs.readdir(path.join(dir, 'images'))).toContain(image.file);
+    expect(await store.deleteClearedPhoto(item.id)).toBe(true);
+    expect(await store.listClearedPhotos()).toEqual([]);
+    expect(await fs.readdir(path.join(dir, 'images'))).not.toContain(image.file);
+    expect(await store.deleteClearedPhoto(item.id)).toBe(false);
+  });
+});

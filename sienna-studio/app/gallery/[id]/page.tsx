@@ -68,6 +68,11 @@ export default function GenerationDetail() {
         router.push(`/gallery/${next.id}`);
         return;
       }
+      if (rec!.swap) {
+        const next = await api<GenerationRecord>('/api/photo-swap', { method: 'POST', json: { clearedId: rec!.swap.clearedId, ...(newSeed ? {} : { seed: rec!.seed }) } });
+        router.push(`/gallery/${next.id}`);
+        return;
+      }
       if (rec!.outfitEdit) {
         const next = await rerunOutfitEdit(rec!, newSeed);
         router.push(`/gallery/${next.id}`);
@@ -211,7 +216,7 @@ export default function GenerationDetail() {
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <Button onClick={() => rerun(false)} loading={busy === 'regen'}>
-          {rec.video ? '↻ Make again' : rec.outfitEdit ? '↻ Re-run edit' : '↻ Regenerate'}
+          {rec.video ? '↻ Make again' : rec.swap ? '↻ Swap again' : rec.outfitEdit ? '↻ Re-run edit' : '↻ Regenerate'}
         </Button>
         <Button onClick={() => rerun(true)} loading={busy === 'var'}>
           🎲 New seed
@@ -249,7 +254,7 @@ export default function GenerationDetail() {
       </div>
       {rec.images.length > 1 && <p className="mt-1 text-xs text-ink-400">Share saves the first image; long-press others to save.</p>}
 
-      {rec.outfitEdit && <OutfitEditCard rec={rec} />}
+      {rec.swap ? <SwapCard rec={rec} /> : rec.outfitEdit && <OutfitEditCard rec={rec} />}
       {rec.video && <VideoCard rec={rec} />}
 
       <div className="mt-5 space-y-3">
@@ -337,6 +342,26 @@ export default function GenerationDetail() {
         Delete
       </Button>
     </div>
+  );
+}
+
+function SwapCard({ rec }: { rec: GenerationRecord }) {
+  const e = rec.outfitEdit;
+  return (
+    <Card className="mt-4 space-y-3">
+      <p className="font-medium">Photo swap · {rec.swap!.model}</p>
+      <div className="flex gap-3">
+        {([['Cleared photo', e?.sourceImage], ['Sienna', e?.reference]] as const).map(([label, img]) =>
+          img ? (
+            <div key={label} className="text-center text-[11px] text-ink-400">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={fileUrl(img.file)} alt={label} className="mb-1 h-24 w-[72px] rounded-lg bg-black object-cover" />
+              {label}
+            </div>
+          ) : null,
+        )}
+      </div>
+    </Card>
   );
 }
 
