@@ -180,7 +180,12 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   };
   let graph;
   try {
-    graph = graphFor(await upload(photo), await upload(character.faceReference));
+    // with the hair step, the editor sees only her face (eyebrows to chin): from her full reference it copied her long hair
+    // and drew it, glossy, over the photo's own hair (5 Nov). SIENNA_SWAP_FACE_FILE names that face-only crop.
+    const faceOnly = hairStep && process.env.SIENNA_SWAP_FACE_FILE ? { id: 'face-only', file: process.env.SIENNA_SWAP_FACE_FILE.trim(), createdAt: '' } : null;
+    const faceRef = faceOnly ? await readImage(faceOnly.file).then(() => faceOnly).catch(() => null) : null;
+    if (faceOnly && !faceRef) warnings.push(`The face-only reference (${faceOnly.file}) is not in the studio's images; her full reference was used.`);
+    graph = graphFor(await upload(photo), await upload(faceRef ?? character.faceReference));
   } catch (e) {
     if (e instanceof ComfyError) throw new GenerationError(`Uploading images failed: ${e.message}`, e.status, e.details);
     throw e;
