@@ -335,7 +335,13 @@ export function ensurePhotoGpu(opts: { minVramGb?: number; replaceIdle?: boolean
     let st = await load();
     if (active(st.session) && st.session.status !== 'stopping') {
       const vram = gpuVramGb(st.session.gpu);
-      if (!min || vram === null || vram >= min) return st.session;
+      if (!min || vram === null || vram >= min) {
+        // someone is still waiting for it: a photo that waits for the GPU has no job yet, so without this a boot longer
+        // than 3 min was stopped as unwanted and started again, over and over (5 Nov)
+        st.session = { ...st.session, lastActivityAt: new Date().toISOString() };
+        await save(st);
+        return st.session;
+      }
       if (!opts.replaceIdle) throw new GpuError(`The photo GPU running now has ${vram} GB; this needs ${min} GB. It will switch once the photos on it are finished — try again in a minute.`, 409);
       await stopLocked(`replaced by a ${min} GB GPU for Photo Swap`);
       st = await load();
@@ -447,7 +453,8 @@ export function tickPhotoGpu(busy: number, probe: PhotoProbe): Promise<PhotoGpuS
     if ((now - Date.parse(s.createdAt)) / 60_000 > c.maxSessionMin) return stopLocked(`stopped: the photo GPU ran for its maximum of ${c.maxSessionMin} min`, busy > 0);
     if (s.status === 'starting') {
       const podAge = (now - Date.parse(s.podCreatedAt)) / 60_000;
-      if (busy === 0 && podAge > 3 && !s.readyAt) return stopLocked('no photo needs the GPU any more');
+      const waitedFor = (now - Date.parse(s.lastActivityAt)) / 60_000 < 2;
+      if (busy === 0 && podAge > 3 && !s.readyAt && !waitedFor) return stopLocked('no photo needs the GPU any more');
       if (await probe(s.url).catch(() => false)) {
         st.session = { ...s, status: 'ready', readyAt: new Date().toISOString(), lastActivityAt: new Date().toISOString(), phase: 'ready' };
         await save(st);
