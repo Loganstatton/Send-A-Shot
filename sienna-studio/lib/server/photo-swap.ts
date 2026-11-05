@@ -44,12 +44,15 @@ export const SWAP_FACE_SKIN_NEGATIVE = 'airbrushed, smooth plastic skin, waxy, b
  * (5 Nov); keeping the photo's hairstyle, a larger working size and the photo's hair recoloured were all tried and
  * judged worse. No garment words: asked to keep "straps, strings and gathers", the editor put a bikini on a woman in a
  * towel. Mirrors are not mentioned: asked to change her reflection too, the editor invented a new mirror.
- * Her long hair falls behind her shoulders (owner, 5 Nov: drawn in front it hid her top), and her arms stay where they
+ * Her long hair falls behind her shoulders (owner, 5 Nov: drawn in front it hid her top), as Picture 2's loose hair: asked
+ * only for hair behind her shoulders, the editor kept a slicked-back ponytail and her face drifted back towards the
+ * photo's woman (0.63 against Sienna, car photo). Her arms stay where they
  * are: the cami photo came back with her arms moved and, twice in three seeds, a sweater in place of the cami. */
 export const SWAP_PROMPT =
   'Replace the woman in Picture 1 with the woman from Picture 2. Her whole face must be the face of the woman in Picture 2, with nothing of the face in ' +
   "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, her long dark-brown hair colour and her light skin tone. Take nothing else " +
-  'from Picture 2. Her long hair falls behind her shoulders, down her back; no hair hangs in front of her shoulders, chest or top. ' +
+  "from Picture 2 but her hair: her long, loose dark-brown hair as in Picture 2 (not Picture 1's hairstyle), worn falling down her back behind " +
+  'her shoulders; no hair hangs in front of her shoulders, chest or top. ' +
   'Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing she is wearing or ' +
   'holding, and cover nothing that is uncovered), her pose and head angle, where her arms and hands are (motion blur included), her hands and fingers, ' +
   'her body shape, how her skin looks, the lighting and shadows, the background and the camera framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where ' +

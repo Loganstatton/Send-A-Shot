@@ -35,7 +35,8 @@ describe('Photo Swap', () => {
     expect(SWAP_PROMPT).not.toMatch(/strings|straps|bikini/);
     expect(SWAP_NEGATIVE).toMatch(/sunglasses/);
     expect(SWAP_PROMPT).toMatch(/her long dark-brown hair colour/);
-    expect(SWAP_PROMPT).toMatch(/hair falls behind her shoulders/);
+    expect(SWAP_PROMPT).toMatch(/falling down her back behind her shoulders/);
+    expect(SWAP_PROMPT).toMatch(/not Picture 1's hairstyle/);
     expect(SWAP_PROMPT).toMatch(/where her arms and hands are/);
   });
   it('puts the photo texture back with a fine grain', async () => {
