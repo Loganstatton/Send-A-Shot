@@ -30,9 +30,8 @@ export const PHOTO_SWAP_WORKFLOW_ID = 'photo-swap-qwen';
 export const PHOTO_SWAP_WORKFLOW_NAME = 'Photo Swap · Qwen-Image-Edit-2511';
 /** Qwen-Image-Edit (2509) ran out of memory on the 24 GB RTX 4090 (18 Oct). */
 export const SWAP_MIN_VRAM_GB = 32;
-/** The editor's working size: at 1 MP a 3 MP photo was enlarged almost 2x afterwards and her hair came out smooth and
- * painted, like a wig (5 Nov); 1.6 MP is near the top of what Qwen-Image was trained on. */
-export const SWAP_WORK_MP = 1.6;
+/** The editor's working size (1.6 MP was tried for hair detail, 5 Nov, and judged worse). */
+export const SWAP_WORK_MP = 1.0;
 /** The face redraw after the swap: its working size and strength. */
 // 384 / 0.45 left a small face soft (0.63); 768 / 0.5 sharp but generic (0.54); 512 / 0.45 in between (5 Nov)
 export const SWAP_FACE_GUIDE = 512;
@@ -41,18 +40,16 @@ export const SWAP_FACE_DENOISE = 0.45;
 /** Her whole face from picture 2, nothing of picture 1's; everything else kept (the wording the 5 Nov test used). */
 /** Her whole face from picture 2, nothing of picture 1's; everything else kept. No garment words: asked to keep
  * "straps, strings and gathers", the editor put a bikini on a woman in a towel (5 Nov). */
-/** Her face from picture 2, her hair keeps picture 1's style and only changes colour (asked for Sienna's "long dark-brown
- * hair", the editor drew a flat, airbrushed wig, 5 Nov), nothing else changed. Mirrors are not mentioned: asked to
- * change her reflection too, the editor invented a large new mirror with a second her in it (5 Nov). */
+/** Her face and hair colour from picture 2, everything else kept. The wording the owner's favourite swaps were made with
+ * (5 Nov); keeping the photo's hairstyle, a larger working size and the photo's hair recoloured were all tried and
+ * judged worse. Mirrors are not mentioned: asked to change her reflection too, the editor invented a new mirror. */
 export const SWAP_PROMPT =
   'Replace the woman in Picture 1 with the woman from Picture 2. Her whole face must be the face of the woman in Picture 2, with nothing of the face in ' +
-  "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, and her light skin tone. Her hair keeps Picture 1's hairstyle exactly (how it " +
-  'falls, its length, volume, parting and fine loose strands, natural real hair texture), only its colour changes to dark brown with softly lighter brown ' +
-  'ends. Take nothing else from Picture 2. Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing ' +
-  'she is wearing or holding), her pose and head angle, her hands and fingers, her body shape, how her skin looks, the lighting and shadows, the background ' +
-  'and the camera framing. Her face is ' +
-  'uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where Picture 1 has blurred or ' +
-  'smudged patches (app buttons painted out), paint in the scene that belongs there, as sharp as the rest of the photo.';
+  "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, her long dark-brown hair colour and her light skin tone. Take nothing else " +
+  'from Picture 2. Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing she is wearing or ' +
+  'holding), her pose and head angle, her hands and fingers, her body shape, how her skin looks, the lighting and shadows, the background and the camera ' +
+  'framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where ' +
+  'Picture 1 has blurred or smudged patches (app buttons painted out), paint in the scene that belongs there, as sharp as the rest of the photo.';
 /** With the hair step on the GPU server: the editor keeps the photo's hair as it is (style and colour) and the hair step
  * recolours it to Sienna's; drawn by the editor, her hair looked like a glossy wig however it was asked for (5 Nov). */
 export const SWAP_PROMPT_KEEP_HAIR = SWAP_PROMPT.replace(
@@ -64,7 +61,7 @@ export const HAIR_CLASS = 'SiennaHairRecolour';
 export const SWAP_SCENE_DENOISE = 0.55;
 export const SWAP_SCENE_POSITIVE = 'the same surface continued seamlessly, natural photo texture, sharp';
 export const SWAP_SCENE_NEGATIVE = 'text, letters, numbers, icons, logo, buttons, watermark, person, face, hand, rock, boulder, ice, crystal, object, blur, smudge';
-export const SWAP_NEGATIVE = 'airbrushed hair, painted hair, wig, flat hair, blonde hair, different clothing, changed outfit, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
+export const SWAP_NEGATIVE = 'different clothing, changed outfit, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
 
 export interface PhotoSwapRequest {
   clearedId: string;
@@ -130,7 +127,8 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const photo = cleared.image;
   const sourceSize = { width: photo.width ?? 832, height: photo.height ?? 1216 };
   const uiClean = backend.kind !== 'mock' && !!(await backend.nodeInfo(UI_MASK_CLASS).catch(() => null));
-  const hairStep = backend.kind !== 'mock' && !!(await backend.nodeInfo(HAIR_CLASS).catch(() => null));
+  // off unless SIENNA_SWAP_HAIR=on: the owner preferred the editor's own hair to the photo's hair recoloured (5 Nov)
+  const hairStep = process.env.SIENNA_SWAP_HAIR === 'on' && backend.kind !== 'mock' && !!(await backend.nodeInfo(HAIR_CLASS).catch(() => null));
   const prompt = hairStep ? SWAP_PROMPT_KEEP_HAIR : SWAP_PROMPT;
   if (!uiClean) warnings.push('The GPU server has no app-overlay remover (SiennaUiMask): screenshot icons and text may stay.');
   const graphFor = (sourceName: string, referenceName: string) => {
