@@ -39,7 +39,8 @@ export const SWAP_PROMPT =
   "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, her long dark-brown hair colour and her light skin tone. Take nothing else " +
   'from Picture 2. Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing she is wearing or ' +
   'holding), her pose and head angle, her hands and fingers, her body shape, how her skin looks, the lighting and shadows, the background and the camera ' +
-  'framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface.';
+  'framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where Picture 1 has blurred or smudged ' +
+  'patches (app buttons painted out), paint in the scene that belongs there, as sharp as the rest of the photo.';
 export const SWAP_NEGATIVE = 'different clothing, changed outfit, sunglasses, glasses, tattoo, text, watermark, extra fingers, deformed hands, blurry, cartoon';
 
 export interface PhotoSwapRequest {
