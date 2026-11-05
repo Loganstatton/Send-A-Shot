@@ -44,19 +44,26 @@ export const SWAP_FACE_SKIN_NEGATIVE = 'airbrushed, smooth plastic skin, waxy, b
  * (5 Nov); keeping the photo's hairstyle, a larger working size and the photo's hair recoloured were all tried and
  * judged worse. No garment words: asked to keep "straps, strings and gathers", the editor put a bikini on a woman in a
  * towel. Mirrors are not mentioned: asked to change her reflection too, the editor invented a new mirror.
- * Her long hair falls behind her shoulders (owner, 5 Nov: drawn in front it hid her top), as Picture 2's loose hair: asked
- * only for hair behind her shoulders, the editor kept a slicked-back ponytail and her face drifted back towards the
- * photo's woman (0.63 against Sienna, car photo). Her arms stay where they
- * are: the cami photo came back with her arms moved and, twice in three seeds, a sweater in place of the cami. */
-export const SWAP_PROMPT =
+ * Where her hair falls: SWAP_HAIR_LINES. Her arms stay where they are: the cami photo came back with her arms moved and, twice in three seeds, a sweater in place of the cami. */
+const SWAP_PROMPT_TEMPLATE =
   'Replace the woman in Picture 1 with the woman from Picture 2. Her whole face must be the face of the woman in Picture 2, with nothing of the face in ' +
   "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, her long dark-brown hair colour and her light skin tone. Take nothing else " +
-  "from Picture 2 but her hair: her long, loose dark-brown hair as in Picture 2 (not Picture 1's hairstyle), worn falling down her back behind " +
-  'her shoulders; no hair hangs in front of her shoulders, chest or top. ' +
-  'Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing she is wearing or ' +
+  'from Picture 2. {HAIR}Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing she is wearing or ' +
   'holding, and cover nothing that is uncovered), her pose and head angle, where her arms and hands are (motion blur included), her hands and fingers, ' +
   'her body shape, how her skin looks, the lighting and shadows, the background and the camera framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where ' +
   'Picture 1 has blurred or smudged patches (app buttons painted out), paint in the scene that belongs there, as sharp as the rest of the photo.';
+/** Where her hair goes ("always behind the shoulders", owner, 5 Nov). Any wording about where it falls made the editor
+ * keep the car photo's slicked-back ponytail, and her face drifted towards the photo's woman (0.62-0.63 against Sienna,
+ * 0.71 without); the variants are tried with test.hair. */
+export const SWAP_HAIR_LINES = {
+  none: '',
+  back: "Her hair is her long, loose dark-brown hair as in Picture 2 (not Picture 1's hairstyle), worn falling down her back behind her shoulders; no hair hangs in front of her shoulders, chest or top. ",
+  swept: 'Her long, loose, wavy dark-brown hair is swept back over her shoulders, so her neckline and top are clear. ',
+} as const;
+export type SwapHairLine = keyof typeof SWAP_HAIR_LINES;
+export const SWAP_HAIR_DEFAULT: SwapHairLine = 'none';
+export const swapPrompt = (hair: SwapHairLine = SWAP_HAIR_DEFAULT) => SWAP_PROMPT_TEMPLATE.replace('{HAIR}', SWAP_HAIR_LINES[hair]);
+export const SWAP_PROMPT = swapPrompt();
 /** With the hair step on the GPU server: the editor keeps the photo's hair as it is (style and colour) and the hair step
  * recolours it to Sienna's; drawn by the editor, her hair looked like a glossy wig however it was asked for (5 Nov). */
 export const SWAP_PROMPT_KEEP_HAIR = SWAP_PROMPT.replace(
@@ -87,6 +94,8 @@ export interface PhotoSwapRequest {
   faceGuide?: number;
   /** Testing: natural skin texture asked for in the face redraw (SWAP_FACE_SKIN). */
   faceSkin?: boolean;
+  /** Testing: where her hair goes (SWAP_HAIR_LINES). */
+  hair?: SwapHairLine;
   /** Testing: a hair texture pass at this strength (SDXL photo checkpoint, hair mask only); off when unset. */
   hairDetail?: number;
 }
@@ -150,7 +159,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const uiClean = backend.kind !== 'mock' && !!(await backend.nodeInfo(UI_MASK_CLASS).catch(() => null));
   // off unless SIENNA_SWAP_HAIR=on: the owner preferred the editor's own hair to the photo's hair recoloured (5 Nov)
   const hairStep = process.env.SIENNA_SWAP_HAIR === 'on' && backend.kind !== 'mock' && !!(await backend.nodeInfo(HAIR_CLASS).catch(() => null));
-  const prompt = hairStep ? SWAP_PROMPT_KEEP_HAIR : SWAP_PROMPT;
+  const prompt = hairStep ? SWAP_PROMPT_KEEP_HAIR : swapPrompt(req.hair);
   const hairMask = !!req.hairDetail && backend.kind !== 'mock' && (await Promise.all([HAIR_MASK_CLASS, 'MaskToSEGS', 'DetailerForEach'].map((c) => backend.nodeInfo(c).catch(() => null)))).every(Boolean);
   if (req.hairDetail && !hairMask) warnings.push('Hair texture pass skipped: the GPU server lacks SiennaHairMask, MaskToSEGS or DetailerForEach.');
   const texture = process.env.SIENNA_SWAP_TEXTURE !== 'off' && backend.kind !== 'mock' && !!(await backend.nodeInfo(TEXTURE_CLASS).catch(() => null));
