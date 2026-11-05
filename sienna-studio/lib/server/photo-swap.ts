@@ -39,14 +39,15 @@ export const SWAP_FACE_DENOISE = 0.45;
 /** Her whole face from picture 2, nothing of picture 1's; everything else kept. No garment words: asked to keep
  * "straps, strings and gathers", the editor put a bikini on a woman in a towel (5 Nov). */
 /** Her face from picture 2, her hair keeps picture 1's style and only changes colour (asked for Sienna's "long dark-brown
- * hair", the editor drew a flat, airbrushed wig, 5 Nov), reflections too, nothing else changed. */
+ * hair", the editor drew a flat, airbrushed wig, 5 Nov), nothing else changed. Mirrors are not mentioned: asked to
+ * change her reflection too, the editor invented a large new mirror with a second her in it (5 Nov). */
 export const SWAP_PROMPT =
   'Replace the woman in Picture 1 with the woman from Picture 2. Her whole face must be the face of the woman in Picture 2, with nothing of the face in ' +
   "Picture 1: Picture 2's face shape, eyes, nose, lips, freckles and eyebrows, and her light skin tone. Her hair keeps Picture 1's hairstyle exactly (how it " +
   'falls, its length, volume, parting and fine loose strands, natural real hair texture), only its colour changes to dark brown with softly lighter brown ' +
   'ends. Take nothing else from Picture 2. Keep everything else in Picture 1 exactly as it is: her clothing exactly as it is (add, remove or change nothing ' +
   'she is wearing or holding), her pose and head angle, her hands and fingers, her body shape, how her skin looks, the lighting and shadows, the background ' +
-  'and the camera framing. If she is seen in a mirror or reflection, the reflection shows the same woman with the same dark-brown hair. Her face is ' +
+  'and the camera framing. Her face is ' +
   'uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where Picture 1 has blurred or ' +
   'smudged patches (app buttons painted out), paint in the scene that belongs there, as sharp as the rest of the photo.';
 /** Enough to give the painted-out patch texture, not enough to invent objects (0.8 drew rocks). */
