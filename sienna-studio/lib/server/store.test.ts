@@ -32,10 +32,12 @@ describe('cleared photo library (Photo Swap)', () => {
     process.env.DATA_DIR = dir;
     const store = await import('./store');
     const image = await store.storeImage(Buffer.from([0xff, 0xd8, 0xff, 0x00]), 'image/jpeg', 'ref', 'Cleared photo');
-    expect(() => store.addClearedPhoto(image, '  ', true)).toThrow(/name or handle/);
-    expect(() => store.addClearedPhoto(image, 'mia', false)).toThrow(/agreed/);
-    const item = await store.addClearedPhoto(image, '@mia.model', true);
-    expect(item).toMatchObject({ model: '@mia.model', consent: true });
+    expect(() => store.addClearedPhoto(image, '  ', true, true)).toThrow(/name or handle/);
+    expect(() => store.addClearedPhoto(image, 'mia', false, true)).toThrow(/agreed/);
+    expect(() => store.addClearedPhoto(image, 'mia', true, false)).toThrow(/18 or older/);
+    const item = await store.addClearedPhoto(image, '@mia.model', true, true);
+    expect(item).toMatchObject({ model: '@mia.model', consent: true, adult: true });
+    expect((await store.confirmClearedAdult(item.id))?.adult).toBe(true);
     expect((await store.listClearedPhotos()).map((c) => c.id)).toEqual([item.id]);
     expect((await store.getClearedPhoto(item.id))?.image.file).toBe(image.file);
     // never pruned as an unused upload

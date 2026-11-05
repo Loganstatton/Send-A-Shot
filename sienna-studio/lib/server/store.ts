@@ -468,15 +468,28 @@ export async function getClearedPhoto(id: string): Promise<ClearedPhoto | null> 
 }
 
 /** Adds a photo to the library. The model's name or handle and the consent confirmation are both required. */
-export function addClearedPhoto(image: StoredImage, model: string, consent: boolean): Promise<ClearedPhoto> {
+export function addClearedPhoto(image: StoredImage, model: string, consent: boolean, adult: boolean): Promise<ClearedPhoto> {
   const name = model.trim().slice(0, 120);
   if (!name) throw Object.assign(new Error('Enter the model’s name or handle.'), { status: 400 });
+  if (adult !== true) throw Object.assign(new Error('Confirm that she is 18 or older.'), { status: 400 });
   if (consent !== true) throw Object.assign(new Error('Confirm that she agreed to her photos being used with Sienna’s face.'), { status: 400 });
   return withLock(async () => {
     const list = await listClearedPhotos();
-    const item: ClearedPhoto = { id: newId('c'), image, model: name, consent: true, consentedAt: now() };
+    const item: ClearedPhoto = { id: newId('c'), image, model: name, consent: true, consentedAt: now(), adult: true };
     await writeJsonAtomic(CLEARED_FILE, [item, ...list]);
     return item;
+  });
+}
+
+/** The owner's confirmation that the model in an earlier entry is 18 or older. */
+export function confirmClearedAdult(id: string): Promise<ClearedPhoto | null> {
+  return withLock(async () => {
+    const list = await listClearedPhotos();
+    const i = list.findIndex((c) => c.id === id);
+    if (i < 0) return null;
+    list[i] = { ...list[i], adult: true };
+    await writeJsonAtomic(CLEARED_FILE, list);
+    return list[i];
   });
 }
 

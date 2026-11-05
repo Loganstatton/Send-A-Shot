@@ -17,22 +17,25 @@ export default function SwapPage() {
   const [file, setFile] = useState<File | null>(null);
   const [model, setModel] = useState('');
   const [consent, setConsent] = useState(false);
+  const [adult, setAdult] = useState(false);
   const [adding, setAdding] = useState(false);
   const [swapping, setSwapping] = useState<string | null>(null);
   const [waitNote, setWaitNote] = useState<string | null>(null);
 
   async function add() {
-    if (!file || !model.trim() || !consent) return;
+    if (!file || !model.trim() || !consent || !adult) return;
     setAdding(true);
     try {
       const form = new FormData();
       form.append('file', file);
       form.append('model', model.trim());
       form.append('consent', 'true');
+      form.append('adult', 'true');
       await api('/api/cleared-photos', { method: 'POST', body: form });
       setFile(null);
       setModel('');
       setConsent(false);
+      setAdult(false);
       if (fileRef.current) fileRef.current.value = '';
       photos.reload();
       toast('Added to the cleared library');
@@ -47,6 +50,16 @@ export default function SwapPage() {
     if (!confirm(`Remove this photo of ${p.model} from the cleared library?`)) return;
     try {
       await api(`/api/cleared-photos/${p.id}`, { method: 'DELETE' });
+      photos.reload();
+    } catch (e: any) {
+      toast(e.message, 'error');
+    }
+  }
+
+  async function confirmAdult(p: ClearedPhoto) {
+    if (!confirm(`Confirm that ${p.model} is 18 or older?`)) return;
+    try {
+      await api(`/api/cleared-photos/${p.id}`, { method: 'PATCH', json: { adult: true } });
       photos.reload();
     } catch (e: any) {
       toast(e.message, 'error');
@@ -87,10 +100,14 @@ export default function SwapPage() {
         <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="block w-full text-sm text-ink-300" />
         <TextInput label="Model’s name or handle" value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. @mia.model" maxLength={120} />
         <label className="flex items-start gap-3 text-sm text-ink-200">
+          <input type="checkbox" checked={adult} onChange={(e) => setAdult(e.target.checked)} className="mt-1 h-5 w-5 shrink-0" />
+          <span>She is 18 or older.</span>
+        </label>
+        <label className="flex items-start gap-3 text-sm text-ink-200">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1 h-5 w-5 shrink-0" />
           <span>She agreed to her photos being used with Sienna’s face.</span>
         </label>
-        <Button variant="primary" className="w-full" onClick={add} loading={adding} disabled={!file || !model.trim() || !consent}>
+        <Button variant="primary" className="w-full" onClick={add} loading={adding} disabled={!file || !model.trim() || !consent || !adult}>
           Add to library
         </Button>
       </Card>
@@ -110,9 +127,15 @@ export default function SwapPage() {
               <img src={`/api/files/${p.image.file}`} alt={`Cleared photo of ${p.model}`} className="aspect-[3/4] w-full rounded-lg object-cover" />
               <div className="truncate text-sm font-medium">{p.model}</div>
               <div className="text-xs text-ink-400">Consent confirmed {new Date(p.consentedAt).toLocaleDateString()}</div>
-              <Button variant="primary" className="w-full" onClick={() => swap(p)} loading={swapping === p.id} disabled={!!swapping}>
-                Swap
-              </Button>
+              {p.adult ? (
+                <Button variant="primary" className="w-full" onClick={() => swap(p)} loading={swapping === p.id} disabled={!!swapping}>
+                  Swap
+                </Button>
+              ) : (
+                <Button variant="primary" className="w-full" onClick={() => confirmAdult(p)}>
+                  Confirm 18+
+                </Button>
+              )}
               <Button variant="ghost" className="w-full" onClick={() => remove(p)} disabled={!!swapping}>
                 Remove
               </Button>

@@ -3,12 +3,21 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 const ensure = vi.fn();
 vi.mock('./photo-gpu', () => ({ ensurePhotoGpu: ensure, photoGpuEnabled: () => true, photoGpuReady: async () => false, touchPhotoGpu: async () => {} }));
-vi.mock('./store', async (orig) => ({ ...(await orig<typeof import('./store')>()), getClearedPhoto: async (id: string) => (id === 'c1' ? { id: 'c1', model: '@mia', consent: true, consentedAt: '', image: { id: 'i', file: 'ref_x.jpg', createdAt: '' } } : null), listHistory: async () => [] }));
+vi.mock('./store', async (orig) => ({
+  ...(await orig<typeof import('./store')>()),
+  getClearedPhoto: async (id: string) =>
+    id === 'c1' ? { id: 'c1', model: '@mia', consent: true, adult: true, consentedAt: '', image: { id: 'i', file: 'ref_x.jpg', createdAt: '' } }
+    : id === 'c0' ? { id: 'c0', model: '@old', consent: true, consentedAt: '', image: { id: 'i', file: 'ref_y.jpg', createdAt: '' } }
+    : null,
+  listHistory: async () => [],
+}));
 
 describe('Photo Swap', () => {
   it('swaps only photos in the cleared library, before asking for a GPU', async () => {
     const { startPhotoSwap } = await import('./photo-swap');
     await expect(startPhotoSwap({ clearedId: 'not-cleared', seed: 1 })).rejects.toMatchObject({ status: 404 });
+    // an entry without the 18+ confirmation is never swapped
+    await expect(startPhotoSwap({ clearedId: 'c0', seed: 1 })).rejects.toMatchObject({ status: 403 });
     expect(ensure).not.toHaveBeenCalled();
   });
   it('asks for a 32 GB GPU and waits while it starts', async () => {

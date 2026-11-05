@@ -8,7 +8,7 @@ const MAX_BYTES = 25 * 1024 * 1024;
 /** Photo Swap's cleared photo library. */
 export const GET = handle(async () => json(await listClearedPhotos()));
 
-/** multipart/form-data: file=<image>, model=<her name or handle>, consent=true */
+/** multipart/form-data: file=<image>, model=<her name or handle>, adult=true, consent=true */
 export const POST = handle(async (req: Request) => {
   const form = await req.formData();
   const file = form.get('file');
@@ -16,11 +16,13 @@ export const POST = handle(async (req: Request) => {
   if (file.size > MAX_BYTES) throw new HttpError(413, 'Image too large (max 25 MB)');
   const model = typeof form.get('model') === 'string' ? String(form.get('model')) : '';
   const consent = form.get('consent') === 'true';
+  const adult = form.get('adult') === 'true';
   if (!model.trim()) throw new HttpError(400, 'Enter the model’s name or handle.');
+  if (!adult) throw new HttpError(400, 'Confirm that she is 18 or older.');
   if (!consent) throw new HttpError(400, 'Confirm that she agreed to her photos being used with Sienna’s face.');
   const bytes = Buffer.from(await file.arrayBuffer());
   const mime = mimeFromBytes(bytes);
   if (!mime) throw new HttpError(415, 'Unsupported image. Use PNG, JPEG or WebP.');
   const image = await storeImage(bytes, mime, 'ref', `Cleared photo: ${model.trim().slice(0, 80)}`);
-  return json(await addClearedPhoto(image, model, consent), 201);
+  return json(await addClearedPhoto(image, model, consent, adult), 201);
 });

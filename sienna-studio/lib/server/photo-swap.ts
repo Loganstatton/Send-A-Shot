@@ -55,6 +55,8 @@ export const SWAP_NEGATIVE = 'different clothing, changed outfit, sunglasses, gl
 export interface PhotoSwapRequest {
   clearedId: string;
   seed: number;
+  /** Testing: the face redraw's strength (default SWAP_FACE_DENOISE). */
+  faceDenoise?: number;
 }
 
 /** Photo jobs still using the photo GPU. */
@@ -79,6 +81,7 @@ async function wakeSwapGpu(): Promise<void> {
 export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationRecord> {
   const cleared = await getClearedPhoto(req.clearedId);
   if (!cleared) throw new GenerationError('Only photos in the cleared library can be swapped. Add the photo there first (her name or handle and that she agreed).', 404);
+  if (cleared.adult !== true) throw new GenerationError(`Confirm that ${cleared.model} is 18 or older before swapping this photo (Swap tab: Confirm 18+).`, 403);
   const [settings, character] = await Promise.all([getSettings(), getCharacter()]);
   if ((character.age ?? 0) < MIN_CHARACTER_AGE) throw new GenerationError(`The character profile age must be at least ${MIN_CHARACTER_AGE}.`);
   if (!character.faceReference) throw new GenerationError('Photo Swap needs Sienna’s face reference (set it on the Sienna page).');
@@ -99,7 +102,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const faceRestore: FaceRestoreSpec | null = lora
     ? {
         // the strong redraw: at the standard 0.3 the swapped face scored 0.54 against Sienna (0.74 needed), 5 Nov
-        denoise: SWAP_FACE_DENOISE,
+        denoise: req.faceDenoise ?? SWAP_FACE_DENOISE,
         checkpoint: d.checkpoint || prod.checkpoint,
         lora: { name: lora.name, strength: lora.strength, clipStrength: lora.clipStrength },
         positive: built.positive,

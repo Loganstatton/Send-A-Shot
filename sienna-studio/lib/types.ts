@@ -25,6 +25,8 @@ export interface ClearedPhoto {
   /** The owner's confirmation that she agreed, and when it was given. */
   consent: true;
   consentedAt: string;
+  /** The owner's confirmation that she is 18 or older (required to swap; entries added before 5 Nov ask for it). */
+  adult?: true;
 }
 
 /** The persistent identity profile for the fictional character. */
