@@ -983,7 +983,36 @@ class SiennaHairMask:
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(m, np.float32))[None], text)}
 
 
+class SiennaPhotoTexture:
+    """Photo Swap: the photo's own fine texture put back wherever the swap kept the photo's picture, then a fine grain
+    (the editor's 1 MP picture, scaled up, made her skin look plastic, 5 Nov)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"original": ("IMAGE",), "image": ("IMAGE",),
+                             "grain": ("FLOAT", {"default": 0.010, "min": 0.0, "max": 0.05, "step": 0.001}),
+                             "seed": ("INT", {"default": 0, "min": 0, "max": 2 ** 31 - 1})}}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, original, image, grain, seed):
+        from . import sienna_texture
+
+        img = image[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+        try:
+            out, info = sienna_texture.photo_texture(original[0].detach().cpu().numpy().astype(np.float32), img, float(grain), int(seed) % (2 ** 31))
+        except Exception as e:  # never lose the swap
+            out, info = img, {"error": f"{type(e).__name__}: {e}"[:200]}
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None], text)}
+
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaPhotoTexture": SiennaPhotoTexture,
     "SiennaHairMask": SiennaHairMask,
     "SiennaHairRecolour": SiennaHairRecolour,
     "SiennaHandPoseMatch": SiennaHandPoseMatch,
@@ -1012,6 +1041,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaPhotoTexture": "Sienna Photo Texture (swap)",
     "SiennaHairMask": "Sienna Hair Mask (swap)",
     "SiennaHairRecolour": "Sienna Hair Recolour (swap)",
     "SiennaHandPoseMatch": "Sienna Hand Pose Match (copy)",

@@ -59,6 +59,10 @@ export const SWAP_PROMPT_KEEP_HAIR = SWAP_PROMPT.replace(
 );
 export const HAIR_CLASS = 'SiennaHairRecolour';
 export const HAIR_MASK_CLASS = 'SiennaHairMask';
+/** The photo's own fine texture put back where the swap kept the picture, and a fine grain: the editor's 1 MP picture,
+ * scaled up to the photo's 3 MP, made her skin look plastic (owner, 5 Nov). Off with SIENNA_SWAP_TEXTURE=off. */
+export const TEXTURE_CLASS = 'SiennaPhotoTexture';
+export const SWAP_GRAIN = 0.01;
 /** The hair texture pass (testing): the editor's hair is glossy and smooth; redrawn lightly by the photo checkpoint, cropped
  * and enlarged to the hair, it may get real strands. Shape and colour stay (low strength, noise mask on the hair only). */
 export const HAIR_DETAIL_PROMPT = 'long dark-brown hair with softly lighter brown ends, natural real hair texture, individual strands, fine flyaway hairs, matte, slightly messy, photo';
@@ -139,6 +143,8 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const prompt = hairStep ? SWAP_PROMPT_KEEP_HAIR : SWAP_PROMPT;
   const hairMask = !!req.hairDetail && backend.kind !== 'mock' && (await Promise.all([HAIR_MASK_CLASS, 'MaskToSEGS', 'DetailerForEach'].map((c) => backend.nodeInfo(c).catch(() => null)))).every(Boolean);
   if (req.hairDetail && !hairMask) warnings.push('Hair texture pass skipped: the GPU server lacks SiennaHairMask, MaskToSEGS or DetailerForEach.');
+  const texture = process.env.SIENNA_SWAP_TEXTURE !== 'off' && backend.kind !== 'mock' && !!(await backend.nodeInfo(TEXTURE_CLASS).catch(() => null));
+  if (!texture && process.env.SIENNA_SWAP_TEXTURE !== 'off' && backend.kind !== 'mock') warnings.push('The GPU server has no photo-texture step (SiennaPhotoTexture): skin and fabric may look smooth.');
   if (!uiClean) warnings.push('The GPU server has no app-overlay remover (SiennaUiMask): screenshot icons and text may stay.');
   const graphFor = (sourceName: string, referenceName: string) => {
     const g = buildOutfitEditGraph({ sourceName, sourceSize, workMp: SWAP_WORK_MP, referenceName, autoCrop: false, prompt, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
@@ -195,6 +201,15 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
     if (hairStep) {
       g.swap_hair = { class_type: HAIR_CLASS, inputs: { image: g[EDIT_NODES.final].inputs.images, strength: 1 }, _meta: { title: 'Photo Swap: her hair recoloured (strands kept)' } };
       g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_hair', 0] } };
+    }
+    // last: the photo's texture back and a fine grain (from the photo with its app overlays painted out, if any)
+    if (texture) {
+      g.swap_tex = {
+        class_type: TEXTURE_CLASS,
+        inputs: { original: uiClean ? ['swap_ui', 2] : ['src', 0], image: g[EDIT_NODES.final].inputs.images, grain: SWAP_GRAIN, seed: seed % 2 ** 31 },
+        _meta: { title: "Photo Swap: the photo's texture back, fine grain" },
+      };
+      g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_tex', 0] } };
     }
     return g;
   };

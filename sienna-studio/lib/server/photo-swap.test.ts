@@ -38,4 +38,10 @@ describe('Photo Swap', () => {
     expect(SWAP_PROMPT).toMatch(/hair falls behind her shoulders/);
     expect(SWAP_PROMPT).toMatch(/where her arms and hands are/);
   });
+  it('puts the photo texture back with a fine grain', async () => {
+    const { TEXTURE_CLASS, SWAP_GRAIN } = await import('./photo-swap');
+    expect(TEXTURE_CLASS).toBe('SiennaPhotoTexture');
+    expect(SWAP_GRAIN).toBeGreaterThan(0);
+    expect(SWAP_GRAIN).toBeLessThan(0.02);
+  });
 });

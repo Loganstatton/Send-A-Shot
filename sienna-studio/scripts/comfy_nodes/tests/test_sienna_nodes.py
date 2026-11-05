@@ -1144,3 +1144,49 @@ def test_hair_recolour_keeps_texture_and_moves_colour_onto_siennas():
     assert np.allclose(out[0, 0], img[0, 0], atol=0.01)  # nothing outside the hair
     same, info = sh.recolour(img, np.zeros((h, w), np.float32))
     assert not info["changed"]
+
+
+def _hf(x):
+    import cv2
+    y = x.mean(axis=2)
+    return float(np.abs(y - cv2.GaussianBlur(y, (0, 0), 1.5)).mean())
+
+
+def test_photo_texture_puts_the_photos_texture_back_where_the_swap_kept_the_picture():
+    import cv2
+    import sienna_texture as st
+
+    rng = np.random.default_rng(3)
+    h, w = 400, 300
+    base = cv2.GaussianBlur(rng.random((h, w, 3)).astype(np.float32), (0, 0), 25) * 0.4 + 0.3
+    photo = np.clip(base + (rng.random((h, w, 3)).astype(np.float32) - 0.5) * 0.04, 0, 1)  # fine skin-like texture
+    swap = cv2.GaussianBlur(photo, (0, 0), 2.5)               # the editor's soft, scaled-up picture
+    swap[60:160, 100:200] = 0.15 + cv2.GaussianBlur(rng.random((100, 100, 3)).astype(np.float32), (0, 0), 3) * 0.1  # a new face
+    out, m = st.transfer(photo, swap, sigma=2.0)
+    assert _hf(out[220:380, 20:280]) > 0.7 * _hf(photo[220:380, 20:280])   # the texture back on the body
+    assert _hf(swap[220:380, 20:280]) < 0.5 * _hf(photo[220:380, 20:280])
+    assert m[90:130, 130:170].max() < 0.2                                  # none of the photo's detail on the new face
+    assert np.abs(out[90:130, 130:170] - swap[90:130, 130:170]).max() < 0.02
+    same, _ = st.transfer(photo, photo, sigma=2.0)
+    assert np.abs(same - photo).max() < 0.01
+
+
+def test_photo_texture_does_not_ghost_a_line_the_swap_dropped():
+    import cv2
+    import sienna_texture as st
+
+    h, w = 300, 300
+    photo = np.full((h, w, 3), 0.55, np.float32)
+    cv2.line(photo, (40, 40), (150, 200), (0.95, 0.85, 0.3), 2)  # a necklace chain
+    swap = np.full((h, w, 3), 0.55, np.float32)                  # the swap has no chain there
+    out, _ = st.transfer(photo, swap, sigma=2.0)
+    assert np.abs(out - swap).max() < 0.06
+
+
+def test_grain_is_fine_and_mild():
+    import sienna_texture as st
+
+    img = np.full((200, 200, 3), 0.5, np.float32)
+    g = st.grain(img, 0.01, seed=1)
+    assert 0.005 < float((g - img).std()) < 0.02 and abs(float((g - img).mean())) < 0.002
+    assert np.array_equal(st.grain(img, 0.0), img)
