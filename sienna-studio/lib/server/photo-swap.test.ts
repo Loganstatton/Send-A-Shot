@@ -36,6 +36,7 @@ describe('Photo Swap', () => {
     expect(SWAP_NEGATIVE).toMatch(/sunglasses/);
     expect(SWAP_PROMPT).toMatch(/her long dark-brown hair colour/);
     expect(SWAP_PROMPT).not.toMatch(/\{HAIR\}/);
+    expect(SWAP_PROMPT).toMatch(/behind her shoulders/);
     const { swapPrompt } = await import('./photo-swap');
     expect(swapPrompt('back')).toMatch(/falling down her back behind her shoulders/);
     expect(swapPrompt('swept')).toMatch(/swept back over her shoulders/);

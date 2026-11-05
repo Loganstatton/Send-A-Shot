@@ -53,15 +53,17 @@ const SWAP_PROMPT_TEMPLATE =
   'her body shape, how her skin looks, the lighting and shadows, the background and the camera framing. Her face is uncovered: no sunglasses or glasses. Her skin is clear: remove any tattoo in Picture 1. No text, icons or app interface: where ' +
   'Picture 1 has blurred or smudged patches (app buttons painted out), paint in the scene that belongs there, as sharp as the rest of the photo.';
 /** Where her hair goes ("always behind the shoulders", owner, 5 Nov). Any wording about where it falls made the editor
- * keep the car photo's slicked-back ponytail, and her face drifted towards the photo's woman (0.62-0.63 against Sienna,
- * 0.71 without); the variants are tried with test.hair. */
+ * keep the car photo's slicked-back ponytail while the negative prompt had hair words in it (see SWAP_NEGATIVE); the
+ * variants are tried with test.hair. */
 export const SWAP_HAIR_LINES = {
   none: '',
   back: "Her hair is her long, loose dark-brown hair as in Picture 2 (not Picture 1's hairstyle), worn falling down her back behind her shoulders; no hair hangs in front of her shoulders, chest or top. ",
   swept: 'Her long, loose, wavy dark-brown hair is swept back over her shoulders, so her neckline and top are clear. ',
 } as const;
 export type SwapHairLine = keyof typeof SWAP_HAIR_LINES;
-export const SWAP_HAIR_DEFAULT: SwapHairLine = 'none';
+/** 'back' once the negative prompt lost its hair words: car 0.74 against Sienna (0.71 without), cami 0.72, her own loose
+ * hair, more of it behind her shoulders (5 Nov). */
+export const SWAP_HAIR_DEFAULT: SwapHairLine = 'back';
 export const swapPrompt = (hair: SwapHairLine = SWAP_HAIR_DEFAULT) => SWAP_PROMPT_TEMPLATE.replace('{HAIR}', SWAP_HAIR_LINES[hair]);
 export const SWAP_PROMPT = swapPrompt();
 /** With the hair step on the GPU server: the editor keeps the photo's hair as it is (style and colour) and the hair step
