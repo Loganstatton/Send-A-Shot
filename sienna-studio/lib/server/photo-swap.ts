@@ -109,6 +109,8 @@ export interface PhotoSwapRequest {
   faceGuide?: number;
   /** Testing: natural skin texture asked for in the face redraw (SWAP_FACE_SKIN). */
   faceSkin?: boolean;
+  /** Keep the screenshot's full frame: its app overlays are painted out, not cut off (the cut can take a fifth of it). */
+  keepFrame?: boolean;
   /** Testing: how many swaps to pick the best of (default SWAP_CANDIDATES; 1 = no pick). */
   candidates?: number;
   /** Testing: where her hair goes (SWAP_HAIR_LINES). */
@@ -175,7 +177,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const sourceSize = { width: photo.width ?? 832, height: photo.height ?? 1216 };
   const uiClean = backend.kind !== 'mock' && !!(await backend.nodeInfo(UI_MASK_CLASS).catch(() => null));
   const softSeam = uiClean && !!(await backend.nodeInfo(SOFT_SEAM_CLASS).catch(() => null));
-  const uiCrop = uiClean && !!(await backend.nodeInfo(UI_CROP_CLASS).catch(() => null));
+  const uiCrop = uiClean && !req.keepFrame && !!(await backend.nodeInfo(UI_CROP_CLASS).catch(() => null));
   // off unless SIENNA_SWAP_HAIR=on: the owner preferred the editor's own hair to the photo's hair recoloured (5 Nov)
   const hairStep = process.env.SIENNA_SWAP_HAIR === 'on' && backend.kind !== 'mock' && !!(await backend.nodeInfo(HAIR_CLASS).catch(() => null));
   const prompt = hairStep ? SWAP_PROMPT_KEEP_HAIR : swapPrompt(req.hair);
