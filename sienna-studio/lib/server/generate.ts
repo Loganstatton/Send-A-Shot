@@ -1057,6 +1057,15 @@ export async function photoGpuHousekeeping(): Promise<void> {
   const recs = await listHistory();
   const probe = async (url: string) => (await createBackend(url).systemInfo().then(() => true, () => false));
   const session = await tickPhotoGpu(recs.filter(photoBusy).length, probe);
+  // photos already on a GPU that has since gone (stopped, out of RunPod funds, removed) can never finish: their status
+  // checks only fail, so they stayed "running" for hours (6 Nov)
+  if (!session || session.status === 'failed' || session.status === 'stopped') {
+    const ended = session?.endedAt ? Date.parse(session.endedAt) : Date.now();
+    for (const r of recs.filter((r) => photoBusy(r) && !photoWaiting(r) && !!r.promptId && Date.parse(r.promptAt ?? r.createdAt) <= ended)) {
+      const why = session?.error ?? session?.stopReason ?? 'it is not running';
+      await patchRecord(r.id, { status: 'error', error: `The photo GPU stopped before this finished (${why}). Nothing was retried automatically — make it again.`, completedAt: new Date().toISOString() });
+    }
+  }
   const waiting = recs.filter(photoWaiting).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   if (!waiting.length) return;
   if (!session || session.status === 'failed' || session.status === 'stopped') {
