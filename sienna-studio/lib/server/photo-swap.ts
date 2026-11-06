@@ -206,12 +206,13 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
       };
       g.q_resize = { ...g.q_resize, inputs: { ...g.q_resize.inputs, image: ['swap_pick', 0] } };
     }
-    // the photo's own body back (from the photo with its app overlays painted out; where they were, the editor's
-    // redraw is kept), only her head and hair from the swap; the face redraw then works on that
+    // the photo's own body back, only her head and hair from the swap; the face redraw then works on that. The photo
+    // has its app overlays painted out, and those patches are redrawn as the scene afterwards (swap_ui*): the editor's
+    // own redraw of them invented a cup and a lemon where the buttons were (purple hot tub, 6 Nov)
     if (keepBody && g.q_resize) {
       g.swap_body = {
         class_type: KEEP_BODY_CLASS,
-        inputs: { original: uiClean ? ['swap_ui', 2] : ['src', 0], image: ['q_resize', 0], ...(uiClean ? { also_keep: ['swap_ui', 0] } : {}) },
+        inputs: { original: uiClean ? ['swap_ui', 2] : ['src', 0], image: ['q_resize', 0] },
         _meta: { title: "Photo Swap: the photo's own body, her head from the swap" },
       };
       if (g.fr_detail) g.fr_detail = { ...g.fr_detail, inputs: { ...g.fr_detail.inputs, image: ['swap_body', 0] } };
