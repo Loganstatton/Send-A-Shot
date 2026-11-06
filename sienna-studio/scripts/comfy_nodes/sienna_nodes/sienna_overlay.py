@@ -391,11 +391,31 @@ def crop_box(mask: np.ndarray, margin: int = 6) -> Tuple[int, int]:
     h, w = mask.shape
     right, bottom = w, h
     col = mask[:, int(0.75 * w):]
-    if col.sum() > 0.01 * col.size:
+    # a button column runs down the side (icons stacked over a third of the height or more); a single disc in the corner
+    # or along the edge (a shrink button, a car seat's red patch) is not one: cutting for it took a strip off the photo
+    # (counted as separate pieces: a fleck at the very top and one blob low down are not a column)
+    import cv2
+    n, _, st, _ = cv2.connectedComponentsWithStats(col.astype(np.uint8), connectivity=8)
+    # the column's height: its pieces of any size, without a lone fleck far above the rest (the car photo: a 23 px fleck at
+    # the top and a 13%-tall seat patch below read as one 87%-tall column)
+    pieces = sorted((int(st[i, 1]), int(st[i, 1] + st[i, 3])) for i in range(1, n) if st[i, 4] >= 30)
+    big = [p for p in pieces if p[1] - p[0] >= 0.02 * h]
+    span = (max(b for _, b in big) - min(a for a, _ in big)) if big else 0
+    if col.sum() > 0.01 * col.size and span > 0.3 * h:
         right = int(0.75 * w) + int(np.nonzero(col.any(0))[0].min()) - margin
-    band = mask[int(0.6 * h):, :right]
+    # the bottom band across the full width when the right column was not cut: a lone round button in the corner (the
+    # app's shrink button) is too small to count as a button column, and was left in (lqcy32, 6 Nov)
+    band = mask[int(0.6 * h):, :right] if right < w else mask[int(0.6 * h):, :]
     if band.any():
-        bottom = int(0.6 * h) + int(np.nonzero(band.any(1))[0].min()) - margin
+        # the overlay rows of the bottom band: its lowest connected run of rows (a stray fleck higher up, on her
+        # leggings, made the whole lower third go, lqcy32, 6 Nov)
+        rows = band.any(1)
+        last = int(np.nonzero(rows)[0].max())
+        first = last
+        gap = max(4, h // 60)
+        while first > 0 and rows[max(0, first - gap):first].any():
+            first = int(np.nonzero(rows[max(0, first - gap):first])[0].min()) + max(0, first - gap)
+        bottom = int(0.6 * h) + first - margin
     # never more than a quarter off either side: a big cut means the mask caught part of the photo
     if right < 0.75 * w:
         right = w

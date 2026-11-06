@@ -1288,3 +1288,13 @@ def test_ui_crop_cuts_off_the_button_column_and_caption_band():
     assert so.crop_box(np.zeros((1000, 600), bool)) == (600, 1000)
     big = np.zeros((1000, 600), bool); big[:, 100:] = True
     assert so.crop_box(big)[0] == 600   # never a big cut
+
+
+def test_ui_crop_ignores_a_stray_fleck_above_the_caption_band():
+    import sienna_overlay as so
+
+    m = np.zeros((1000, 600), bool)
+    m[700:704, 40:44] = True       # a fleck on her leggings
+    m[930:980, 520:570] = True     # the round shrink button in the corner
+    right, bottom = so.crop_box(m)
+    assert 915 <= bottom < 930 and right == 600
