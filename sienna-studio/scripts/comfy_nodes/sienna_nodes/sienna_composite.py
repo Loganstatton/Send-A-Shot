@@ -37,12 +37,18 @@ def head_region(cls_o: np.ndarray, cls_s: np.ndarray, long_side: int) -> np.ndar
     return np.clip(cv2.GaussianBlur(m.astype(np.float32), (0, 0), f), 0, 1)
 
 
-def _reach(orig: np.ndarray, swap: np.ndarray, keep: np.ndarray) -> np.ndarray:
+def _reach(orig: np.ndarray, swap: np.ndarray, keep: np.ndarray, below: Optional[int] = None) -> np.ndarray:
     """keep (at its own size) grown into the area next to it where the two pictures clearly differ, up to REACH: the
     rest of the photo's own head (and anything else of it the editor removed) that touches her new head."""
     kh, kw = keep.shape
     small = lambda im: cv2.GaussianBlur(cv2.resize(im, (kw, kh), interpolation=cv2.INTER_AREA), (0, 0), 1.5)  # noqa: E731
     differs = (np.abs(small(orig) - small(swap)).max(axis=2) > DIFFERS).astype(np.uint8)
+    # blobs only (a bun, a lens), not the thin lines where every edge of the editor's body sits a little off the photo's:
+    # grown along those, it traced the neckline, the cleavage and her waist (lqcy32, 6 Nov) ...
+    differs = cv2.morphologyEx(differs, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+    # ... and only round her head: the photo's head ends at her chin
+    if below is not None:
+        differs[max(0, below):] = 0
     region = (keep > 0.5).astype(np.uint8)
     steps = max(1, int(REACH * max(kh, kw)))
     k = np.ones((3, 3), np.uint8)
@@ -53,6 +59,40 @@ def _reach(orig: np.ndarray, swap: np.ndarray, keep: np.ndarray) -> np.ndarray:
         region = grown
     f = max(0.5, FEATHER * max(kh, kw))
     return np.clip(cv2.GaussianBlur(cv2.dilate(region, k, iterations=2).astype(np.float32), (0, 0), f), 0, 1)
+
+
+FLOW_MAX = 0.025   # the editor's body moved onto the photo's by at most this share of the picture's long side
+
+
+def align_body(orig: np.ndarray, swap: np.ndarray, below: Optional[int], still: Optional[np.ndarray] = None) -> Tuple[np.ndarray, float]:
+    """The swap with its body (below `below`, a row at full size) moved onto the photo's: where the photo's long hair
+    covered her chest, the editor's body is used, and its edges sat a few pixels off the photo's beside it, an outline
+    along the seam (lqcy32, selna84, 6 Nov). A smooth flow, its head untouched. Returns (swap, mean shift in px)."""
+    h, w = swap.shape[:2]
+    if below is None or below >= h - 2:
+        return swap, 0.0
+    sc = 640 / max(h, w)
+    gray = lambda im: cv2.cvtColor((np.clip(cv2.resize(im, None, fx=sc, fy=sc, interpolation=cv2.INTER_AREA), 0, 1) * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY)  # noqa: E731
+    try:
+        dis = cv2.DISOpticalFlow_create(cv2.DISOPTICAL_FLOW_PRESET_MEDIUM)
+        flow = dis.calc(gray(orig), gray(swap), None).astype(np.float32)
+    except cv2.error:
+        return swap, 0.0
+    lim = FLOW_MAX * max(h, w) * sc
+    flow = np.clip(flow, -lim, lim)
+    k = max(3.0, 0.02 * max(flow.shape[:2]))
+    flow = cv2.GaussianBlur(flow, (0, 0), k)  # smooth: whole parts move, nothing is bent
+    flow = cv2.resize(flow, (w, h), interpolation=cv2.INTER_LINEAR) / sc
+    ramp = np.clip((np.arange(h, dtype=np.float32) - below) / max(1.0, 0.04 * h), 0, 1)[:, None, None]
+    flow *= ramp  # nothing above her chin moves (her face stays as drawn)
+    if still is not None:
+        # nor her hair: moved, its strands bent into zigzags (selna84, 6 Nov)
+        st = cv2.resize(still.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+        st = cv2.GaussianBlur(st, (0, 0), max(2.0, 0.006 * max(h, w)))
+        flow *= (1 - np.clip(st, 0, 1))[..., None]
+    gx, gy = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
+    out = cv2.remap(swap, gx + flow[..., 0], gy + flow[..., 1], cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+    return out, float(np.abs(flow).mean())
 
 
 def skin_shift(orig: np.ndarray, swap: np.ndarray, shared_skin: np.ndarray) -> Optional[np.ndarray]:
@@ -74,7 +114,10 @@ def composite(orig: np.ndarray, swap: np.ndarray, cls_o: np.ndarray, cls_s: np.n
     if orig.shape[:2] != (h, w):
         orig = cv2.resize(orig, (w, h), interpolation=cv2.INTER_AREA)
     keep = head_region(cls_o, cls_s, max(h, w))
-    keep = np.maximum(keep, _reach(orig, swap, keep))
+    face_rows = np.nonzero((np.isin(cls_o, (FACE_SKIN,)) | np.isin(cls_s, (FACE_SKIN,))).any(1))[0]
+    chin = int(face_rows.max() + 0.03 * cls_o.shape[0]) if face_rows.size else None
+    keep = np.maximum(keep, _reach(orig, swap, keep, chin))
+    swap, moved = align_body(orig, swap, None if chin is None else int(chin * h / cls_o.shape[0]), cls_s == HAIR)
     keep = cv2.resize(keep, (w, h), interpolation=cv2.INTER_LINEAR)
     # what the swap changed on purpose outside her head: same layout, clearly different (a tattoo taken off)
     same_layout = cv2.resize((cls_o == cls_s).astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
@@ -110,6 +153,6 @@ def composite(orig: np.ndarray, swap: np.ndarray, cls_o: np.ndarray, cls_s: np.n
     k = np.clip(k, 0, 1)[..., None]
     out = orig * (1 - k) + head * k
     return np.clip(out, 0, 1).astype(np.float32), {
-        "swap_share": round(float((k[..., 0] > 0.5).mean()), 3),
+        "swap_share": round(float((k[..., 0] > 0.5).mean()), 3), "body_moved_px": round(moved, 1),
         "tone_shift": None if shift is None else [round(float(v), 1) for v in shift],
         "edited_share": round(float((edited > 0.5).mean()), 4)}

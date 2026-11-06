@@ -1298,3 +1298,17 @@ def test_ui_crop_ignores_a_stray_fleck_above_the_caption_band():
     m[930:980, 520:570] = True     # the round shrink button in the corner
     right, bottom = so.crop_box(m)
     assert 915 <= bottom < 930 and right == 600
+
+
+def test_keep_body_reach_does_not_trace_the_bodys_edges():
+    import cv2
+    import sienna_composite as sc
+
+    h, w = 300, 200
+    photo = np.full((h, w, 3), 0.7, np.float32)
+    cv2.circle(photo, (100, 200), 50, (0.85, 0.6, 0.5), -1)      # her chest
+    swap = np.full((h, w, 3), 0.7, np.float32)
+    cv2.circle(swap, (103, 202), 50, (0.85, 0.6, 0.5), -1)       # the editor's, a few px off
+    keep = np.zeros((h, w), np.float32); keep[20:80, 70:130] = 1  # her head
+    r = sc._reach(photo, swap, keep, below=90)
+    assert r[150:, :].max() < 0.05                                # nothing below her chin
