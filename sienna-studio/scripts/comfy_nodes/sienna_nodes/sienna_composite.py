@@ -1,0 +1,84 @@
+"""Photo Swap: the photo's own body on the swap, only her head and hair from the editor.
+
+The owner wants the body to match the photo exactly: pose, clothing, the details on her skin (5 Nov). The image editor
+redraws the whole picture, so it drifts (arms moved, a cami turned into a sweater, skin smoothed). Here the photo is put
+back everywhere but her head and hair: the swap is kept where either picture has her hair or face (the editor's long
+hair over a shoulder, and wherever the photo's own hair was, which the editor filled in), and where the swap changed
+the photo on purpose (a tattoo removed: what differs there at the editor's scale while the layout is the same). The
+swap's head is shifted to the photo's skin tone, measured on the body both pictures share, so her face sits on the
+photo's neck without a seam.
+
+No ComfyUI imports; unit-tested in tests/test_sienna_nodes.py.
+"""
+from typing import Dict, Optional, Sequence, Tuple
+
+import cv2
+import numpy as np
+
+HAIR, BODY_SKIN, FACE_SKIN, CLOTHES = 1, 2, 3, 4
+GROW = 0.012      # the head and hair region grown by this share of the picture's long side ...
+FEATHER = 0.008   # ... and its edge softened over this share
+
+
+def _lab(img: np.ndarray) -> np.ndarray:
+    return cv2.cvtColor(np.clip(img, 0, 1).astype(np.float32), cv2.COLOR_RGB2LAB)
+
+
+def head_region(cls_o: np.ndarray, cls_s: np.ndarray, long_side: int) -> np.ndarray:
+    """Where the swap is kept (float 0..1, the classes' size): hair or face in either picture, grown and softened."""
+    m = np.isin(cls_o, (HAIR, FACE_SKIN)) | np.isin(cls_s, (HAIR, FACE_SKIN))
+    s = cls_o.shape[0] / float(long_side) if cls_o.shape[0] >= cls_o.shape[1] else cls_o.shape[1] / float(long_side)
+    g = max(1, int(round(GROW * long_side * s)))
+    m = cv2.dilate(m.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * g + 1, 2 * g + 1)))
+    f = max(0.5, FEATHER * long_side * s)
+    return np.clip(cv2.GaussianBlur(m.astype(np.float32), (0, 0), f), 0, 1)
+
+
+def skin_shift(orig: np.ndarray, swap: np.ndarray, shared_skin: np.ndarray) -> Optional[np.ndarray]:
+    """Lab offset taking the swap's skin to the photo's, measured on body skin both pictures have in the same place
+    (her neck, chest, arms); None when there is too little of it."""
+    if shared_skin.sum() < 200:
+        return None
+    lo, ls = _lab(orig)[shared_skin], _lab(swap)[shared_skin]
+    return np.median(lo, axis=0) - np.median(ls, axis=0)
+
+
+def composite(orig: np.ndarray, swap: np.ndarray, cls_o: np.ndarray, cls_s: np.ndarray,
+              also_keep: Optional[np.ndarray] = None) -> Tuple[np.ndarray, Dict]:
+    """orig, swap: float RGB 0..1, same size. cls_*: segmenter class maps (argmax) at any size (same for both).
+    also_keep: where the swap is kept as well (the app overlays painted out of a screenshot, which the editor redrew)."""
+    h, w = swap.shape[:2]
+    orig = orig[..., :3].astype(np.float32)
+    swap = swap[..., :3].astype(np.float32)
+    if orig.shape[:2] != (h, w):
+        orig = cv2.resize(orig, (w, h), interpolation=cv2.INTER_AREA)
+    keep = head_region(cls_o, cls_s, max(h, w))
+    keep = cv2.resize(keep, (w, h), interpolation=cv2.INTER_LINEAR)
+    # what the swap changed on purpose outside her head: same layout, clearly different (a tattoo taken off)
+    same_layout = cv2.resize((cls_o == cls_s).astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
+    sig = max(1.0, 0.9 * (h * w / 1.0e6) ** 0.5)
+    lo, ls = cv2.GaussianBlur(orig, (0, 0), 3 * sig), cv2.GaussianBlur(swap, (0, 0), 3 * sig)
+    # skin both share, away from her head: the tone reference
+    skin_o = cv2.resize(np.isin(cls_o, (BODY_SKIN,)).astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
+    skin_s = cv2.resize(np.isin(cls_s, (BODY_SKIN,)).astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
+    shared = skin_o & skin_s & (keep < 0.05)
+    shift = skin_shift(lo, ls, shared)
+    head = swap
+    if shift is not None:
+        lab = _lab(swap) + shift.astype(np.float32)
+        head = np.clip(cv2.cvtColor(lab, cv2.COLOR_LAB2RGB), 0, 1)
+    # tattoos and the like: the swap's skin there, toned to the photo
+    diff = np.abs(_lab(lo) - _lab(ls))[..., 0]
+    edited = ((diff > 12) & same_layout & skin_o & skin_s).astype(np.float32)
+    edited = cv2.GaussianBlur(cv2.morphologyEx(edited, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)), (0, 0), 2 * sig)
+    k = np.maximum(keep, edited)
+    if also_keep is not None and also_keep.any():
+        ak = cv2.resize(also_keep.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+        ak = cv2.GaussianBlur(cv2.dilate(ak, np.ones((9, 9), np.uint8)), (0, 0), 3)
+        k = np.maximum(k, ak)
+    k = np.clip(k, 0, 1)[..., None]
+    out = orig * (1 - k) + head * k
+    return np.clip(out, 0, 1).astype(np.float32), {
+        "swap_share": round(float((k[..., 0] > 0.5).mean()), 3),
+        "tone_shift": None if shift is None else [round(float(v), 1) for v in shift],
+        "edited_share": round(float((edited > 0.5).mean()), 4)}

@@ -1251,3 +1251,27 @@ def test_ui_mask_takes_a_profile_placeholder_and_a_grey_pill_whole():
     out = so.paint_out(img, m)
     assert out[1130:1150, 200:380].mean() > 0.38                          # filled from the water, not left dark
     assert not m[600, 360]
+
+
+def test_keep_body_puts_the_photos_body_back_and_keeps_her_head():
+    import sienna_composite as sc
+
+    h, w = 400, 300
+    rng = np.random.default_rng(2)
+    photo = np.clip(0.5 + 0.05 * rng.standard_normal((h, w, 3)).astype(np.float32), 0, 1)
+    photo[150:400, 80:220] = (0.85, 0.62, 0.5)              # her body (skin)
+    photo[0:150, 100:200] = (0.9, 0.85, 0.6)                # blonde hair and face
+    swap = photo.copy()
+    swap[0:150, 100:200] = (0.3, 0.2, 0.15)                 # Sienna's head and dark hair
+    swap[150:400, 80:220] += 0.05                           # the editor's slightly different body
+    swap[300:330, 20:60] = 0.1                              # and a drift (her hand moved) outside the head
+    cls_o = np.zeros((h, w), np.uint8); cls_o[150:400, 80:220] = sc.BODY_SKIN; cls_o[0:100, 100:200] = sc.HAIR; cls_o[100:150, 120:180] = sc.FACE_SKIN
+    cls_s = cls_o.copy()
+    ui = np.zeros((h, w), np.float32); ui[380:400, 0:60] = 1  # a painted-out username the editor redrew
+    swap[380:400, 0:60] = 0.2
+    out, info = sc.composite(photo, swap, cls_o, cls_s, ui)
+    assert np.abs(out[250:280, 120:180] - photo[250:280, 120:180]).max() < 0.01   # the photo's body, exactly
+    assert np.abs(out[310:320, 30:50] - photo[310:320, 30:50]).max() < 0.01       # the drift undone
+    assert out[40:80, 130:170].mean() < 0.35                                      # her head from the swap
+    assert np.abs(out[392:398, 10:40] - 0.2).max() < 0.08                         # the redrawn overlay kept
+    assert info["tone_shift"] is not None and abs(info["tone_shift"][0]) > 1      # her head toned to the photo's skin

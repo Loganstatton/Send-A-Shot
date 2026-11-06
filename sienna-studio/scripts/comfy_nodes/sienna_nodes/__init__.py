@@ -1057,7 +1057,42 @@ class SiennaPickSwap:
         return {"ui": {"text": [text]}, "result": (candidates[i:i + 1], text)}
 
 
+class SiennaKeepBody:
+    """Photo Swap: the photo's own body (pose, clothing, the details on her skin) on the swap; only her head and hair,
+    and what the swap changed on purpose (a tattoo taken off, app overlays redrawn), come from the editor (owner, 5 Nov:
+    "the body matches exactly ... the face should just be Sienna")."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"original": ("IMAGE",), "image": ("IMAGE",)}, "optional": {"also_keep": ("MASK",)}}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, original, image, also_keep=None):
+        from . import sienna_composite, sienna_pick
+
+        img = image[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+        try:
+            orig = original[0].detach().cpu().numpy().astype(np.float32)[..., :3]
+            cls = sienna_pick.classes_isolated([orig, img])
+            if cls is None:
+                out, info = img, {"changed": False, "error": "the segmenter could not run: the swap is kept whole"}
+            else:
+                ak = also_keep[0].detach().cpu().numpy().astype(np.float32) if also_keep is not None else None
+                out, info = sienna_composite.composite(orig, img, cls[0], cls[1], ak)
+                info["changed"] = True
+        except Exception as e:  # never lose the swap
+            out, info = img, {"changed": False, "error": f"{type(e).__name__}: {e}"[:200]}
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None], text)}
+
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaKeepBody": SiennaKeepBody,
     "SiennaPickSwap": SiennaPickSwap,
     "SiennaPhotoTexture": SiennaPhotoTexture,
     "SiennaHairMask": SiennaHairMask,
@@ -1088,6 +1123,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaKeepBody": "Sienna Keep Body (swap)",
     "SiennaPickSwap": "Sienna Pick Swap (best of several)",
     "SiennaPhotoTexture": "Sienna Photo Texture (swap)",
     "SiennaHairMask": "Sienna Hair Mask (swap)",

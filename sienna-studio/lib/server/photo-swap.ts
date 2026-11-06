@@ -82,6 +82,9 @@ export const SWAP_GRAIN = 0.01;
  * put a sweater over a cami in 2 of 3 seeds, and took the face from 0.64 to 0.75 against Sienna (5 Nov). */
 export const PICK_CLASS = 'SiennaPickSwap';
 export const SWAP_CANDIDATES = 3;
+/** The photo's own body on the swap, only her head and hair from the editor: "the body matches exactly ... the face
+ * should just be Sienna" (owner, 5 Nov). Off with SIENNA_SWAP_KEEP_BODY=off. */
+export const KEEP_BODY_CLASS = 'SiennaKeepBody';
 /** The hair texture pass (testing): the editor's hair is glossy and smooth; redrawn lightly by the photo checkpoint, cropped
  * and enlarged to the hair, it may get real strands. Shape and colour stay (low strength, noise mask on the hair only). */
 export const HAIR_DETAIL_PROMPT = 'long dark-brown hair with softly lighter brown ends, natural real hair texture, individual strands, fine flyaway hairs, matte, slightly messy, photo';
@@ -179,6 +182,8 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const pickOk = wantCandidates > 1 && backend.kind !== 'mock' && !!(await backend.nodeInfo(PICK_CLASS).catch(() => null));
   if (wantCandidates > 1 && !pickOk && backend.kind !== 'mock') warnings.push('The GPU server has no best-of-several step (SiennaPickSwap): one swap was made, as before.');
   const candidates = pickOk ? wantCandidates : 1;
+  const keepBody = process.env.SIENNA_SWAP_KEEP_BODY !== 'off' && backend.kind !== 'mock' && !!(await backend.nodeInfo(KEEP_BODY_CLASS).catch(() => null));
+  if (!keepBody && process.env.SIENNA_SWAP_KEEP_BODY !== 'off' && backend.kind !== 'mock') warnings.push("The GPU server has no keep-the-body step (SiennaKeepBody): the editor's own body was used.");
   if (!uiClean) warnings.push('The GPU server has no app-overlay remover (SiennaUiMask): screenshot icons and text may stay.');
   const graphFor = (sourceName: string, referenceName: string) => {
     const g = buildOutfitEditGraph({ sourceName, sourceSize, workMp: SWAP_WORK_MP, referenceName, autoCrop: false, prompt, negativePrompt: SWAP_NEGATIVE, seed, faceRestore });
@@ -199,6 +204,17 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
         _meta: { title: `Photo Swap: the best of ${candidates} swaps` },
       };
       g.q_resize = { ...g.q_resize, inputs: { ...g.q_resize.inputs, image: ['swap_pick', 0] } };
+    }
+    // the photo's own body back (from the photo with its app overlays painted out; where they were, the editor's
+    // redraw is kept), only her head and hair from the swap; the face redraw then works on that
+    if (keepBody && g.q_resize) {
+      g.swap_body = {
+        class_type: KEEP_BODY_CLASS,
+        inputs: { original: uiClean ? ['swap_ui', 2] : ['src', 0], image: ['q_resize', 0], ...(uiClean ? { also_keep: ['swap_ui', 0] } : {}) },
+        _meta: { title: "Photo Swap: the photo's own body, her head from the swap" },
+      };
+      if (g.fr_detail) g.fr_detail = { ...g.fr_detail, inputs: { ...g.fr_detail.inputs, image: ['swap_body', 0] } };
+      else g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_body', 0] } };
     }
     // (IP-Adapter Plus Face in this redraw, 0.8, overcooked the face: orange patches, a pasted box, 0.35 against Sienna,
     // lavender hot tub, 5 Nov; not used)
