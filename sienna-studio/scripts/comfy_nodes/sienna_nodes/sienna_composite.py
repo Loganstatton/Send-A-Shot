@@ -94,7 +94,9 @@ def composite(orig: np.ndarray, swap: np.ndarray, cls_o: np.ndarray, cls_s: np.n
         toned = np.clip(cv2.cvtColor(lab, cv2.COLOR_LAB2RGB), 0, 1)
         head = swap * (1 - skin) + toned * skin
     # tattoos and the like: the swap's skin there, toned to the photo
-    diff = np.abs(_lab(lo) - _lab(ls))[..., 0]
+    # only a dark mark on the photo's skin the swap took off (ink is darker than skin): where the swap *added* or moved
+    # something (its own necklace a little higher) the photo stays, else that came back as a ghost pendant (cami, 6 Nov)
+    diff = (_lab(ls) - _lab(lo))[..., 0]
     edited = ((diff > 12) & same_layout & skin_o & skin_s).astype(np.float32)
     edited = cv2.GaussianBlur(cv2.morphologyEx(edited, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)), (0, 0), 2 * sig)
     k = np.maximum(keep, edited)
