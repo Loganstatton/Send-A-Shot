@@ -18,6 +18,9 @@ import numpy as np
 HAIR, BODY_SKIN, FACE_SKIN, CLOTHES = 1, 2, 3, 4
 GROW = 0.012      # the head and hair region grown by this share of the picture's long side ...
 FEATHER = 0.008   # ... and its edge softened over this share
+REACH = 0.07      # ... and on into what clearly differs next to it, up to this share (the photo's own head: a bun, a
+                  # profile, sunglasses the segmenter did not call hair or face came back as ghosts, red hot tub, 6 Nov)
+DIFFERS = 0.12    # clearly different (0..1, at the editor's scale)
 
 
 def _lab(img: np.ndarray) -> np.ndarray:
@@ -32,6 +35,24 @@ def head_region(cls_o: np.ndarray, cls_s: np.ndarray, long_side: int) -> np.ndar
     m = cv2.dilate(m.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * g + 1, 2 * g + 1)))
     f = max(0.5, FEATHER * long_side * s)
     return np.clip(cv2.GaussianBlur(m.astype(np.float32), (0, 0), f), 0, 1)
+
+
+def _reach(orig: np.ndarray, swap: np.ndarray, keep: np.ndarray) -> np.ndarray:
+    """keep (at its own size) grown into the area next to it where the two pictures clearly differ, up to REACH: the
+    rest of the photo's own head (and anything else of it the editor removed) that touches her new head."""
+    kh, kw = keep.shape
+    small = lambda im: cv2.GaussianBlur(cv2.resize(im, (kw, kh), interpolation=cv2.INTER_AREA), (0, 0), 1.5)  # noqa: E731
+    differs = (np.abs(small(orig) - small(swap)).max(axis=2) > DIFFERS).astype(np.uint8)
+    region = (keep > 0.5).astype(np.uint8)
+    steps = max(1, int(REACH * max(kh, kw)))
+    k = np.ones((3, 3), np.uint8)
+    for _ in range(steps):
+        grown = cv2.dilate(region, k) & (differs | region)
+        if np.array_equal(grown, region):
+            break
+        region = grown
+    f = max(0.5, FEATHER * max(kh, kw))
+    return np.clip(cv2.GaussianBlur(cv2.dilate(region, k, iterations=2).astype(np.float32), (0, 0), f), 0, 1)
 
 
 def skin_shift(orig: np.ndarray, swap: np.ndarray, shared_skin: np.ndarray) -> Optional[np.ndarray]:
@@ -53,6 +74,7 @@ def composite(orig: np.ndarray, swap: np.ndarray, cls_o: np.ndarray, cls_s: np.n
     if orig.shape[:2] != (h, w):
         orig = cv2.resize(orig, (w, h), interpolation=cv2.INTER_AREA)
     keep = head_region(cls_o, cls_s, max(h, w))
+    keep = np.maximum(keep, _reach(orig, swap, keep))
     keep = cv2.resize(keep, (w, h), interpolation=cv2.INTER_LINEAR)
     # what the swap changed on purpose outside her head: same layout, clearly different (a tattoo taken off)
     same_layout = cv2.resize((cls_o == cls_s).astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
@@ -65,8 +87,12 @@ def composite(orig: np.ndarray, swap: np.ndarray, cls_o: np.ndarray, cls_s: np.n
     shift = skin_shift(lo, ls, shared)
     head = swap
     if shift is not None:
+        # her skin only: toning her hair with it turned it a sunlit blonde-brown (red hot tub, 6 Nov)
+        skin = cv2.resize(np.isin(cls_s, (BODY_SKIN, FACE_SKIN)).astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
+        skin = cv2.GaussianBlur(skin, (0, 0), 2 * sig)[..., None]
         lab = _lab(swap) + shift.astype(np.float32)
-        head = np.clip(cv2.cvtColor(lab, cv2.COLOR_LAB2RGB), 0, 1)
+        toned = np.clip(cv2.cvtColor(lab, cv2.COLOR_LAB2RGB), 0, 1)
+        head = swap * (1 - skin) + toned * skin
     # tattoos and the like: the swap's skin there, toned to the photo
     diff = np.abs(_lab(lo) - _lab(ls))[..., 0]
     edited = ((diff > 12) & same_layout & skin_o & skin_s).astype(np.float32)
