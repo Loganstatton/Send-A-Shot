@@ -57,7 +57,8 @@ const SWAP_PROMPT_TEMPLATE =
  * variants are tried with test.hair. */
 export const SWAP_HAIR_LINES = {
   none: '',
-  back: "Her hair is her long, loose dark-brown hair as in Picture 2 (not Picture 1's hairstyle), worn falling down her back behind her shoulders; no hair hangs in front of her shoulders, chest or top. ",
+  // "worn down, not tied back": on the car photo three seeds in a row copied its slicked-back ponytail (0.64, 6 Nov)
+  back: "Her hair is her long, loose dark-brown hair as in Picture 2 (not Picture 1's hairstyle), worn down and open, not tied back and not in a ponytail or bun, falling down her back behind her shoulders; no hair hangs in front of her shoulders, chest or top. ",
   swept: 'Her long, loose, wavy dark-brown hair is swept back over her shoulders, so her neckline and top are clear. ',
 } as const;
 export type SwapHairLine = keyof typeof SWAP_HAIR_LINES;
