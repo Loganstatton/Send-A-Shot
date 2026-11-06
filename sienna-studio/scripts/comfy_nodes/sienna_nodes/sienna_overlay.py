@@ -382,3 +382,23 @@ def paint_out(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
     m3 = cv2.GaussianBlur(m8.astype(np.float32), (0, 0), 2)[..., None]
     out = (out * (1 - m3) + soft * m3).astype(np.float32) / 255
     return out
+
+
+def crop_box(mask: np.ndarray, margin: int = 6) -> Tuple[int, int]:
+    """(right, bottom): where to cut a screenshot so its app overlays are gone (the button column on the right, the
+    username and caption along the bottom). Painting them out left smears and invented objects there (a cup and an
+    orange, 6 Nov); cutting them off leaves only the real photo. (w, h) when there is nothing to cut."""
+    h, w = mask.shape
+    right, bottom = w, h
+    col = mask[:, int(0.75 * w):]
+    if col.sum() > 0.01 * col.size:
+        right = int(0.75 * w) + int(np.nonzero(col.any(0))[0].min()) - margin
+    band = mask[int(0.6 * h):, :right]
+    if band.any():
+        bottom = int(0.6 * h) + int(np.nonzero(band.any(1))[0].min()) - margin
+    # never more than a quarter off either side: a big cut means the mask caught part of the photo
+    if right < 0.75 * w:
+        right = w
+    if bottom < 0.75 * h:
+        bottom = h
+    return max(16, right), max(16, bottom)

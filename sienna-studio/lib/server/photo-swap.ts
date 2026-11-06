@@ -86,6 +86,9 @@ export const SWAP_CANDIDATES = 3;
 /** The photo's own body on the swap, only her head and hair from the editor: "the body matches exactly ... the face
  * should just be Sienna" (owner, 5 Nov). Off with SIENNA_SWAP_KEEP_BODY=off. */
 export const KEEP_BODY_CLASS = 'SiennaKeepBody';
+/** A screenshot's app overlays cut off at the end, not painted over: painted out, the button column and caption band
+ * came back as smears and invented objects (a cup and an orange) in every screenshot (6 Nov). */
+export const UI_CROP_CLASS = 'SiennaUiCrop';
 /** The hair texture pass (testing): the editor's hair is glossy and smooth; redrawn lightly by the photo checkpoint, cropped
  * and enlarged to the hair, it may get real strands. Shape and colour stay (low strength, noise mask on the hair only). */
 export const HAIR_DETAIL_PROMPT = 'long dark-brown hair with softly lighter brown ends, natural real hair texture, individual strands, fine flyaway hairs, matte, slightly messy, photo';
@@ -172,6 +175,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const sourceSize = { width: photo.width ?? 832, height: photo.height ?? 1216 };
   const uiClean = backend.kind !== 'mock' && !!(await backend.nodeInfo(UI_MASK_CLASS).catch(() => null));
   const softSeam = uiClean && !!(await backend.nodeInfo(SOFT_SEAM_CLASS).catch(() => null));
+  const uiCrop = uiClean && !!(await backend.nodeInfo(UI_CROP_CLASS).catch(() => null));
   // off unless SIENNA_SWAP_HAIR=on: the owner preferred the editor's own hair to the photo's hair recoloured (5 Nov)
   const hairStep = process.env.SIENNA_SWAP_HAIR === 'on' && backend.kind !== 'mock' && !!(await backend.nodeInfo(HAIR_CLASS).catch(() => null));
   const prompt = hairStep ? SWAP_PROMPT_KEEP_HAIR : swapPrompt(req.hair);
@@ -283,6 +287,14 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
         _meta: { title: "Photo Swap: the photo's texture back, fine grain" },
       };
       g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_tex', 0] } };
+    }
+    if (uiCrop) {
+      g.swap_crop = {
+        class_type: UI_CROP_CLASS,
+        inputs: { image: g[EDIT_NODES.final].inputs.images, mask: ['swap_ui', 0] },
+        _meta: { title: "Photo Swap: the screenshot's app strips cut off" },
+      };
+      g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_crop', 0] } };
     }
     return g;
   };

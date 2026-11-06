@@ -52,5 +52,7 @@ describe('Photo Swap', () => {
     expect(SWAP_CANDIDATES).toBeGreaterThanOrEqual(2);
     const { KEEP_BODY_CLASS } = await import('./photo-swap');
     expect(KEEP_BODY_CLASS).toBe('SiennaKeepBody');
+    const { UI_CROP_CLASS } = await import('./photo-swap');
+    expect(UI_CROP_CLASS).toBe('SiennaUiCrop');
   });
 });

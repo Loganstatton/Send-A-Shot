@@ -1275,3 +1275,16 @@ def test_keep_body_puts_the_photos_body_back_and_keeps_her_head():
     assert out[40:80, 130:170].mean() < 0.35                                      # her head from the swap
     assert np.abs(out[392:398, 10:40] - 0.2).max() < 0.08                         # the redrawn overlay kept
     assert info["tone_shift"] is not None and abs(info["tone_shift"][0]) > 1      # her head toned to the photo's skin
+
+
+def test_ui_crop_cuts_off_the_button_column_and_caption_band():
+    import sienna_overlay as so
+
+    m = np.zeros((1000, 600), bool)
+    m[400:900, 520:580] = True     # buttons down the right
+    m[880:990, 10:300] = True      # username and caption
+    right, bottom = so.crop_box(m)
+    assert 500 <= right < 520 and 860 <= bottom < 880
+    assert so.crop_box(np.zeros((1000, 600), bool)) == (600, 1000)
+    big = np.zeros((1000, 600), bool); big[:, 100:] = True
+    assert so.crop_box(big)[0] == 600   # never a big cut

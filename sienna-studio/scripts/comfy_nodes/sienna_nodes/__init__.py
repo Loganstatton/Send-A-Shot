@@ -1091,7 +1091,39 @@ class SiennaKeepBody:
         return {"ui": {"text": [text]}, "result": (torch.from_numpy(np.ascontiguousarray(out, np.float32))[None], text)}
 
 
+class SiennaUiCrop:
+    """Photo Swap: the finished swap of a screenshot with the strips where the app overlays were cut off (mask from
+    SiennaUiMask on the photo); a photo without overlays comes back whole."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"image": ("IMAGE",), "mask": ("MASK",)}}
+
+    RETURN_TYPES = ("IMAGE", "STRING")
+    RETURN_NAMES = ("image", "report")
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "sienna"
+
+    def run(self, image, mask):
+        import cv2
+
+        try:
+            m = mask[0].detach().cpu().numpy() > 0.5
+            h, w = image.shape[1], image.shape[2]
+            if m.shape != (h, w):
+                m = cv2.resize(m.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST) > 0
+            right, bottom = sienna_overlay.crop_box(m)
+            info = {"cropped": [int(w), int(h), int(right), int(bottom)] if (right, bottom) != (w, h) else None}
+            out = image[:, :bottom, :right, :]
+        except Exception as e:  # never lose the swap
+            out, info = image, {"error": f"{type(e).__name__}: {e}"[:200]}
+        text = json.dumps(info)
+        return {"ui": {"text": [text]}, "result": (out, text)}
+
+
 NODE_CLASS_MAPPINGS = {
+    "SiennaUiCrop": SiennaUiCrop,
     "SiennaKeepBody": SiennaKeepBody,
     "SiennaPickSwap": SiennaPickSwap,
     "SiennaPhotoTexture": SiennaPhotoTexture,
@@ -1123,6 +1155,7 @@ NODE_CLASS_MAPPINGS = {
     "SiennaFigureComposite": SiennaFigureComposite,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "SiennaUiCrop": "Sienna UI Crop (swap)",
     "SiennaKeepBody": "Sienna Keep Body (swap)",
     "SiennaPickSwap": "Sienna Pick Swap (best of several)",
     "SiennaPhotoTexture": "Sienna Photo Texture (swap)",
