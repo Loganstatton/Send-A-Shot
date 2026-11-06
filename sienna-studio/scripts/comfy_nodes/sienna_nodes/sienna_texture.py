@@ -35,6 +35,13 @@ def align(orig: np.ndarray, edit: np.ndarray) -> np.ndarray:
         return orig
     if np.abs(warp[:, :2] - np.eye(2)).max() > 0.05:  # not a small shift: a wrong match
         return orig
+    # only if it lines the pictures up better than leaving them as they are: with her body already the photo's (keep
+    # body), her new hair pulled the match 20-45 px off, and the photo's texture, laid over itself shifted, drew outlines
+    # along every edge (lqcy32, 6 Nov)
+    go, ge = g(orig), g(edit)
+    moved = cv2.warpAffine(go, warp, (go.shape[1], go.shape[0]), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP, borderMode=cv2.BORDER_REFLECT)
+    if float(np.median(np.abs(moved - ge))) > 0.8 * float(np.median(np.abs(go - ge))):
+        return orig
     warp[:, 2] /= s
     return cv2.warpAffine(orig, warp, (orig.shape[1], orig.shape[0]), flags=cv2.INTER_CUBIC | cv2.WARP_INVERSE_MAP,
                           borderMode=cv2.BORDER_REFLECT)

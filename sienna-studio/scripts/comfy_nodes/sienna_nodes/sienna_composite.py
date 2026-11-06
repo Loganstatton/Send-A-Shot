@@ -99,7 +99,10 @@ def composite(orig: np.ndarray, swap: np.ndarray, cls_o: np.ndarray, cls_s: np.n
     diff = (_lab(ls) - _lab(lo))[..., 0]
     edited = ((diff > 12) & same_layout & skin_o & skin_s).astype(np.float32)
     edited = cv2.GaussianBlur(cv2.morphologyEx(edited, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)), (0, 0), 2 * sig)
-    k = np.maximum(keep, edited)
+    # (the swap's skin was kept where the photo's was clearly darker, for a tattoo the swap took off; it took a strip of
+    # the cleavage's shadow too, lqcy32, 6 Nov: the photo's body is kept whole now, tattoos included)
+    edited = np.zeros_like(edited)
+    k = keep
     if also_keep is not None and also_keep.any():
         ak = cv2.resize(also_keep.astype(np.float32), (w, h), interpolation=cv2.INTER_LINEAR)
         ak = cv2.GaussianBlur(cv2.dilate(ak, np.ones((9, 9), np.uint8)), (0, 0), 3)
