@@ -1221,3 +1221,33 @@ def test_pick_swap_leaves_her_hair_out_of_the_change():
     cls_c = cls_o.copy(); cls_c[40:100, 0:30] = sp.HAIR
     assert sp.change(o, long_hair, (40, 5, 20, 20), cls_o, cls_c) < 0.03     # only its blurred edge
     assert sp.change(o, long_hair, (40, 5, 20, 20)) > 0.1                # without the segmenter it counts
+
+
+def test_ui_mask_takes_a_profile_placeholder_and_a_grey_pill_whole():
+    import cv2
+    import sienna_overlay as so
+
+    rng = np.random.default_rng(5)
+    h, w = 1200, 720
+    img = np.clip(0.45 + 0.08 * rng.standard_normal((h, w, 3)).astype(np.float32), 0, 1)  # water
+    img = cv2.GaussianBlur(img, (0, 0), 2)
+    # a profile placeholder: a light disc with a grey silhouette, a pink heart on its edge
+    cv2.circle(img, (60, 1030), 34, (0.95, 0.95, 0.96), -1)
+    cv2.circle(img, (60, 1018), 12, (0.47, 0.49, 0.54), -1)
+    cv2.ellipse(img, (60, 1062), (24, 18), 0, 180, 360, (0.47, 0.49, 0.54), -1)
+    cv2.circle(img, (88, 1056), 9, (0.95, 0.2, 0.5), -1)
+    # a dark grey pill with white words
+    (tw, _), _ = cv2.getTextSize("Made with Edits", cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
+    end = 140 + tw + 12
+    cv2.rectangle(img, (120, 1120), (end, 1160), (0.29, 0.30, 0.35), -1)
+    cv2.circle(img, (120, 1140), 20, (0.29, 0.30, 0.35), -1)
+    cv2.circle(img, (end, 1140), 20, (0.29, 0.30, 0.35), -1)
+    text = np.zeros((h, w), np.uint8)
+    cv2.putText(text, "Made with Edits", (140, 1152), cv2.FONT_HERSHEY_SIMPLEX, 0.9, 255, 2)
+    img[text > 0] = 1.0
+    m, rep = so.ui_mask(img)
+    assert m[1030, 60] and m[1018, 30] and m[1056, 88]                    # the placeholder and its heart
+    assert m[1140, 104] and m[1140, end + 16] and m[1122, 300]            # the pill to its rounded ends
+    out = so.paint_out(img, m)
+    assert out[1130:1150, 200:380].mean() > 0.38                          # filled from the water, not left dark
+    assert not m[600, 360]

@@ -242,6 +242,46 @@ def _pills(rgb: np.ndarray) -> np.ndarray:
     return out
 
 
+UI_AVATAR_DISC = (0.035, 0.13)  # a profile-picture placeholder's width, as shares of the picture's width
+
+
+def _avatar_discs(rgb: np.ndarray) -> np.ndarray:
+    """Profile-picture placeholders (a light grey disc with a grey person silhouette, a small badge on its edge) along the
+    bottom band or the button column: the stroke test drops them, as their white is broad (purple hot tub, 5 Nov)."""
+    import cv2
+
+    h, w = rgb.shape[:2]
+    top, right, bottom = UI_ZONE
+    light = ((rgb.min(-1) > 0.8) & ((rgb.max(-1) - rgb.min(-1)) < 0.08)).astype(np.uint8)
+    n, lab, stats, cent = cv2.connectedComponentsWithStats(light, 8)
+    out = np.zeros((h, w), bool)
+    for i in range(1, n):
+        x0, y0, bw, bh, area = (int(v) for v in stats[i])
+        cx, cy = cent[i]
+        if not (cy > bottom * h or cx > right * w):
+            continue
+        if not (UI_AVATAR_DISC[0] * w <= max(bw, bh) <= UI_AVATAR_DISC[1] * w and 0.8 <= bw / max(1, bh) <= 1.25):
+            continue
+        comp = (lab[y0:y0 + bh, x0:x0 + bw] == i).astype(np.uint8)
+        pts = cv2.findNonZero(comp)
+        (ccx, ccy), r = cv2.minEnclosingCircle(pts)
+        circle = np.pi * r * r
+        hull = cv2.contourArea(cv2.convexHull(pts))
+        # round (the silhouette's shoulders cut its lower edge: 0.83 of the circle, 5 Nov; button icons were 0.64-0.71)
+        if hull < 0.78 * circle or not (0.4 <= area / circle <= 0.9):
+            continue  # not round, or no silhouette in it (a plain white blob: foam, a towel)
+        disc = np.zeros((bh, bw), np.uint8)
+        cv2.circle(disc, (int(round(ccx)), int(round(ccy))), int(round(r)), 1, -1)
+        inner = rgb[y0:y0 + bh, x0:x0 + bw][(disc > 0) & (comp == 0)]
+        if inner.size == 0 or float(np.median(inner.max(-1) - inner.min(-1))) > 0.12:
+            continue  # the silhouette is grey: a coloured inside is a photo, not a placeholder
+        grow = int(0.45 * r) + 4  # the badge on its lower edge (a pink heart) and the soft rim
+        m = np.zeros((h, w), np.uint8)
+        cv2.circle(m, (int(round(x0 + ccx)), int(round(y0 + ccy))), int(round(r)) + grow, 1, -1)
+        out |= m.astype(bool)
+    return out
+
+
 def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
     """img: (H, W, 3) float 0..1 → (mask HxW bool of app overlays to repaint, report)."""
     import cv2
@@ -283,6 +323,12 @@ def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
                 # the button column (or a tall icon): its icons and counts and any disc behind them, so little of the
                 # scene is repainted (whole rectangles left blocky patches in foamy water, 31 Oct)
                 mask |= cv2.dilate((part | backing).astype(np.uint8), np.ones((9, 9), np.uint8), iterations=2).astype(bool)
+                if cx > right * w and max(bw, bh) <= 0.12 * w:
+                    # the see-through disc a button sits on, which the backing test can miss (a brown disc behind the
+                    # mute icon stayed and came back as a faint circle, 5 Nov)
+                    disc = np.zeros((h, w), np.uint8)
+                    cv2.circle(disc, (int(x0 + bw / 2), int(y0 + bh / 2)), int(0.5 * np.hypot(bw, bh) * 1.25) + 6, 1, -1)
+                    mask |= disc.astype(bool)
                 continue
             # the whole element, not only its white strokes: the coloured profile picture left of a username, the dark
             # pill behind "Made with Edits", icon fills (31 Oct: the avatar and a dark smudge stayed in the copies)
@@ -293,6 +339,22 @@ def ui_mask(img: np.ndarray) -> Tuple[np.ndarray, Dict]:
             box = (max(0, y0 - pad_y), min(h, y0 + bh + pad_y), max(0, x0 - left), min(w, x0 + bw + right_pad))
             mask[box[0]:box[1], box[2]:box[3]] = True
             mask |= _label(rgb, box)
+            # the flat pill behind words ("Made with Edits" on dark grey), whole: cut at its edge, the fill kept its
+            # colour and the editor drew a dark slab there (5 Nov)
+            pill = _backing(rgb, part, (x0, y0, bw, bh))
+            if pill.any():
+                ys, xs = np.nonzero(pill)
+                col = rgb[pill]
+                # only a grey pill hugging the words: a flat patch of skin or swimsuit next to a username was taken
+                # once (purple hot tub, 5 Nov)
+                hugs = ys.min() >= y0 - 1.2 * bh and ys.max() <= y0 + 2.2 * bh and xs.min() >= x0 - 2.5 * bh and xs.max() <= x0 + bw + 2.5 * bh
+                grey = float(np.median((col.max(-1) - col.min(-1)) / np.maximum(col.max(-1), 1e-3))) < 0.25
+                if hugs and grey:
+                    mask |= cv2.dilate(pill.astype(np.uint8), np.ones((7, 7), np.uint8)).astype(bool)
+    discs = _avatar_discs(rgb)
+    if discs.any():
+        mask |= discs
+        parts += 1
     pills = _pills(rgb)
     if pills.any():
         mask |= pills
@@ -313,7 +375,8 @@ def paint_out(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
     if not mask.any():
         return img
     f8 = np.clip(np.round(img[..., :3] * 255), 0, 255).astype(np.uint8)
-    m8 = mask.astype(np.uint8)
+    # filled from a few pixels past the mask: an edge on an overlay's own border carried its colour in (5 Nov)
+    m8 = cv2.dilate(mask.astype(np.uint8), np.ones((7, 7), np.uint8))
     out = cv2.inpaint(f8, m8, 9, cv2.INPAINT_TELEA)
     soft = cv2.GaussianBlur(out, (0, 0), 3)
     m3 = cv2.GaussianBlur(m8.astype(np.float32), (0, 0), 2)[..., None]

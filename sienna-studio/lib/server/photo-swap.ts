@@ -17,7 +17,7 @@ import { buildOutfitEditGraph, EDIT_NODES, type FaceRestoreSpec } from '../outfi
 import { buildPrompt } from '../prompt';
 import { resolveLockedLora } from '../sienna-models';
 import { FACE_NODE_ID, faceNode, SIENNA_FACE_EMBEDDING } from '../identity';
-import { UI_MASK_CLASS } from '../comfy/keep-scene';
+import { SOFT_SEAM_CLASS, UI_MASK_CLASS } from '../comfy/keep-scene';
 import { EMPTY_FIELDS } from '../defaults';
 import type { ContentMode, GenerationRecord, StoredImage } from '../types';
 import { describeMissing, GenerationError, missingClasses } from './generate';
@@ -167,6 +167,7 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
   const photo = cleared.image;
   const sourceSize = { width: photo.width ?? 832, height: photo.height ?? 1216 };
   const uiClean = backend.kind !== 'mock' && !!(await backend.nodeInfo(UI_MASK_CLASS).catch(() => null));
+  const softSeam = uiClean && !!(await backend.nodeInfo(SOFT_SEAM_CLASS).catch(() => null));
   // off unless SIENNA_SWAP_HAIR=on: the owner preferred the editor's own hair to the photo's hair recoloured (5 Nov)
   const hairStep = process.env.SIENNA_SWAP_HAIR === 'on' && backend.kind !== 'mock' && !!(await backend.nodeInfo(HAIR_CLASS).catch(() => null));
   const prompt = hairStep ? SWAP_PROMPT_KEEP_HAIR : swapPrompt(req.hair);
@@ -224,6 +225,11 @@ export async function startPhotoSwap(req: PhotoSwapRequest): Promise<GenerationR
           swap_uidec: { class_type: 'VAEDecode', inputs: { samples: ['swap_uiks', 0], vae: ['fr_ckpt', 2] } },
           swap_uifix: { class_type: 'ImageCompositeMasked', inputs: { destination: img, source: ['swap_uidec', 0], x: 0, y: 0, resize_source: false, mask: ['swap_uigrow', 0] } },
         });
+        // pasted with a soft edge: a hard one left a straight seam across the water under a painted-out username (5 Nov)
+        if (softSeam) {
+          g.swap_uisoft = { class_type: SOFT_SEAM_CLASS, inputs: { mask: ['swap_uigrow', 0], kernel_size: 31, sigma: 10 } };
+          g.swap_uifix = { ...g.swap_uifix, inputs: { ...g.swap_uifix.inputs, mask: ['swap_uisoft', 0] } };
+        }
         g[EDIT_NODES.final] = { ...g[EDIT_NODES.final], inputs: { ...g[EDIT_NODES.final].inputs, images: ['swap_uifix', 0] } };
       }
     }
