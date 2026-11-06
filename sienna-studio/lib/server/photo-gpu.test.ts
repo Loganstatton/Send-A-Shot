@@ -48,3 +48,27 @@ describe('a booting photo GPU that a swap is waiting for', () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe('the RunPod balance', () => {
+  it('stops the photo GPU from starting on an empty account, and is shown', async () => {
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    vi.stubEnv('DATA_DIR', await fs.mkdtemp(path.join(os.tmpdir(), 'pgpu-')));
+    vi.stubEnv('PHOTO_GPU', 'runpod');
+    vi.stubEnv('PHOTO_RUNPOD_API_KEY', 'test');
+    vi.stubEnv('PHOTO_GPU_VOLUME_ID', 'vol');
+    vi.stubEnv('PHOTO_GPU_DATACENTER', 'EU-RO-1');
+    vi.resetModules();
+    vi.doUnmock('./video-gpu');
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: { myself: { clientBalance: -0.02 } } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const gpu = await import('./photo-gpu');
+    await expect(gpu.ensurePhotoGpu({ minVramGb: 32 })).rejects.toMatchObject({ status: 402, message: expect.stringMatching(/RunPod balance is \$-0\.02/) });
+    const view = await gpu.photoGpuView();
+    expect(view.balanceUsd).toBe(-0.02);
+    expect(view.lowBalance).toBe(true);
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+});

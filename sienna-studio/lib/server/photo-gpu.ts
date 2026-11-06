@@ -304,6 +304,41 @@ export interface PhotoGpuView {
   budgetUsd: number;
   idleMin?: number;
   missing?: string[];
+  /** The RunPod account's balance (all of it: GPUs, storage, video), when RunPod answered. */
+  balanceUsd?: number;
+  lowBalance?: boolean;
+}
+
+/** Below this the photo GPU is not started (RunPod stops pods and can remove storage on an empty account). */
+export const MIN_BALANCE_USD = 1;
+/** Below this the app warns. */
+export const LOW_BALANCE_USD = 5;
+const balanceCache = (gl as unknown as { __siennaRunpodBalance?: { at: number; usd: number | null } });
+
+/**
+ * The RunPod account balance, cached for two minutes; null when RunPod can't be asked. The month's budget counts only
+ * the photo GPU time the app tracks: the account ran empty (storage, video, other pods) while it showed $40 of $50 (6 Nov).
+ */
+export async function runpodBalance(c: Pick<PhotoGpuConfig, 'apiKey'>, fresh = false): Promise<number | null> {
+  const hit = balanceCache.__siennaRunpodBalance;
+  if (!fresh && hit && Date.now() - hit.at < 120_000) return hit.usd;
+  let usd: number | null = null;
+  try {
+    const res = await fetch(process.env.RUNPOD_GRAPHQL_URL || 'https://api.runpod.io/graphql', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${c.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: 'query { myself { clientBalance } }' }),
+      signal: AbortSignal.timeout(20_000),
+      cache: 'no-store',
+    });
+    const j: any = res.ok ? await res.json() : null;
+    const v = j?.data?.myself?.clientBalance;
+    usd = typeof v === 'number' && Number.isFinite(v) ? v : null;
+  } catch {
+    usd = null;
+  }
+  balanceCache.__siennaRunpodBalance = { at: Date.now(), usd };
+  return usd;
 }
 
 export async function photoGpuView(): Promise<PhotoGpuView> {
@@ -319,6 +354,7 @@ export async function photoGpuView(): Promise<PhotoGpuView> {
     monthUsd: monthSpend(st),
     budgetUsd: c.monthlyBudgetUsd,
     idleMin: c.idleMin,
+    ...(await runpodBalance(c).then((b) => (b === null ? {} : { balanceUsd: Math.round(b * 100) / 100, lowBalance: b < LOW_BALANCE_USD }))),
   };
 }
 
@@ -359,6 +395,9 @@ export function ensurePhotoGpu(opts: { minVramGb?: number; replaceIdle?: boolean
         `This month’s photo GPU budget is used up ($${monthSpend(st).toFixed(2)} of $${c.monthlyBudgetUsd.toFixed(2)}). Raise PHOTO_GPU_MONTHLY_BUDGET_USD to continue.`,
         402,
       );
+    const balance = await runpodBalance(c, true);
+    if (balance !== null && balance < MIN_BALANCE_USD)
+      throw new GpuError(`Your RunPod balance is $${balance.toFixed(2)}, too low to start the photo GPU. Add funds on RunPod (Billing), then try again.`, 402);
     const now = new Date().toISOString();
     // a pod too small for this request (one just stopped can still be listed) is stopped, never reused
     const listed = await listPhotoPods(c);

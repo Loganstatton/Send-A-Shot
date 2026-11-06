@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { api, ApiError, useApi } from '@/lib/client/api';
 import type { ClearedPhoto, GenerationRecord } from '@/lib/types';
 import { Button, Card, EmptyState, Notice, PageHeader, SectionTitle, TextInput, toast } from '@/components/ui';
+import { PhotoGpuCard } from '@/components/PhotoGpuCard';
 
 /**
  * Photo Swap: photos of models who agreed to their photos being used with Sienna's face (the cleared library), and
@@ -94,6 +95,7 @@ export default function SwapPage() {
   return (
     <div className="pb-nav">
       <PageHeader title="Photo Swap" subtitle="Sienna in place of the model, everything else kept" />
+      <PhotoGpuCard />
       <Card className="mb-4 space-y-3">
         <SectionTitle>Add a cleared photo</SectionTitle>
         <p className="text-sm text-ink-400">Only photos of models who agreed to their photos being used with Sienna’s face. Any other photo: use Copy Photo on the Create screen.</p>

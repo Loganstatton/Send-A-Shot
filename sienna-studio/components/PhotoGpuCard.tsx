@@ -16,6 +16,8 @@ interface PhotoGpuView {
   budgetUsd: number;
   idleMin?: number;
   dataCenter?: string;
+  balanceUsd?: number;
+  lowBalance?: boolean;
 }
 
 /** The on-demand photo GPU (PHOTO_GPU=runpod): status, Start / Stop, cost. Renders nothing in the old fixed-URL mode. */
@@ -73,6 +75,12 @@ export function PhotoGpuCard() {
       <p className="text-sm">{label}</p>
       {live && gpu.dataCenter && <p className="text-xs text-ink-400">Data centre: {gpu.dataCenter}</p>}
       {gpu.status === 'failed' && gpu.error && <p className="text-xs text-amber-300">Last start failed: {gpu.error}</p>}
+      {gpu.balanceUsd !== undefined && (
+        <p className={`text-xs ${gpu.lowBalance ? 'text-amber-300' : 'text-ink-400'}`}>
+          RunPod balance ${gpu.balanceUsd.toFixed(2)}
+          {gpu.lowBalance ? (gpu.balanceUsd < 1 ? ' — too low to start the GPU: add funds on RunPod.' : ' — running low: add funds on RunPod soon.') : ''}
+        </p>
+      )}
       <p className="text-xs text-ink-400">
         {live && gpu.sessionUsd !== undefined ? `This session ≈ $${gpu.sessionUsd.toFixed(2)} · ` : ''}This month ${gpu.monthUsd.toFixed(2)} of ${gpu.budgetUsd.toFixed(2)}
         {gpu.rate ? ` · $${gpu.rate.toFixed(2)}/h` : ''}
