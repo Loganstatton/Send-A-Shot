@@ -81,7 +81,9 @@ export async function pruneUnusedUploads(minAgeMs = 60 * 60_000): Promise<number
   referencedFiles(await readJson<ClearedPhoto[]>(CLEARED_FILE), inUse);
   let freed = 0;
   const cutoff = Date.now() - minAgeMs;
-  for (const [dir, test] of [[IMAGES_DIR, (f: string) => /^up_/.test(f) && SAFE_FILE_RE.test(f) && !inUse.has(f)], [DATA_DIR, (f: string) => f.endsWith('.tmp')]] as const) {
+  // (and uploaded driving videos, mot_*, that no record uses: a Copy Motion refused before it started left its upload)
+  const unused = (f: string) => ((/^up_/.test(f) && SAFE_FILE_RE.test(f)) || (/^mot_/.test(f) && SAFE_VIDEO_RE.test(f))) && !inUse.has(f);
+  for (const [dir, test] of [[IMAGES_DIR, unused], [DATA_DIR, (f: string) => f.endsWith('.tmp')]] as const) {
     const names = await fs.readdir(dir).catch(() => [] as string[]);
     for (const f of names) {
       if (!test(f)) continue;
