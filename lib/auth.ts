@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
 import { db, getArtist, getUserById, setUserRole } from './db';
+import { perRequest } from './request-cache';
 import { Artist, User } from './types';
 
 export const SESSION_COOKIE = 'scout_session';
@@ -90,7 +91,7 @@ async function maybeBootstrapAdmin(user: User): Promise<User> {
 }
 
 // Server-only: read + verify the session cookie and load the user.
-export async function getSessionUser(): Promise<User | null> {
+export const getSessionUser = perRequest(async (): Promise<User | null> => {
   const token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const payload = await verify(token);
@@ -98,7 +99,7 @@ export async function getSessionUser(): Promise<User | null> {
   const user = await getUserById(payload.uid);
   if (!user) return null;
   return await maybeBootstrapAdmin(user);
-}
+});
 
 // For server components/pages: redirect to /login if not authenticated.
 export async function requireUser(): Promise<User> {

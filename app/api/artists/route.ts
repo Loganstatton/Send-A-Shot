@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createArtist, findArtistsByName, getAllArtists, setFeaturedVideoMatchType, stampSourceSyncedAt, stampYoutubeNoMatch, updateArtist } from '@/lib/db';
 import { getInternalUser } from '@/lib/auth';
+import { isUniqueViolation } from '@/lib/pg';
 import { Artist, ArtistInput } from '@/lib/types';
 import { getTopSongForArtist } from '@/lib/deezer';
 import { getFeaturedVideoForArtist, youtubeConfigured } from '@/lib/youtube';
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
     // twice (see the unique index in lib/db.ts) — that's not "two artists
     // with the same name," it's definitely the same real artist already on
     // the roster.
-    if (/UNIQUE constraint failed.*soundcharts_uuid/i.test(err?.message ?? '')) {
+    if (isUniqueViolation(err) && err?.constraint === 'idx_artists_soundcharts_uuid') {
       return NextResponse.json({ error: 'An artist with this Soundcharts link already exists on the roster.' }, { status: 409 });
     }
     throw err;

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createUser, findUserByNormalizedEmail, getUserByEmail, logEvent } from '@/lib/db';
 import { createActionToken, hashPassword, setSessionCookie } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
+import { isUniqueViolation } from '@/lib/pg';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,17 @@ export async function POST(req: Request) {
   }
 
   const password_hash = await hashPassword(password);
-  const user = await createUser({ name, email, password_hash });
+  let user;
+  try {
+    user = await createUser({ name, email, password_hash });
+  } catch (err) {
+    // Two signups for the same address arriving together both pass the
+    // checks above; the unique index on email lets exactly one through.
+    if (isUniqueViolation(err)) {
+      return NextResponse.json({ error: 'An account with that email already exists.' }, { status: 409 });
+    }
+    throw err;
+  }
   await setSessionCookie(user.id);
   await logEvent(user.id, 'signup_completed');
 

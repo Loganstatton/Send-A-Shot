@@ -1,4 +1,5 @@
 import { db, isUniqueViolation } from './pg';
+import { perRequest } from './request-cache';
 import { breakoutScore } from './scoring';
 import { toPublicArtist } from './public-artist';
 import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents, quoteSell } from './next-market';
@@ -78,13 +79,36 @@ const WRITABLE_FIELDS = [
 // stay in the schema (legacy context a Scout can still see/edit) but no
 // longer drive anything automatically.
 const SCORE_FIELD_SET = new Set(Object.keys(SCORE_WEIGHTS));
+const INTEGER_ARTIST_FIELDS = new Set<string>(['followers_count', 'monthly_listeners']);
+const DECIMAL_ARTIST_FIELDS = new Set<string>(['growth_velocity_pct', 'engagement_rate_pct']);
+
+// Every artist write (Scout form, bulk add, sync routes, discovery approval,
+// claimed-artist edits) passes each value through here. The database's
+// numeric columns only accept real numbers, and the Breakout Score formula
+// assumes each of the eight ratings is 0-10 — so that is enforced in this
+// one place instead of trusting every caller: a rating is clamped to 0-10
+// (anything unreadable counts as 0), a count is a whole number >= 0, and a
+// blank or unreadable count/percentage is stored as "unknown" (NULL).
+function normalizeArtistValue(field: string, value: unknown): unknown {
+  if (SCORE_FIELD_SET.has(field)) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.max(0, Math.min(10, n)) : 0;
+  }
+  if (INTEGER_ARTIST_FIELDS.has(field) || DECIMAL_ARTIST_FIELDS.has(field)) {
+    if (value == null || value === '') return null;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    return INTEGER_ARTIST_FIELDS.has(field) ? Math.max(0, Math.round(n)) : n;
+  }
+  return value ?? null;
+}
 
 export async function createArtist(input: ArtistInput, actor?: Actor | null): Promise<Artist> {
   const now = new Date().toISOString();
   const row: Record<string, unknown> = { created_at: now, updated_at: now, created_by: actor?.id ?? null };
   for (const field of WRITABLE_FIELDS) {
     const value = (input as any)[field];
-    if (value != null) row[field] = value;
+    if (value != null) row[field] = normalizeArtistValue(field, value);
     else if (field === 'stage') row[field] = 'watchlist';
     else if (SCORE_FIELD_SET.has(field)) row[field] = 0;
     else row[field] = null;
@@ -109,7 +133,7 @@ export async function updateArtist(id: number, input: ArtistInput, actor?: Actor
   for (const field of WRITABLE_FIELDS) {
     if (field in input) {
       sets.push(`${field} = @${field}`);
-      row[field] = (input as any)[field];
+      row[field] = normalizeArtistValue(field, (input as any)[field]);
     }
   }
   if (sets.length > 0) {
@@ -263,6 +287,23 @@ async function snapshotScore(artist: Artist) {
     commercial_potential: artist.commercial_potential,
     professionalism: artist.professionalism,
   });
+}
+
+// Batch form of getScoreHistory: full history for many artists in one
+// query, oldest first per artist.
+export async function getScoreHistories(artistIds: number[]): Promise<Map<number, ScoreSnapshot[]>> {
+  const unique = [...new Set(artistIds)];
+  const result = new Map<number, ScoreSnapshot[]>();
+  if (unique.length === 0) return result;
+  const rows = (await db
+    .prepare(`SELECT * FROM score_history WHERE artist_id IN (${unique.map(() => '?').join(',')}) ORDER BY recorded_at ASC, id ASC`)
+    .all(...unique)) as ScoreSnapshot[];
+  for (const row of rows) {
+    const list = result.get(row.artist_id) ?? [];
+    list.push(row);
+    result.set(row.artist_id, list);
+  }
+  return result;
 }
 
 export async function getScoreHistory(artistId: number): Promise<ScoreSnapshot[]> {
@@ -875,9 +916,9 @@ async function toMarketRows(artists: Artist[]): Promise<NextMarketRow[]> {
 // raw ScoreInputs categories, soundcharts_uuid, claimed_by_user_id, etc)
 // must fetch it separately via getArtist()/getAllArtists() — never widen
 // this function's return type to route around that.
-export async function getNextMarket(): Promise<NextMarketRow[]> {
+export const getNextMarket = perRequest(async (): Promise<NextMarketRow[]> => {
   return await toMarketRows((await getAllArtists()).filter((a) => a.stage !== 'passed'));
-}
+});
 
 // Batch sibling of getNextArtist — NEXT Feed needs live score/price context
 // for a page of feed_events, which typically names far fewer distinct
@@ -1975,6 +2016,29 @@ export async function getRankMovements(): Promise<Record<number, number | null>>
   return rankMovementsFrom(await getScoutStandings());
 }
 
+// getRankMovements() rebuilds every scout's portfolio history, which is
+// fine for the Leaderboard page but too much for the notification badge
+// that renders on every NEXT page. Standings only change when someone
+// trades or an account is created/removed, so the last answer is reused
+// until the newest trade id or the number of accounts changes (one cheap
+// query to check) — and for at most ten minutes regardless, since "rank a
+// week ago" also drifts slowly with the clock.
+const RANK_MOVEMENTS_MAX_AGE_MS = 10 * 60 * 1000;
+let rankMovementsCache: { key: string; at: number; value: Record<number, number | null> } | null = null;
+
+export async function getRankMovementsCached(): Promise<Record<number, number | null>> {
+  const marker = (await db
+    .prepare('SELECT (SELECT COALESCE(MAX(id), 0) FROM next_transactions) AS last_trade_id, (SELECT COUNT(*) FROM users) AS user_count')
+    .get()) as { last_trade_id: number; user_count: number };
+  const key = `${marker.last_trade_id}:${marker.user_count}`;
+  if (rankMovementsCache && rankMovementsCache.key === key && Date.now() - rankMovementsCache.at < RANK_MOVEMENTS_MAX_AGE_MS) {
+    return rankMovementsCache.value;
+  }
+  const value = await getRankMovements();
+  rankMovementsCache = { key, at: Date.now(), value };
+  return value;
+}
+
 // Ranked by total return % over `window`; ties broken by artists backed
 // (more activity outranks a flat, untouched account at the same %). For
 // 'week'/'month', the baseline is each scout's own reconstructed portfolio
@@ -2133,6 +2197,16 @@ export async function getGenreLeaderboard(genre: string): Promise<GenreLeaderboa
   entries.sort((a, b) => b.pnlCents - a.pnlCents);
   entries.forEach((e, i) => { e.rank = i + 1; });
   return entries;
+}
+
+// Batch form of getFoundingBelieverCountForArtist, one query for many artists.
+export async function getFoundingBelieverCountsForArtists(artistIds: number[]): Promise<Map<number, number>> {
+  const unique = [...new Set(artistIds)];
+  if (unique.length === 0) return new Map();
+  const rows = (await db
+    .prepare(`SELECT artist_id, COUNT(*) AS c FROM next_founding_believers WHERE artist_id IN (${unique.map(() => '?').join(',')}) GROUP BY artist_id`)
+    .all(...unique)) as { artist_id: number; c: number }[];
+  return new Map(rows.map((r) => [r.artist_id, r.c]));
 }
 
 export async function getFoundingBelieverCountForArtist(artistId: number): Promise<number> {

@@ -16,8 +16,8 @@
 
 import { Artist, FavoriteGenre, FoundingBelieverRecord, User, WatchlistEntry } from './types';
 import {
-  getFavoriteGenres, getFoundingBelieverCountForArtist, getFoundingBelieverRecordsForUser, getNewArtistsThisWeek,
-  getNextMarket, getPortfolioValue, getRankMovements, getReadNotificationKeys, getScoreHistory, getUserWatchlist,
+  getFavoriteGenres, getFoundingBelieverCountsForArtists, getFoundingBelieverRecordsForUser, getNewArtistsThisWeek,
+  getNextMarket, getPortfolioValue, getRankMovementsCached, getReadNotificationKeys, getScoreHistories, getUserWatchlist,
   setNotificationsEmailedThrough, valueAtOrBefore,
 } from './db';
 import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, changePctForWindow, marketSentiment } from './next-market';
@@ -68,11 +68,12 @@ function todayKey(): string {
 
 async function watchlistNotifications(watchlist: WatchlistEntry[], trendingIds: Set<number>): Promise<Notification[]> {
   const notifications: Notification[] = [];
+  const scoreHistories = await getScoreHistories(watchlist.filter((e) => e.alertsEnabled).map((e) => e.artist.id));
   for (const entry of watchlist) {
     if (!entry.alertsEnabled) continue;
     const { artist, score, priceCents } = entry;
 
-    const scoreHistory = await getScoreHistory(artist.id);
+    const scoreHistory = scoreHistories.get(artist.id) ?? [];
     const latestSnapshot = scoreHistory[scoreHistory.length - 1];
     if (latestSnapshot && entry.scoreAtWatch != null) {
       const scoreDelta = Math.round((score - entry.scoreAtWatch) * 10) / 10;
@@ -170,8 +171,9 @@ function newArtistNotifications(favoriteGenres: FavoriteGenre[], newArtists: Art
 
 async function foundingBelieverNotifications(records: (FoundingBelieverRecord & { artist_name: string })[]): Promise<Notification[]> {
   const notifications: Notification[] = [];
+  const counts = await getFoundingBelieverCountsForArtists(records.map((r) => r.artist_id));
   for (const record of records) {
-    const currentCount = await getFoundingBelieverCountForArtist(record.artist_id);
+    const currentCount = counts.get(record.artist_id) ?? 0;
     for (const tier of FOUNDING_BELIEVER_MILESTONES) {
       // Only tiers reached AFTER this user backed the artist — otherwise a
       // late Founding Believer would get credited with milestones the
@@ -244,7 +246,7 @@ export async function getNotificationsForUser(user: User): Promise<Notification[
   }
   if (user.notify_founding_believer) all = all.concat(await foundingBelieverNotifications(await getFoundingBelieverRecordsForUser(user.id)));
   if (user.notify_portfolio_milestones) all = all.concat(portfolioMilestoneNotifications((await getPortfolioValue(user.id)).totalReturnPct));
-  if (user.notify_leaderboard_rank) all = all.concat(leaderboardRankNotification((await getRankMovements())[user.id] ?? null));
+  if (user.notify_leaderboard_rank) all = all.concat(leaderboardRankNotification((await getRankMovementsCached())[user.id] ?? null));
 
   const readKeys = await getReadNotificationKeys(user.id);
   all.forEach((n) => { n.read = readKeys.has(n.key); });
