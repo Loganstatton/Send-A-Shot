@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function NotificationsPage() {
   const user = await requireUser();
-  const notifications = getNotificationsForUser(user);
+  const notifications = await getNotificationsForUser(user);
 
   // Best-effort digest email for whatever's new since the last one — see
   // maybeSendNotificationDigestEmail for why this runs here (on view)

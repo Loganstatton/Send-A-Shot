@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function ArtistClaimsPage() {
   await requireInternal();
-  const claims = getPendingArtistClaims();
+  const claims = await getPendingArtistClaims();
 
   return (
     <div className="space-y-6">

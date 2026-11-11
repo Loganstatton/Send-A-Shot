@@ -22,7 +22,7 @@ import ClaimArtistPanel from '@/components/next/ClaimArtistPanel';
 import MobileTradeBar from '@/components/next/MobileTradeBar';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-  const artist = getArtist(Number(params.id));
+  const artist = await getArtist(Number(params.id));
   return { title: artist?.name ?? 'Artist' };
 }
 
@@ -41,9 +41,9 @@ export default async function NextArtistPage({ params, searchParams }: { params:
   // integrity, all of which lives in executeTrade untouched.
   const feedEventIdParam = Number(searchParams.feedEventId);
   const feedReferralEventId = searchParams.ref === 'feed' && Number.isInteger(feedEventIdParam) ? feedEventIdParam : undefined;
-  const row = getNextArtist(id);
+  const row = await getNextArtist(id);
   if (!row) notFound();
-  logEvent(user.id, 'artist_detail_opened', { artistId: id });
+  await logEvent(user.id, 'artist_detail_opened', { artistId: id });
 
   const { artist, score, priceCents, priceHistory } = row;
   // A few things on this page (the Score-contribution breakdown, the claim-
@@ -52,22 +52,22 @@ export default async function NextArtistPage({ params, searchParams }: { params:
   // lib/types.ts) — fetched here, server-side only, never passed as a prop
   // into a 'use client' component itself (only the derived, already-safe
   // scoreParts/claimState values below are).
-  const rawArtist = getArtist(id)!;
+  const rawArtist = (await getArtist(id))!;
   const sentiment = marketSentiment(score, priceCents);
-  const holding = getHolding(user.id, id);
-  const scoreHistory = getScoreHistory(id);
-  const foundingRecord = getFoundingBelieverRecord(user.id, id);
-  const earlyBackerCount = getFoundingBelieverCountForArtist(id); // ever-first-bought — see the Founding Believer module below
-  const currentBackerCount = getBackerCountsByArtist()[id] ?? 0; // currently holding shares right now
-  const watchCount = getWatchCountsByArtist()[id] ?? 0;
-  const watching = isWatchlisted(user.id, id);
+  const holding = await getHolding(user.id, id);
+  const scoreHistory = await getScoreHistory(id);
+  const foundingRecord = await getFoundingBelieverRecord(user.id, id);
+  const earlyBackerCount = await getFoundingBelieverCountForArtist(id); // ever-first-bought — see the Founding Believer module below
+  const currentBackerCount = (await getBackerCountsByArtist())[id] ?? 0; // currently holding shares right now
+  const watchCount = (await getWatchCountsByArtist())[id] ?? 0;
+  const watching = await isWatchlisted(user.id, id);
   const scoreParts = scoreContributors(rawArtist);
-  const volumeCents24h = getArtistTradeVolumeCents(id, 24);
-  const recentBackerCount24h = getRecentBackerCount(id, 24);
-  const recentTrades = getRecentTradesForArtist(id);
+  const volumeCents24h = await getArtistTradeVolumeCents(id, 24);
+  const recentBackerCount24h = await getRecentBackerCount(id, 24);
+  const recentTrades = await getRecentTradesForArtist(id);
   const claimState =
     rawArtist.claimed_by_user_id == null
-      ? (getPendingClaimForUserAndArtist(user.id, id) ? 'pending' as const : 'unclaimed' as const)
+      ? (await getPendingClaimForUserAndArtist(user.id, id) ? 'pending' as const : 'unclaimed' as const)
       : rawArtist.claimed_by_user_id === user.id
       ? 'owned_by_me' as const
       : 'claimed_by_other' as const;

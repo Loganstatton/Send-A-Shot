@@ -15,7 +15,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
   if (id === null) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const artist = getArtist(id);
+  const artist = await getArtist(id);
   if (!artist) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json(artist);
 }
@@ -26,7 +26,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const id = parseId(params.id);
   if (id === null) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const body = (await req.json()) as ArtistInput;
-  const artist = updateArtist(id, body, user);
+  const artist = await updateArtist(id, body, user);
   if (!artist) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json(artist);
 }
@@ -36,7 +36,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
   if (id === null) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const ok = deleteArtist(id);
+  const ok = await deleteArtist(id);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

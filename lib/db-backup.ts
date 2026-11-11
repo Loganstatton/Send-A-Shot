@@ -1,57 +1,85 @@
-import fs from 'fs';
-import path from 'path';
-import { db } from './db';
-import { DATA_DIR } from './data-dir';
+import { db } from './pg';
+import { exportSnapshot, restoreSnapshot } from './snapshot-core';
 
-// Database backups (Phase 10) — a single SQLite file (see data-dir.ts), so
-// "backup" means a consistent point-in-time copy of it. `VACUUM INTO` is
-// SQLite's own supported mechanism for this: unlike a raw file copy, it's
-// crash-consistent even in WAL mode (a plain `cp` can catch the main file
-// mid-checkpoint, missing writes still sitting in the -wal file) and it
-// runs against the live connection — no need to stop the app.
+// Database backups. Two independent layers, covering different failures:
 //
-// These land in DATA_DIR/backups, i.e. the SAME persistent disk the live
-// database is already on (Render's disk, in production) — this protects
-// against accidental deletes/bad migrations/corruption, NOT against losing
-// the whole disk. True off-site backup (S3, etc.) needs real storage
-// credentials this app doesn't have configured; wiring that up is a
-// follow-up once those exist, not something to fake here.
-const BACKUP_DIR = path.join(DATA_DIR, 'backups');
-export const BACKUP_RETENTION_COUNT = 14; // roughly two weeks at one backup/day
+//   1. The hosting provider's own Postgres backups (on Render's paid
+//      database plans: point-in-time recovery) — the answer to "the whole
+//      database server is gone." Nothing in this file; see docs/DEPLOYMENT.md.
+//
+//   2. Snapshots, below — a consistent logical export of every table, stored
+//      as a row in db_snapshots. The answer to "a bad migration / an
+//      accidental delete / a bug corrupted rows and I need yesterday's
+//      data back": restore one in place, or download it to keep a copy
+//      that lives outside the database entirely.
+//
+// A snapshot lives in the same database it protects, so by itself it is NOT
+// protection against losing that database — downloading one (the admin
+// Backups page) is what makes an off-site copy.
 
-export type BackupResult = { fileName: string; path: string; sizeBytes: number; prunedCount: number };
+// How many scheduled/manual snapshots are kept; older ones are pruned.
+export const BACKUP_RETENTION_COUNT = 14; // roughly two weeks at one a day
+// Safety snapshots taken automatically right before a restore are kept
+// separately, so a run of restores can't push out the regular history.
+const PRE_RESTORE_RETENTION_COUNT = 5;
 
-export function runBackup(): BackupResult {
-  fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  // A random suffix, not just the millisecond timestamp — VACUUM INTO
-  // refuses to write to a path that already exists, so two calls landing
-  // in the same millisecond (a double-click on "Back up now", a retried
-  // cron request) would otherwise throw instead of producing two backups.
+export type BackupKind = 'scheduled' | 'pre-restore';
+export type BackupResult = { fileName: string; sizeBytes: number; rowCount: number; prunedCount: number };
+export type BackupListEntry = { fileName: string; kind: BackupKind; sizeBytes: number; rowCount: number; createdAt: string };
+
+const raw = { query: async (text: string, values?: unknown[]) => await db.query(text, values) };
+
+export async function runBackup(kind: BackupKind = 'scheduled'): Promise<BackupResult> {
+  // REPEATABLE READ: every table is read as of the same instant, however
+  // long the export takes and whatever is being written meanwhile.
+  const { data, rowCount } = await db.transaction(async () => {
+    await db.exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
+    return exportSnapshot(raw);
+  });
+
+  const now = new Date().toISOString();
+  // A random suffix, not just the timestamp — two requests landing in the
+  // same millisecond (a double-click, a retried cron call) both succeed.
   const suffix = Math.random().toString(36).slice(2, 8);
-  const fileName = `app-${new Date().toISOString().replace(/[:.]/g, '-')}-${suffix}.db`;
-  const filePath = path.join(BACKUP_DIR, fileName);
+  const fileName = `${kind === 'pre-restore' ? 'pre-restore' : 'snapshot'}-${now.replace(/[:.]/g, '-')}-${suffix}.json.gz`;
+  await db
+    .prepare('INSERT INTO db_snapshots (created_at, file_name, kind, size_bytes, row_count, data) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(now, fileName, kind, data.length, rowCount, data);
 
-  db.prepare('VACUUM INTO ?').run(filePath);
-  const sizeBytes = fs.statSync(filePath).size;
+  const keep = kind === 'pre-restore' ? PRE_RESTORE_RETENTION_COUNT : BACKUP_RETENTION_COUNT;
+  const pruned = await db
+    .prepare(`
+      DELETE FROM db_snapshots
+      WHERE kind = ? AND id NOT IN (SELECT id FROM db_snapshots WHERE kind = ? ORDER BY created_at DESC, id DESC LIMIT ?)
+    `)
+    .run(kind, kind, keep);
 
-  const existing = fs.readdirSync(BACKUP_DIR).filter((f) => f.startsWith('app-') && f.endsWith('.db')).sort();
-  let prunedCount = 0;
-  while (existing.length - prunedCount > BACKUP_RETENTION_COUNT) {
-    fs.unlinkSync(path.join(BACKUP_DIR, existing[prunedCount]));
-    prunedCount++;
-  }
-
-  return { fileName, path: filePath, sizeBytes, prunedCount };
+  return { fileName, sizeBytes: data.length, rowCount, prunedCount: pruned.changes };
 }
 
-export function listBackups(): { fileName: string; sizeBytes: number; createdAt: string }[] {
-  if (!fs.existsSync(BACKUP_DIR)) return [];
-  return fs
-    .readdirSync(BACKUP_DIR)
-    .filter((f) => f.startsWith('app-') && f.endsWith('.db'))
-    .map((fileName) => {
-      const stat = fs.statSync(path.join(BACKUP_DIR, fileName));
-      return { fileName, sizeBytes: stat.size, createdAt: stat.mtime.toISOString() };
-    })
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+export async function listBackups(): Promise<BackupListEntry[]> {
+  const rows = (await db
+    .prepare('SELECT file_name, kind, size_bytes, row_count, created_at FROM db_snapshots ORDER BY created_at DESC, id DESC')
+    .all()) as { file_name: string; kind: BackupKind; size_bytes: number; row_count: number; created_at: string }[];
+  return rows.map((r) => ({ fileName: r.file_name, kind: r.kind, sizeBytes: r.size_bytes, rowCount: r.row_count, createdAt: r.created_at }));
+}
+
+/** The snapshot file itself (gzipped JSON), for download or restore. */
+export async function getBackupData(fileName: string): Promise<Buffer | undefined> {
+  const row = (await db.prepare('SELECT data FROM db_snapshots WHERE file_name = ?').get(fileName)) as { data: Buffer } | undefined;
+  return row?.data;
+}
+
+export type RestoreResult = { rowCount: number; tableCount: number; skippedTables: string[]; snapshotCreatedAt: string; safetySnapshot: string };
+
+// Replaces every table's contents with a stored snapshot's. Takes a fresh
+// 'pre-restore' snapshot of the current state first, so a restore can
+// itself be undone. The replacement runs in one transaction — if anything
+// fails partway, the database is left exactly as it was.
+export async function restoreBackup(fileName: string): Promise<RestoreResult> {
+  const data = await getBackupData(fileName);
+  if (!data) throw new Error(`No snapshot named ${fileName}.`);
+  const safety = await runBackup('pre-restore');
+  const result = await db.transaction(() => restoreSnapshot(raw, data));
+  return { ...result, safetySnapshot: safety.fileName };
 }

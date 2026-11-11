@@ -17,7 +17,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: 'decision must be approved or rejected' }, { status: 400 });
   }
 
-  const claim = reviewArtistClaim(id, decision, user);
+  const claim = await reviewArtistClaim(id, decision, user);
   if (!claim) return NextResponse.json({ error: 'not found or already reviewed' }, { status: 404 });
 
   return NextResponse.json(claim);

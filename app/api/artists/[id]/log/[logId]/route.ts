@@ -13,7 +13,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; lo
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
   const body = (await req.json()) as { follow_up_at?: string | null };
-  const entry = setFollowUp(artistId, logId, body.follow_up_at ?? null);
+  const entry = await setFollowUp(artistId, logId, body.follow_up_at ?? null);
   if (!entry) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json(entry);
 }
@@ -26,7 +26,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string; 
   if (!Number.isInteger(artistId) || !Number.isInteger(logId)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
-  const ok = deleteLogEntry(artistId, logId);
+  const ok = await deleteLogEntry(artistId, logId);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

@@ -15,8 +15,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
   if (id === null) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  if (!getArtist(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return NextResponse.json(getArtistLog(id));
+  if (!await getArtist(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json(await getArtistLog(id));
 }
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -24,7 +24,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
   if (id === null) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  if (!getArtist(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (!await getArtist(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   const body = (await req.json()) as LogEntryInput;
   if (!body.message || !body.message.trim()) {
@@ -33,6 +33,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!LOG_TYPES.includes(body.type)) {
     return NextResponse.json({ error: 'invalid type' }, { status: 400 });
   }
-  const entry = addLogEntry(id, body, user);
+  const entry = await addLogEntry(id, body, user);
   return NextResponse.json(entry, { status: 201 });
 }

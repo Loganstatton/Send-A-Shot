@@ -12,7 +12,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string; 
   if (!Number.isInteger(artistId) || !Number.isInteger(investmentId)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
-  const ok = deleteInvestmentEntry(artistId, investmentId);
+  const ok = await deleteInvestmentEntry(artistId, investmentId);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

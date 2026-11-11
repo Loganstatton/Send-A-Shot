@@ -19,14 +19,14 @@ async function isAuthorized(req: Request): Promise<boolean> {
 export async function POST(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const run = createSyncRun('feed_signals');
+  const run = await createSyncRun('feed_signals');
   try {
-    const { checked, created } = generateFeedSignals();
-    completeSyncRun(run.id, { status: 'completed', checkedCount: checked, updatedCount: created, failedCount: 0 });
+    const { checked, created } = await generateFeedSignals();
+    await completeSyncRun(run.id, { status: 'completed', checkedCount: checked, updatedCount: created, failedCount: 0 });
     return NextResponse.json({ runId: run.id, checked, created });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error generating Feed signals.';
-    completeSyncRun(run.id, { status: 'failed', checkedCount: 0, updatedCount: 0, failedCount: 0, error: message });
+    await completeSyncRun(run.id, { status: 'failed', checkedCount: 0, updatedCount: 0, failedCount: 0, error: message });
     await notifyAdminsOfRunFailure('NEXT Feed signal generation', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }

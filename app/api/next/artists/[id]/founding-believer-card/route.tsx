@@ -31,9 +31,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   const artistId = Number(params.id);
   if (!Number.isInteger(artistId)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const row = getNextArtist(artistId);
+  const row = await getNextArtist(artistId);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const record = getFoundingBelieverRecord(user.id, artistId);
+  const record = await getFoundingBelieverRecord(user.id, artistId);
   if (!record) return NextResponse.json({ error: 'no founding believer record' }, { status: 404 });
 
   const { artist, score, priceCents } = row;

@@ -7,10 +7,12 @@ export const dynamic = 'force-dynamic';
 // health check) needs to hit this without a session. Checks real DB
 // connectivity rather than just returning 200 unconditionally, since "the
 // Node process is up" and "the app can actually serve a request" aren't
-// the same thing for this app (every page read goes through SQLite).
+// the same thing for this app (every page read goes through the database).
+// Reaching the database also proves its schema migrations have been applied
+// (lib/pg.ts runs them before the first query).
 export async function GET() {
   try {
-    db.prepare('SELECT 1').get();
+    await db.prepare('SELECT 1').get();
     return NextResponse.json({ ok: true, db: 'connected', timestamp: new Date().toISOString() });
   } catch (err: any) {
     return NextResponse.json({ ok: false, db: 'unreachable', error: err?.message ?? 'unknown error' }, { status: 503 });

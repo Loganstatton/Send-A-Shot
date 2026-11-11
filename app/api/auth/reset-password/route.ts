@@ -19,15 +19,15 @@ export async function POST(req: Request) {
   // already-used reset link self-invalidate: once the hash below changes,
   // this same token's fingerprint no longer matches.
   const uidGuess = decodeUid(token);
-  const currentHash = uidGuess ? getUserPasswordHash(uidGuess) : undefined;
-  const result = verifyActionToken(token, 'reset-password', currentHash);
+  const currentHash = uidGuess ? await getUserPasswordHash(uidGuess) : undefined;
+  const result = await verifyActionToken(token, 'reset-password', currentHash);
   if (!result) return NextResponse.json({ error: 'This reset link is invalid, expired, or already used.' }, { status: 400 });
 
   const password_hash = await hashPassword(password);
-  updateUserPasswordHash(result.uid, password_hash);
+  await updateUserPasswordHash(result.uid, password_hash);
 
-  const user = getUserById(result.uid);
-  if (user) setSessionCookie(user.id); // convenience: log them straight in after a successful reset
+  const user = await getUserById(result.uid);
+  if (user) await setSessionCookie(user.id); // convenience: log them straight in after a successful reset
   return NextResponse.json({ ok: true });
 }
 

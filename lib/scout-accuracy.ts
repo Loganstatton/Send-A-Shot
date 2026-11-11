@@ -31,10 +31,10 @@ export type ScoutAccuracyRow = {
   latestGrowthPct: number | null;
 };
 
-export function getScoutAccuracyRows(minDays = MIN_DAYS_FOR_ACCURACY_ROW): ScoutAccuracyRow[] {
-  const artistsById = new Map(getAllArtists().map((a) => [a.id, a]));
-  const earliestBySnapshot = new Map(getEarliestScoreSnapshots().map((s) => [s.artist_id, s]));
-  const latestBySnapshot = new Map(getLatestScoreSnapshots().map((s) => [s.artist_id, s]));
+export async function getScoutAccuracyRows(minDays = MIN_DAYS_FOR_ACCURACY_ROW): Promise<ScoutAccuracyRow[]> {
+  const artistsById = new Map((await getAllArtists()).map((a) => [a.id, a]));
+  const earliestBySnapshot = new Map((await getEarliestScoreSnapshots()).map((s) => [s.artist_id, s]));
+  const latestBySnapshot = new Map((await getLatestScoreSnapshots()).map((s) => [s.artist_id, s]));
 
   const rows: ScoutAccuracyRow[] = [];
   const now = Date.now();

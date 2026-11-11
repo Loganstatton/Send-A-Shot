@@ -16,7 +16,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const artist = getArtist(id);
+  const artist = await getArtist(id);
   if (!artist) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   const result = await findCommonsImagesForArtist(artist.name, artist.wikidata_qid);

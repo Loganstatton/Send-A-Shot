@@ -51,9 +51,9 @@ export type YoutubeQuotaStatus = { usedToday: number; budget: number; remaining:
 // last unit is spent.
 const QUOTA_WARNING_RATIO = 0.8;
 
-export function getYoutubeQuotaStatus(): YoutubeQuotaStatus {
+export async function getYoutubeQuotaStatus(): Promise<YoutubeQuotaStatus> {
   const budget = dailyQuotaBudget();
-  const usedToday = getYoutubeQuotaUsedToday(currentYoutubeQuotaDay());
+  const usedToday = await getYoutubeQuotaUsedToday(currentYoutubeQuotaDay());
   return { usedToday, budget, remaining: Math.max(0, budget - usedToday), warning: usedToday >= budget * QUOTA_WARNING_RATIO };
 }
 
@@ -75,7 +75,7 @@ async function youtubeFetch(path: string, params: Record<string, string>): Promi
 
   const cost = QUOTA_COST_BY_PATH[path] ?? 1;
   const quotaDay = currentYoutubeQuotaDay();
-  const status = getYoutubeQuotaStatus();
+  const status = await getYoutubeQuotaStatus();
   // Self-imposed budget check, ahead of YouTube's own — turns "warn before
   // hitting the daily limit" into an actual guardrail instead of only a
   // number on a dashboard nobody's watching in real time. Refusing here
@@ -111,11 +111,11 @@ async function youtubeFetch(path: string, params: Record<string, string>): Promi
       // (unlike every other outcome below) is deliberately NOT recorded.
       return { ok: false, quotaExceeded: true, error: 'YouTube API daily quota exceeded — try again after the quota resets (midnight Pacific).' };
     }
-    recordYoutubeQuotaUsage(cost, path, quotaDay);
+    await recordYoutubeQuotaUsage(cost, path, quotaDay);
     return { ok: false, error: `YouTube API error (${res.status}): ${message}` };
   }
 
-  recordYoutubeQuotaUsage(cost, path, quotaDay);
+  await recordYoutubeQuotaUsage(cost, path, quotaDay);
   try {
     return { ok: true, data: await res.json() };
   } catch {
@@ -355,7 +355,7 @@ export async function getFeaturedVideoForArtist(artistName: string, channelUrl?:
         if (uploadsResult.data) return { ok: true, data: { ...uploadsResult.data, matchType: 'channel' } };
       }
     }
-    return searchArtistVideo(artistName);
+    return await searchArtistVideo(artistName);
   })();
 
   if (!match.ok || !match.data) return match;

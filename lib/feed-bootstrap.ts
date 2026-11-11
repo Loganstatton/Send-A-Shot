@@ -29,7 +29,7 @@ export const BOOTSTRAP_CAP_PER_TYPE = 30;
 
 export type FeedBootstrapResult = { newArtist: number; earlyDiscovery: number; artistUpdate: number };
 
-export function bootstrapFeedFromHistory(): FeedBootstrapResult {
+export async function bootstrapFeedFromHistory(): Promise<FeedBootstrapResult> {
   const cutoff = new Date(Date.now() - BOOTSTRAP_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
   let newArtist = 0;
   let earlyDiscovery = 0;
@@ -37,7 +37,7 @@ export function bootstrapFeedFromHistory(): FeedBootstrapResult {
 
   // new_artist + early_discovery: every approved candidate in the window
   // that resolved to a real, still-existing artist.
-  const approvedCandidates = db
+  const approvedCandidates = await db
     .prepare(`
       SELECT discovery_candidates.id AS candidate_id, discovery_candidates.submitted_by_user_id, discovery_candidates.reviewed_at,
              artists.id AS artist_id
@@ -50,10 +50,10 @@ export function bootstrapFeedFromHistory(): FeedBootstrapResult {
     .all(cutoff, BOOTSTRAP_CAP_PER_TYPE) as { candidate_id: number; submitted_by_user_id: number | null; reviewed_at: string; artist_id: number }[];
 
   for (const row of approvedCandidates) {
-    const artist = db.prepare('SELECT * FROM artists WHERE id = ?').get(row.artist_id) as Artist | undefined;
+    const artist = await db.prepare('SELECT * FROM artists WHERE id = ?').get(row.artist_id) as Artist | undefined;
     if (!artist) continue;
 
-    const created = createFeedEvent({
+    const created = await createFeedEvent({
       eventType: 'new_artist',
       artistId: artist.id,
       refType: 'discovery_candidate',
@@ -64,7 +64,7 @@ export function bootstrapFeedFromHistory(): FeedBootstrapResult {
     if (created) newArtist++;
 
     if (row.submitted_by_user_id) {
-      const createdEarly = createFeedEvent({
+      const createdEarly = await createFeedEvent({
         eventType: 'early_discovery',
         actorUserId: row.submitted_by_user_id,
         artistId: artist.id,
@@ -81,7 +81,7 @@ export function bootstrapFeedFromHistory(): FeedBootstrapResult {
   // note form — tagged with the exact "Artist self-update:" prefix that
   // route stamps, so this never mistakes an internal Scout contact-log
   // entry (a call note, a status change) for a public artist post.
-  const selfUpdates = db
+  const selfUpdates = await db
     .prepare(`
       SELECT id, artist_id FROM contact_log
       WHERE type = 'note' AND message LIKE 'Artist self-update:%' AND created_at >= ?
@@ -91,9 +91,9 @@ export function bootstrapFeedFromHistory(): FeedBootstrapResult {
     .all(cutoff, BOOTSTRAP_CAP_PER_TYPE) as { id: number; artist_id: number }[];
 
   for (const entry of selfUpdates) {
-    const artist = db.prepare('SELECT claimed_by_user_id FROM artists WHERE id = ?').get(entry.artist_id) as { claimed_by_user_id: number | null } | undefined;
+    const artist = await db.prepare('SELECT claimed_by_user_id FROM artists WHERE id = ?').get(entry.artist_id) as { claimed_by_user_id: number | null } | undefined;
     if (!artist) continue;
-    const created = createFeedEvent({
+    const created = await createFeedEvent({
       eventType: 'artist_update',
       actorUserId: artist.claimed_by_user_id ?? undefined,
       artistId: entry.artist_id,

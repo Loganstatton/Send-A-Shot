@@ -20,7 +20,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: "can't demote yourself" }, { status: 400 });
   }
 
-  const user = setUserRole(id, body.role);
+  const user = await setUserRole(id, body.role);
   if (!user) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json(user);
 }

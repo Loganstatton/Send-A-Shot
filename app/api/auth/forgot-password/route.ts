@@ -13,12 +13,12 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'A valid email is required.' }, { status: 400 });
 
-  const user = getUserByEmail(parsed.data.email);
+  const user = await getUserByEmail(parsed.data.email);
   // Always the same response whether or not the account exists — a
   // different message here would let anyone probe which emails have
   // accounts on this app.
   if (user) {
-    const token = createActionToken(user.id, 'reset-password', RESET_TOKEN_TTL_SEC, user.password_hash);
+    const token = await createActionToken(user.id, 'reset-password', RESET_TOKEN_TTL_SEC, user.password_hash);
     const appUrl = process.env.APP_URL ?? new URL(req.url).origin;
     sendEmail({
       to: user.email,

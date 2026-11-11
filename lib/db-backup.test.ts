@@ -1,54 +1,120 @@
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import { describe, expect, it } from 'vitest';
 
-// Own DATA_DIR — this test writes real files to disk (the whole point of
-// runBackup), so it needs a throwaway directory, not the shared test DB.
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'db-backup-test-'));
-process.env.DATA_DIR = dataDir;
-
-const { createArtist } = await import('./db');
-const { BACKUP_RETENTION_COUNT, listBackups, runBackup } = await import('./db-backup');
+const {
+  createArtist, createUser, db, deleteArtist, executeTrade, getAllArtists, getArtist, getHolding, getUserById, getUserTransactions,
+} = await import('./db');
+const { BACKUP_RETENTION_COUNT, getBackupData, listBackups, restoreBackup, runBackup } = await import('./db-backup');
+const { parseSnapshot } = await import('./snapshot-core');
 
 describe('runBackup', () => {
-  it('writes a real, non-empty .db file to DATA_DIR/backups and it appears in listBackups', () => {
-    createArtist({ name: 'Backup Test Artist', music_talent: 5 }); // give the DB something in it
-    const result = runBackup();
+  it('stores a real, non-empty snapshot and it appears in listBackups', async () => {
+    await createArtist({ name: 'Backup Test Artist', music_talent: 5 });
+    const result = await runBackup();
 
-    expect(fs.existsSync(result.path)).toBe(true);
     expect(result.sizeBytes).toBeGreaterThan(0);
-    expect(result.path).toBe(path.join(dataDir, 'backups', result.fileName));
-
-    const backups = listBackups();
-    expect(backups.some((b) => b.fileName === result.fileName)).toBe(true);
+    expect(result.rowCount).toBeGreaterThan(0);
+    const backups = await listBackups();
+    const listed = backups.find((b) => b.fileName === result.fileName);
+    expect(listed).toBeDefined();
+    expect(listed!.sizeBytes).toBe(result.sizeBytes);
+    expect(listed!.kind).toBe('scheduled');
   });
 
-  it('the backup file is a real, valid SQLite database containing the data at backup time', () => {
-    createArtist({ name: 'Backup Content Artist', music_talent: 7 });
-    const result = runBackup();
+  it('the snapshot really contains the data as of backup time', async () => {
+    await createArtist({ name: 'Backup Content Artist', music_talent: 7 });
+    const result = await runBackup();
+    await createArtist({ name: 'Created After The Backup', music_talent: 7 });
 
-    // Open the BACKUP file directly (not the live db) and confirm the
-    // artist is really in there — proves this is a real, queryable
-    // snapshot, not just an empty or corrupt file of the right size.
-    const Database = require('better-sqlite3');
-    const backupDb = new Database(result.path, { readonly: true });
-    const row = backupDb.prepare("SELECT name FROM artists WHERE name = 'Backup Content Artist'").get();
-    backupDb.close();
-    expect(row).toBeDefined();
-    expect(row.name).toBe('Backup Content Artist');
+    // Read the stored SNAPSHOT (not the live tables) and confirm the artist
+    // is in there — a real, parseable export, not just bytes of the right size.
+    const snapshot = parseSnapshot((await getBackupData(result.fileName))!);
+    const names = snapshot.tables.artists.map((a: { name: string }) => a.name);
+    expect(names).toContain('Backup Content Artist');
+    expect(names).not.toContain('Created After The Backup');
+    // Snapshots never contain other snapshots (or they'd grow without bound).
+    expect(snapshot.tables.db_snapshots).toBeUndefined();
   });
 
-  it('prunes old backups beyond BACKUP_RETENTION_COUNT, keeping the newest ones', () => {
-    // Whatever the two tests above already left in dataDir/backups, running
-    // this many MORE times must bring the total back down to at most the
-    // retention count — pruning is triggered on every run, not just once.
-    for (let i = 0; i < BACKUP_RETENTION_COUNT + 3; i++) runBackup();
-    const backups = listBackups();
-    expect(backups.length).toBeLessThanOrEqual(BACKUP_RETENTION_COUNT);
+  it('prunes old snapshots beyond BACKUP_RETENTION_COUNT, keeping the newest ones', async () => {
+    let last = await runBackup();
+    for (let i = 0; i < BACKUP_RETENTION_COUNT + 3; i++) last = await runBackup();
+    const backups = (await listBackups()).filter((b) => b.kind === 'scheduled');
+    expect(backups.length).toBe(BACKUP_RETENTION_COUNT);
+    // The very last one just written is still there, newest first.
+    expect(backups[0].fileName).toBe(last.fileName);
+  });
+});
 
-    // And it kept the NEWEST ones — the very last backup just written is
-    // still present, not pruned in favor of an older one.
-    expect(backups[0].fileName).toBeDefined();
+describe('restoreBackup', () => {
+  it('brings back deleted rows, undoes later changes, and keeps ids, balances and holdings exactly', async () => {
+    const trader = await createUser({ name: 'Restore Trader', email: 'restore-trader@example.com', password_hash: 'hash' });
+    const artist = await createArtist({ name: 'Restore Me', music_talent: 8 });
+    const buy = await executeTrade(trader.id, artist.id, 'buy', 250_000);
+    expect(buy.ok).toBe(true);
+    const balanceAtBackup = (await getUserById(trader.id))!.next_credits_cents;
+    const holdingAtBackup = (await getHolding(trader.id, artist.id))!;
+
+    const backup = await runBackup();
+
+    // Damage after the backup: more trading, a new artist, and the original
+    // artist deleted outright (which cascades away the holding and trades).
+    await executeTrade(trader.id, artist.id, 'buy', 100_000);
+    const later = await createArtist({ name: 'Should Vanish On Restore', music_talent: 5 });
+    await deleteArtist(artist.id);
+    expect(await getArtist(artist.id)).toBeUndefined();
+    expect(await getHolding(trader.id, artist.id)).toBeUndefined();
+
+    const result = await restoreBackup(backup.fileName);
+    expect(result.rowCount).toBe(backup.rowCount);
+
+    expect((await getArtist(artist.id))!.name).toBe('Restore Me');
+    expect(await getArtist(later.id)).toBeUndefined();
+    expect((await getUserById(trader.id))!.next_credits_cents).toBe(balanceAtBackup);
+    const holding = (await getHolding(trader.id, artist.id))!;
+    expect(holding.shares).toBe(holdingAtBackup.shares);
+    expect(holding.cost_basis_cents).toBe(holdingAtBackup.cost_basis_cents);
+    expect(await getUserTransactions(trader.id)).toHaveLength(1);
+  });
+
+  it('new rows after a restore get fresh ids (sequences are moved past the restored rows)', async () => {
+    const before = await getAllArtists();
+    const maxId = Math.max(...before.map((a) => a.id));
+    const backup = await runBackup();
+    await restoreBackup(backup.fileName);
+    const created = await createArtist({ name: 'Created After Restore', music_talent: 5 });
+    expect(created.id).toBeGreaterThan(maxId);
+  });
+
+  it('takes a pre-restore safety snapshot first, so the restore itself can be undone', async () => {
+    const backup = await runBackup();
+    const marker = await createArtist({ name: 'Only In The Safety Snapshot', music_talent: 5 });
+
+    const result = await restoreBackup(backup.fileName);
+    expect(await getArtist(marker.id)).toBeUndefined();
+    const safety = (await listBackups()).find((b) => b.fileName === result.safetySnapshot);
+    expect(safety?.kind).toBe('pre-restore');
+
+    // Undo the restore.
+    await restoreBackup(result.safetySnapshot);
+    expect((await getArtist(marker.id))!.name).toBe('Only In The Safety Snapshot');
+  });
+
+  it('a failed restore leaves the database untouched', async () => {
+    const artist = await createArtist({ name: 'Survives A Failed Restore', music_talent: 5 });
+    // A snapshot whose rows violate a NOT NULL constraint partway through.
+    const zlib = await import('zlib');
+    const bad = zlib.gzipSync(Buffer.from(JSON.stringify({
+      format: 'sas-snapshot-v1', created_at: new Date().toISOString(), migrations: [],
+      tables: { users: [{ id: 1, created_at: 'x', name: null, email: 'bad@example.com', password_hash: 'h' }] },
+    })));
+    await db.prepare('INSERT INTO db_snapshots (created_at, file_name, kind, size_bytes, row_count, data) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(new Date().toISOString(), 'broken.json.gz', 'scheduled', bad.length, 1, bad);
+
+    await expect(restoreBackup('broken.json.gz')).rejects.toThrow();
+    expect((await getArtist(artist.id))!.name).toBe('Survives A Failed Restore');
+  });
+
+  it('rejects an unknown snapshot name', async () => {
+    await expect(restoreBackup('does-not-exist.json.gz')).rejects.toThrow(/No snapshot named/);
   });
 });

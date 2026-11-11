@@ -7,5 +7,5 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  return NextResponse.json(getDueFollowUps());
+  return NextResponse.json(await getDueFollowUps());
 }

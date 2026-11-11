@@ -28,12 +28,12 @@ const TRADES_PER_TRADER = 8;
 // runner whose speed varies run to run.
 const BUDGET_MS = 2000;
 
-function seedArtists(count: number) {
+async function seedArtists(count: number) {
   const genres = ['Pop', 'Hip-Hop', 'R&B', 'Country', 'Rock', 'Electronic'];
   const artists = [];
   for (let i = 0; i < count; i++) {
     artists.push(
-      createArtist({
+      await createArtist({
         name: `Perf Artist ${i}`,
         genre: genres[i % genres.length],
         music_talent: 5 + (i % 5),
@@ -50,36 +50,36 @@ function seedArtists(count: number) {
   return artists;
 }
 
-function seedTraders(count: number) {
+async function seedTraders(count: number) {
   const traders = [];
   for (let i = 0; i < count; i++) {
-    traders.push(createUser({ name: `Perf Trader ${i}`, email: `perf-trader-${i}@example.com`, password_hash: 'hash' }));
+    traders.push(await createUser({ name: `Perf Trader ${i}`, email: `perf-trader-${i}@example.com`, password_hash: 'hash' }));
   }
   return traders;
 }
 
-function timeIt<T>(fn: () => T): { result: T; ms: number } {
+async function timeIt<T>(fn: () => Promise<T>): Promise<{ result: T; ms: number }> {
   const start = performance.now();
-  const result = fn();
+  const result = await fn();
   const ms = performance.now() - start;
   return { result, ms };
 }
 
 describe('Performance at scale (Phase 10) — 100+ artists, many traders and trades', () => {
-  it(`seeds ${ARTIST_COUNT} artists, ${TRADER_COUNT} traders, and executes real trades across them within budget`, () => {
-    const { result: artists, ms: seedArtistsMs } = timeIt(() => seedArtists(ARTIST_COUNT));
+  it(`seeds ${ARTIST_COUNT} artists, ${TRADER_COUNT} traders, and executes real trades across them within budget`, async () => {
+    const { result: artists, ms: seedArtistsMs } = await timeIt(async () => await seedArtists(ARTIST_COUNT));
     expect(artists).toHaveLength(ARTIST_COUNT);
     console.log(`[perf] seeded ${ARTIST_COUNT} artists in ${seedArtistsMs.toFixed(0)}ms`);
 
-    const { result: traders, ms: seedTradersMs } = timeIt(() => seedTraders(TRADER_COUNT));
+    const { result: traders, ms: seedTradersMs } = await timeIt(async () => await seedTraders(TRADER_COUNT));
     expect(traders).toHaveLength(TRADER_COUNT);
     console.log(`[perf] seeded ${TRADER_COUNT} traders in ${seedTradersMs.toFixed(0)}ms`);
 
-    const { ms: tradesMs } = timeIt(() => {
+    const { ms: tradesMs } = await timeIt(async () => {
       for (const trader of traders) {
         for (let t = 0; t < TRADES_PER_TRADER; t++) {
           const artist = artists[(trader.id + t) % artists.length];
-          const buy = executeTrade(trader.id, artist.id, 'buy', 5_000 + t * 1_000);
+          const buy = await executeTrade(trader.id, artist.id, 'buy', 5_000 + t * 1_000);
           if (!buy.ok) throw new Error(buy.error);
         }
       }
@@ -88,23 +88,23 @@ describe('Performance at scale (Phase 10) — 100+ artists, many traders and tra
     console.log(`[perf] executed ${totalTrades} trades in ${tradesMs.toFixed(0)}ms (${(tradesMs / totalTrades).toFixed(2)}ms/trade)`);
     expect(tradesMs).toBeLessThan(BUDGET_MS * 5); // trading is the heaviest write path — a wider budget
 
-    const { result: market, ms: marketMs } = timeIt(() => getNextMarket());
+    const { result: market, ms: marketMs } = await timeIt(async () => await getNextMarket());
     console.log(`[perf] getNextMarket() over ${market.length} artists in ${marketMs.toFixed(0)}ms`);
     expect(market.length).toBeGreaterThanOrEqual(ARTIST_COUNT);
     expect(marketMs).toBeLessThan(BUDGET_MS);
 
-    const { result: leaderboard, ms: leaderboardMs } = timeIt(() => getScoutLeaderboard());
+    const { result: leaderboard, ms: leaderboardMs } = await timeIt(async () => await getScoutLeaderboard());
     console.log(`[perf] getScoutLeaderboard() over ${leaderboard.length} scouts in ${leaderboardMs.toFixed(0)}ms`);
     expect(leaderboardMs).toBeLessThan(BUDGET_MS);
 
-    const { ms: discoveryLeaderboardMs } = timeIt(() => getDiscoveryLeaderboard());
+    const { ms: discoveryLeaderboardMs } = await timeIt(async () => await getDiscoveryLeaderboard());
     console.log(`[perf] getDiscoveryLeaderboard() in ${discoveryLeaderboardMs.toFixed(0)}ms`);
     expect(discoveryLeaderboardMs).toBeLessThan(BUDGET_MS);
 
     // The heaviest read in the app by construction — pulls every
     // transaction and does O(n log n) grouping/sorting in JS (see
     // lib/market-integrity.ts). This is the one most worth a scale check.
-    const { result: flags, ms: flagsMs } = timeIt(() => getSuspiciousTradingFlags());
+    const { result: flags, ms: flagsMs } = await timeIt(async () => await getSuspiciousTradingFlags());
     console.log(`[perf] getSuspiciousTradingFlags() over ${totalTrades} transactions in ${flagsMs.toFixed(0)}ms, ${flags.length} flags`);
     expect(flagsMs).toBeLessThan(BUDGET_MS);
   }, 30_000);

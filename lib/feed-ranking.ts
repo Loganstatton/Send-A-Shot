@@ -9,7 +9,7 @@
 
 // Type-only imports — erased at compile time, so this file (imported
 // directly by the client-side FeedView component for instant tab
-// switching) never pulls lib/db.ts's better-sqlite3 dependency, or any
+// switching) never pulls lib/db.ts's database driver, or any
 // other server-only code, into the browser bundle.
 import type { FeedEventType } from './types';
 import type { FeedItemDTO } from './feed-items';

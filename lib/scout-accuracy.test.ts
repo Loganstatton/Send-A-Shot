@@ -20,16 +20,16 @@ function daysAgoIso(days: number): string {
 // snapshotScore always stamps "now", so this is how every other test in
 // this codebase controls recorded_at (see lib/db.test.ts's Leaderboard
 // tests for the same pattern).
-function backdateLatestSnapshot(artistId: number, at: string) {
-  const row = db.prepare('SELECT id FROM score_history WHERE artist_id = ? ORDER BY id DESC LIMIT 1').get(artistId) as { id: number };
-  db.prepare('UPDATE score_history SET recorded_at = ? WHERE id = ?').run(at, row.id);
+async function backdateLatestSnapshot(artistId: number, at: string) {
+  const row = await db.prepare('SELECT id FROM score_history WHERE artist_id = ? ORDER BY id DESC LIMIT 1').get(artistId) as { id: number };
+  await db.prepare('UPDATE score_history SET recorded_at = ? WHERE id = ?').run(at, row.id);
 }
 
 // All six human-rated categories at the same value, for a scoutPoints of
 // exactly value * 7 (weights sum to 70) and initialScoutRatingAvg of
 // exactly `value`.
-function makeRatedArtist(name: string, rating: number, growthPct: number) {
-  return createArtist({
+async function makeRatedArtist(name: string, rating: number, growthPct: number) {
+  return await createArtist({
     name, music_talent: rating, original_song_response: rating, brand_personality: rating,
     content_consistency: rating, commercial_potential: rating, professionalism: rating,
     growth_velocity_pct: growthPct,
@@ -37,25 +37,25 @@ function makeRatedArtist(name: string, rating: number, growthPct: number) {
 }
 
 describe('getScoutAccuracyRows', () => {
-  it('excludes an artist with only one snapshot ever (no second data point to compare against)', () => {
-    const artist = makeRatedArtist('Single Snapshot', 8, 20);
-    const rows = getScoutAccuracyRows(0);
+  it('excludes an artist with only one snapshot ever (no second data point to compare against)', async () => {
+    const artist = await makeRatedArtist('Single Snapshot', 8, 20);
+    const rows = await getScoutAccuracyRows(0);
     expect(rows.find((r) => r.artistId === artist.id)).toBeUndefined();
   });
 
-  it('excludes an artist whose two snapshots are less than minDays apart', () => {
-    const artist = makeRatedArtist('Too Recent', 8, 20);
-    updateArtist(artist.id, { name: artist.name, growth_velocity_pct: 25 }); // second snapshot, "now" — seconds apart
-    const rows = getScoutAccuracyRows(MIN_DAYS_FOR_ACCURACY_ROW);
+  it('excludes an artist whose two snapshots are less than minDays apart', async () => {
+    const artist = await makeRatedArtist('Too Recent', 8, 20);
+    await updateArtist(artist.id, { name: artist.name, growth_velocity_pct: 25 }); // second snapshot, "now" — seconds apart
+    const rows = await getScoutAccuracyRows(MIN_DAYS_FOR_ACCURACY_ROW);
     expect(rows.find((r) => r.artistId === artist.id)).toBeUndefined();
   });
 
-  it('includes a qualifying artist with the correct initial rating, initial growth, and latest growth', () => {
-    const artist = makeRatedArtist('Qualifying Artist', 8, 32);
-    backdateLatestSnapshot(artist.id, daysAgoIso(20));
-    updateArtist(artist.id, { name: artist.name, growth_velocity_pct: 45 });
+  it('includes a qualifying artist with the correct initial rating, initial growth, and latest growth', async () => {
+    const artist = await makeRatedArtist('Qualifying Artist', 8, 32);
+    await backdateLatestSnapshot(artist.id, daysAgoIso(20));
+    await updateArtist(artist.id, { name: artist.name, growth_velocity_pct: 45 });
 
-    const row = getScoutAccuracyRows(14).find((r) => r.artistId === artist.id)!;
+    const row = (await getScoutAccuracyRows(14)).find((r) => r.artistId === artist.id)!;
     expect(row).toBeDefined();
     expect(row.daysSinceFirstRating).toBeGreaterThanOrEqual(19); // ~20, allowing for a little test-run drift
     expect(row.initialScoutPoints).toBe(56); // 8 * 70 / 10
@@ -64,18 +64,18 @@ describe('getScoutAccuracyRows', () => {
     expect(row.latestGrowthPct).toBe(45);
   });
 
-  it('reports latestGrowthPct as null (not 0) when the latest snapshot never recorded a growth %', () => {
-    const artist = createArtist({ name: 'No Growth Data Artist', music_talent: 7, original_song_response: 7, brand_personality: 7, content_consistency: 7, commercial_potential: 7, professionalism: 7 });
-    backdateLatestSnapshot(artist.id, daysAgoIso(20));
-    updateArtist(artist.id, { name: artist.name, location: 'Nashville, TN' }); // a second snapshot, still no growth_velocity_pct ever set
+  it('reports latestGrowthPct as null (not 0) when the latest snapshot never recorded a growth %', async () => {
+    const artist = await createArtist({ name: 'No Growth Data Artist', music_talent: 7, original_song_response: 7, brand_personality: 7, content_consistency: 7, commercial_potential: 7, professionalism: 7 });
+    await backdateLatestSnapshot(artist.id, daysAgoIso(20));
+    await updateArtist(artist.id, { name: artist.name, location: 'Nashville, TN' }); // a second snapshot, still no growth_velocity_pct ever set
 
-    const row = getScoutAccuracyRows(14).find((r) => r.artistId === artist.id)!;
+    const row = (await getScoutAccuracyRows(14)).find((r) => r.artistId === artist.id)!;
     expect(row.latestGrowthPct).toBeNull();
   });
 });
 
 describe('getScoutAccuracySummary', () => {
-  it('computes a strong positive correlation and correct quartile averages for a clearly monotonic dataset', () => {
+  it('computes a strong positive correlation and correct quartile averages for a clearly monotonic dataset', async () => {
     const specs: [string, number, number][] = [
       ['Top Rated', 10, 50],
       ['High Rated', 7.5, 30],
@@ -83,12 +83,12 @@ describe('getScoutAccuracySummary', () => {
       ['Low Rated', 2.5, 5],
     ];
     for (const [name, rating, growth] of specs) {
-      const artist = makeRatedArtist(name, rating, 10);
-      backdateLatestSnapshot(artist.id, daysAgoIso(20));
-      updateArtist(artist.id, { name: artist.name, growth_velocity_pct: growth });
+      const artist = await makeRatedArtist(name, rating, 10);
+      await backdateLatestSnapshot(artist.id, daysAgoIso(20));
+      await updateArtist(artist.id, { name: artist.name, growth_velocity_pct: growth });
     }
 
-    const rows = getScoutAccuracyRows(14).filter((r) => specs.some(([name]) => name === r.artistName));
+    const rows = (await getScoutAccuracyRows(14)).filter((r) => specs.some(([name]) => name === r.artistName));
     expect(rows).toHaveLength(4);
     const summary = getScoutAccuracySummary(rows);
 
@@ -99,7 +99,7 @@ describe('getScoutAccuracySummary', () => {
     expect(summary.bottomQuartileAvgGrowth).toBe(5); // "Low Rated" alone
   });
 
-  it('computes a strong negative correlation when higher-rated artists actually grew less', () => {
+  it('computes a strong negative correlation when higher-rated artists actually grew less', async () => {
     const specs: [string, number, number][] = [
       ['Inverse Top Rated', 10, 5],
       ['Inverse High Rated', 7.5, 20],
@@ -107,25 +107,25 @@ describe('getScoutAccuracySummary', () => {
       ['Inverse Low Rated', 2.5, 50],
     ];
     for (const [name, rating, growth] of specs) {
-      const artist = makeRatedArtist(name, rating, 10);
-      backdateLatestSnapshot(artist.id, daysAgoIso(20));
-      updateArtist(artist.id, { name: artist.name, growth_velocity_pct: growth });
+      const artist = await makeRatedArtist(name, rating, 10);
+      await backdateLatestSnapshot(artist.id, daysAgoIso(20));
+      await updateArtist(artist.id, { name: artist.name, growth_velocity_pct: growth });
     }
 
-    const rows = getScoutAccuracyRows(14).filter((r) => specs.some(([name]) => name === r.artistName));
+    const rows = (await getScoutAccuracyRows(14)).filter((r) => specs.some(([name]) => name === r.artistName));
     const summary = getScoutAccuracySummary(rows);
     expect(summary.correlation!).toBeLessThan(-0.9);
   });
 
-  it('returns null quartile averages (but still a correlation) with fewer than 4 rows, and an all-null summary with zero rows', () => {
-    const a = makeRatedArtist('Pair A', 9, 10);
-    backdateLatestSnapshot(a.id, daysAgoIso(20));
-    updateArtist(a.id, { name: a.name, growth_velocity_pct: 40 });
-    const b = makeRatedArtist('Pair B', 3, 10);
-    backdateLatestSnapshot(b.id, daysAgoIso(20));
-    updateArtist(b.id, { name: b.name, growth_velocity_pct: 10 });
+  it('returns null quartile averages (but still a correlation) with fewer than 4 rows, and an all-null summary with zero rows', async () => {
+    const a = await makeRatedArtist('Pair A', 9, 10);
+    await backdateLatestSnapshot(a.id, daysAgoIso(20));
+    await updateArtist(a.id, { name: a.name, growth_velocity_pct: 40 });
+    const b = await makeRatedArtist('Pair B', 3, 10);
+    await backdateLatestSnapshot(b.id, daysAgoIso(20));
+    await updateArtist(b.id, { name: b.name, growth_velocity_pct: 10 });
 
-    const pairRows = getScoutAccuracyRows(14).filter((r) => r.artistName === 'Pair A' || r.artistName === 'Pair B');
+    const pairRows = (await getScoutAccuracyRows(14)).filter((r) => r.artistName === 'Pair A' || r.artistName === 'Pair B');
     const summary = getScoutAccuracySummary(pairRows);
     expect(summary.sampleSize).toBe(2);
     expect(summary.correlation).not.toBeNull();

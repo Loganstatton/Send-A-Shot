@@ -21,11 +21,11 @@ async function isAuthorized(req: Request): Promise<boolean> {
 export async function POST(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const run = createSyncRun('deezer');
+  const run = await createSyncRun('deezer');
   // Covers the whole roster (Deezer lookup is by artist name) but only
   // artists still missing a top song or a photo — see
   // getArtistsMissingDeezerData for why it never overwrites either field.
-  const artists = getArtistsMissingDeezerData();
+  const artists = await getArtistsMissingDeezerData();
   let updatedCount = 0;
   let noMatchCount = 0;
   let errorCount = 0;
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
         if (result.reason === 'no_artist_match' || result.reason === 'no_top_track') {
           noMatchCount++;
           // A completed, honest check — even though it found nothing.
-          stampSourceSyncedAt(artist.id, 'deezer');
+          await stampSourceSyncedAt(artist.id, 'deezer');
           // Previously silent — made it impossible to tell which specific
           // artists (a famous one shouldn't ever land here) got "no match"
           // vs which genuinely have no Deezer presence, without guessing
@@ -53,12 +53,12 @@ export async function POST(req: Request) {
         } else {
           errorCount++;
           lastError = result.error;
-          logSyncFailure(run.id, 'deezer', artist.id, artist.name, result.error ?? result.reason);
+          await logSyncFailure(run.id, 'deezer', artist.id, artist.name, result.error ?? result.reason);
           console.error('[deezer-sync] lookup failed for', artist.name, result.reason, result.error);
         }
         continue;
       }
-      stampSourceSyncedAt(artist.id, 'deezer');
+      await stampSourceSyncedAt(artist.id, 'deezer');
       // Pre-beta migration: Deezer's photo is never used publicly (see
       // lib/artist-image.ts's resolver and the SOURCE_TYPES comment in
       // lib/types.ts) — there's no reliable rights/attribution info behind
@@ -66,17 +66,17 @@ export async function POST(req: Request) {
       // top_song_url/song_preview_url (internal Scout research links, never
       // rendered on Public NEXT) still come from this sync.
       const { photo_url, ...publicSafeFields } = result.data;
-      updateArtist(artist.id, publicSafeFields as ArtistInput);
+      await updateArtist(artist.id, publicSafeFields as ArtistInput);
       updatedCount++;
     }
 
     const failedCount = noMatchCount + errorCount;
-    completeSyncRun(run.id, { status: 'completed', checkedCount: artists.length, updatedCount, failedCount, noMatchCount, errorCount, lastError });
+    await completeSyncRun(run.id, { status: 'completed', checkedCount: artists.length, updatedCount, failedCount, noMatchCount, errorCount, lastError });
     return NextResponse.json({ runId: run.id, checked: artists.length, updated: updatedCount, noMatch: noMatchCount, errors: errorCount, lastError });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during Deezer sync.';
     const failedCount = noMatchCount + errorCount;
-    completeSyncRun(run.id, { status: 'failed', checkedCount: artists.length, updatedCount, failedCount, error: message, noMatchCount, errorCount, lastError });
+    await completeSyncRun(run.id, { status: 'failed', checkedCount: artists.length, updatedCount, failedCount, error: message, noMatchCount, errorCount, lastError });
     await notifyAdminsOfRunFailure('Deezer sync', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }

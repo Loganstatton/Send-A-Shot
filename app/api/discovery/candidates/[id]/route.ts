@@ -15,12 +15,12 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 
   const body = (await req.json()) as { action?: 'watch' | 'pass' | 'approve' };
   if (body.action === 'watch' || body.action === 'pass') {
-    const updated = setDiscoveryCandidateStatus(id, body.action === 'watch' ? 'watching' : 'passed', user);
+    const updated = await setDiscoveryCandidateStatus(id, body.action === 'watch' ? 'watching' : 'passed', user);
     if (!updated) return NextResponse.json({ error: 'candidate not found' }, { status: 404 });
     return NextResponse.json(updated);
   }
   if (body.action === 'approve') {
-    let artist = approveDiscoveryCandidate(id, user);
+    let artist = await approveDiscoveryCandidate(id, user);
     if (!artist) return NextResponse.json({ error: 'candidate not found or already approved' }, { status: 404 });
 
     // Same best-effort, one-time Deezer top-song lookup as the manual Add
@@ -32,7 +32,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         return null;
       });
       if (result?.ok) {
-        artist = updateArtist(artist.id, result.data as ArtistInput) ?? artist;
+        artist = await updateArtist(artist.id, result.data as ArtistInput) ?? artist;
       } else if (result) {
         console.log('[deezer-lookup] on-approve lookup found no top song for', artist.name, `(${result.reason})`, result.error ?? '');
       }

@@ -13,12 +13,12 @@ import { insertErrorReport } from './db';
 // error (those already return a 400 with a specific message and never
 // reach here). Never throws itself: a logging failure must not turn a
 // real error response into a worse one.
-export function logServerError(context: string, err: unknown, meta?: { path?: string; userId?: number }): void {
+export async function logServerError(context: string, err: unknown, meta?: { path?: string; userId?: number }): Promise<void> {
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack : undefined;
   console.error(`[${context}]`, err);
   try {
-    insertErrorReport({ source: 'server', message: `${context}: ${message}`, stack, path: meta?.path, userId: meta?.userId });
+    await insertErrorReport({ source: 'server', message: `${context}: ${message}`, stack, path: meta?.path, userId: meta?.userId });
   } catch (logErr) {
     console.error('[error-log] failed to persist error report', logErr);
   }

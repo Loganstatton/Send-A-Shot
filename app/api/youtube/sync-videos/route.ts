@@ -24,12 +24,12 @@ export async function POST(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (!youtubeConfigured()) return NextResponse.json({ error: 'YouTube is not configured on this server.' }, { status: 400 });
 
-  const run = createSyncRun('youtube_video');
+  const run = await createSyncRun('youtube_video');
   // Every artist still missing a featured video and not in the "recently
   // confirmed no match" backoff window — this is what backfills existing
   // manually-added artists (they never got the on-create lookup in
   // app/api/artists/route.ts), not just new ones going forward.
-  const artists = getArtistsMissingVideo();
+  const artists = await getArtistsMissingVideo();
   let attemptedCount = 0;
   let updatedCount = 0;
   let noMatchCount = 0;
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
         attemptedCount++;
         errorCount++;
         lastError = result.error;
-        logSyncFailure(run.id, 'youtube_video', artist.id, artist.name, result.error);
+        await logSyncFailure(run.id, 'youtube_video', artist.id, artist.name, result.error);
         console.error('[youtube-video-sync] lookup failed for', artist.name, result.error);
         continue;
       }
@@ -66,25 +66,25 @@ export async function POST(req: Request) {
       // A completed, honest check either way — including "found nothing
       // usable" (no hits, or the only candidate failed the embeddability
       // check inside getFeaturedVideoForArtist).
-      stampSourceSyncedAt(artist.id, 'youtube');
+      await stampSourceSyncedAt(artist.id, 'youtube');
       if (!result.data) {
         noMatchCount++;
-        stampYoutubeNoMatch(artist.id);
+        await stampYoutubeNoMatch(artist.id);
         console.log('[youtube-video-sync] no match for', artist.name);
         continue;
       }
-      setFeaturedVideoMatchType(artist.id, result.data.matchType);
-      updateArtist(artist.id, { featured_video_id: result.data.videoId } as ArtistInput);
+      await setFeaturedVideoMatchType(artist.id, result.data.matchType);
+      await updateArtist(artist.id, { featured_video_id: result.data.videoId } as ArtistInput);
       updatedCount++;
     }
 
     const failedCount = noMatchCount + errorCount;
-    completeSyncRun(run.id, { status: 'completed', checkedCount: attemptedCount, updatedCount, failedCount, noMatchCount, errorCount, lastError });
+    await completeSyncRun(run.id, { status: 'completed', checkedCount: attemptedCount, updatedCount, failedCount, noMatchCount, errorCount, lastError });
     // So a caller can explain a "checked 0" result instead of leaving it
     // looking broken — was there really nothing to check, or is everything
     // sitting in the recheck backoff? (queuedForQuotaReset already covers
     // the third case, quota exhaustion mid-run.)
-    const inBackoff = getArtistsInVideoBackoff().count;
+    const inBackoff = (await getArtistsInVideoBackoff()).count;
     return NextResponse.json({
       runId: run.id, checked: attemptedCount, updated: updatedCount, noMatch: noMatchCount, errors: errorCount, lastError,
       queuedForQuotaReset, inBackoff,
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during YouTube video sync.';
     const failedCount = noMatchCount + errorCount;
-    completeSyncRun(run.id, { status: 'failed', checkedCount: attemptedCount, updatedCount, failedCount, error: message, noMatchCount, errorCount, lastError });
+    await completeSyncRun(run.id, { status: 'failed', checkedCount: attemptedCount, updatedCount, failedCount, error: message, noMatchCount, errorCount, lastError });
     await notifyAdminsOfRunFailure('YouTube video sync', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }

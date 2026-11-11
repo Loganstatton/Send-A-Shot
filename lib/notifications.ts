@@ -66,13 +66,13 @@ function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function watchlistNotifications(watchlist: WatchlistEntry[], trendingIds: Set<number>): Notification[] {
+async function watchlistNotifications(watchlist: WatchlistEntry[], trendingIds: Set<number>): Promise<Notification[]> {
   const notifications: Notification[] = [];
   for (const entry of watchlist) {
     if (!entry.alertsEnabled) continue;
     const { artist, score, priceCents } = entry;
 
-    const scoreHistory = getScoreHistory(artist.id);
+    const scoreHistory = await getScoreHistory(artist.id);
     const latestSnapshot = scoreHistory[scoreHistory.length - 1];
     if (latestSnapshot && entry.scoreAtWatch != null) {
       const scoreDelta = Math.round((score - entry.scoreAtWatch) * 10) / 10;
@@ -168,10 +168,10 @@ function newArtistNotifications(favoriteGenres: FavoriteGenre[], newArtists: Art
     }));
 }
 
-function foundingBelieverNotifications(records: (FoundingBelieverRecord & { artist_name: string })[]): Notification[] {
+async function foundingBelieverNotifications(records: (FoundingBelieverRecord & { artist_name: string })[]): Promise<Notification[]> {
   const notifications: Notification[] = [];
   for (const record of records) {
-    const currentCount = getFoundingBelieverCountForArtist(record.artist_id);
+    const currentCount = await getFoundingBelieverCountForArtist(record.artist_id);
     for (const tier of FOUNDING_BELIEVER_MILESTONES) {
       // Only tiers reached AFTER this user backed the artist — otherwise a
       // late Founding Believer would get credited with milestones the
@@ -222,12 +222,12 @@ function leaderboardRankNotification(rankChange: number | null): Notification[] 
   }];
 }
 
-export function getNotificationsForUser(user: User): Notification[] {
-  const watchlist = user.notify_watchlist_moves ? getUserWatchlist(user.id) : [];
+export async function getNotificationsForUser(user: User): Promise<Notification[]> {
+  const watchlist = user.notify_watchlist_moves ? await getUserWatchlist(user.id) : [];
 
   let trendingIds = new Set<number>();
   if (watchlist.length > 0) {
-    const market = getNextMarket();
+    const market = await getNextMarket();
     trendingIds = new Set(
       [...market]
         .map((row) => ({ id: row.artist.id, changePct: changePctForWindow(row.priceCents, row.priceHistory, TRENDING_WINDOW_HOURS) }))
@@ -238,15 +238,15 @@ export function getNotificationsForUser(user: User): Notification[] {
   }
 
   let all: Notification[] = [];
-  if (user.notify_watchlist_moves) all = all.concat(watchlistNotifications(watchlist, trendingIds));
+  if (user.notify_watchlist_moves) all = all.concat(await watchlistNotifications(watchlist, trendingIds));
   if (user.notify_new_artists) {
-    all = all.concat(newArtistNotifications(getFavoriteGenres(user.id), getNewArtistsThisWeek(7)));
+    all = all.concat(newArtistNotifications(await getFavoriteGenres(user.id), await getNewArtistsThisWeek(7)));
   }
-  if (user.notify_founding_believer) all = all.concat(foundingBelieverNotifications(getFoundingBelieverRecordsForUser(user.id)));
-  if (user.notify_portfolio_milestones) all = all.concat(portfolioMilestoneNotifications(getPortfolioValue(user.id).totalReturnPct));
-  if (user.notify_leaderboard_rank) all = all.concat(leaderboardRankNotification(getRankMovements()[user.id] ?? null));
+  if (user.notify_founding_believer) all = all.concat(await foundingBelieverNotifications(await getFoundingBelieverRecordsForUser(user.id)));
+  if (user.notify_portfolio_milestones) all = all.concat(portfolioMilestoneNotifications((await getPortfolioValue(user.id)).totalReturnPct));
+  if (user.notify_leaderboard_rank) all = all.concat(leaderboardRankNotification((await getRankMovements())[user.id] ?? null));
 
-  const readKeys = getReadNotificationKeys(user.id);
+  const readKeys = await getReadNotificationKeys(user.id);
   all.forEach((n) => { n.read = readKeys.has(n.key); });
   all.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));
   return all;
@@ -274,5 +274,5 @@ export async function maybeSendNotificationDigestEmail(user: User, notifications
     <p style="color:#888;font-size:12px;">You're getting this because email notifications are on in your NEXT settings.</p>
   `;
   const result = await sendEmail({ to: user.email, subject: `${unsent.length} new update${unsent.length === 1 ? '' : 's'} on NEXT`, html });
-  if (result.ok) setNotificationsEmailedThrough(user.id, new Date().toISOString());
+  if (result.ok) await setNotificationsEmailedThrough(user.id, new Date().toISOString());
 }

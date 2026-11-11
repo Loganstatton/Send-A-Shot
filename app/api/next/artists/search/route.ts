@@ -13,5 +13,5 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const q = new URL(req.url).searchParams.get('q') ?? '';
-  return NextResponse.json({ results: searchNextArtists(q) });
+  return NextResponse.json({ results: await searchNextArtists(q) });
 }

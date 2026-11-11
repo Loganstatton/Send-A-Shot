@@ -8,8 +8,8 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminErrorsPage() {
   await requireAdmin();
-  const reports = getRecentErrorReports(100);
-  const last24h = getErrorReportCount(24);
+  const reports = await getRecentErrorReports(100);
+  const last24h = await getErrorReportCount(24);
 
   return (
     <div className="space-y-6">

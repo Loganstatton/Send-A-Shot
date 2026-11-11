@@ -15,18 +15,18 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   await requireInternal();
-  const lastActivity = getArtistLastActivityMap();
-  const artists = getAllArtists()
+  const lastActivity = await getArtistLastActivityMap();
+  const artists = (await getAllArtists())
     .map((a) => ({ ...a, score: breakoutScore(a), last_activity_at: lastActivity.get(a.id) }))
     .sort((a, b) => b.score - a.score);
-  const dueFollowUps = getDueFollowUps();
-  const newCandidateCount = getNewDiscoveryCandidateCount();
-  const lastSync = getLatestSyncRun('soundcharts');
-  const lastDeezerSync = getLatestSyncRun('deezer');
-  const lastVideoSync = getLatestSyncRun('youtube_video');
-  const videoBackoff = getArtistsInVideoBackoff();
-  const lastPhotoBackfill = getLatestSyncRun('soundcharts_photo');
-  const photoBackoff = getArtistsInPhotoBackoff();
+  const dueFollowUps = await getDueFollowUps();
+  const newCandidateCount = await getNewDiscoveryCandidateCount();
+  const lastSync = await getLatestSyncRun('soundcharts');
+  const lastDeezerSync = await getLatestSyncRun('deezer');
+  const lastVideoSync = await getLatestSyncRun('youtube_video');
+  const videoBackoff = await getArtistsInVideoBackoff();
+  const lastPhotoBackfill = await getLatestSyncRun('soundcharts_photo');
+  const photoBackoff = await getArtistsInPhotoBackoff();
 
   const active = artists.filter((a) => a.stage !== 'passed');
   const fire = active.filter((a) => a.score >= 85).length;
@@ -143,8 +143,8 @@ export default async function DashboardPage() {
       <div className="card text-sm" style={{ color: 'var(--text-muted)' }}>
         <p>
           <strong>Scout:</strong> internal tool for tracking emerging, unsigned artists and scoring
-          their breakout potential before they build a professional team. Data is stored locally in
-          SQLite — this is a discovery/scoring tool, not a contract or payments system. Not visible to
+          their breakout potential before they build a professional team. This is a discovery/scoring
+          tool, not a contract or payments system. Not visible to
           NEXT (public) users.
         </p>
       </div>

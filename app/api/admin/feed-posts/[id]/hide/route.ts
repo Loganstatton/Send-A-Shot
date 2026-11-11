@@ -13,7 +13,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   if (!admin) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const hidden = hideUserTakePost(admin.id, id);
+  const hidden = await hideUserTakePost(admin.id, id);
   return NextResponse.json({ ok: hidden });
 }
 
@@ -22,6 +22,6 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   if (!admin) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const unhidden = unhideUserTakePost(id);
+  const unhidden = await unhideUserTakePost(id);
   return NextResponse.json({ ok: unhidden });
 }

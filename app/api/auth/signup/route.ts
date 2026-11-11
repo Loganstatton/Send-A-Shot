@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'That invite code is not valid.' }, { status: 403 });
   }
 
-  if (getUserByEmail(email)) {
+  if (await getUserByEmail(email)) {
     return NextResponse.json({ error: 'An account with that email already exists.' }, { status: 409 });
   }
   // Same message as the exact-match check above — this catches the most
@@ -44,19 +44,19 @@ export async function POST(req: Request) {
   // use to spin up a second account, but there's no reason to reveal to
   // the caller WHICH check caught it. See findUserByNormalizedEmail's own
   // comment for what this can't catch.
-  if (findUserByNormalizedEmail(email)) {
+  if (await findUserByNormalizedEmail(email)) {
     return NextResponse.json({ error: 'An account with that email already exists.' }, { status: 409 });
   }
 
   const password_hash = await hashPassword(password);
-  const user = createUser({ name, email, password_hash });
-  setSessionCookie(user.id);
-  logEvent(user.id, 'signup_completed');
+  const user = await createUser({ name, email, password_hash });
+  await setSessionCookie(user.id);
+  await logEvent(user.id, 'signup_completed');
 
   // Best-effort — never blocks account creation. Without RESEND_API_KEY
   // configured, sendEmail logs the link instead of delivering it (see
   // lib/email.ts), so this is still testable in dev with no setup.
-  const verifyToken = createActionToken(user.id, 'verify-email', VERIFY_TOKEN_TTL_SEC);
+  const verifyToken = await createActionToken(user.id, 'verify-email', VERIFY_TOKEN_TTL_SEC);
   const appUrl = process.env.APP_URL ?? new URL(req.url).origin;
   sendEmail({
     to: user.email,

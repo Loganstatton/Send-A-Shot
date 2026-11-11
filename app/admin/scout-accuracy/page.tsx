@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminScoutAccuracyPage() {
   await requireAdmin();
 
-  const rows = getScoutAccuracyRows();
+  const rows = await getScoutAccuracyRows();
   const summary = getScoutAccuracySummary(rows);
 
   return (

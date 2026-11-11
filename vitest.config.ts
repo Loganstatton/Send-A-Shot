@@ -4,9 +4,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    // Each test file gets its own process/module registry, so setting
-    // DATA_DIR before importing lib/db.ts (in lib/db.test.ts) isolates it
-    // from the real dev/prod database.
+    // Tests run against a real Postgres: globalSetup makes sure one is
+    // reachable, and setupFiles gives each test file its own empty schema
+    // in it (so files are isolated from each other and from any dev data).
+    globalSetup: './vitest.global-setup.ts',
+    setupFiles: ['./vitest.setup.ts'],
     fileParallelism: false,
   },
   resolve: {

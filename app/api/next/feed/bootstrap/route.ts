@@ -23,15 +23,15 @@ async function isAuthorized(req: Request): Promise<boolean> {
 export async function POST(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const run = createSyncRun('feed_bootstrap');
+  const run = await createSyncRun('feed_bootstrap');
   try {
-    const result = bootstrapFeedFromHistory();
+    const result = await bootstrapFeedFromHistory();
     const created = result.newArtist + result.earlyDiscovery + result.artistUpdate;
-    completeSyncRun(run.id, { status: 'completed', checkedCount: created, updatedCount: created, failedCount: 0 });
+    await completeSyncRun(run.id, { status: 'completed', checkedCount: created, updatedCount: created, failedCount: 0 });
     return NextResponse.json({ runId: run.id, ...result });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error bootstrapping the Feed.';
-    completeSyncRun(run.id, { status: 'failed', checkedCount: 0, updatedCount: 0, failedCount: 0, error: message });
+    await completeSyncRun(run.id, { status: 'failed', checkedCount: 0, updatedCount: 0, failedCount: 0, error: message });
     await notifyAdminsOfRunFailure('NEXT Feed bootstrap', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }

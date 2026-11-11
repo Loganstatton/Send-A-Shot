@@ -15,7 +15,7 @@ const KIND_LABELS = {
 
 export default async function AdminMarketIntegrityPage() {
   await requireAdmin();
-  const flags = getSuspiciousTradingFlags();
+  const flags = await getSuspiciousTradingFlags();
 
   return (
     <div className="space-y-6">

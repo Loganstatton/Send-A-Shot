@@ -1,9 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // better-sqlite3 ships a native .node binary — keep it out of the webpack
-  // bundle (Next tries to parse it as JS otherwise, which breaks the build).
+  // node-postgres is a server-only package with optional native bindings —
+  // load it from node_modules at runtime instead of bundling it.
   experimental: {
-    serverComponentsExternalPackages: ['better-sqlite3'],
+    serverComponentsExternalPackages: ['pg'],
   },
 };
 module.exports = nextConfig;

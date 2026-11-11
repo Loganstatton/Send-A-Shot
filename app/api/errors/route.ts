@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   if (!message) return NextResponse.json({ error: 'message is required' }, { status: 400 });
 
   const user = await getSessionUser().catch(() => null);
-  insertErrorReport({
+  await insertErrorReport({
     source: 'client',
     message,
     stack: typeof body?.stack === 'string' ? body.stack : undefined,

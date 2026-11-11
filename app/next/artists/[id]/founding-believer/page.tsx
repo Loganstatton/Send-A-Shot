@@ -12,7 +12,7 @@ import ShareToFeedButton from '@/components/next/ShareToFeedButton';
 import HoloCard from '@/components/next/HoloCard';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-  const row = getNextArtist(Number(params.id));
+  const row = await getNextArtist(Number(params.id));
   return { title: row ? `You Were Early — ${row.artist.name}` : 'Founding Believer' };
 }
 
@@ -55,13 +55,13 @@ export default async function FoundingBelieverReceiptPage({ params }: { params: 
   const user = await requireUser();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
-  const row = getNextArtist(id);
+  const row = await getNextArtist(id);
   if (!row) notFound();
-  const record = getFoundingBelieverRecord(user.id, id);
+  const record = await getFoundingBelieverRecord(user.id, id);
   if (!record) notFound();
 
   const { artist, score, priceCents } = row;
-  const currentBackerCount = getFoundingBelieverCountForArtist(id);
+  const currentBackerCount = await getFoundingBelieverCountForArtist(id);
   const tier = getFoundingBelieverTier(record.discovery_rank);
   const serial = foundingBelieverSerial(artist.name, record.discovery_rank);
   const lockedDate = new Date(record.purchased_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });

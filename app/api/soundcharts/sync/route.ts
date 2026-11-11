@@ -28,8 +28,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Soundcharts is not configured on this server.' }, { status: 503 });
   }
 
-  const run = createSyncRun();
-  const linked = getArtistsWithSoundchartsLink();
+  const run = await createSyncRun();
+  const linked = await getArtistsWithSoundchartsLink();
   let updatedCount = 0;
   let failedCount = 0;
 
@@ -41,10 +41,10 @@ export async function POST(req: Request) {
       const result = await withRetry(() => getArtistData(soundcharts_uuid));
       if (!result.ok) {
         failedCount++;
-        logSyncFailure(run.id, 'soundcharts', id, name, result.error);
+        await logSyncFailure(run.id, 'soundcharts', id, name, result.error);
         continue;
       }
-      stampSourceSyncedAt(id, 'soundcharts');
+      await stampSourceSyncedAt(id, 'soundcharts');
       // Same rule the manual "Sync from Soundcharts" button follows: only
       // fields Soundcharts actually returned a value for get written, so a
       // transient gap in their response never blanks out something a Scout
@@ -62,16 +62,16 @@ export async function POST(req: Request) {
         // updateArtist only writes fields present in the object (see
         // lib/db.ts) — ArtistInput's required `name` is a create-time
         // constraint that doesn't apply to a partial update like this one.
-        updateArtist(id, nonEmpty as ArtistInput);
+        await updateArtist(id, nonEmpty as ArtistInput);
         updatedCount++;
       }
     }
 
-    completeSyncRun(run.id, { status: 'completed', checkedCount: linked.length, updatedCount, failedCount });
+    await completeSyncRun(run.id, { status: 'completed', checkedCount: linked.length, updatedCount, failedCount });
     return NextResponse.json({ runId: run.id, checked: linked.length, updated: updatedCount, failed: failedCount });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during sync.';
-    completeSyncRun(run.id, { status: 'failed', checkedCount: linked.length, updatedCount, failedCount, error: message });
+    await completeSyncRun(run.id, { status: 'failed', checkedCount: linked.length, updatedCount, failedCount, error: message });
     await notifyAdminsOfRunFailure('Soundcharts sync', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }

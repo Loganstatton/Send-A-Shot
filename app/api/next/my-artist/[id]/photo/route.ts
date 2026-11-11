@@ -20,7 +20,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
 
-  const artist = getArtist(id);
+  const artist = await getArtist(id);
   if (!artist || artist.claimed_by_user_id !== user.id) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => null);
@@ -41,7 +41,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: 'You must confirm you own this content or have permission to provide it for use on NEXT.' }, { status: 400 });
   }
 
-  const updated = setArtistPhotoByOwner(id, photoUrl, user.id);
+  const updated = await setArtistPhotoByOwner(id, photoUrl, user.id);
   if (!updated) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true, photo_url: updated.photo_url });
 }

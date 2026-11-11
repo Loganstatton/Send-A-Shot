@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  return NextResponse.json(getAllArtists());
+  return NextResponse.json(await getAllArtists());
 }
 
 export async function POST(req: Request) {
@@ -28,11 +28,11 @@ export async function POST(req: Request) {
   // artist already on the roster (an outright duplicate identity, like the
   // same Soundcharts uuid, is instead a hard error — see createArtist's
   // unique index in lib/db.ts).
-  const existingNameMatches = findArtistsByName(body.name);
+  const existingNameMatches = await findArtistsByName(body.name);
 
   let artist: Artist;
   try {
-    artist = createArtist(body, user);
+    artist = await createArtist(body, user);
   } catch (err: any) {
     // The one case that IS blocked: the same Soundcharts identity linked
     // twice (see the unique index in lib/db.ts) — that's not "two artists
@@ -56,13 +56,13 @@ export async function POST(req: Request) {
       return null;
     });
     if (result?.ok) {
-      stampSourceSyncedAt(artist.id, 'deezer');
-      artist = updateArtist(artist.id, result.data as ArtistInput) ?? artist;
+      await stampSourceSyncedAt(artist.id, 'deezer');
+      artist = await updateArtist(artist.id, result.data as ArtistInput) ?? artist;
     } else if (result) {
       // Logged (not silently dropped) so a Scout wondering why a real
       // artist's top song didn't fill in on creation can check Render's
       // logs instead of only seeing an empty field with no explanation.
-      if (result.reason === 'no_artist_match' || result.reason === 'no_top_track') stampSourceSyncedAt(artist.id, 'deezer');
+      if (result.reason === 'no_artist_match' || result.reason === 'no_top_track') await stampSourceSyncedAt(artist.id, 'deezer');
       console.log('[deezer-lookup] on-create lookup found no top song for', artist.name, `(${result.reason})`, result.error ?? '');
     }
   }
@@ -79,15 +79,15 @@ export async function POST(req: Request) {
       return null;
     });
     if (result?.ok) {
-      stampSourceSyncedAt(artist.id, 'youtube');
+      await stampSourceSyncedAt(artist.id, 'youtube');
       if (result.data) {
-        setFeaturedVideoMatchType(artist.id, result.data.matchType);
-        artist = updateArtist(artist.id, { featured_video_id: result.data.videoId } as ArtistInput) ?? artist;
+        await setFeaturedVideoMatchType(artist.id, result.data.matchType);
+        artist = await updateArtist(artist.id, { featured_video_id: result.data.videoId } as ArtistInput) ?? artist;
       } else {
         // A genuine no-match, stamped so the next scheduled backfill sync
         // (app/api/youtube/sync-videos) doesn't immediately re-spend quota
         // re-checking an artist that was just honestly checked right now.
-        stampYoutubeNoMatch(artist.id);
+        await stampYoutubeNoMatch(artist.id);
       }
     } else if (result && !result.ok) {
       console.log('[youtube-lookup] on-create lookup failed for', artist.name, result.error);
