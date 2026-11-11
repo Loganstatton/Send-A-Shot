@@ -82,7 +82,7 @@ export default async function NextMarketPage() {
           Back breakout artists before <span style={{ color: 'var(--ember)' }}>everyone else does.</span>
         </h1>
         <p className="text-base leading-relaxed m-0 max-w-[58ch]" style={{ color: 'var(--text-muted)' }}>
-          NEXT Score predicts momentum from real performance data. NEXT Price is what the market
+          NEXT Score is our Scouts&apos; own call on an artist&apos;s potential. NEXT Price is what the market
           currently pays. When the two disagree — that&apos;s the signal.
         </p>
       </div>

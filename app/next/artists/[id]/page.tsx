@@ -89,9 +89,9 @@ export default async function NextArtistPage({ params, searchParams }: { params:
 
   const signalCopy =
     sentiment.tone === 'undervalued'
-      ? `Signal detected — NEXT Score is running ${Math.round(sentiment.diff)} points ahead of what NEXT Price implies. The market hasn't priced in the fundamentals yet.`
+      ? `Signal detected — NEXT Score is running ${Math.round(sentiment.diff)} points ahead of what NEXT Price implies. The market hasn't caught up to our Scouts' rating yet.`
       : sentiment.tone === 'overheated'
-      ? `Heads up — NEXT Price is running ${Math.round(Math.abs(sentiment.diff))} points ahead of what NEXT Score supports. The market may be ahead of the fundamentals.`
+      ? `Heads up — NEXT Price is running ${Math.round(Math.abs(sentiment.diff))} points ahead of what NEXT Score supports. The market may be ahead of our Scouts' rating.`
       : null;
 
   return (
@@ -116,7 +116,7 @@ export default async function NextArtistPage({ params, searchParams }: { params:
             <span className="num text-[15px] font-bold">{score.toFixed(0)}</span>
             <InfoTip
               label="NEXT Score"
-              text="Our read on this artist's real momentum — growth, engagement, and buzz, boiled into one number. Compare it to NEXT Price below to see if the market agrees."
+              text="Our Scouts' own read on this artist's momentum — growth, engagement, and buzz, boiled into one number. Compare it to NEXT Price below to see if the market agrees."
             />
           </div>
           {sentiment.tone !== 'fair' && (
@@ -222,7 +222,7 @@ export default async function NextArtistPage({ params, searchParams }: { params:
               color="var(--ember)"
             />
             <p className="mt-3.5 mb-0 text-[12.5px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-              This is the fundamentals history — see when the algorithm spotted momentum before the price caught up.
+              This is the Score history — see when our Scouts spotted momentum before the price caught up.
             </p>
             <div className="mt-5 pt-5" style={{ borderTop: '1px solid var(--border-soft)' }}>
               <div className="text-xs uppercase tracking-[0.06em] font-mono mb-3" style={{ color: 'var(--text-faint)' }}>Why the Score is what it is</div>

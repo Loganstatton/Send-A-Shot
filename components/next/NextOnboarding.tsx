@@ -79,7 +79,7 @@ export default function NextOnboarding({ startingCreditsCents }: { startingCredi
             <div className="flex flex-col gap-3 mb-4">
               <div className="rounded-[12px] p-4" style={{ background: 'var(--surface-2)', border: '1px solid var(--border-soft)' }}>
                 <div className="text-[11px] font-mono mb-1" style={{ color: 'var(--text-faint)' }}>NEXT SCORE</div>
-                <p className="text-[13px] m-0" style={{ color: 'var(--text-muted)' }}>Our read on an artist's real momentum — growth, engagement, and buzz, boiled down to one number.</p>
+                <p className="text-[13px] m-0" style={{ color: 'var(--text-muted)' }}>Our Scouts' own read on an artist's momentum — growth, engagement, and buzz, boiled down to one number.</p>
               </div>
               <div className="rounded-[12px] p-4" style={{ background: 'var(--surface-2)', border: '1px solid var(--border-soft)' }}>
                 <div className="text-[11px] font-mono mb-1" style={{ color: 'var(--text-faint)' }}>NEXT PRICE</div>
