@@ -33,6 +33,7 @@ export default function NextHeader({
     { href: '/next/portfolio', label: 'Portfolio', active: is('/next/portfolio') },
     { href: '/next/leaderboard', label: 'Leaderboard', active: is('/next/leaderboard') },
     { href: '/next/leagues', label: 'Leagues', active: is('/next/leagues') },
+    { href: '/next/challenges', label: 'Challenges', active: is('/next/challenges') },
     { href: '/next/watchlist', label: 'Watchlist', active: is('/next/watchlist') },
     { href: '/next/submit-artist', label: 'Submit artist', active: is('/next/submit-artist') },
     ...(hasClaimedArtist ? [{ href: '/next/my-artist', label: 'My Artist', active: is('/next/my-artist') }] : []),
@@ -46,16 +47,17 @@ export default function NextHeader({
             <span>NEXT</span>
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--ember)] self-center ml-1 shadow-[0_0_12px_var(--ember)]" />
           </Link>
-          {/* xl:, not sm: — with 7-8 links (Feed added a slot) plus the
+          {/* 2xl:, not sm: — with 9-10 links (Leagues and Challenges added) plus the
               credits pill, bell, avatar, Settings, and Log out all
               competing for room on the right, this row genuinely doesn't
-              fit until roughly 1280px wide (confirmed: it visibly
+              fit until roughly 1536px wide (confirmed: it visibly
               overflowed/wrapped at tablet-portrait 768px, phone-landscape
-              844px, and even a narrow ~1030px desktop window). The
+              844px, ~1030px, and — once Leagues and Challenges were added —
+              at 1280px too). The
               hamburger menu below already renders the same links cleanly
               at any width, so this just hands off to it until there's
               genuinely enough room instead of overflowing. */}
-          <nav className="hidden xl:flex items-center gap-6 text-sm">
+          <nav className="hidden 2xl:flex items-center gap-6 text-sm">
             {links.map((l) => (
               <Link
                 key={l.href}
@@ -71,7 +73,7 @@ export default function NextHeader({
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
           {isInternal && (
-            <Link href="/" className="hidden xl:inline text-xs" style={{ color: 'var(--text-faint)' }}>
+            <Link href="/" className="hidden 2xl:inline text-xs" style={{ color: 'var(--text-faint)' }}>
               Switch to Scout →
             </Link>
           )}
@@ -110,14 +112,14 @@ export default function NextHeader({
               user.name.trim().charAt(0).toUpperCase() || '?'
             )}
           </Link>
-          <Link href="/settings" className="next-btn-ghost text-xs px-3 py-2 hidden xl:inline-flex rounded-lg">Settings</Link>
-          <LogoutButton className="next-btn-ghost text-xs px-3 py-2 hidden xl:inline-flex" />
+          <Link href="/settings" className="next-btn-ghost text-xs px-3 py-2 hidden 2xl:inline-flex rounded-lg">Settings</Link>
+          <LogoutButton className="next-btn-ghost text-xs px-3 py-2 hidden 2xl:inline-flex" />
           <button
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
-            className="next-icon-btn xl:hidden w-9 h-9 rounded-full flex items-center justify-center border active:scale-90"
+            className="next-icon-btn 2xl:hidden w-9 h-9 rounded-full flex items-center justify-center border active:scale-90"
             style={{ borderColor: 'var(--border-soft)', color: 'var(--text)' }}
           >
             {menuOpen ? (
@@ -131,7 +133,7 @@ export default function NextHeader({
 
       {menuOpen && (
         <nav
-          className="next-menu-panel xl:hidden absolute left-0 right-0 top-full z-30 flex flex-col px-4 py-3 gap-1"
+          className="next-menu-panel 2xl:hidden absolute left-0 right-0 top-full z-30 flex flex-col px-4 py-3 gap-1"
           style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border-soft)' }}
         >
           {links.map((l) => (
