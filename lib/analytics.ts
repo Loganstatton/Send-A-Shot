@@ -6,7 +6,7 @@
 // functions would be, and far more readable for the gap-based session
 // grouping several of these metrics need.
 
-import { getAllEvents, getAllPreviewListenEvents, getAllTransactionsForAnalytics, getAllUsers, getArtist } from './db';
+import { db, getAllEvents, getAllPreviewListenEvents, getAllTransactionsForAnalytics, getAllUsers, getArtist } from './db';
 import { AnalyticsEvent } from './types';
 
 function groupByUser<T extends { user_id: number | null }>(rows: T[]): Map<number, T[]> {
@@ -298,4 +298,52 @@ export async function getGenreRetention(): Promise<GenreRetention[]> {
       return { genre, userCount: userIds.length, day7RetentionPct: retention.pct };
     })
     .sort((a, b) => b.userCount - a.userCount);
+}
+
+// --- Growth loops ---
+// The paths by which NEXT is meant to spread: a signed-out visitor browsing,
+// a shared "I was early" proof link, and a private-league invite. Counted
+// with SQL (these tables only grow), each figure labelled for what it
+// actually is — e.g. signed-out page views are views, not unique people,
+// because a visitor without an account has no id to count them by.
+export type GrowthLoops = {
+  guestDiscoverViews: number;
+  guestArtistViews: number;
+  signups: number;
+  onboardingCompleted: number;
+  pickedGenres: number;
+  backedAnArtist: number;
+  proofLinksShared: number;
+  proofViewsSignedOut: number;
+  proofViewsSignedIn: number;
+  leaguesActive: number;
+  leagueMembers: number;
+  leagueInvitesShared: number;
+  inviteViewsSignedOut: number;
+  inviteViewsSignedIn: number;
+  leagueJoins: number;
+};
+
+export async function getGrowthLoops(): Promise<GrowthLoops> {
+  const count = async (sql: string, ...params: unknown[]) => ((await db.prepare(sql).get(...params)) as { c: number }).c;
+  const events = async (type: string, extra = '') => count(`SELECT COUNT(*) AS c FROM analytics_events WHERE event_type = ? ${extra}`, type);
+  const meta = (key: string) => `(CASE WHEN metadata IS NULL THEN NULL ELSE metadata::jsonb ->> '${key}' END)`;
+
+  return {
+    guestDiscoverViews: await events('discover_viewed', 'AND user_id IS NULL'),
+    guestArtistViews: await events('artist_detail_opened', `AND user_id IS NULL AND ${meta('via')} IS DISTINCT FROM 'proof_page'`),
+    signups: await count('SELECT COUNT(*) AS c FROM users'),
+    onboardingCompleted: await count('SELECT COUNT(*) AS c FROM users WHERE next_onboarded_at IS NOT NULL'),
+    pickedGenres: await count('SELECT COUNT(*) AS c FROM users WHERE next_genre_prefs IS NOT NULL'),
+    backedAnArtist: await count('SELECT COUNT(DISTINCT user_id) AS c FROM next_founding_believers'),
+    proofLinksShared: await events('proof_link_shared'),
+    proofViewsSignedOut: await events('artist_detail_opened', `AND user_id IS NULL AND ${meta('via')} = 'proof_page'`),
+    proofViewsSignedIn: await events('artist_detail_opened', `AND user_id IS NOT NULL AND ${meta('via')} = 'proof_page'`),
+    leaguesActive: await count('SELECT COUNT(*) AS c FROM next_leagues'),
+    leagueMembers: await count('SELECT COUNT(*) AS c FROM next_league_members'),
+    leagueInvitesShared: await events('league_invite_shared'),
+    inviteViewsSignedOut: await events('league_invite_viewed', 'AND user_id IS NULL'),
+    inviteViewsSignedIn: await events('league_invite_viewed', 'AND user_id IS NOT NULL'),
+    leagueJoins: await events('league_joined'),
+  };
 }

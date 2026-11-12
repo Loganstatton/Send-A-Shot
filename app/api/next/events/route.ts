@@ -17,6 +17,7 @@ const CLIENT_EVENT_TYPES: AnalyticsEventType[] = [
   'feed_tab_changed', 'feed_artist_opened', 'feed_audio_played', 'feed_watch_added', 'feed_trade_initiated', 'feed_scroll_depth',
   'feed_reaction_added',
   'feed_user_post_artist_opened', 'feed_user_post_audio_played', 'feed_user_post_watch', 'feed_user_post_trade_initiated',
+  'proof_link_shared', 'league_invite_shared',
 ];
 
 export async function POST(req: Request) {

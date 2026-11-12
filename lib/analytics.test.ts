@@ -1,13 +1,7 @@
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import { describe, expect, it } from 'vitest';
 
-// Same isolation trick as lib/db.test.ts and lib/notifications.test.ts:
-// DATA_DIR must be set before lib/db.ts (imported transitively by
-// lib/analytics.ts) is ever imported, so this runs against a throwaway
-// SQLite file that only this test file's own actions ever touch.
-process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'analytics-test-'));
+// Runs in its own Postgres schema (see vitest.setup.ts), so only this
+// file's own actions are ever counted.
 
 const { addToWatchlist, createArtist, createUser, db, executeTrade, logEvent, recordPreviewListen } = await import('./db');
 const {

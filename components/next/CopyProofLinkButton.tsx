@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { track } from '@/lib/track';
 
 // Shares the public early-proof page — a link anyone can open, signed in or
 // not, that previews as the card image in messaging apps and social posts.
@@ -12,9 +13,11 @@ export default function CopyProofLinkButton({ recordId, artistName }: { recordId
     try {
       if (typeof navigator.share === 'function') {
         await navigator.share({ title: `I backed ${artistName} early on NEXT`, url });
+        track('proof_link_shared', { recordId, method: 'share_sheet' });
         return;
       }
       await navigator.clipboard.writeText(url);
+      track('proof_link_shared', { recordId, method: 'copy' });
       setState('copied');
       setTimeout(() => setState('idle'), 2500);
     } catch (err: any) {

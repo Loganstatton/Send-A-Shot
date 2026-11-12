@@ -3,7 +3,7 @@ import { requireInternal } from '@/lib/auth';
 import {
   getAvgArtistsViewedBeforeFirstTrade, getAvgTradesPerUser, getAvgWatchlistAddsPerUser, getGenreRetention,
   getMostEffectiveFilters, getPctTradesPrecededByListen, getRetention, getSessionAverages,
-  getSignupConversionFunnel, getTimeToFirstTrade, getTopEngagementArtists,
+  getGrowthLoops, getSignupConversionFunnel, getTimeToFirstTrade, getTopEngagementArtists,
 } from '@/lib/analytics';
 import StatTile from '@/components/StatTile';
 
@@ -35,6 +35,7 @@ export default async function MetricsPage() {
   const filters = await getMostEffectiveFilters();
   const topArtists = await getTopEngagementArtists();
   const genreRetention = await getGenreRetention();
+  const loops = await getGrowthLoops();
 
   return (
     <div className="space-y-6">
@@ -52,6 +53,34 @@ export default async function MetricsPage() {
           <StatTile label="→ Viewed an artist" value={pct(funnel.viewedArtist, funnel.totalUsers)} delta={`${funnel.viewedArtist} users`} />
           <StatTile label="→ Listened to a preview" value={pct(funnel.listened, funnel.totalUsers)} delta={`${funnel.listened} users`} />
           <StatTile label="→ Made a trade" value={pct(funnel.traded, funnel.totalUsers)} delta={`${funnel.traded} users`} />
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-semibold">Growth loops</h2>
+        <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
+          How NEXT spreads. Signed-out figures are page views, not people — a visitor without an account can&apos;t be counted
+          individually. Shares count taps of a Share/Copy button, so a share sheet the person then cancelled isn&apos;t included.
+        </p>
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>Visitor → player</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatTile label="Signed-out Discover views" value={String(loops.guestDiscoverViews)} delta={`${loops.guestArtistViews} signed-out artist page views`} />
+          <StatTile label="Accounts" value={String(loops.signups)} />
+          <StatTile label="→ Finished onboarding" value={pct(loops.onboardingCompleted, loops.signups)} delta={`${loops.onboardingCompleted} users · ${loops.pickedGenres} picked genres`} />
+          <StatTile label="→ Backed an artist" value={pct(loops.backedAnArtist, loops.signups)} delta={`${loops.backedAnArtist} users`} />
+        </div>
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>Early-proof links</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatTile label="Proof links shared" value={String(loops.proofLinksShared)} />
+          <StatTile label="Proof page views (signed out)" value={String(loops.proofViewsSignedOut)} />
+          <StatTile label="Proof page views (signed in)" value={String(loops.proofViewsSignedIn)} />
+        </div>
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>Private leagues</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatTile label="Leagues" value={String(loops.leaguesActive)} delta={loops.leaguesActive > 0 ? `${(loops.leagueMembers / loops.leaguesActive).toFixed(1)} members on average` : undefined} />
+          <StatTile label="Invites shared" value={String(loops.leagueInvitesShared)} />
+          <StatTile label="Invite page views" value={String(loops.inviteViewsSignedOut + loops.inviteViewsSignedIn)} delta={`${loops.inviteViewsSignedOut} signed out`} />
+          <StatTile label="Joins via invite" value={String(loops.leagueJoins)} />
         </div>
       </section>
 
