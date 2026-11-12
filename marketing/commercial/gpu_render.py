@@ -23,10 +23,12 @@ IMAGE = arg('--image', 'runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 MAX_MIN = int(arg('--max-minutes', '45'))
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOKEN = secrets.token_hex(24)
+# RunPod sits behind Cloudflare, which rejects Python's default user agent (error 1010).
+UA = 'next-commercial-render/1.0 (+curl-compatible)'
 
 def api(method, path, body=None):
     req = urllib.request.Request(API + path, method=method, data=None if body is None else json.dumps(body).encode(),
-                                 headers={'Authorization': f'Bearer {KEY}', 'Content-Type': 'application/json'})
+                                 headers={'Authorization': f'Bearer {KEY}', 'Content-Type': 'application/json', 'User-Agent': UA})
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             t = r.read().decode()
@@ -78,7 +80,7 @@ def start_cmd():
             'exec python3 /server.py')
 
 def worker(method, path, data=None, headers=None, timeout=120):
-    req = urllib.request.Request(BASE + path, method=method, data=data, headers={'X-Token': TOKEN, **(headers or {})})
+    req = urllib.request.Request(BASE + path, method=method, data=data, headers={'X-Token': TOKEN, 'User-Agent': UA, **(headers or {})})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
@@ -101,7 +103,9 @@ try:
     t0 = time.time()
     while True:
         try:
-            if worker('GET', '/health', timeout=15) == b'ok': break
+            # RunPod's proxy answers /health itself; only our worker answers
+            # /status (token-protected) with this JSON.
+            if 'running' in json.loads(worker('GET', '/status', timeout=15)): break
         except Exception:
             pass
         if time.time() - t0 > 900: raise SystemExit('pod did not come up in 15 minutes')
