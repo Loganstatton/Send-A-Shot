@@ -49,7 +49,9 @@ const signup = (ctx, name, email) => ctx.post('/api/auth/signup', { data: { name
       startHrefs['Artists with fewest backers'] === '/next?sort=fewest#artists' && startHrefs['Browse genres'] === '/next/genres', JSON.stringify(startHrefs));
     await page.getByRole('link', { name: 'Browse genres' }).click();
     await page.waitForURL(/\/next\/genres$/);
-    check('"Browse genres" opens the genre list', /genre/i.test(await page.locator('h1').first().innerText()));
+    // The URL changes before the new page renders, so wait for its heading.
+    const genreHeading = await page.getByRole('heading', { level: 1, name: /genre/i }).waitFor({ timeout: 10000 }).then(() => true, () => false);
+    check('"Browse genres" opens the genre list', genreHeading);
     await page.goto(BASE + '/next/challenges', { waitUntil: 'networkidle' });
     await page.getByRole('link', { name: 'Artists with fewest backers' }).click();
     await page.waitForURL(/sort=fewest/);
