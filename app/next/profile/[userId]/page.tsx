@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getFoundingBelieverRecordsForUser, getScoutProfile, getUserTakePostsForUser } from '@/lib/db';
-import { getSessionUser, requireUser } from '@/lib/auth';
+import { getSessionUser } from '@/lib/auth';
 import { EARLY_DISCOVERY_RANK_THRESHOLD } from '@/lib/scout-score';
 import { formatCents } from '@/lib/format';
 import { DiscoveryCandidateStatus } from '@/lib/types';
@@ -24,13 +24,11 @@ export async function generateMetadata({ params }: { params: { userId: string } 
 
 export const dynamic = 'force-dynamic';
 
-// Public — any logged-in user (NEXT trader or Scout staff) can view anyone's
-// Scout Profile, same as a leaderboard is meant to be seen by everyone. Only
+// Public — anyone, signed in or not, can view anyone's Scout Profile, same as a leaderboard is meant to be seen by everyone. Only
 // what's already public-safe is shown: name, Scout Score, portfolio return,
 // rank, and the Founding Believer trophy case. No email, no credits balance
 // beyond the return %.
 export default async function ScoutProfilePage({ params }: { params: { userId: string } }) {
-  await requireUser();
   const userId = Number(params.userId);
   if (!Number.isInteger(userId)) notFound();
   const profile = await getScoutProfile(userId);
@@ -168,7 +166,7 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
           <Link
             key={f.id}
             id={`founding-${f.artist_id}`}
-            href={isOwnProfile ? `/next/artists/${f.artist_id}/founding-believer` : `/next/artists/${f.artist_id}`}
+            href={isOwnProfile ? `/next/artists/${f.artist_id}/founding-believer` : `/next/proof/${f.id}`}
             className="next-card next-card-hover flex items-center gap-4 px-5 py-4"
           >
             <ArtistAvatar name={f.artist_name} photoUrl={f.artist_photo_url} />

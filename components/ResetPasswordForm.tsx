@@ -45,8 +45,8 @@ export default function ResetPasswordForm({ token }: { token: string }) {
       <form onSubmit={handleSubmit} className="space-y-3">
         {error && <div className="text-sm text-red-300">{error}</div>}
         <div>
-          <label className="label">New password</label>
-          <input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
+          <label className="label" htmlFor="reset-password">New password</label>
+          <input id="reset-password" type="password" className="input" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
         </div>
         <button type="submit" className="btn btn-primary w-full" disabled={saving}>
           {saving ? 'Saving…' : 'Reset password'}

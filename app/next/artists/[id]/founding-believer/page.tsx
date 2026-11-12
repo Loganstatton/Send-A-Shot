@@ -9,6 +9,7 @@ import { heroGradient } from '@/components/next/heroGradient';
 import { getArtistAvatarUrl } from '@/lib/artist-image';
 import ShareReceiptButton from '@/components/next/ShareReceiptButton';
 import ShareToFeedButton from '@/components/next/ShareToFeedButton';
+import CopyProofLinkButton from '@/components/next/CopyProofLinkButton';
 import HoloCard from '@/components/next/HoloCard';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
@@ -143,6 +144,7 @@ export default async function FoundingBelieverReceiptPage({ params }: { params: 
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
+              <CopyProofLinkButton recordId={record.id} artistName={artist.name} />
               <ShareReceiptButton artistId={id} artistName={artist.name} />
               <ShareToFeedButton artistId={id} />
             </div>

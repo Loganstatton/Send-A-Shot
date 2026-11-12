@@ -38,8 +38,8 @@ export default function ForgotPasswordForm() {
           <p className="text-sm text-neutral-400">Enter your email and we'll send you a link to reset your password.</p>
           {error && <div className="text-sm text-red-300">{error}</div>}
           <div>
-            <label className="label">Email</label>
-            <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <label className="label" htmlFor="forgot-email">Email</label>
+            <input id="forgot-email" type="email" className="input" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <button type="submit" className="btn btn-primary w-full" disabled={saving}>
             {saving ? 'Sending…' : 'Send reset link'}

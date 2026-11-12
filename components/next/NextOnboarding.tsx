@@ -87,7 +87,7 @@ export default function NextOnboarding({ startingCreditsCents }: { startingCredi
               </div>
             </div>
             <p className="text-[13.5px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              When Score runs ahead of Price, that's a signal — the artist is <strong style={{ color: 'var(--ember)' }}>undervalued</strong>, and the market hasn't caught up yet. That gap is the whole game.
+              When Score runs ahead of Price, our Scouts rate the artist <strong style={{ color: 'var(--ember)' }}>higher than the market does</strong>. Sometimes the market catches up, sometimes the Scouts are wrong — deciding who's right is the game.
             </p>
           </>
         )}

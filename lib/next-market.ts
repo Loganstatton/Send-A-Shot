@@ -111,18 +111,27 @@ export function quoteSell(currentPriceCents: number, shares: number): SellQuote 
 // price, if price purely tracked the base formula?" Comparing this to the
 // artist's actual NEXT Score is how NEXT surfaces its own headline idea —
 // "when they disagree, that's the signal" — as an actual number instead of
-// just a sentence. A price above what the score would set on its own means
-// the market has pushed past what our Scouts' rating supports (overheated);
-// a price below means the market hasn't caught up to that rating yet
-// (undervalued).
+// just a sentence.
+//
+// What the gap is, and isn't: NEXT Score is our Scouts' rating; NEXT Price
+// is what players have bid in a game with virtual credits. The gap measures
+// how far those two opinions have drifted apart — nothing more. It is not a
+// "fair value" and an artist isn't objectively under- or over-priced, so
+// user-facing wording describes a disagreement ("Scouts rate higher than the
+// market"), never a valuation. The tone keys below keep their original
+// names only because they're stored in feed_events.event_type.
 export function impliedScoreFromPrice(priceCents: number): number {
   const dollars = priceCents / 100;
   const normalized = Math.pow(Math.max(0, (dollars - 1) / 49), 1 / 1.8);
   return Math.max(0, Math.min(100, normalized * 100));
 }
 
+export const SCOUT_GAP_EXPLAINER =
+  "We turn the current NEXT Price back into the Score that would have set it as a starting price, and compare it with the Scouts' actual Score. " +
+  "The gap shows where our Scouts and the players disagree. It's a difference of opinion, not a prediction — you decide who's right.";
+
 export type MarketSentiment = {
-  label: 'Undervalued' | 'Overheated' | 'Fair value';
+  label: 'Scouts rate higher' | 'Market ahead of Scouts' | 'In line';
   tone: 'undervalued' | 'overheated' | 'fair';
   impliedScore: number;
   diff: number; // actual score minus implied score, in score points
@@ -135,7 +144,7 @@ const SENTIMENT_THRESHOLD = 4;
 export function marketSentiment(actualScore: number, priceCents: number): MarketSentiment {
   const impliedScore = impliedScoreFromPrice(priceCents);
   const diff = actualScore - impliedScore;
-  if (diff >= SENTIMENT_THRESHOLD) return { label: 'Undervalued', tone: 'undervalued', impliedScore, diff };
-  if (diff <= -SENTIMENT_THRESHOLD) return { label: 'Overheated', tone: 'overheated', impliedScore, diff };
-  return { label: 'Fair value', tone: 'fair', impliedScore, diff };
+  if (diff >= SENTIMENT_THRESHOLD) return { label: 'Scouts rate higher', tone: 'undervalued', impliedScore, diff };
+  if (diff <= -SENTIMENT_THRESHOLD) return { label: 'Market ahead of Scouts', tone: 'overheated', impliedScore, diff };
+  return { label: 'In line', tone: 'fair', impliedScore, diff };
 }

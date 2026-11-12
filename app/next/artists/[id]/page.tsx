@@ -6,7 +6,8 @@ import {
   getFoundingBelieverRecord, getHolding, getNextArtist, getPendingClaimForUserAndArtist, getRecentBackerCount,
   getRecentTradesForArtist, getScoreHistory, getWatchCountsByArtist, isWatchlisted, logEvent,
 } from '@/lib/db';
-import { requireUser } from '@/lib/auth';
+import { getSessionUser } from '@/lib/auth';
+import { getArtistAvatarUrl } from '@/lib/artist-image';
 import { marketSentiment } from '@/lib/next-market';
 import { scoreContributors } from '@/lib/scoring';
 import { formatCents } from '@/lib/format';
@@ -20,10 +21,24 @@ import ScoreContributorBar from '@/components/next/ScoreContributorBar';
 import RecentActivity from '@/components/next/RecentActivity';
 import ClaimArtistPanel from '@/components/next/ClaimArtistPanel';
 import MobileTradeBar from '@/components/next/MobileTradeBar';
+import GuestBackPanel from '@/components/next/GuestBackPanel';
 
+// What a shared artist link previews as (iMessage, X, Discord, etc.).
+// Built from the public projection only — nothing Scout-internal.
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-  const artist = await getArtist(Number(params.id));
-  return { title: artist?.name ?? 'Artist' };
+  const id = Number(params.id);
+  const row = Number.isInteger(id) ? await getNextArtist(id) : undefined;
+  if (!row) return { title: 'Artist' };
+  const { artist } = row;
+  const where = [artist.genre, artist.location].filter(Boolean).join(' · ');
+  const description = `${artist.name}${where ? ` — ${where}` : ''}. Listen, and back them early on NEXT.`;
+  const image = getArtistAvatarUrl(artist) ?? (artist.featured_video_id ? `https://img.youtube.com/vi/${artist.featured_video_id}/hqdefault.jpg` : undefined);
+  return {
+    title: artist.name,
+    description,
+    openGraph: { title: `${artist.name} on NEXT`, description, type: 'profile', images: image ? [image] : undefined },
+    twitter: { card: image ? 'summary_large_image' : 'summary', title: `${artist.name} on NEXT`, description, images: image ? [image] : undefined },
+  };
 }
 
 export const dynamic = 'force-dynamic';
@@ -31,8 +46,10 @@ export const dynamic = 'force-dynamic';
 // Public-safe view only: name, genre, location, public socials, public
 // growth metrics, NEXT Score, NEXT Price. Deliberately excludes stage,
 // scout_name, notes, created_by — that's Scout's internal view, not NEXT's.
+// Viewable signed out (this is the page shared links land on); the
+// personal parts — holding, watch state, claim, trading — need an account.
 export default async function NextArtistPage({ params, searchParams }: { params: { id: string }; searchParams: { ref?: string; feedEventId?: string } }) {
-  const user = await requireUser();
+  const user = await getSessionUser();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
   // A trade completed on this page can be attributed back to the Feed card
@@ -43,7 +60,7 @@ export default async function NextArtistPage({ params, searchParams }: { params:
   const feedReferralEventId = searchParams.ref === 'feed' && Number.isInteger(feedEventIdParam) ? feedEventIdParam : undefined;
   const row = await getNextArtist(id);
   if (!row) notFound();
-  await logEvent(user.id, 'artist_detail_opened', { artistId: id });
+  await logEvent(user?.id ?? null, 'artist_detail_opened', user ? { artistId: id } : { artistId: id, guest: true });
 
   const { artist, score, priceCents, priceHistory } = row;
   // A few things on this page (the Score-contribution breakdown, the claim-
@@ -54,19 +71,21 @@ export default async function NextArtistPage({ params, searchParams }: { params:
   // scoreParts/claimState values below are).
   const rawArtist = (await getArtist(id))!;
   const sentiment = marketSentiment(score, priceCents);
-  const holding = await getHolding(user.id, id);
+  const holding = user ? await getHolding(user.id, id) : undefined;
   const scoreHistory = await getScoreHistory(id);
-  const foundingRecord = await getFoundingBelieverRecord(user.id, id);
+  const foundingRecord = user ? await getFoundingBelieverRecord(user.id, id) : undefined;
   const earlyBackerCount = await getFoundingBelieverCountForArtist(id); // ever-first-bought — see the Founding Believer module below
   const currentBackerCount = (await getBackerCountsByArtist())[id] ?? 0; // currently holding shares right now
   const watchCount = (await getWatchCountsByArtist())[id] ?? 0;
-  const watching = await isWatchlisted(user.id, id);
+  const watching = user ? await isWatchlisted(user.id, id) : false;
   const scoreParts = scoreContributors(rawArtist);
   const volumeCents24h = await getArtistTradeVolumeCents(id, 24);
   const recentBackerCount24h = await getRecentBackerCount(id, 24);
   const recentTrades = await getRecentTradesForArtist(id);
   const claimState =
-    rawArtist.claimed_by_user_id == null
+    !user
+      ? null
+      : rawArtist.claimed_by_user_id == null
       ? (await getPendingClaimForUserAndArtist(user.id, id) ? 'pending' as const : 'unclaimed' as const)
       : rawArtist.claimed_by_user_id === user.id
       ? 'owned_by_me' as const
@@ -89,9 +108,9 @@ export default async function NextArtistPage({ params, searchParams }: { params:
 
   const signalCopy =
     sentiment.tone === 'undervalued'
-      ? `Signal detected — NEXT Score is running ${Math.round(sentiment.diff)} points ahead of what NEXT Price implies. The market hasn't caught up to our Scouts' rating yet.`
+      ? `Our Scouts rate ${artist.name} ${Math.round(sentiment.diff)} points higher than the current NEXT Price implies — the players haven't come around to the Scouts' view yet. If you agree with the Scouts, this is where you'd act; if you don't, they could be wrong.`
       : sentiment.tone === 'overheated'
-      ? `Heads up — NEXT Price is running ${Math.round(Math.abs(sentiment.diff))} points ahead of what NEXT Score supports. The market may be ahead of our Scouts' rating.`
+      ? `The market has priced ${artist.name} ${Math.round(Math.abs(sentiment.diff))} points above our Scouts' rating — players are more excited than the Scouts are. That can mean the Scouts are behind, or the price has run ahead of itself.`
       : null;
 
   return (
@@ -129,7 +148,7 @@ export default async function NextArtistPage({ params, searchParams }: { params:
               }
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" /></svg>
-              {sentiment.tone === 'undervalued' ? 'Undervalued' : 'Overheated'} by {Math.round(Math.abs(sentiment.diff))}
+              {sentiment.tone === 'undervalued' ? `Scouts rate +${Math.round(sentiment.diff)} vs. market` : `Market +${Math.round(Math.abs(sentiment.diff))} vs. Scouts`}
             </div>
           )}
           <div
@@ -158,7 +177,15 @@ export default async function NextArtistPage({ params, searchParams }: { params:
 
       <SpotifyPreview artistUrl={artist.spotify_url} />
 
-      <ClaimArtistPanel artistId={id} artistName={artist.name} initialState={claimState} />
+      {claimState ? (
+        <ClaimArtistPanel artistId={id} artistName={artist.name} initialState={claimState} />
+      ) : rawArtist.claimed_by_user_id == null ? (
+        <p className="m-0 text-[13px]" style={{ color: 'var(--text-faint)' }}>
+          Are you {artist.name}?{' '}
+          <Link href={`/signup?next=${encodeURIComponent(`/next/artists/${id}`)}`} className="underline">Sign up to claim this profile</Link>{' '}
+          and post updates to your fans.
+        </p>
+      ) : null}
 
       {signalCopy && (
         <div
@@ -284,6 +311,9 @@ export default async function NextArtistPage({ params, searchParams }: { params:
           <RecentActivity trades={recentTrades} />
         </div>
 
+        {!user ? (
+          <GuestBackPanel artistId={id} artistName={artist.name} priceCents={priceCents} />
+        ) : (
         <TradePanel
           artistId={id}
           artistName={artist.name}
@@ -295,6 +325,7 @@ export default async function NextArtistPage({ params, searchParams }: { params:
           recentBackerCount24h={recentBackerCount24h}
           feedReferralEventId={feedReferralEventId}
         />
+        )}
       </div>
 
       <MobileTradeBar artistName={artist.name} priceCents={priceCents} changePct={todayChangePct} />

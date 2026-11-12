@@ -15,13 +15,14 @@ export default function NextHeader({
   unreadNotifications = 0,
   hasClaimedArtist = false,
 }: {
-  user: User;
+  user: User | null;
   unreadNotifications?: number;
   hasClaimedArtist?: boolean;
 }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
+  if (!user) return <GuestHeader pathname={pathname ?? '/next'} />;
   const is = (p: string) => pathname === p || (p !== '/next' && pathname?.startsWith(p));
   const isInternal = user.role === 'internal' || user.role === 'admin';
 
@@ -170,6 +171,65 @@ export default function NextHeader({
           <div className="pt-2 mt-1" style={{ borderTop: '1px solid var(--border-soft)' }}>
             <LogoutButton className="next-btn-ghost text-sm px-4 py-2.5 rounded-[10px] w-full flex justify-center" />
           </div>
+        </nav>
+      )}
+    </div>
+  );
+}
+
+// What a signed-out visitor sees: only the pages they can actually open,
+// plus a clear way in. "Sign up" carries the current page so signing up
+// from an artist page lands back on that artist.
+function GuestHeader({ pathname }: { pathname: string }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const back = pathname && pathname !== '/next' ? `?next=${encodeURIComponent(pathname)}` : '';
+  const links = [
+    { href: '/next', label: 'Discover', active: pathname === '/next' || pathname.startsWith('/next/artists') },
+    { href: '/next/leaderboard', label: 'Leaderboard', active: pathname.startsWith('/next/leaderboard') },
+  ];
+  return (
+    <div className="relative border-b border-[var(--border-soft)]">
+      <div className="flex items-center justify-between px-4 sm:px-6 md:px-12 py-5">
+        <div className="flex items-center gap-10">
+          <Link href="/next" className="flex items-baseline gap-0.5 font-display font-extrabold text-[22px] tracking-[-0.01em]">
+            <span>NEXT</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--ember)] self-center ml-1 shadow-[0_0_12px_var(--ember)]" />
+          </Link>
+          <nav className="hidden sm:flex items-center gap-6 text-sm">
+            {links.map((l) => (
+              <Link key={l.href} href={l.href} className={`relative pb-[22px] ${l.active ? 'font-medium' : ''}`} style={{ color: l.active ? 'var(--text)' : 'var(--text-muted)' }}>
+                {l.label}
+                {l.active && <span className="absolute left-0 right-0 -bottom-[21px] h-0.5 rounded-full" style={{ background: 'var(--ember)' }} />}
+              </Link>
+            ))}
+          </nav>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href={`/login${back}`} className="next-btn-ghost text-sm px-3.5 py-2 rounded-lg">Log in</Link>
+          <Link href={`/signup${back}`} className="next-btn-primary text-sm font-semibold px-4 py-2 rounded-lg">Sign up free</Link>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            className="next-icon-btn sm:hidden w-9 h-9 rounded-full flex items-center justify-center border active:scale-90"
+            style={{ borderColor: 'var(--border-soft)', color: 'var(--text)' }}
+          >
+            {menuOpen ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M6 6l12 12M18 6 6 18" /></svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+            )}
+          </button>
+        </div>
+      </div>
+      {menuOpen && (
+        <nav className="next-menu-panel sm:hidden absolute left-0 right-0 top-full z-30 flex flex-col px-4 py-3 gap-1" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border-soft)' }}>
+          {links.map((l) => (
+            <Link key={l.href} href={l.href} onClick={() => setMenuOpen(false)} className="px-2 py-3 text-[15px] rounded-lg" style={{ color: l.active ? 'var(--text)' : 'var(--text-muted)', fontWeight: l.active ? 600 : 400 }}>
+              {l.label}
+            </Link>
+          ))}
         </nav>
       )}
     </div>

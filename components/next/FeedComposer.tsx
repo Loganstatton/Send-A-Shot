@@ -173,7 +173,7 @@ export default function FeedComposer({ onPosted, openSignal = 0 }: { onPosted: (
           onChange={(e) => setBody(e.target.value)}
           maxLength={BODY_MAX_LENGTH}
           rows={3}
-          placeholder="I think this artist is massively undervalued…"
+          placeholder="Why do you think this artist is next?"
           className="w-full mt-1.5 px-3 py-2.5 rounded-lg text-sm border resize-none"
           style={{ background: 'var(--surface)', borderColor: 'var(--border-soft)', color: 'var(--text)' }}
         />

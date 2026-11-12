@@ -1,9 +1,10 @@
 import crypto from 'crypto';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
 import { db, getArtist, getUserById, setUserRole } from './db';
 import { perRequest } from './request-cache';
+import { withReturnPath } from './return-path';
 import { Artist, User } from './types';
 
 export const SESSION_COOKIE = 'scout_session';
@@ -102,9 +103,11 @@ export const getSessionUser = perRequest(async (): Promise<User | null> => {
 });
 
 // For server components/pages: redirect to /login if not authenticated.
+// Signed-out visitors go to /login, carrying the page they asked for (set
+// by middleware.ts) so logging in brings them straight back to it.
 export async function requireUser(): Promise<User> {
   const user = await getSessionUser();
-  if (!user) redirect('/login');
+  if (!user) redirect(withReturnPath('/login', headers().get('x-request-path')));
   return user;
 }
 

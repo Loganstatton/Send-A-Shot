@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getAllArtists, getArtistLastActivityMap, getArtistsInPhotoBackoff, getArtistsInVideoBackoff, getDueFollowUps, getLatestSyncRun, getNewDiscoveryCandidateCount } from '@/lib/db';
-import { requireInternal } from '@/lib/auth';
+import { redirect } from 'next/navigation';
+import { getSessionUser, requireInternal } from '@/lib/auth';
 import { breakoutScore } from '@/lib/scoring';
 import RosterList from '@/components/RosterList';
 import NeedsActionToday from '@/components/NeedsActionToday';
@@ -14,6 +15,9 @@ export const metadata: Metadata = { title: { absolute: 'Scout — Early Artist D
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
+  // The site's front door: a signed-out visitor sees NEXT (which explains
+  // itself and can be browsed without an account), not a login form.
+  if (!(await getSessionUser())) redirect('/next');
   await requireInternal();
   const lastActivity = await getArtistLastActivityMap();
   const artists = (await getAllArtists())

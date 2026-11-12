@@ -56,7 +56,7 @@ function cardContent(item: FeedItemDTO, viewerUserId: number): { icon: string; e
       return {
         icon: undervalued ? '🔥' : '⚠️',
         eyebrow: 'NEXT Signal',
-        headline: `${artistName} looks ${undervalued ? 'undervalued' : 'overheated'}`,
+        headline: undervalued ? `Scouts rate ${artistName} higher than the market` : `The market is ahead of the Scouts on ${artistName}`,
         body: num('diff') != null ? `Score runs ${Math.abs(num('diff') as number).toFixed(0)} pts ${undervalued ? 'ahead of' : 'behind'} price` : undefined,
       };
     }

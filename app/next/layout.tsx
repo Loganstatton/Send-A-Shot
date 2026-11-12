@@ -1,11 +1,12 @@
 import { Bricolage_Grotesque, IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import './next-theme.css';
-import { requireUser } from '@/lib/auth';
+import { getSessionUser } from '@/lib/auth';
 import { getArtistsClaimedByUser } from '@/lib/db';
 import { NEXT_STARTING_CREDITS_CENTS } from '@/lib/next-market';
 import { getNotificationsForUser } from '@/lib/notifications';
 import NextHeader from '@/components/next/NextHeader';
 import NextOnboarding from '@/components/next/NextOnboarding';
+import { ViewerProvider } from '@/lib/viewer-context';
 
 // Self-hosted via next/font (no runtime <link> tag, no layout shift) —
 // scoped to just the /next/* route group. Scout keeps the default globals.css
@@ -15,9 +16,12 @@ const body = IBM_Plex_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], 
 const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-mono' });
 
 export default async function NextLayout({ children }: { children: React.ReactNode }) {
-  const user = await requireUser();
-  const unreadNotifications = (await getNotificationsForUser(user)).filter((n) => !n.read).length;
-  const hasClaimedArtist = (await getArtistsClaimedByUser(user.id)).length > 0;
+  // Signed-out visitors can browse Discover, artist pages, the leaderboard,
+  // profiles and shared early-proof cards; every other NEXT page checks for
+  // a session itself (requireUser) and sends them to log in.
+  const user = await getSessionUser();
+  const unreadNotifications = user ? (await getNotificationsForUser(user)).filter((n) => !n.read).length : 0;
+  const hasClaimedArtist = user ? (await getArtistsClaimedByUser(user.id)).length > 0 : false;
 
   return (
     <div
@@ -32,8 +36,10 @@ export default async function NextLayout({ children }: { children: React.ReactNo
       }}
     >
       <NextHeader user={user} unreadNotifications={unreadNotifications} hasClaimedArtist={hasClaimedArtist} />
-      {!user.next_onboarded_at && <NextOnboarding startingCreditsCents={NEXT_STARTING_CREDITS_CENTS} />}
-      <main className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14">{children}</main>
+      {user && !user.next_onboarded_at && <NextOnboarding startingCreditsCents={NEXT_STARTING_CREDITS_CENTS} />}
+      <ViewerProvider guest={!user}>
+        <main className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14">{children}</main>
+      </ViewerProvider>
     </div>
   );
 }
