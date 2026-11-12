@@ -7,6 +7,7 @@ import { getNotificationsForUser } from '@/lib/notifications';
 import NextHeader from '@/components/next/NextHeader';
 import NextOnboarding from '@/components/next/NextOnboarding';
 import { ViewerProvider } from '@/lib/viewer-context';
+import { getGenreOptions } from '@/lib/genre-prefs';
 
 // Self-hosted via next/font (no runtime <link> tag, no layout shift) —
 // scoped to just the /next/* route group. Scout keeps the default globals.css
@@ -22,6 +23,8 @@ export default async function NextLayout({ children }: { children: React.ReactNo
   const user = await getSessionUser();
   const unreadNotifications = user ? (await getNotificationsForUser(user)).filter((n) => !n.read).length : 0;
   const hasClaimedArtist = user ? (await getArtistsClaimedByUser(user.id)).length > 0 : false;
+  const showOnboarding = !!user && !user.next_onboarded_at;
+  const genreOptions = showOnboarding ? await getGenreOptions() : [];
 
   return (
     <div
@@ -36,7 +39,7 @@ export default async function NextLayout({ children }: { children: React.ReactNo
       }}
     >
       <NextHeader user={user} unreadNotifications={unreadNotifications} hasClaimedArtist={hasClaimedArtist} />
-      {user && !user.next_onboarded_at && <NextOnboarding startingCreditsCents={NEXT_STARTING_CREDITS_CENTS} />}
+      {showOnboarding && <NextOnboarding startingCreditsCents={NEXT_STARTING_CREDITS_CENTS} genreOptions={genreOptions} />}
       <ViewerProvider guest={!user}>
         <main className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14">{children}</main>
       </ViewerProvider>

@@ -63,7 +63,7 @@ export default async function LeaguePage(props: { params: Promise<{ id: string }
                     {s.user.name}{isMe ? ' (you)' : ''}
                   </Link>
                   <div className="text-xs truncate" style={{ color: 'var(--text-faint)' }}>
-                    {s.isOwner ? 'Owner · ' : ''}Joined {formatDate(s.joined_at)} · {s.artistsBackedCount} artists backed
+                    {s.isOwner ? 'Owner · ' : ''}Joined {formatDate(s.joined_at)} · {s.artistsBackedCount} {s.artistsBackedCount === 1 ? 'artist' : 'artists'} backed
                   </div>
                 </div>
                 <div className="text-right shrink-0">

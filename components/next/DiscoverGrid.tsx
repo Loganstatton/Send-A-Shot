@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { NextMarketRow, ScoreChange } from '@/lib/types';
 import { changePctForWindow as sharedChangePctForWindow, changePctSinceListing, marketSentiment } from '@/lib/next-market';
 import { track } from '@/lib/track';
+import { matchesGenrePrefs } from '@/lib/genre-match';
 import ArtistCard, { SinceWatched } from '@/components/next/ArtistCard';
 
 type SortMode = 'score' | 'gain' | 'loss' | 'new' | 'gap' | 'watched' | 'backed' | 'trending' | 'momentum';
@@ -37,6 +38,13 @@ function changePctFor(row: NextMarketRow): number {
 type RangeFilter = { min: string; max: string };
 const EMPTY_RANGE: RangeFilter = { min: '', max: '' };
 
+// Sentinel genre value for the "For you" filter (no real genre is spelled
+// with a leading NUL).
+const FOR_YOU = '\u0000for-you';
+// Below this many matching artists, opening on "For you" would hide most
+// of a small roster, so Discover opens on All instead.
+const FOR_YOU_MIN_ARTISTS = 3;
+
 function inRange(value: number | null | undefined, range: RangeFilter): boolean {
   if (value == null) return range.min === '' && range.max === '';
   if (range.min !== '' && value < Number(range.min)) return false;
@@ -52,6 +60,7 @@ export default function DiscoverGrid({
   scoreChanges = {},
   sinceWatchedByArtist = {},
   emptyMessage = 'No artists match these filters yet.',
+  genrePrefs = [],
 }: {
   rows: NextMarketRow[];
   watchedIds?: number[];
@@ -63,6 +72,9 @@ export default function DiscoverGrid({
   // "since you added" doesn't apply.
   sinceWatchedByArtist?: Record<number, SinceWatched>;
   emptyMessage?: string;
+  // Genres the player picked (onboarding or Settings). Adds a "For you"
+  // filter, which is on by default when it has enough artists to show.
+  genrePrefs?: string[];
 }) {
   const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds]);
   const genres = useMemo(() => {
@@ -74,7 +86,8 @@ export default function DiscoverGrid({
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([genre]) => genre).slice(0, 6);
   }, [rows]);
 
-  const [genre, setGenre] = useState<string | null>(null);
+  const forYouCount = useMemo(() => rows.filter((r) => matchesGenrePrefs(r.artist.genre, genrePrefs)).length, [rows, genrePrefs]);
+  const [genre, setGenre] = useState<string | null>(forYouCount >= FOR_YOU_MIN_ARTISTS ? FOR_YOU : null);
   const [signalOnly, setSignalOnly] = useState(false);
   const [watchlistOnly, setWatchlistOnly] = useState(false);
   const [sort, setSort] = useState<SortMode>('score');
@@ -109,7 +122,8 @@ export default function DiscoverGrid({
     let list = rows;
     const term = search.trim().toLowerCase();
     if (term) list = list.filter((r) => r.artist.name.toLowerCase().includes(term));
-    if (genre) list = list.filter((r) => r.artist.genre === genre);
+    if (genre === FOR_YOU) list = list.filter((r) => matchesGenrePrefs(r.artist.genre, genrePrefs));
+    else if (genre) list = list.filter((r) => r.artist.genre === genre);
     if (signalOnly) list = list.filter((r) => marketSentiment(r.score, r.priceCents).tone === 'undervalued');
     if (watchlistOnly) list = list.filter((r) => watchedSet.has(r.artist.id));
     if (scoreRange.min !== '' || scoreRange.max !== '') list = list.filter((r) => inRange(r.score, scoreRange));
@@ -128,7 +142,7 @@ export default function DiscoverGrid({
       case 'momentum': sorted.sort((a, b) => (scoreChanges[b.artist.id]?.changeAbs ?? -Infinity) - (scoreChanges[a.artist.id]?.changeAbs ?? -Infinity)); break;
     }
     return sorted;
-  }, [rows, genre, signalOnly, watchlistOnly, scoreRange, priceRange, sort, search, watchedSet, watchCounts, backerCounts, scoreChanges]);
+  }, [rows, genre, genrePrefs, signalOnly, watchlistOnly, scoreRange, priceRange, sort, search, watchedSet, watchCounts, backerCounts, scoreChanges]);
 
   const chip = (active: boolean) => `next-pill ${active ? 'next-pill-active' : ''}`;
 
@@ -162,9 +176,20 @@ export default function DiscoverGrid({
       </div>
 
       <div className="flex items-center gap-2.5 flex-wrap">
-        <button type="button" onClick={() => setGenre(null)} className={chip(genre === null)}>All</button>
+        <button type="button" aria-pressed={genre === null} onClick={() => setGenre(null)} className={chip(genre === null)}>All</button>
+        {forYouCount > 0 && (
+          <button
+            type="button"
+            aria-pressed={genre === FOR_YOU}
+            title={`Your genres: ${genrePrefs.join(', ')}`}
+            onClick={() => { setGenre(FOR_YOU); track('filter_used', { filter: 'genre', value: 'for_you' }); }}
+            className={chip(genre === FOR_YOU)}
+          >
+            For you
+          </button>
+        )}
         {genres.map((g) => (
-          <button key={g} type="button" onClick={() => { setGenre(g); track('filter_used', { filter: 'genre', value: g }); }} className={chip(genre === g)}>{g}</button>
+          <button key={g} type="button" aria-pressed={genre === g} onClick={() => { setGenre(g); track('filter_used', { filter: 'genre', value: g }); }} className={chip(genre === g)}>{g}</button>
         ))}
         <div className="hidden sm:block w-px h-[22px] mx-1" style={{ background: 'var(--border-soft)' }} />
         <button

@@ -556,4 +556,12 @@ CREATE TABLE IF NOT EXISTS next_league_members (
 CREATE INDEX IF NOT EXISTS idx_next_league_members_user ON next_league_members(user_id);
 `,
   },
+  {
+    // The genres a player said they listen to (onboarding or Settings), as a
+    // JSON array of labels. NULL = never asked / skipped.
+    id: '005_genre_prefs',
+    sql: `
+ALTER TABLE users ADD COLUMN IF NOT EXISTS next_genre_prefs TEXT COLLATE "C";
+`,
+  },
 ];

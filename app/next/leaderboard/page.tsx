@@ -89,7 +89,7 @@ export default async function LeaderboardPage(
                 <div className="min-w-0 flex-1">
                   <div className="font-display font-semibold truncate">{entry.user.name}</div>
                   <div className="text-xs truncate" style={{ color: 'var(--text-faint)' }}>
-                    {entry.artistsBackedCount} artists backed (Founding Believer) · {entry.earlyDiscoveriesCount} early calls
+                    {entry.artistsBackedCount} {entry.artistsBackedCount === 1 ? 'artist' : 'artists'} backed · {entry.earlyDiscoveriesCount} early {entry.earlyDiscoveriesCount === 1 ? 'call' : 'calls'}
                   </div>
                 </div>
                 <div className="text-right shrink-0">

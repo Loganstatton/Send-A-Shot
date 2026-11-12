@@ -181,7 +181,8 @@ export function LeagueInvitePanel({ leagueId, leagueName, inviteCode, isOwner }:
           )}
         </div>
       </div>
-      <p aria-live="polite" className="m-0 text-xs min-h-[1em]" style={{ color: 'var(--text-muted)' }}>{status}</p>
+      {/* Always rendered so screen readers announce updates; takes no space while empty. */}
+      <p aria-live="polite" className={status ? 'm-0 text-xs' : 'sr-only'} style={{ color: 'var(--text-muted)' }}>{status}</p>
     </div>
   );
 }
