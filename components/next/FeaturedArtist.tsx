@@ -25,7 +25,7 @@ export default function FeaturedArtist({ row }: { row: NextMarketRow }) {
     <Link href={`/next/artists/${artist.id}`} className="next-card next-card-hover block overflow-hidden relative">
       <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 pl-2.5 pr-3 py-[6px] rounded-full backdrop-blur-sm border" style={{ background: 'oklch(15% 0.012 40 / 0.72)', borderColor: 'var(--ember-line)' }}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ember)" strokeWidth={2.5}><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" /></svg>
-        <span className="text-[11.5px] font-semibold font-mono" style={{ color: 'var(--ember)' }}>TODAY&apos;S BREAKOUT PICK</span>
+        <span className="text-[11.5px] font-semibold font-mono" style={{ color: 'var(--ember)' }}>FEATURED · SCOUTS&apos; PICK</span>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[1.3fr_1fr]">

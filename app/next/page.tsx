@@ -14,6 +14,10 @@ import FeaturedArtist from '@/components/next/FeaturedArtist';
 import { getGenrePrefs } from '@/lib/genre-prefs';
 import { getWeeklyChallenges } from '@/lib/challenges';
 import ChallengesCard from '@/components/next/ChallengesCard';
+import { getGenreHubs } from '@/lib/genre-hubs';
+import { getCollections } from '@/lib/collections';
+import ArtistAvatar from '@/components/ArtistAvatar';
+import { getArtistAvatarUrl } from '@/lib/artist-image';
 
 export const metadata: Metadata = {
   title: { absolute: "NEXT — Discover tomorrow's biggest artists" },
@@ -28,6 +32,7 @@ export const dynamic = 'force-dynamic';
 const MIN_BACKERS_FOR_STATS = 10;
 const MIN_ARTISTS_FOR_STATS = 3;
 const MIN_MOVE_PCT = 0.5;
+const NEW_ARTIST_DAYS = 14;
 
 // Public: a signed-out visitor gets the pitch and can browse every artist;
 // backing, watching and everything personal asks them to sign up first.
@@ -40,6 +45,12 @@ export default async function NextMarketPage() {
   const scoreChanges = await getScoreChanges();
   const genrePrefs = user ? await getGenrePrefs(user.id) : [];
   const challenges = user && rows.length > 0 ? await getWeeklyChallenges(user.id) : null;
+  const genreHubs = rows.length > 0 ? (await getGenreHubs()).filter((h) => h.count > 0) : [];
+  const collections = rows.length > 0 ? (await getCollections({ publishedOnly: true })).slice(0, 3) : [];
+  // "New on NEXT": artists added in the last two weeks, newest first —
+  // only shown when there are some, never as an empty row.
+  const newCutoff = new Date(Date.now() - NEW_ARTIST_DAYS * 86_400_000).toISOString();
+  const newArtists = rows.filter((r) => r.artist.created_at >= newCutoff).sort((a, b) => (b.artist.created_at > a.artist.created_at ? 1 : -1)).slice(0, 4);
 
   // Batched, not per-card impression tracking (no client-side scroll
   // observer or one network round trip per card) — "viewed" here means
@@ -168,9 +179,53 @@ export default async function NextMarketPage() {
       ) : (
         <div id="artists" className="flex flex-col gap-10 scroll-mt-6">
           {featured && <FeaturedArtist row={featured} />}
+          {collections.length > 0 && (
+            <section aria-labelledby="collections" className="flex flex-col gap-3">
+              <h2 id="collections" className="text-xs uppercase tracking-[0.08em] font-mono m-0" style={{ color: 'var(--text-faint)' }}>Collections from our Scouts</h2>
+              <ul className="grid grid-cols-1 md:grid-cols-3 gap-2.5 list-none p-0 m-0">
+                {collections.map((c) => (
+                  <li key={c.id}>
+                    <Link href={`/next/collections/${c.slug}`} className="next-card next-card-hover flex flex-col gap-1 px-5 py-4 h-full">
+                      <span className="font-display font-semibold">{c.title}</span>
+                      {c.description && <span className="text-sm line-clamp-2" style={{ color: 'var(--text-muted)' }}>{c.description}</span>}
+                      <span className="text-xs mt-auto" style={{ color: 'var(--text-faint)' }}>{c.itemCount} {c.itemCount === 1 ? 'artist' : 'artists'}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {newArtists.length > 0 && rows.some((r) => r.artist.created_at < newCutoff) && (
+            <section aria-labelledby="new-on-next" className="flex flex-col gap-3">
+              <h2 id="new-on-next" className="text-xs uppercase tracking-[0.08em] font-mono m-0" style={{ color: 'var(--text-faint)' }}>New on NEXT</h2>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 list-none p-0 m-0">
+                {newArtists.map((r) => (
+                  <li key={r.artist.id}>
+                    <Link href={`/next/artists/${r.artist.id}`} className="next-card next-card-hover flex items-center gap-3 px-4 py-3">
+                      <ArtistAvatar name={r.artist.name} photoUrl={getArtistAvatarUrl(r.artist)} size="sm" />
+                      <div className="min-w-0">
+                        <div className="font-display font-semibold truncate">{r.artist.name}</div>
+                        <div className="text-xs truncate" style={{ color: 'var(--text-faint)' }}>
+                          {r.artist.genre ? `${r.artist.genre} · ` : ''}added {new Date(r.artist.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </div>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {/* Keyed on the genre picks so Discover re-opens on "For you" right
               after onboarding saves them (it was already mounted behind
               the dialog, with no picks yet). */}
+          {genreHubs.length > 1 && (
+            <nav aria-label="Browse by genre" className="flex items-center gap-2 flex-wrap text-[13px]">
+              <span style={{ color: 'var(--text-faint)' }}>Browse by genre:</span>
+              {genreHubs.map((h) => (
+                <Link key={h.slug} href={`/next/genres/${h.slug}`} className="next-pill">{h.label}</Link>
+              ))}
+            </nav>
+          )}
           <DiscoverGrid key={genrePrefs.join('|')} rows={rows} watchedIds={watchedIds} watchCounts={watchCounts} backerCounts={backerCounts} scoreChanges={scoreChanges} genrePrefs={genrePrefs} />
         </div>
       )}

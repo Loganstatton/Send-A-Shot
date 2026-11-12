@@ -4,9 +4,10 @@ import type { Metadata } from 'next';
 import {
   getArtist, getArtistTradeVolumeCents, getBackerCountsByArtist, getFoundingBelieverCountForArtist,
   getFoundingBelieverRecord, getHolding, getNextArtist, getPendingClaimForUserAndArtist, getRecentBackerCount,
-  getPublicScoreChanges, getRecentTradesForArtist, getScoreHistory, getWatchCountsByArtist, isWatchlisted, logEvent,
+  getNextMarket, getPublicScoreChanges, getRecentTradesForArtist, getScoreHistory, getWatchCountsByArtist, isWatchlisted, logEvent,
 } from '@/lib/db';
 import { getSessionUser } from '@/lib/auth';
+import { hubForGenre } from '@/lib/genre-hubs';
 import { getArtistAvatarUrl } from '@/lib/artist-image';
 import { marketSentiment } from '@/lib/next-market';
 import { formatCents } from '@/lib/format';
@@ -83,6 +84,13 @@ export default async function NextArtistPage(
   const watchCount = (await getWatchCountsByArtist())[id] ?? 0;
   const watching = user ? await isWatchlisted(user.id, id) : false;
   const scoreChanges = await getPublicScoreChanges(id);
+  // Previous/next in Discover's default order (highest Score first), so a
+  // listener can move straight on to the next artist.
+  const ordered = [...(await getNextMarket())].sort((a, b) => b.score - a.score);
+  const position = ordered.findIndex((r) => r.artist.id === id);
+  const prevArtist = position > 0 ? ordered[position - 1].artist : null;
+  const nextArtist = position >= 0 && position < ordered.length - 1 ? ordered[position + 1].artist : null;
+  const genreHub = await hubForGenre(row.artist.genre);
   const volumeCents24h = await getArtistTradeVolumeCents(id, 24);
   const recentBackerCount24h = await getRecentBackerCount(id, 24);
   const recentTrades = await getRecentTradesForArtist(id);
@@ -119,10 +127,26 @@ export default async function NextArtistPage(
 
   return (
     <div className="flex flex-col gap-6 pb-20 lg:pb-0">
-      <Link href="/next" className="text-[13px] flex items-center gap-1.5 w-fit" style={{ color: 'var(--text-faint)' }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M15 18 9 12l6-6" /></svg>
-        Back to Discover
-      </Link>
+      <nav aria-label="Artist navigation" className="flex items-center justify-between gap-3 flex-wrap text-[13px]">
+        <Link href="/next" className="flex items-center gap-1.5 w-fit" style={{ color: 'var(--text-faint)' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M15 18 9 12l6-6" /></svg>
+          Back to Discover
+        </Link>
+        {(prevArtist || nextArtist) && (
+          <div className="flex items-center gap-3">
+            {prevArtist && (
+              <Link href={`/next/artists/${prevArtist.id}`} rel="prev" className="next-btn-ghost px-3 py-1.5 rounded-lg max-w-[180px] truncate">
+                ← <span className="sr-only">Previous artist: </span>{prevArtist.name}
+              </Link>
+            )}
+            {nextArtist && (
+              <Link href={`/next/artists/${nextArtist.id}`} rel="next" className="next-btn-ghost px-3 py-1.5 rounded-lg max-w-[180px] truncate">
+                <span className="sr-only">Next artist: </span>{nextArtist.name} →
+              </Link>
+            )}
+          </div>
+        )}
+      </nav>
 
       <VideoBanner artistId={artist.id} name={artist.name} videoId={artist.featured_video_id} photoUrl={artist.photo_url} />
 
@@ -130,7 +154,10 @@ export default async function NextArtistPage(
         <div>
           <h1 className="font-display font-bold text-[34px] m-0 tracking-[-0.01em]">{artist.name}</h1>
           <p className="mt-1 mb-0 text-sm" style={{ color: 'var(--text-faint)' }}>
-            {artist.genre}{artist.genre && artist.location ? ' · ' : ''}{artist.location}
+            {genreHub ? (
+              <Link href={`/next/genres/${genreHub.slug}`} className="underline-offset-2 hover:underline">{artist.genre}</Link>
+            ) : artist.genre}
+            {artist.genre && artist.location ? ' · ' : ''}{artist.location}
           </p>
         </div>
         <div className="flex items-center gap-2.5 flex-wrap">
