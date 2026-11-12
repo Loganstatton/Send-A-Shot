@@ -41,7 +41,9 @@ a licensable data product.
   (`Recouped $X of $Y`). This is a ledger for tracking negotiated terms and
   totals, not a payout-accounting engine — real splits are whatever the
   actual contract and accountant say
-- SQLite (via better-sqlite3) with auto-seeding of a few example artists
+- Postgres for all data (accounts, balances, trades, artists, history), with
+  versioned schema migrations applied automatically on startup — see
+  [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - Optional Soundcharts integration: search an artist by name to auto-fill
   photo, country, follower count, and 30-day growth %, plus a one-click
   re-sync once linked — bio, genre, and platform links stay manual, since
@@ -82,20 +84,23 @@ a licensable data product.
 
 ## Quick Start
 ```bash
-# Node 18+ recommended
+# Node 18+ and a local Postgres install (macOS: brew install postgresql@16,
+# Debian/Ubuntu: apt install postgresql) — no Docker or cloud account needed
 npm i
 
-# Recommended: set a persistent session secret so logins survive restarts
-echo "SESSION_SECRET=$(openssl rand -hex 32)" > .env.local
+# Starts a throwaway local Postgres (data in ./data/pg) and prints the URL
+npm run db:dev
+echo "DATABASE_URL=postgresql://postgres@127.0.0.1:54329/sas_dev" > .env.local
 
 npm run dev
 # open http://localhost:3000, then sign up for an account
+
+npm test   # runs against the same local Postgres, each test file in its own schema
 ```
 
-If you skip `SESSION_SECRET`, the app generates a fallback secret at
-`data/.session-secret` on first run so sessions still work — but that file
-is dev-only and gitignored; set a real `SESSION_SECRET` for any deployment
-that isn't a single local process.
+The app creates its own tables on first start. `SESSION_SECRET` is optional:
+without it the app generates a signing key once and keeps it in the database,
+so sessions survive restarts and are shared by every instance.
 
 Sign-up is open to anyone who can reach the app, but new accounts always
 start as **Public** (NEXT paper-trading only — no access to Scout's internal
@@ -500,33 +505,14 @@ via the existing `RESEND_API_KEY`/`EMAIL_FROM` setup — see
 `lib/ops-alerts.ts`) so a broken daily job doesn't go unnoticed until
 someone happens to check `/admin/sync`.
 
-**Database backups and restore** — the whole app is one SQLite file
-(`data/app.db`), so "backup" means a consistent point-in-time copy of it.
-`lib/db-backup.ts`'s `runBackup()` uses SQLite's own `VACUUM INTO` (crash-
-consistent even in WAL mode, unlike a raw file copy) to write into
-`data/backups/`, keeping the most recent 14 and pruning older ones. The
-daily GitHub Actions workflow triggers this automatically via
-`POST /api/admin/backup` (same `CRON_SECRET` auth as the sync endpoints);
-an admin can also trigger one on demand from `/admin/backups`.
-
-These backups live on the SAME persistent disk as the live database —
-they protect against a bad migration or an accidental delete, **not**
-against losing the disk itself. True off-site backup (S3, etc.) needs real
-storage credentials this app doesn't have configured; that's a follow-up
-once those exist.
-
-To restore, **stop the app first** (restoring into a live database out
-from under a running server risks the app reading a half-swapped file),
-then from the server's disk:
-```bash
-node scripts/restore-db.js latest          # picks the newest file in data/backups
-node scripts/restore-db.js /path/to/app-2026-01-01T00-00-00-000-ab12cd.db
-```
-`restore-db.js` always copies whatever's currently live to
-`data/pre-restore-<timestamp>.db` before overwriting, so a wrong or aborted
-restore is never unrecoverable. `npm run backup` runs the same backup
-logic as a one-off CLI command (useful for local dev, or a shell with
-direct disk access rather than going through the web route).
+**Database backups and restore** — see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#backups-and-restore). In short: a
+daily consistent snapshot of every table is taken automatically (the GitHub
+Actions workflow calls `POST /api/admin/backup`), the newest 14 are kept,
+and an admin can take, **download**, or **restore** one at `/admin/backups`.
+A restore first snapshots the current state, so it can itself be undone.
+`npm run backup` / `npm run restore` do the same from a terminal against
+any database URL — the disaster-recovery path if the database itself is lost.
 
 ## What This MVP Does Not Include
 - Full CRM tooling (email sequences, reminders/follow-up scheduling)
@@ -582,11 +568,12 @@ components/          # Header, ArtistForm, ScoreBadge, ActivityLog, ScoreHistory
                      # StatTile, Sparkline, FollowUpList, AuthForm, SoundchartsSearch,
                      # SyncAllButton, DeezerSyncButton, DiscoveryQueue,
                      # YoutubeScanButton
-lib/                 # sqlite db, types, scoring logic, NEXT pricing engine,
+lib/                 # postgres data layer (pg.ts, db.ts, db-schema.ts), types, scoring logic, NEXT pricing engine,
                      # auth/role helpers, money formatting, soundcharts + deezer
                      # clients, discovery-source abstraction + Soundcharts/
                      # YouTube discovery filtering + scoring logic
-data/                # sqlite file + fallback session secret live here
+data/pg/             # local dev Postgres (npm run db:dev), gitignored
+docs/DEPLOYMENT.md   # hosting, environment variables, deploy/rollback, backups
 ```
 
 ## Next Steps (Roadmap)
