@@ -35,6 +35,15 @@ cy.use_denoising = True
 cy.denoiser = 'OPENIMAGEDENOISE'
 cy.max_bounces, cy.diffuse_bounces, cy.glossy_bounces, cy.transmission_bounces = 6, 2, 4, 2
 cy.caustics_reflective = cy.caustics_refractive = False
+if '--gpu' in argv:
+    # NVIDIA OptiX on a cloud GPU: same scene, more samples, minutes not hours.
+    prefs = bpy.context.preferences.addons['cycles'].preferences
+    prefs.compute_device_type = 'OPTIX'
+    prefs.get_devices()
+    for d in prefs.devices: d.use = d.type in ('OPTIX', 'CUDA')
+    cy.device = 'GPU'
+    cy.samples = 128
+    cy.denoiser = 'OPTIX'
 sc.render.resolution_x, sc.render.resolution_y = 1080, 1920
 sc.render.resolution_percentage = 35 if PREVIEW else 100
 sc.render.use_motion_blur = True
