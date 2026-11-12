@@ -12,3 +12,4 @@ data/pre-restore-*.db
 *.tsbuildinfo
 data/pg/
 next-env.d.ts
+e2e/screenshots/
