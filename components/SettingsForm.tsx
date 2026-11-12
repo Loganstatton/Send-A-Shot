@@ -2,8 +2,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { User } from '@/lib/types';
+import GenrePrefsForm from './GenrePrefsForm';
 
-export default function SettingsForm({ user }: { user: User }) {
+export default function SettingsForm({ user, genreOptions, genrePrefs }: { user: User; genreOptions: string[]; genrePrefs: string[] }) {
   const router = useRouter();
 
   // Profile
@@ -207,7 +208,7 @@ export default function SettingsForm({ user }: { user: User }) {
         </p>
         {[
           { label: 'Watchlist moves', hint: 'Score/Price jumps, Scout-vs-market gaps, trending today', checked: notifyWatchlistMoves, set: setNotifyWatchlistMoves },
-          { label: 'New artists in your genres', hint: 'Based on the genres you’ve backed the most', checked: notifyNewArtists, set: setNotifyNewArtists },
+          { label: 'New artists in your genres', hint: 'Genres you picked below, plus the ones you’ve backed the most', checked: notifyNewArtists, set: setNotifyNewArtists },
           { label: 'Founding Believer milestones', hint: 'An artist you backed early crosses a backer-count milestone', checked: notifyFoundingBeliever, set: setNotifyFoundingBeliever },
           { label: 'Portfolio milestones', hint: 'Your all-time return crosses a round number, up or down', checked: notifyPortfolioMilestones, set: setNotifyPortfolioMilestones },
           { label: 'Leaderboard rank changes', hint: 'Your all-time rank moves up or down this week', checked: notifyLeaderboardRank, set: setNotifyLeaderboardRank },
@@ -236,6 +237,8 @@ export default function SettingsForm({ user }: { user: User }) {
           {notificationsSaving ? 'Saving…' : 'Save notification preferences'}
         </button>
       </form>
+
+      <GenrePrefsForm options={genreOptions} initial={genrePrefs} />
 
       <form onSubmit={changePassword} className="card space-y-3">
         <h2 className="font-semibold text-neutral-100">Change password</h2>

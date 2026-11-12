@@ -20,6 +20,7 @@ import {
   getNextMarket, getPortfolioValue, getRankMovementsCached, getReadNotificationKeys, getScoreHistories, getUserWatchlist,
   setNotificationsEmailedThrough, valueAtOrBefore,
 } from './db';
+import { getGenrePrefs, matchesGenrePrefs } from './genre-prefs';
 import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, changePctForWindow, marketSentiment } from './next-market';
 import { emailConfigured, sendEmail } from './email';
 
@@ -153,11 +154,13 @@ async function watchlistNotifications(watchlist: WatchlistEntry[], trendingIds: 
   return notifications;
 }
 
-function newArtistNotifications(favoriteGenres: FavoriteGenre[], newArtists: Artist[]): Notification[] {
+// "Your genres" = the genres you've backed most, plus the ones you picked
+// yourself in onboarding or Settings.
+function newArtistNotifications(favoriteGenres: FavoriteGenre[], pickedGenres: string[], newArtists: Artist[]): Notification[] {
   const genres = new Set(favoriteGenres.map((g) => g.genre));
-  if (genres.size === 0) return [];
+  if (genres.size === 0 && pickedGenres.length === 0) return [];
   return newArtists
-    .filter((a) => a.genre && genres.has(a.genre))
+    .filter((a) => a.genre && (genres.has(a.genre) || matchesGenrePrefs(a.genre, pickedGenres)))
     .map((a) => ({
       key: `new_artist_genre:${a.id}`,
       kind: 'new_artist_genre' as const,
@@ -242,7 +245,7 @@ export async function getNotificationsForUser(user: User): Promise<Notification[
   let all: Notification[] = [];
   if (user.notify_watchlist_moves) all = all.concat(await watchlistNotifications(watchlist, trendingIds));
   if (user.notify_new_artists) {
-    all = all.concat(newArtistNotifications(await getFavoriteGenres(user.id), await getNewArtistsThisWeek(7)));
+    all = all.concat(newArtistNotifications(await getFavoriteGenres(user.id), await getGenrePrefs(user.id), await getNewArtistsThisWeek(7)));
   }
   if (user.notify_founding_believer) all = all.concat(await foundingBelieverNotifications(await getFoundingBelieverRecordsForUser(user.id)));
   if (user.notify_portfolio_milestones) all = all.concat(portfolioMilestoneNotifications((await getPortfolioValue(user.id)).totalReturnPct));

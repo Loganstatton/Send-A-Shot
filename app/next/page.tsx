@@ -11,6 +11,7 @@ import { NextMarketRow } from '@/lib/types';
 import DiscoverGrid from '@/components/next/DiscoverGrid';
 import NextStatTile from '@/components/next/NextStatTile';
 import FeaturedArtist from '@/components/next/FeaturedArtist';
+import { getGenrePrefs } from '@/lib/genre-prefs';
 
 export const metadata: Metadata = {
   title: { absolute: "NEXT — Discover tomorrow's biggest artists" },
@@ -35,6 +36,7 @@ export default async function NextMarketPage() {
   const watchCounts = await getWatchCountsByArtist();
   const backerCounts = await getBackerCountsByArtist();
   const scoreChanges = await getScoreChanges();
+  const genrePrefs = user ? await getGenrePrefs(user.id) : [];
 
   // Batched, not per-card impression tracking (no client-side scroll
   // observer or one network round trip per card) — "viewed" here means
@@ -161,7 +163,10 @@ export default async function NextMarketPage() {
       ) : (
         <div id="artists" className="flex flex-col gap-10 scroll-mt-6">
           {featured && <FeaturedArtist row={featured} />}
-          <DiscoverGrid rows={rows} watchedIds={watchedIds} watchCounts={watchCounts} backerCounts={backerCounts} scoreChanges={scoreChanges} />
+          {/* Keyed on the genre picks so Discover re-opens on "For you" right
+              after onboarding saves them (it was already mounted behind
+              the dialog, with no picks yet). */}
+          <DiscoverGrid key={genrePrefs.join('|')} rows={rows} watchedIds={watchedIds} watchCounts={watchCounts} backerCounts={backerCounts} scoreChanges={scoreChanges} genrePrefs={genrePrefs} />
         </div>
       )}
     </div>

@@ -478,6 +478,7 @@ export type AnalyticsEventType =
   | 'league_joined'
   | 'league_left'
   | 'league_invite_viewed'
+  | 'genre_prefs_saved'
   | 'feed_user_post_created'
   | 'feed_user_post_deleted'
   | 'feed_user_post_reported'
