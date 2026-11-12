@@ -92,42 +92,42 @@ export default function RosterList({ artists }: { artists: RosterArtist[] }) {
     <div className="space-y-3">
       <div className="card flex flex-wrap gap-3 items-end">
         <div>
-          <label className="label">Search</label>
-          <input className="input" placeholder="Artist name…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <label className="label" htmlFor="roster-list-search">Search</label>
+          <input id="roster-list-search" className="input" placeholder="Artist name…" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <div>
-          <label className="label">Stage</label>
-          <select className="input" value={stage} onChange={(e) => setStage(e.target.value as Stage | 'active' | 'all')}>
+          <label className="label" htmlFor="roster-list-stage">Stage</label>
+          <select id="roster-list-stage" className="input" value={stage} onChange={(e) => setStage(e.target.value as Stage | 'active' | 'all')}>
             <option value="active">Active (not passed)</option>
             <option value="all">All stages</option>
             {STAGES.map((s) => <option key={s} value={s}>{STAGE_LABELS[s]}</option>)}
           </select>
         </div>
         <div>
-          <label className="label">Scout</label>
-          <select className="input" value={scout} onChange={(e) => setScout(e.target.value)}>
+          <label className="label" htmlFor="roster-list-scout">Scout</label>
+          <select id="roster-list-scout" className="input" value={scout} onChange={(e) => setScout(e.target.value)}>
             <option value="all">All scouts</option>
             {scouts.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         <div>
-          <label className="label">Genre</label>
-          <select className="input" value={genre} onChange={(e) => setGenre(e.target.value)}>
+          <label className="label" htmlFor="roster-list-genre">Genre</label>
+          <select id="roster-list-genre" className="input" value={genre} onChange={(e) => setGenre(e.target.value)}>
             <option value="all">All genres</option>
             {genres.map((g) => <option key={g} value={g}>{g}</option>)}
           </select>
         </div>
         <div>
-          <label className="label">Min score</label>
-          <input type="number" min={0} max={100} className="input w-24" value={minScore} onChange={(e) => setMinScore(e.target.value)} />
+          <label className="label" htmlFor="roster-list-min-score">Min score</label>
+          <input id="roster-list-min-score" type="number" min={0} max={100} className="input w-24" value={minScore} onChange={(e) => setMinScore(e.target.value)} />
         </div>
         <div>
-          <label className="label">Min growth %</label>
-          <input type="number" className="input w-24" value={minGrowth} onChange={(e) => setMinGrowth(e.target.value)} />
+          <label className="label" htmlFor="roster-list-min-growth">Min growth %</label>
+          <input id="roster-list-min-growth" type="number" className="input w-24" value={minGrowth} onChange={(e) => setMinGrowth(e.target.value)} />
         </div>
         <div>
-          <label className="label">Sort</label>
-          <select className="input" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+          <label className="label" htmlFor="roster-list-sort">Sort</label>
+          <select id="roster-list-sort" className="input" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
             {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => <option key={key} value={key}>{SORT_LABELS[key]}</option>)}
           </select>
         </div>

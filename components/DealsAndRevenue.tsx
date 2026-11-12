@@ -203,12 +203,12 @@ export default function DealsAndRevenue({ artistId }: { artistId: number }) {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="label">Start date</label>
-                <input className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                <label className="label" htmlFor="deals-and-revenue-start-date">Start date</label>
+                <input id="deals-and-revenue-start-date" className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
               </div>
               <div>
-                <label className="label">End date</label>
-                <input className="input" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                <label className="label" htmlFor="deals-and-revenue-end-date">End date</label>
+                <input id="deals-and-revenue-end-date" className="input" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
             </div>
             <textarea className="input min-h-[60px]" placeholder="Terms, notes…" value={agreementNotes} onChange={(e) => setAgreementNotes(e.target.value)} />

@@ -112,6 +112,7 @@ export default function SoundchartsSearch({
         <div className="relative">
           <input
             className="input"
+            aria-label="Search Soundcharts by artist name"
             placeholder="Search Soundcharts by artist name…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

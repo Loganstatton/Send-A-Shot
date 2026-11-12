@@ -30,8 +30,8 @@ export default function ArtistDashboardNoteForm({ artistId }: { artistId: number
 
   return (
     <form onSubmit={submit} className="next-card p-6 flex flex-col gap-3">
-      <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Send an update to your Scout</label>
-      <textarea
+      <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-dashboard-note-form-send-an-update-to-your-scout">Send an update to your Scout</label>
+      <textarea id="artist-dashboard-note-form-send-an-update-to-your-scout"
         className="w-full min-h-[80px] rounded-[10px] px-3.5 py-2.5 text-sm outline-none"
         style={{ border: '1px solid var(--border-soft)', background: 'var(--bg)', color: 'var(--text)' }}
         value={message}

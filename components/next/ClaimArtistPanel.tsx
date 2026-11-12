@@ -70,10 +70,10 @@ export default function ClaimArtistPanel({ artistId, artistName, initialState }:
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="claim-artist-panel-how-can-a-scout-verify-this-is-you-a-lin">
             How can a Scout verify this is you? (a link, a note — whatever helps)
           </label>
-          <textarea
+          <textarea id="claim-artist-panel-how-can-a-scout-verify-this-is-you-a-lin"
             className="w-full min-h-[70px] rounded-[10px] px-3.5 py-2.5 text-sm outline-none"
             style={{ border: '1px solid var(--border-soft)', background: 'var(--bg)', color: 'var(--text)' }}
             value={message}

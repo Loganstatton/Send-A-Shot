@@ -62,46 +62,46 @@ export default function ArtistProfileEditForm({ artistId, initial }: Props) {
       </div>
 
       <div>
-        <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Bio</label>
-        <textarea className="w-full min-h-[70px] rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.bio} onChange={(e) => set('bio', e.target.value)} />
+        <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-bio">Bio</label>
+        <textarea id="artist-profile-edit-form-bio" className="w-full min-h-[70px] rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.bio} onChange={(e) => set('bio', e.target.value)} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Genre</label>
-          <input className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.genre} onChange={(e) => set('genre', e.target.value)} />
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-genre">Genre</label>
+          <input id="artist-profile-edit-form-genre" className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.genre} onChange={(e) => set('genre', e.target.value)} />
         </div>
         <div>
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Location</label>
-          <input className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.location} onChange={(e) => set('location', e.target.value)} />
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-location">Location</label>
+          <input id="artist-profile-edit-form-location" className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.location} onChange={(e) => set('location', e.target.value)} />
         </div>
         <div className="sm:col-span-2">
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Website</label>
-          <input className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.website_url} onChange={(e) => set('website_url', e.target.value)} placeholder="https://…" />
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-website">Website</label>
+          <input id="artist-profile-edit-form-website" className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.website_url} onChange={(e) => set('website_url', e.target.value)} placeholder="https://…" />
         </div>
         <div>
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>TikTok</label>
-          <input className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.tiktok_url} onChange={(e) => set('tiktok_url', e.target.value)} />
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-tiktok">TikTok</label>
+          <input id="artist-profile-edit-form-tiktok" className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.tiktok_url} onChange={(e) => set('tiktok_url', e.target.value)} />
         </div>
         <div>
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Instagram</label>
-          <input className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.instagram_url} onChange={(e) => set('instagram_url', e.target.value)} />
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-instagram">Instagram</label>
+          <input id="artist-profile-edit-form-instagram" className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.instagram_url} onChange={(e) => set('instagram_url', e.target.value)} />
         </div>
         <div>
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>YouTube</label>
-          <input className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.youtube_url} onChange={(e) => set('youtube_url', e.target.value)} />
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-youtube">YouTube</label>
+          <input id="artist-profile-edit-form-youtube" className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.youtube_url} onChange={(e) => set('youtube_url', e.target.value)} />
         </div>
         <div>
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Spotify</label>
-          <input className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.spotify_url} onChange={(e) => set('spotify_url', e.target.value)} />
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-spotify">Spotify</label>
+          <input id="artist-profile-edit-form-spotify" className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.spotify_url} onChange={(e) => set('spotify_url', e.target.value)} />
         </div>
         <div>
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>SoundCloud</label>
-          <input className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.soundcloud_url} onChange={(e) => set('soundcloud_url', e.target.value)} />
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-soundcloud">SoundCloud</label>
+          <input id="artist-profile-edit-form-soundcloud" className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.soundcloud_url} onChange={(e) => set('soundcloud_url', e.target.value)} />
         </div>
         <div className="sm:col-span-2">
-          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Featured video (YouTube)</label>
-          <input className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.featured_video_id} onChange={(e) => set('featured_video_id', e.target.value)} placeholder="A YouTube link — plays behind your NEXT profile" />
+          <label className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }} htmlFor="artist-profile-edit-form-featured-video-youtube">Featured video (YouTube)</label>
+          <input id="artist-profile-edit-form-featured-video-youtube" className="w-full rounded-[10px] px-3.5 py-2.5 text-sm outline-none mt-1" style={inputStyle} value={form.featured_video_id} onChange={(e) => set('featured_video_id', e.target.value)} placeholder="A YouTube link — plays behind your NEXT profile" />
         </div>
       </div>
 
