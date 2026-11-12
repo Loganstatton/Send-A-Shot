@@ -19,7 +19,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // anything that reads status codes.
 const LOGIN_REQUIRED = [
   '/next/activity', '/next/challenges', '/next/feed', '/next/leagues', '/next/my-artist', '/next/notifications', '/next/portfolio',
-  '/next/submit-artist', '/next/watchlist', '/settings', '/admin', '/artists', '/artist-claims', '/discovery', '/metrics', '/screener',
+  '/next/submit-artist', '/next/watchlist', '/settings', '/admin', '/artists', '/artist-claims', '/collections', '/discovery', '/metrics', '/screener',
 ];
 const PUBLIC_EXCEPTIONS = ['/next/leagues/join/'];
 

@@ -43,6 +43,7 @@ export default function Header({ user, newCandidateCount = 0, pendingArtistClaim
                   <Link className={navClass(pathname === '/')} style={navStyle(pathname === '/')} href="/">Dashboard</Link>
                   <Link className={navClass(is('/screener'))} style={navStyle(is('/screener'))} href="/screener">Screener</Link>
                   <Link className={navClass(is('/metrics'))} style={navStyle(is('/metrics'))} href="/metrics">Metrics</Link>
+                  <Link className={navClass(is('/collections'))} style={navStyle(is('/collections'))} href="/collections">Collections</Link>
                   <Link className={navClass(is('/discovery'))} style={navStyle(is('/discovery'))} href="/discovery">
                     New Candidates{newCandidateCount > 0 && <span className="num ml-1.5 badge text-xs px-1.5" style={{ background: 'var(--fire-dim)', borderColor: 'var(--fire-line)', color: 'var(--fire)' }}>{newCandidateCount}</span>}
                   </Link>

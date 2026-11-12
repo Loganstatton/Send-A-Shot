@@ -578,4 +578,30 @@ ALTER TABLE score_history ADD COLUMN IF NOT EXISTS rationale TEXT COLLATE "C";
 UPDATE artists SET scored_at = created_at WHERE scored_at IS NULL;
 `,
   },
+  {
+    // Editorial collections: staff-curated, titled lists of artists with a
+    // short note on each ("Bedroom pop to watch"). Editorial only — no paid
+    // placement.
+    id: '007_collections',
+    sql: `
+CREATE TABLE IF NOT EXISTS next_collections (
+  id BIGSERIAL PRIMARY KEY,
+  slug TEXT COLLATE "C" NOT NULL UNIQUE,
+  title TEXT COLLATE "C" NOT NULL,
+  description TEXT COLLATE "C",
+  published BIGINT NOT NULL DEFAULT 0,
+  created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT COLLATE "C" NOT NULL,
+  updated_at TEXT COLLATE "C" NOT NULL
+);
+CREATE TABLE IF NOT EXISTS next_collection_items (
+  id BIGSERIAL PRIMARY KEY,
+  collection_id BIGINT NOT NULL REFERENCES next_collections(id) ON DELETE CASCADE,
+  artist_id BIGINT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  position BIGINT NOT NULL,
+  note TEXT COLLATE "C",
+  UNIQUE (collection_id, artist_id)
+);
+`,
+  },
 ];
