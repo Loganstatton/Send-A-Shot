@@ -9,6 +9,7 @@ const TABS = [
   { href: '/admin/scout-accuracy', label: 'Scout accuracy' },
   { href: '/admin/market-integrity', label: 'Market integrity' },
   { href: '/admin/feed-reports', label: 'Feed reports' },
+  { href: '/admin/feedback', label: 'Beta feedback' },
   { href: '/admin/errors', label: 'Errors' },
   { href: '/admin/backups', label: 'Backups' },
 ];
