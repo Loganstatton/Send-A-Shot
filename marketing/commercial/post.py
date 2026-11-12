@@ -132,8 +132,8 @@ def typography(img, f):
         out = smooth((f - 37) / 7)
         place(img, text_layer(TEXT1, WHITE, reveal=r), cy=330 - out * 40, scale=1.0 + out * 0.25, blur=out * 14, alpha=1 - out)
     # Line 2: slams in at f56 — scale down, blur to sharp, ember on FAMOUS.
-    if f >= 56:
-        p = ease_out((f - 56) / 9, 4)
+    if f >= 55:
+        p = ease_out((f - 55) / 9, 4)
         famous = set(range(TEXT2.index('FAMOUS'), TEXT2.index('FAMOUS') + 6))
         col = lambda i: EMBER if i in famous else WHITE
         place(img, text_layer(TEXT2, col, reveal=1.0), cy=330, scale=1.22 - 0.22 * p, blur=(1 - p) * 10, alpha=min(1, p * 1.6), glow=0.35 * (1 - p) + 0.12)

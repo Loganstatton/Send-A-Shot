@@ -4,7 +4,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 PY=${PY:-post-venv/bin/python}
 $PY post.py frames post_frames --frames 1-90
-$PY audio.py opener_sfx.wav 3.0
+$PY music.py music.wav 3.0
+$PY audio.py opener_sfx.wav 3.0 --music music.wav
 ffmpeg -hide_banner -loglevel error -y -framerate 30 -i post_frames/p%04d.png -i opener_sfx.wav \
   -c:v libx264 -preset slow -crf 14 -pix_fmt yuv420p -profile:v high -level 4.2 \
   -x264-params "aq-mode=3:deblock=-1,-1" -colorspace bt709 -color_primaries bt709 -color_trc bt709 \

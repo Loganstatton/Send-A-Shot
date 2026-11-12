@@ -29,7 +29,7 @@ def add(sig, start, gain=1.0, pan=0.0):
     gl, gr = np.cos((pan + 1) * np.pi / 4), np.sin((pan + 1) * np.pi / 4)
     L[s0:s0 + n] += sig[:n] * gain * gl * 1.414; R[s0:s0 + n] += sig[:n] * gain * gr * 1.414
 
-SHATTER, SLAM = 36 / 30, 55 / 30
+SHATTER, SLAM = 36 / 30, 54 / 30   # 1.2 s and 1.8 s: beats 3 and 4 at 100 BPM
 
 # 1) Drone: sub + warm saw pad that swells into the break.
 n = at(SHATTER)
@@ -41,7 +41,7 @@ pad = np.zeros(n)
 for i in range(0, n, 2400):   # filter opens as it swells (block-wise sweep)
     pad[i:i + 2400] = lp(saw[max(0, i - 2400):i + 2400], 260 + 1600 * swell[i] ** 2, order=2)[-len(saw[i:i + 2400]):]
 pad *= 0.07 * (0.3 + swell)
-add(sub + pad, 0.0, 1.0)
+pass  # drone replaced by the score (music.py)
 
 # 2) Vinyl spin: band noise pulsing at the rotation rate, plus crackle.
 noise = rng.standard_normal(n)
@@ -53,7 +53,7 @@ for k in rng.choice(n - 400, 70, replace=False):
 add(hp(crackle, 2500) * 0.25, 0.0, 1.0)
 
 # 3) Letter ticks for "THE NEXT SUPERSTAR…" (f6–f22).
-for i in range(18):
+for i in range(0):
     tick = np.sin(2 * np.pi * 3400 * np.arange(500) / SR) * env_exp(500, 0.0012)
     add(tick * 0.05, (6 + i * 0.9) / 30, pan=-0.6 + 1.2 * i / 17)
 
@@ -92,7 +92,7 @@ for _ in range(160):
     add(g * rng.uniform(0.008, 0.03), rng.uniform(SHATTER + 0.1, 2.9), pan=rng.uniform(-1, 1))
 
 # 7) Chart drawing: ascending "data" blips on a pentatonic scale (A minor).
-notes = [57, 60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84]
+notes = [65, 68, 70, 72, 75, 77, 80, 82, 84, 87, 89, 92]
 for i, nn in enumerate(notes):
     f = 440 * 2 ** ((nn - 69) / 12); m = at(0.22)
     tone = (np.sin(2 * np.pi * f * np.arange(m) / SR) + 0.3 * np.sin(2 * np.pi * 2 * f * np.arange(m) / SR)) * env_exp(m, 0.07)
@@ -106,7 +106,7 @@ snap = hp(rng.standard_normal(at(0.06)), 2500) * env_exp(at(0.06), 0.012) * 0.5
 add(hit + thump, SLAM); add(snap, SLAM)
 # sustained low chord after the slam to carry into the next scene
 cn = N - at(SLAM); ct = np.arange(cn) / SR
-chord = sum(np.sin(2 * np.pi * (440 * 2 ** ((m - 69) / 12)) * ct) for m in (45, 52, 57, 60)) / 4
+chord = sum(np.sin(2 * np.pi * (440 * 2 ** ((m - 69) / 12)) * ct) for m in (41, 48, 53, 56)) / 4
 chord = lp(chord, 900) * np.clip(ct / 0.4, 0, 1) * 0.12
 add(chord, SLAM)
 
@@ -117,6 +117,12 @@ wetL = signal.fftconvolve(L, ir)[:N]; wetR = signal.fftconvolve(R, np.roll(ir, 3
 L2 = L + 0.18 * wetL; R2 = R + 0.18 * wetR
 # gentle bus compression (soft clip) and peak normalise to -1 dBFS
 mix = np.stack([L2, R2], axis=1)
+if '--music' in sys.argv:
+    from scipy.io import wavfile as _wf
+    msr, mus = _wf.read(sys.argv[sys.argv.index('--music') + 1])
+    mus = mus.astype(np.float64) / 32768.0
+    m = np.zeros_like(mix); n_ = min(len(mus), N); m[:n_] = mus[:n_]
+    mix = mix / (np.abs(mix).max() + 1e-9) * 0.55 + m / (np.abs(m).max() + 1e-9) * 0.8
 mix = np.tanh(mix * 1.3) / np.tanh(1.3)
 mix *= 10 ** (-3.5 / 20) / np.abs(mix).max()
 fade = np.ones(N); fade[-at(0.05):] = np.linspace(1, 0, at(0.05))
