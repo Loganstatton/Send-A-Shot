@@ -564,4 +564,18 @@ CREATE INDEX IF NOT EXISTS idx_next_league_members_user ON next_league_members(u
 ALTER TABLE users ADD COLUMN IF NOT EXISTS next_genre_prefs TEXT COLLATE "C";
 `,
   },
+  {
+    // Scout Score transparency: the Scout's public reasoning, when the
+    // ratings last changed and who changed them; each score_history row
+    // also records who made that change and the reasoning at the time.
+    id: '006_score_rationale',
+    sql: `
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS score_rationale TEXT COLLATE "C";
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS scored_at TEXT COLLATE "C";
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS scored_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE score_history ADD COLUMN IF NOT EXISTS changed_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE score_history ADD COLUMN IF NOT EXISTS rationale TEXT COLLATE "C";
+UPDATE artists SET scored_at = created_at WHERE scored_at IS NULL;
+`,
+  },
 ];

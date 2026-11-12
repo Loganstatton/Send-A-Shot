@@ -14,7 +14,7 @@ import {
   DueFollowUp, FavoriteGenre, FeedEvent, FeedEventType, FeedReaction, FeedUserPost, FoundingBelieverRecord,
   GenreLeaderboardEntry, InvestmentEntry, InvestmentEntryInput, LeaderboardEntry, LeaderboardWindow, LogEntry,
   LogEntryInput, NextHolding, NextMarketRow, NextPricePoint, NextTransaction, NextTransactionType, PortfolioValue,
-  ReactionType, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutDiscoveryEntry,
+  PublicScoreChange, ReactionType, RevenueEntry, RevenueEntryInput, RevenueSource, Role, SCORE_WEIGHTS, ScoreChange, ScoreSnapshot, ScoutDiscoveryEntry,
   ScoutProfile, SuspiciousTradingFlag,
   Stage, SyncFailure, SyncRun, SyncSourceKey, User, WatchlistEntry,
 } from './types';
@@ -55,7 +55,7 @@ const WRITABLE_FIELDS = [
   'music_talent', 'growth_velocity', 'engagement_quality', 'original_song_response',
   'brand_personality', 'content_consistency', 'commercial_potential', 'professionalism',
   'notes', 'photo_url', 'bio', 'top_song_url', 'song_preview_url', 'why_trending', 'soundcharts_uuid',
-  'featured_video_id', 'high_rating_note',
+  'featured_video_id', 'high_rating_note', 'score_rationale',
   // Photo provenance a Scout sets alongside photo_url (manual paste ->
   // 'SCOUT_MANUAL'; the Commons picker fills all five at once with
   // 'WIKIMEDIA_COMMONS' — see components/WikimediaCommonsSearch.tsx).
@@ -100,8 +100,16 @@ function normalizeArtistValue(field: string, value: unknown): unknown {
     if (!Number.isFinite(n)) return null;
     return INTEGER_ARTIST_FIELDS.has(field) ? Math.max(0, Math.round(n)) : n;
   }
+  // Shown publicly on NEXT: trimmed, blank means none, and capped so one
+  // entry can't flood the artist page.
+  if (field === 'score_rationale') {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return text ? text.slice(0, SCORE_RATIONALE_MAX) : null;
+  }
   return value ?? null;
 }
+
+export const SCORE_RATIONALE_MAX = 600;
 
 export async function createArtist(input: ArtistInput, actor?: Actor | null): Promise<Artist> {
   const now = new Date().toISOString();
@@ -119,9 +127,16 @@ export async function createArtist(input: ArtistInput, actor?: Actor | null): Pr
   const info = await db
     .prepare(`INSERT INTO artists (${columns.join(', ')}) VALUES (${placeholders})`)
     .run(row);
+  await db.prepare('UPDATE artists SET scored_at = ?, scored_by = ? WHERE id = ?').run(now, actor?.id ?? null, info.lastInsertRowid);
   const artist = (await getArtist(info.lastInsertRowid as number))!;
-  await snapshotScore(artist);
+  await snapshotScore(artist, actor?.id ?? null, artist.score_rationale ?? null);
   return artist;
+}
+
+function ratingsChanged(existing: Artist, input: ArtistInput): boolean {
+  return [...SCORE_FIELD_SET].some(
+    (f) => f in input && normalizeArtistValue(f, (input as any)[f]) !== (existing as any)[f],
+  );
 }
 
 export async function updateArtist(id: number, input: ArtistInput, actor?: Actor | null): Promise<Artist | undefined> {
@@ -139,6 +154,10 @@ export async function updateArtist(id: number, input: ArtistInput, actor?: Actor
   if (sets.length > 0) {
     await db.prepare(`UPDATE artists SET updated_at = @updated_at, ${sets.join(', ')} WHERE id = @id`).run(row);
   }
+  // "Last rated" only moves when one of the eight ratings actually changes —
+  // not on a bio, photo or link edit, and not on an automated sync.
+  const rated = ratingsChanged(existing, input);
+  if (rated) await db.prepare('UPDATE artists SET scored_at = ?, scored_by = ? WHERE id = ?').run(now, actor?.id ?? null, id);
   const updated = (await getArtist(id))!;
   if (input.stage && input.stage !== existing.stage) {
     await addLogEntry(id, {
@@ -152,7 +171,7 @@ export async function updateArtist(id: number, input: ArtistInput, actor?: Actor
   if (sets.length > 0 && actor?.id != null) {
     await logArtistFieldChanges(id, existing, input, actor.id);
   }
-  if (sets.length > 0) await snapshotScore(updated);
+  if (sets.length > 0) await snapshotScore(updated, rated ? actor?.id ?? null : null, rated ? updated.score_rationale ?? null : null);
   return updated;
 }
 
@@ -256,20 +275,24 @@ export async function deleteArtist(id: number): Promise<boolean> {
   return info.changes > 0;
 }
 
-async function snapshotScore(artist: Artist) {
+async function snapshotScore(artist: Artist, changedBy: number | null = null, rationale: string | null = null) {
   await db.prepare(`
     INSERT INTO score_history (
       artist_id, recorded_at, stage, breakout_score,
       followers_count, monthly_listeners, growth_velocity_pct, engagement_rate_pct,
       music_talent, growth_velocity, engagement_quality, original_song_response,
-      brand_personality, content_consistency, commercial_potential, professionalism
+      brand_personality, content_consistency, commercial_potential, professionalism,
+      changed_by, rationale
     ) VALUES (
       @artist_id, @recorded_at, @stage, @breakout_score,
       @followers_count, @monthly_listeners, @growth_velocity_pct, @engagement_rate_pct,
       @music_talent, @growth_velocity, @engagement_quality, @original_song_response,
-      @brand_personality, @content_consistency, @commercial_potential, @professionalism
+      @brand_personality, @content_consistency, @commercial_potential, @professionalism,
+      @changed_by, @rationale
     )
   `).run({
+    changed_by: changedBy,
+    rationale,
     artist_id: artist.id,
     recorded_at: new Date().toISOString(),
     stage: artist.stage,
@@ -304,6 +327,25 @@ export async function getScoreHistories(artistIds: number[]): Promise<Map<number
     result.set(row.artist_id, list);
   }
   return result;
+}
+
+// Public Score change log: the first rating, then every snapshot where the
+// Score itself moved (by at least 0.1), newest first, with the reasoning
+// recorded at the time. Who made each change stays internal.
+export async function getPublicScoreChanges(artistId: number, limit = 10): Promise<PublicScoreChange[]> {
+  const rows = (await db
+    .prepare('SELECT recorded_at, breakout_score, rationale FROM score_history WHERE artist_id = ? ORDER BY recorded_at ASC, id ASC')
+    .all(artistId)) as { recorded_at: string; breakout_score: number; rationale: string | null }[];
+  const changes: PublicScoreChange[] = [];
+  let prev: number | null = null;
+  for (const r of rows) {
+    const score = Math.round(r.breakout_score * 10) / 10;
+    if (prev === null || score !== prev) {
+      changes.push({ recorded_at: r.recorded_at, from: prev, to: score, rationale: r.rationale?.trim() || null });
+      prev = score;
+    }
+  }
+  return changes.reverse().slice(0, limit);
 }
 
 export async function getScoreHistory(artistId: number): Promise<ScoreSnapshot[]> {

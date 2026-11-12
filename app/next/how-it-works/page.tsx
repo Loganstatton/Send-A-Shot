@@ -8,6 +8,7 @@ import {
 import { TRADE_RATE_LIMIT_PER_MINUTE } from '@/lib/db';
 import { getFoundingBelieverTier } from '@/lib/founding-believer';
 import { STREAK_MIN } from '@/lib/challenges';
+import { SCORING_GUIDELINES } from '@/lib/scoring-guidelines';
 import { EARLY_DISCOVERY_RANK_THRESHOLD } from '@/lib/scout-score';
 
 export const metadata: Metadata = {
@@ -76,7 +77,10 @@ export default function HowItWorksPage() {
             <tbody>
               {CATEGORIES.map((c) => (
                 <tr key={c} style={{ borderTop: '1px solid var(--border-soft)' }}>
-                  <td className="py-2" style={{ color: 'var(--text)' }}>{SCORE_LABELS[c]}</td>
+                  <td className="py-2 pr-4" style={{ color: 'var(--text)' }}>
+                    {SCORE_LABELS[c]}
+                    <span className="block text-[12.5px]" style={{ color: 'var(--text-faint)' }}>{SCORING_GUIDELINES[c].question}</span>
+                  </td>
                   <td className="py-2 text-right num">{SCORE_WEIGHTS[c]}%</td>
                 </tr>
               ))}
@@ -84,8 +88,9 @@ export default function HowItWorksPage() {
           </table>
         </div>
         <p className="m-0">
-          Example: an artist rated 8/10 in every category scores 80. Ratings are revisited as an artist develops, and each
-          artist&apos;s page charts its Score history so you can see when it changed. &ldquo;Audience Growth Velocity&rdquo; and
+          Example: an artist rated 8/10 in every category scores 80. Scouts rate against written guidelines for each category,
+          with a description of what each band (0–3, 4–6, 7–8, 9–10) means. Ratings are revisited as an artist develops; each
+          artist&apos;s page shows when they were last rated, the Scout&apos;s notes, and every change to the Score. &ldquo;Audience Growth Velocity&rdquo; and
           &ldquo;Engagement Quality&rdquo; are the Scout&apos;s judgment of those things too, not live measurements.
         </p>
       </Section>

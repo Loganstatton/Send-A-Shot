@@ -4,12 +4,11 @@ import type { Metadata } from 'next';
 import {
   getArtist, getArtistTradeVolumeCents, getBackerCountsByArtist, getFoundingBelieverCountForArtist,
   getFoundingBelieverRecord, getHolding, getNextArtist, getPendingClaimForUserAndArtist, getRecentBackerCount,
-  getRecentTradesForArtist, getScoreHistory, getWatchCountsByArtist, isWatchlisted, logEvent,
+  getPublicScoreChanges, getRecentTradesForArtist, getScoreHistory, getWatchCountsByArtist, isWatchlisted, logEvent,
 } from '@/lib/db';
 import { getSessionUser } from '@/lib/auth';
 import { getArtistAvatarUrl } from '@/lib/artist-image';
 import { marketSentiment } from '@/lib/next-market';
-import { scoreContributors } from '@/lib/scoring';
 import { formatCents } from '@/lib/format';
 import SpotifyPreview from '@/components/SpotifyPreview';
 import PriceChart from '@/components/PriceChart';
@@ -17,7 +16,7 @@ import TradePanel from '@/components/TradePanel';
 import VideoBanner from '@/components/next/VideoBanner';
 import WatchButton from '@/components/next/WatchButton';
 import InfoTip from '@/components/next/InfoTip';
-import ScoreContributorBar from '@/components/next/ScoreContributorBar';
+import ScoreExplainer from '@/components/next/ScoreExplainer';
 import RecentActivity from '@/components/next/RecentActivity';
 import ClaimArtistPanel from '@/components/next/ClaimArtistPanel';
 import MobileTradeBar from '@/components/next/MobileTradeBar';
@@ -83,7 +82,7 @@ export default async function NextArtistPage(
   const currentBackerCount = (await getBackerCountsByArtist())[id] ?? 0; // currently holding shares right now
   const watchCount = (await getWatchCountsByArtist())[id] ?? 0;
   const watching = user ? await isWatchlisted(user.id, id) : false;
-  const scoreParts = scoreContributors(rawArtist);
+  const scoreChanges = await getPublicScoreChanges(id);
   const volumeCents24h = await getArtistTradeVolumeCents(id, 24);
   const recentBackerCount24h = await getRecentBackerCount(id, 24);
   const recentTrades = await getRecentTradesForArtist(id);
@@ -253,25 +252,15 @@ export default async function NextArtistPage(
               format="number"
               color="var(--ember)"
             />
-            <p className="mt-3.5 mb-0 text-[12.5px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-              This is the Score history — see when our Scouts spotted momentum before the price caught up.
-            </p>
             <div className="mt-5 pt-5" style={{ borderTop: '1px solid var(--border-soft)' }}>
-              <div className="text-xs uppercase tracking-[0.06em] font-mono mb-3" style={{ color: 'var(--text-faint)' }}>Why the Score is what it is</div>
-              <div className="flex flex-col gap-2.5">
-                <ScoreContributorBar label="Growth &amp; engagement" points={scoreParts.realDataPoints} total={scoreParts.total} color="var(--up)" />
-                <ScoreContributorBar label="Everything else" points={scoreParts.scoutPoints} total={scoreParts.total} color="var(--ember)" />
-              </div>
-              <p className="mt-3 mb-0 text-[12px] leading-relaxed" style={{ color: 'var(--text-faint)' }}>
-                NEXT Score is a Scout&apos;s own 0–100 evaluation across eight weighted categories — talent, growth, engagement, brand, and more. It&apos;s a human judgment call, not a formula pulled from an external platform.
-              </p>
+              <ScoreExplainer ratings={rawArtist} rationale={rawArtist.score_rationale} scoredAt={rawArtist.scored_at} changes={scoreChanges} />
             </div>
           </div>
 
           <div className="next-card p-6">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-[18px]">
-              <h2 className="font-display font-bold text-[17px] m-0">Momentum</h2>
-              <span className="text-[11.5px]" style={{ color: 'var(--text-faint)' }}>On NEXT right now</span>
+              <h2 className="font-display font-bold text-[17px] m-0">Activity on NEXT</h2>
+              <span className="text-[11.5px]" style={{ color: 'var(--text-faint)' }}>Players on NEXT, right now</span>
             </div>
             {/* First-party — computed live from NEXT's own trading/watch
                 activity, not an external platform's numbers. */}
@@ -312,6 +301,22 @@ export default async function NextArtistPage(
               </div>
             )}
           </div>
+
+          {/* Verified Momentum — the third signal, alongside the Scout's
+              Score and the game's Price. There is no licensed source of
+              verified streaming/social growth yet, so say so instead of
+              showing nothing (or something that isn't verified). */}
+          <section aria-labelledby="verified-momentum" className="next-card p-6 flex flex-col gap-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h2 id="verified-momentum" className="font-display font-bold text-[17px] m-0">Verified Momentum</h2>
+              <span className="text-[11.5px] px-2.5 py-1 rounded-full border" style={{ color: 'var(--text-faint)', borderColor: 'var(--border-soft)' }}>Not available yet</span>
+            </div>
+            <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              NEXT doesn&apos;t yet have a licensed source of verified real-world growth — streams, listeners or followers over time —
+              so none is shown here. When it does, this will show the numbers with their source and the date they were last updated.
+              The Score above is a Scout&apos;s rating, and the Price comes from players trading virtual credits.
+            </p>
+          </section>
 
           <RecentActivity trades={recentTrades} />
         </div>

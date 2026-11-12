@@ -1,11 +1,10 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requireArtistOwner } from '@/lib/auth';
-import { getBackerCountsByArtist, getFoundingBelieverCountForArtist, getNextArtist, getScoreHistory, getWatchCountsByArtist } from '@/lib/db';
-import { scoreContributors } from '@/lib/scoring';
+import { getBackerCountsByArtist, getFoundingBelieverCountForArtist, getNextArtist, getPublicScoreChanges, getScoreHistory, getWatchCountsByArtist } from '@/lib/db';
 import { formatCents } from '@/lib/format';
 import PriceChart from '@/components/PriceChart';
-import ScoreContributorBar from '@/components/next/ScoreContributorBar';
+import ScoreExplainer from '@/components/next/ScoreExplainer';
 import ArtistDashboardNoteForm from '@/components/next/ArtistDashboardNoteForm';
 import ArtistProfileEditForm from '@/components/next/ArtistProfileEditForm';
 import ArtistPhotoSubmitForm from '@/components/next/ArtistPhotoSubmitForm';
@@ -47,7 +46,7 @@ export default async function MyArtistDashboardPage(props: { params: Promise<{ i
   if (!row) notFound();
   const { score, priceCents, priceHistory } = row;
   const scoreHistory = await getScoreHistory(id);
-  const scoreParts = scoreContributors(artist);
+  const scoreChanges = await getPublicScoreChanges(artist.id);
   const backerCount = (await getBackerCountsByArtist())[id] ?? 0;
   const earlyBackerCount = await getFoundingBelieverCountForArtist(id);
   const watchCount = (await getWatchCountsByArtist())[id] ?? 0;
@@ -79,11 +78,7 @@ export default async function MyArtistDashboardPage(props: { params: Promise<{ i
           color="var(--ember)"
         />
         <div className="mt-5 pt-5" style={{ borderTop: '1px solid var(--border-soft)' }}>
-          <div className="text-xs uppercase tracking-[0.06em] font-mono mb-3" style={{ color: 'var(--text-faint)' }}>Why the Score is what it is</div>
-          <div className="flex flex-col gap-2.5">
-            <ScoreContributorBar label="Growth &amp; engagement" points={scoreParts.realDataPoints} total={scoreParts.total} color="var(--up)" />
-            <ScoreContributorBar label="Everything else" points={scoreParts.scoutPoints} total={scoreParts.total} color="var(--ember)" />
-          </div>
+          <ScoreExplainer ratings={artist} rationale={artist.score_rationale} scoredAt={artist.scored_at} changes={scoreChanges} />
         </div>
       </div>
 
