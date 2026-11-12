@@ -213,6 +213,7 @@ export default function DiscoverGrid({
             setSignalOnly(next);
             if (next) track('filter_used', { filter: 'undervalued' });
           }}
+          aria-pressed={signalOnly}
           className={signalOnly ? 'next-pill next-pill-signal' : 'next-pill'}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={signalOnly ? 'var(--ember)' : 'currentColor'} strokeWidth={2.5}><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" /></svg>
@@ -225,6 +226,7 @@ export default function DiscoverGrid({
             setWatchlistOnly(next);
             if (next) track('filter_used', { filter: 'watchlisted' });
           }}
+          aria-pressed={watchlistOnly}
           className={chip(watchlistOnly)}
         >
           Watchlisted

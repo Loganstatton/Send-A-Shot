@@ -54,6 +54,16 @@ const signup = (ctx, name, email) => ctx.post('/api/auth/signup', { data: { name
     const listenBar = page.getByRole('progressbar', { name: 'Crate digger progress' });
     check('Crate digger shows 3/5 with an accessible progress bar', (await listenBar.getAttribute('aria-valuenow')) === '3' && (await listenBar.getAttribute('aria-valuemax')) === '5');
     check('streak is 0 with only 2 done', /Streak\s*0 weeks/i.test(body));
+    // Each unfinished challenge's button goes where its label says.
+    const actionHref = async (label) => page.getByRole('link', { name: label }).getAttribute('href').catch(() => null);
+    check('challenge buttons point at the matching page',
+      (await actionHref('See who Scouts rate higher')) === '/next?view=scouts-higher#artists' && (await actionHref('Start listening')) === '/next#artists' && (await actionHref('Your leagues')) === '/next/leagues');
+    await page.getByRole('link', { name: 'See who Scouts rate higher' }).click();
+    await page.waitForURL(/view=scouts-higher/);
+    await page.waitForLoadState('networkidle');
+    check('"See who Scouts rate higher" opens Discover with that filter on',
+      (await page.getByRole('button', { name: 'Scouts rate higher' }).getAttribute('aria-pressed')) === 'true');
+    await page.goto(BASE + '/next/challenges', { waitUntil: 'networkidle' });
     await page.screenshot({ path: `${SHOTS}/challenges-page.png`, fullPage: true });
 
     // Two others back the same artist afterwards -> track record.
