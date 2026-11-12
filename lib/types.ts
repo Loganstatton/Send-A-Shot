@@ -479,6 +479,9 @@ export type AnalyticsEventType =
   | 'league_left'
   | 'league_invite_viewed'
   | 'genre_prefs_saved'
+  // Browser-side shares (Web Share sheet or copied link).
+  | 'proof_link_shared'
+  | 'league_invite_shared'
   | 'feed_user_post_created'
   | 'feed_user_post_deleted'
   | 'feed_user_post_reported'

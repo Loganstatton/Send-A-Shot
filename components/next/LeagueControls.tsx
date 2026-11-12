@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { track } from '@/lib/track';
 
 const inputStyle: React.CSSProperties = { border: '1px solid var(--border-soft)', background: 'var(--bg)', color: 'var(--text)' };
 
@@ -141,9 +142,11 @@ export function LeagueInvitePanel({ leagueId, leagueName, inviteCode, isOwner }:
     try {
       if (typeof navigator.share === 'function') {
         await navigator.share({ title: `Join ${leagueName} on NEXT`, text: 'Who can find the next big artist first?', url });
+        track('league_invite_shared', { leagueId, method: 'share_sheet' });
         return;
       }
       await navigator.clipboard.writeText(url);
+      track('league_invite_shared', { leagueId, method: 'copy' });
       setStatus('Invite link copied.');
     } catch (err: any) {
       if (err?.name !== 'AbortError') setStatus(`Couldn't copy — the link is ${url}`);
