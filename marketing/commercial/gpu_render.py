@@ -16,6 +16,9 @@ API = 'https://rest.runpod.io/v1'
 KEY = os.environ.get('RUNPOD_API_KEY', 'injected-by-proxy')
 args = sys.argv[1:]
 SCENE, OUT = args[0], args[1]
+# Several scenes in one pod session: --scenes "scene2.py:1-180,scene3.py:1-216" (frames land in OUT/<scene>/)
+SCENES = [tuple(x.split(':')) for x in (args[args.index('--scenes') + 1].split(',') if '--scenes' in args else [])]
+ASSET_DIR = args[args.index('--assets') + 1] if '--assets' in args else None
 def arg(n, d=None): return args[args.index(n) + 1] if n in args else d
 FRAMES = arg('--frames', '1-90')
 GPU_TYPES = [arg('--gpu-type')] if arg('--gpu-type') else ['NVIDIA GeForce RTX 4090', 'NVIDIA GeForce RTX 5090', 'NVIDIA L40S', 'NVIDIA RTX 6000 Ada Generation', 'NVIDIA RTX A6000']
@@ -79,10 +82,16 @@ def start_cmd():
             f"cat > /server.py <<'PYEOF'\n{SERVER}\nPYEOF\n"
             'exec python3 /server.py')
 
-def worker(method, path, data=None, headers=None, timeout=120):
-    req = urllib.request.Request(BASE + path, method=method, data=data, headers={'X-Token': TOKEN, 'User-Agent': UA, **(headers or {})})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+def worker(method, path, data=None, headers=None, timeout=120, tries=6):
+    # RunPod's proxy can briefly 404/502 right after a pod starts: retry.
+    for i in range(tries):
+        req = urllib.request.Request(BASE + path, method=method, data=data, headers={'X-Token': TOKEN, 'User-Agent': UA, **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
+            if i == tries - 1: raise
+            time.sleep(5 * (i + 1))
 
 pod_id = None
 try:
@@ -111,14 +120,18 @@ try:
         if time.time() - t0 > 900: raise SystemExit('pod did not come up in 15 minutes')
         time.sleep(10)
     print(f'worker up after {time.time() - t0:.0f}s', flush=True)
-    files = {os.path.basename(SCENE): SCENE}
+    files = {os.path.basename(SCENE): SCENE, 'next3d.py': os.path.join(HERE, 'next3d.py')}
+    for sc_, _ in SCENES: files[sc_] = os.path.join(HERE, sc_)
     for f in os.listdir(os.path.join(HERE, 'fonts')): files[f'fonts/{f}'] = os.path.join(HERE, 'fonts', f)
+    if ASSET_DIR:
+        for f in os.listdir(ASSET_DIR): files[f'assets/{f}'] = os.path.join(ASSET_DIR, f)
     for name, path in files.items():
         worker('PUT', f'/f/{name}', open(path, 'rb').read())
     a, b = FRAMES.split('-')
+    renders = [f'python3.11 {sc_} -- --gpu --assets assets --frames {fr} --out frames/{sc_[:-3]}' for sc_, fr in SCENES] or \
+              [f'python3.11 {os.path.basename(SCENE)} -- --gpu --frames {a}-{b} --out frames']
     cmd = ('apt-get update -qq && apt-get install -y -qq libxrender1 libxi6 libxkbcommon0 libsm6 libgl1 libegl1 >/dev/null; '
-           'python3.11 -m pip install -q bpy==5.0.1 && nvidia-smi -L && '
-           f'python3.11 {os.path.basename(SCENE)} -- --gpu --frames {a}-{b} --out frames')
+           'python3.11 -m pip install -q --timeout 120 --retries 10 bpy==5.0.1 && nvidia-smi -L && ' + ' && '.join(renders))
     worker('POST', '/run', json.dumps({'cmd': cmd}).encode(), {'Content-Type': 'application/json'})
     last = ''
     while True:

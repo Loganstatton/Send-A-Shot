@@ -85,38 +85,84 @@ def crash(level=1.0):
 F1, Ab1, Bb1, C2, Db2, Eb2, F2 = 29, 32, 34, 36, 37, 39, 41
 RIFF = [F1, F1, F2, F1,  F1, Ab1, F1, C2,  F1, F1, Eb2, F1,  Db2, F1, C2, Ab1,
         F1, F1, F2, F1,  F1, Ab1, F1, C2,  F1, F1, F2, Eb2,  Db2, C2, Bb1, Ab1]
+# Section markers (seconds), all on the beat grid. A 3 s render stops after the opener.
+S2, PEAK, LOGO, CTA = 3.0, 9.0, 16.2, 19.8
+def section(t):
+    if t < DROP: return 'intro'
+    if t < PEAK: return 'groove'
+    if t < LOGO: return 'peak'
+    if t < CTA: return 'break'
+    return 'outro'
+
+def snare(level=1.0):
+    n = at(0.18); t = np.arange(n) / SR
+    body = np.sin(2 * np.pi * 190 * t) * np.exp(-t / 0.05) * 0.5
+    x = signal.sosfilt(sos('bandpass', [1500, 9000]), rng.standard_normal(n)) * np.exp(-t / 0.07)
+    return np.tanh((body + x) * 1.6) * 0.45 * level
+
+ARP = [65, 68, 72, 75, 77, 75, 72, 68]   # F minor arpeggio (my own pattern)
+def arp_note(note, dur, bright):
+    n = at(dur); t = np.arange(n) / SR; f = midi(note)
+    x = signal.sawtooth(2 * np.pi * f * t) + 0.5 * signal.square(2 * np.pi * f * 2 * t, 0.3)
+    x = signal.sosfilt(sos('lowpass', bright), x)
+    return np.tanh(x * 1.5) * np.exp(-t / (dur * 0.7)) * 0.13
+
 steps = int(LEN / S16) + 2
 for k in range(steps):
     t0 = k * S16
-    if t0 >= LEN + 0.6: break
+    if t0 >= LEN: break
+    sec = section(t0)
     beat_pos = k % 4
-    # kick every beat; doubled 16th before the drop for tension
-    if beat_pos == 0:
-        add(kick(1.15 if abs(t0 - DROP) < 1e-6 or t0 == 0 else 1.0), t0, 1.0)
+    bar_beat = (k // 4) % 4
+    drums = sec in ('intro', 'groove', 'peak')
+    if beat_pos == 0 and drums:
+        add(kick(1.15 if t0 in (0.0,) or abs(t0 - DROP) < 1e-6 or abs(t0 - PEAK) < 1e-6 else 1.0), t0, 1.0)
         dn = at(0.25); s0 = at(t0)
         if s0 < N: duck[s0:s0 + dn] = np.minimum(duck[s0:s0 + dn], 1 - 0.75 * np.exp(-np.arange(min(dn, N - s0)) / SR / 0.08))
     if abs(t0 - (DROP - S16)) < 1e-6:
         add(kick(0.8), t0, 0.7)
-    # clap on beats 2 and 4 of each bar after the drop
-    if t0 >= DROP and (k // 4) % 2 == 1 and beat_pos == 0:
-        add(clap(), t0, 0.9, pan=0.05)
-    # hats: 16ths, accents on off-beats; quieter before the drop
-    acc = 1.0 if beat_pos == 2 else 0.55
-    add(hat(open_=(beat_pos == 2 and t0 >= DROP), accent=acc * (0.6 if t0 < DROP else 1.0)), t0, 1.0, pan=0.35 if k % 2 else -0.25)
-    # bass: filter closed before the drop, opens after
+    if sec in ('groove', 'peak') and bar_beat in (1, 3) and beat_pos == 0:
+        add(clap(), t0, 0.9 if sec == 'groove' else 1.0, pan=0.05)
+    if drums:
+        acc = 1.0 if beat_pos == 2 else 0.55
+        add(hat(open_=(beat_pos == 2 and sec != 'intro'), accent=acc * (0.6 if sec == 'intro' else 1.0 if sec == 'groove' else 1.15)), t0, 1.0,
+            pan=0.35 if k % 2 else -0.25)
+    # snare rolls into the peak and into the logo
+    for roll_end in (PEAK, LOGO):
+        if roll_end - 0.6 <= t0 < roll_end - 1e-6:
+            add(snare(0.4 + 0.8 * (t0 - (roll_end - 0.6)) / 0.6), t0, 1.0, pan=-0.1)
     note = RIFF[k % len(RIFF)]
-    peak = 250 + 500 * min(1, t0 / DROP) ** 2 if t0 < DROP else 2600
-    add(bass_note(note, S16 * 0.92, peak, drive=2.0 if t0 < DROP else 3.5), t0, 0.5 if t0 < DROP else 1.1)
+    if sec == 'intro':
+        add(bass_note(note, S16 * 0.92, 250 + 500 * min(1, t0 / DROP) ** 2, drive=2.0), t0, 0.5)
+    elif sec in ('groove', 'peak'):
+        add(bass_note(note, S16 * 0.92, 2600 if sec == 'groove' else 3400, drive=3.5 if sec == 'groove' else 4.2), t0, 1.1)
+    elif sec == 'break' and k % 8 == 0:
+        add(bass_note(F1, BEAT * 2, 400, drive=1.6), t0, 0.8)
+    if sec == 'peak':
+        add(arp_note(ARP[k % len(ARP)], S16 * 0.9, 2200 + 1800 * ((t0 - PEAK) / (LOGO - PEAK))), t0, 1.0, pan=-0.5 + 1.0 * ((k % 8) / 7))
+    if sec == 'break' and k % 2 == 0:
+        add(arp_note(ARP[(k // 2) % len(ARP)] + 12, S16 * 1.8, 1500), t0, 0.45, pan=0.6 * np.sin(k))
 
-# impact on the very first frame, the drop, and the slam
+# impacts: first frame, drop, slam, the cuts, the logo and the call to action
 add(stab([41, 44, 48, 53], 1.1, 4200), 0.0, 1.0)               # Fm, wide
 add(crash(0.9), 0.0); add(crash(1.0), DROP)
 add(stab([41, 44, 48, 53, 56], 1.4, 6000), DROP, 1.1)
 add(stab([37, 41, 44, 49], 0.9, 3800), DROP + BEAT, 0.9)        # Db on the slam
-# dark pad underneath everything
+if LEN > 3.5:
+    add(stab([41, 44, 48, 53], 0.8, 5000), S2, 0.8); add(crash(0.6), S2)
+    add(stab([41, 44, 48, 53, 56, 60], 1.6, 7000), PEAK, 1.15); add(crash(1.1), PEAK)
+    add(kick(1.3), LOGO, 1.1); add(crash(1.2), LOGO)
+    add(stab([37, 41, 44, 48, 53], 2.4, 5200), LOGO, 1.1)       # Dbmaj7-ish lift into the logo
+    add(kick(1.3), CTA, 1.1); add(crash(1.0), CTA)
+    add(stab([41, 44, 48, 53, 56], 2.8, 6000), CTA, 1.15)
+
+# dark pad underneath everything, swelling in the breakdown
 n = N; t = np.arange(n) / SR
 pad = sum(np.sin(2 * np.pi * midi(m) * t + np.sin(2 * np.pi * 0.2 * t) * 0.6) for m in (53, 56, 60, 65)) / 4
-add(signal.sosfilt(sos('lowpass', 1400), pad) * 0.05, 0.0)
+pad_env = np.ones(n) * 0.05
+if LEN > 3.5:
+    pad_env += 0.10 * np.clip((t - LOGO) / 0.8, 0, 1) * (t < LEN)
+add(signal.sosfilt(sos('lowpass', 1400), pad) * pad_env, 0.0)
 
 # ---------------------------------------------------------------- mix
 mix = np.stack([L * duck + 0.0, R * duck], axis=1)
@@ -128,6 +174,6 @@ mix[:, 1] += 0.12 * signal.fftconvolve(mix[:, 1], np.roll(ir, 211))[:N]
 mix = np.tanh(mix * 1.2) / np.tanh(1.2)
 mix = mix[:at(LEN)]
 mix *= 10 ** (-3.5 / 20) / np.abs(mix).max()
-fade = at(0.04); mix[-fade:] *= np.linspace(1, 0, fade)[:, None]
+fade = at(0.04 if LEN <= 3.5 else 0.6); mix[-fade:] *= np.linspace(1, 0, fade)[:, None]
 wavfile.write(sys.argv[1], SR, (mix * 32767).astype(np.int16))
 print('wrote', sys.argv[1], f'{LEN}s @ {BPM:.0f} BPM, drop at {DROP}s')

@@ -69,7 +69,7 @@ def grade(lin, frame):
     return np.clip(disp, 0, 1)
 
 # ---------------------------------------------------------------- type
-SAFE_W = 900
+SAFE_W = 860
 def fit_font(text, tracking=0.02, size=104):
     while size > 40:
         f = ImageFont.truetype(os.path.join(HERE, 'fonts', 'BricolageGrotesque-ExtraBold.ttf'), size)
@@ -124,19 +124,93 @@ def place(base, layer, cy, scale=1.0, blur=0.0, alpha=1.0, glow=0.0):
     region *= (1 - 0.55 * sh)
     region[:] = region * (1 - a) + rgb * a
 
+# ---------------------------------------------------------------- the full timeline (global frames, 30 fps)
+# Beats every 18 frames (100 BPM): cuts at 91, 271, 487.
+SANS = os.path.join(HERE, 'fonts', 'IBMPlexSans-Medium.ttf')
+SANS_SB = os.path.join(HERE, 'fonts', 'IBMPlexSans-SemiBold.ttf')
+MUTED = (205, 198, 186)
+CTA_URL = os.environ.get('NEXT_CTA_URL', 'send-a-shot.onrender.com')
+CUTS = (91, 271, 487)
+
+def plain_layer(text, size, color, font_path=SANS, tracking=0.0):
+    font = ImageFont.truetype(font_path, size)
+    return text_layer(text, color, tracking=tracking, font=font)
+
+def words_layer(words, alphas, colors, font, tracking=0.02):
+    """One line of words with fixed layout; each word has its own alpha/colour (so the line never jumps)."""
+    line = ' '.join(words)
+    layer = Image.new('RGBA', (W * 2, 300), (0, 0, 0, 0))
+    widths = [font.getlength(ch) + font.size * tracking for ch in line]
+    x = (W * 2 - (sum(widths) - font.size * tracking)) / 2
+    wi = 0
+    for i, ch in enumerate(line):
+        if ch == ' ': wi += 1
+        a = alphas[wi]
+        if a > 0 and ch != ' ':
+            g = Image.new('RGBA', layer.size, (0, 0, 0, 0))
+            ImageDraw.Draw(g).text((x, 90 + 18 * (1 - a)), ch, font=font, fill=(*colors[wi], int(255 * a)))
+            layer = Image.alpha_composite(layer, g)
+        x += widths[i]
+    return layer
+
+def slam(f, f0, dur=9):
+    p = ease_out((f - f0) / dur, 4)
+    return dict(scale=1.22 - 0.22 * p, blur=(1 - p) * 10, alpha=min(1, p * 1.6), glow=0.35 * (1 - p) + 0.12)
+
+def fade_out(f, f0, dur=6):
+    return 1 - smooth((f - f0) / dur)
+
 TEXT1, TEXT2 = 'THE NEXT SUPERSTAR…', 'ISN’T FAMOUS YET.'
+DISCLAIM_A = 'NEXT Credits are virtual — no real money.'
+DISCLAIM_B1, DISCLAIM_B2 = 'Virtual credits only. No real money.', 'No ownership of artists’ music or earnings.'
+
 def typography(img, f):
-    # Line 1: letters rise in (f6–f22), hold, blown away by the shatter (f37–f44).
+    # 0–3 s  opener
     if 6 <= f < 46:
         r = (f - 6) / 16
         out = smooth((f - 37) / 7)
         place(img, text_layer(TEXT1, WHITE, reveal=r), cy=330 - out * 40, scale=1.0 + out * 0.25, blur=out * 14, alpha=1 - out)
-    # Line 2: slams in at f56 — scale down, blur to sharp, ember on FAMOUS.
-    if f >= 55:
-        p = ease_out((f - 55) / 9, 4)
+    if 55 <= f <= 90:
         famous = set(range(TEXT2.index('FAMOUS'), TEXT2.index('FAMOUS') + 6))
-        col = lambda i: EMBER if i in famous else WHITE
-        place(img, text_layer(TEXT2, col, reveal=1.0), cy=330, scale=1.22 - 0.22 * p, blur=(1 - p) * 10, alpha=min(1, p * 1.6), glow=0.35 * (1 - p) + 0.12)
+        st = slam(f, 55); st['alpha'] *= fade_out(f, 85, 5)
+        place(img, text_layer(TEXT2, lambda i: EMBER if i in famous else WHITE), cy=330, **st)
+    # 3–9 s  DISCOVER. BACK. TRADE.
+    if 109 <= f <= 270:
+        words = ['DISCOVER.', 'BACK.', 'TRADE.']
+        starts = (109, 217, 253)
+        font = fit_font(' '.join(words), 0.02, 92)
+        alphas = [ease_out((f - s0) / 7, 3) if f >= s0 else 0.0 for s0 in starts]
+        newest = max([i for i, s0 in enumerate(starts) if f >= s0])
+        colors = [EMBER if i == newest else WHITE for i in range(3)]
+        o = fade_out(f, 265, 5)
+        place(img, words_layer(words, [a * o for a in alphas], colors, font), cy=250, glow=0.1)
+        if f >= 217:
+            place(img, plain_layer(DISCLAIM_A, 32, MUTED), cy=345, alpha=ease_out((f - 217) / 8) * o)
+    # 9–16.2 s  PROVE YOU WERE EARLY.
+    if 289 <= f <= 486:
+        t = 'PROVE YOU WERE EARLY.'
+        early = set(range(t.index('EARLY'), len(t)))
+        st = slam(f, 289); st['alpha'] *= fade_out(f, 480, 6)
+        place(img, text_layer(t, lambda i: EMBER if i in early else WHITE), cy=250, **st)
+        o = ease_out((f - 300) / 8) * fade_out(f, 480, 6)
+        place(img, plain_layer(DISCLAIM_B1, 31, MUTED), cy=345, alpha=o)
+        place(img, plain_layer(DISCLAIM_B2, 31, MUTED), cy=388, alpha=o)
+    # 16.2–22.2 s  logo, tagline, call to action
+    if 541 <= f < 597:
+        o = fade_out(f, 589, 6)
+        place(img, text_layer('DISCOVER TOMORROW’S STARS.', WHITE, reveal=min(1, (f - 541) / 12)), cy=1060, alpha=o)
+        if f >= 559:
+            st = slam(f, 559); st['alpha'] *= o
+            place(img, text_layer('TODAY.', EMBER, font=ImageFont.truetype(os.path.join(HERE, 'fonts', 'BricolageGrotesque-ExtraBold.ttf'), 132)), cy=1180, **st)
+    if f >= 595:
+        st = slam(f, 595, 10)
+        place(img, text_layer('JOIN NEXT', WHITE, font=ImageFont.truetype(os.path.join(HERE, 'fonts', 'BricolageGrotesque-ExtraBold.ttf'), 150)), cy=1080, **st)
+        if f >= 603:
+            place(img, plain_layer(f'Play free at {CTA_URL}', 46, WHITE, SANS_SB), cy=1225, alpha=ease_out((f - 603) / 8))
+        if f >= 611:
+            place(img, plain_layer('Free to play · Virtual credits only · No real money', 30, MUTED), cy=1295, alpha=ease_out((f - 611) / 8))
+
+OFFSET = int(arg('--offset', '0'))
 
 def process(f):
     src = os.path.join(IN, f'f{f:04d}.hdr')
@@ -145,10 +219,14 @@ def process(f):
     lin = lin[..., :3].astype(np.float32)
     if lin.shape[1] != W:
         lin = cv2.resize(lin, (W, H), interpolation=cv2.INTER_CUBIC)
-    img = grade(lin, f)
+    g = f + OFFSET
+    # a quick flash on every cut, on the beat
+    for c in CUTS:
+        lin *= {c - 1: 1.45, c: 2.0, c + 1: 1.3, c + 2: 1.1}.get(g, 1.0)
+    img = grade(lin, g)
     img = img[..., [2, 1, 0]].copy()      # to RGB
-    typography(img, f)
-    Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)).save(os.path.join(OUT, f'p{f:04d}.png'), compress_level=1)
+    if '--no-type' not in args: typography(img, g)
+    Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)).save(os.path.join(OUT, f'p{g:04d}.png'), compress_level=1)
 
 os.makedirs(OUT, exist_ok=True)
 if arg('--list'):

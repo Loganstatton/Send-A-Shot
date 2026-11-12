@@ -110,6 +110,57 @@ chord = sum(np.sin(2 * np.pi * (440 * 2 ** ((m - 69) / 12)) * ct) for m in (41, 
 chord = lp(chord, 900) * np.clip(ct / 0.4, 0, 1) * 0.12
 add(chord, SLAM)
 
+# ---------------------------------------------------------------- scenes 2–4 (only for the full-length mix)
+def g(frame): return (frame - 1) / 30.0           # global frame -> seconds
+def whoosh(dur=0.5, lo=300, hi=6000, level=0.12):
+    n = at(dur); tt = np.arange(n) / SR
+    x = rng.standard_normal(n); out = np.zeros(n)
+    for i in range(0, n, 1200):
+        c = lo + (hi - lo) * np.sin(np.pi * min(1, i / n)) ** 2
+        out[i:i + 1200] = bp(x[i:i + 1200], max(60, c * 0.5), min(c * 1.5, 20000), order=2)
+    return out * np.sin(np.pi * tt / dur) ** 1.5 * level
+def click(level=0.25):
+    n = at(0.04); tt = np.arange(n) / SR
+    return (np.sin(2 * np.pi * 2300 * tt) * 0.6 + hp(rng.standard_normal(n), 3000) * 0.4) * env_exp(n, 0.006) * level
+def chime(notes, step=0.07, level=0.09):
+    out = np.zeros(at(1.6))
+    for i, nn in enumerate(notes):
+        f = 440 * 2 ** ((nn - 69) / 12); m = at(1.2); tt = np.arange(m) / SR
+        tone = (np.sin(2 * np.pi * f * tt) + 0.4 * np.sin(2 * np.pi * 2.01 * f * tt) + 0.15 * np.sin(2 * np.pi * 3.02 * f * tt)) * env_exp(m, 0.35)
+        s0 = at(i * step); out[s0:s0 + m] += tone[:len(out) - s0]
+    return out * level
+def impact(level=0.8, f0=50):
+    n = at(1.2); tt = np.arange(n) / SR
+    return (np.sin(2 * np.pi * np.cumsum(f0 * 0.6 + f0 * 1.8 * np.exp(-tt / 0.06)) / SR) * env_exp(n, 0.4) + lp(rng.standard_normal(n), 200) * env_exp(n, 0.06) * 0.6) * level
+def reverse_swell(dur, level=0.18):
+    n = at(dur); tt = np.arange(n) / SR
+    x = bp(rng.standard_normal(n), 500, 9000) * (tt / dur) ** 3
+    return x * level
+
+if LEN > 3.5:
+    # scene 2 — phone in, taps, listen, backed
+    add(whoosh(0.7, 200, 5000, 0.16), g(91) - 0.1, pan=0.3)
+    for fr in (91 + 79, 91 + 136, 91 + 152):            # the three taps on real buttons
+        add(click(0.3), g(fr))
+    add(chime([77, 80, 84, 89], 0.09, 0.05), g(91 + 91), pan=-0.2)       # listen shimmer
+    add(chime([68, 72, 75, 80, 84], 0.06, 0.08), g(91 + 156), pan=0.2)  # backed: bright Ab arpeggio
+    add(whoosh(0.4, 600, 9000, 0.08), g(91 + 121))                       # slide up
+    # scene 3 — cut in, chart flythrough tags, phone, leaderboard swipe, card spin + landing
+    add(whoosh(0.6, 200, 7000, 0.16), g(271) - 0.15)
+    for k, fr in enumerate((271 + 40, 271 + 46, 271 + 52)):
+        add(chime([84 + 3 * k], 0.0, 0.035), g(fr), pan=-0.4 + 0.4 * k)
+    add(whoosh(0.4, 300, 6000, 0.1), g(271 + 72) - 0.1)
+    add(whoosh(0.35, 800, 9000, 0.08), g(271 + 108))
+    for k in range(6):                                                   # card spinning in
+        add(whoosh(0.18, 1500, 9000, 0.05 + 0.01 * k), g(271 + 144) + k * 0.12, pan=(-1) ** k * 0.5)
+    add(impact(0.45, 70), g(271 + 170)); add(chime([77, 81, 84, 89, 93], 0.04, 0.07), g(271 + 170))
+    # scene 4 — swell into the logo, collapse, the logo lands, call to action
+    add(reverse_swell(0.8, 0.2), g(487) - 0.8)
+    add(impact(0.9, 46), g(487))
+    add(whoosh(1.0, 300, 8000, 0.14), g(487) + 0.15, pan=-0.3); add(np.roll(whoosh(1.0, 300, 8000, 0.14), 900), g(487) + 0.15, pan=0.3)
+    add(chime([89, 96], 0.0, 0.08), g(487 + 46))                          # the logo "lands"
+    add(impact(0.7, 44), g(595))
+
 # Simple reverb (decaying-noise impulse response) for space.
 ir_n = at(1.4)
 ir = rng.standard_normal(ir_n) * env_exp(ir_n, 0.35); ir = lp(ir, 6000); ir /= np.abs(ir).sum() / 6
