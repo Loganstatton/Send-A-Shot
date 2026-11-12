@@ -23,6 +23,6 @@ ffmpeg -hide_banner -loglevel error -y -framerate 30 -i "$OUT/frames/p%04d.png" 
 # Hook cut: frames 1–90 (opener) + 487–666 (logo + call to action); audio 0–3 s + 16.2–22.2 s.
 ffmpeg -hide_banner -loglevel error -y -i "$OUT/NEXT-commercial-22s.mp4" -filter_complex \
   "[0:v]trim=start_frame=0:end_frame=90,setpts=PTS-STARTPTS[v1];[0:v]trim=start_frame=486:end_frame=666,setpts=PTS-STARTPTS[v2];[v1][v2]concat=n=2:v=1:a=0[v];\
-   [0:a]atrim=0:3,asetpts=PTS-STARTPTS[a1];[0:a]atrim=16.2:22.2,asetpts=PTS-STARTPTS[a2];[a1][a2]concat=n=2:v=0:a=1[a]" \
+   [0:a]atrim=0:3,asetpts=PTS-STARTPTS,afade=t=out:st=2.985:d=0.015[a1];[0:a]atrim=16.2:22.2,asetpts=PTS-STARTPTS,afade=t=in:d=0.015[a2];[a1][a2]concat=n=2:v=0:a=1[a]" \
   -map "[v]" -map "[a]" $ENC "$OUT/NEXT-commercial-9s.mp4"
 for f in "$OUT"/NEXT-commercial-*.mp4; do ffprobe -v error -show_entries format=duration:stream=codec_name,width,height -of compact "$f"; done

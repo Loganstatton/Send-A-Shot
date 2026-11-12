@@ -212,6 +212,28 @@ def typography(img, f):
 
 OFFSET = int(arg('--offset', '0'))
 
+# Reframes: (first, last global frame) -> pixels to push the render down.
+# Scene 3 shot A: the chart price tags otherwise run into the headline.
+REFRAME = {(271, 342): 300}
+def reframe(lin, g):
+    for (a, b), dy in REFRAME.items():
+        if a <= g <= b:
+            out = np.zeros_like(lin)             # dark sky above; content fades in below the seam
+            out[dy:] = lin[:H - dy]
+            t = np.clip((np.arange(H, dtype=np.float32) - dy) / 160, 0, 1)
+            return out * (t * t * (3 - 2 * t))[:, None, None]
+    return lin
+
+# A soft dark band behind the top headline + disclaimer, so a bright phone
+# screen pushed up behind it can't eat the type.
+_y = np.arange(H, dtype=np.float32)
+_t = np.clip((_y - 380) / 240, 0, 1)
+SCRIM = (1 - _t * _t * (3 - 2 * _t))[:, None, None]
+def scrim_amount(g):
+    if 103 <= g <= 271: return smooth((g - 103) / 9) * fade_out(g, 265, 6)
+    if 289 <= g <= 486: return smooth((g - 289) / 8) * fade_out(g, 480, 6)
+    return 0.0
+
 def process(f):
     src = os.path.join(IN, f'f{f:04d}.hdr')
     lin = cv2.imread(src, cv2.IMREAD_UNCHANGED)
@@ -220,11 +242,14 @@ def process(f):
     if lin.shape[1] != W:
         lin = cv2.resize(lin, (W, H), interpolation=cv2.INTER_CUBIC)
     g = f + OFFSET
+    lin = reframe(lin, g)
     # a quick flash on every cut, on the beat
     for c in CUTS:
         lin *= {c - 1: 1.45, c: 2.0, c + 1: 1.3, c + 2: 1.1}.get(g, 1.0)
     img = grade(lin, g)
     img = img[..., [2, 1, 0]].copy()      # to RGB
+    k = scrim_amount(g)
+    if k > 0: img *= 1 - 0.72 * k * SCRIM
     if '--no-type' not in args: typography(img, g)
     Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)).save(os.path.join(OUT, f'p{g:04d}.png'), compress_level=1)
 
