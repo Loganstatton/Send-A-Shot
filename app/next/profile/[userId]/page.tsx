@@ -9,6 +9,7 @@ import { DiscoveryCandidateStatus } from '@/lib/types';
 import ArtistAvatar from '@/components/ArtistAvatar';
 import NextStatTile from '@/components/next/NextStatTile';
 import MyTakesList from '@/components/next/MyTakesList';
+import { FLAT_BAND_PCT, getTrackRecord } from '@/lib/track-record';
 
 const DISCOVERY_STATUS_LABELS: Record<DiscoveryCandidateStatus, string> = {
   new: 'Awaiting review',
@@ -39,6 +40,7 @@ export default async function ScoutProfilePage(props: { params: Promise<{ userId
   const viewer = await getSessionUser();
   const isOwnProfile = viewer?.id === userId;
   const founded = await getFoundingBelieverRecordsForUser(userId);
+  const track = await getTrackRecord(userId);
   // "View own posts" — a normal-user Feed control from the spec — lives
   // here rather than a new page, same reasoning as the Founding Believer
   // trophy case above: this profile already is the "my own stuff" view.
@@ -164,6 +166,31 @@ export default async function ScoutProfilePage(props: { params: Promise<{ userId
             {isOwnProfile && <Link href="/next" className="next-btn-primary mt-4 inline-flex px-5 py-2.5 rounded-[10px] text-sm">Browse NEXT</Link>}
           </div>
         )}
+        {track.picks > 0 && (
+          <div className="next-card p-5 flex flex-col gap-3">
+            <p className="m-0 text-xs font-mono uppercase tracking-[0.08em]" style={{ color: 'var(--text-faint)' }}>Track record</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="m-0 num font-bold text-xl">{track.upCount} of {track.picks}</p>
+                <p className="m-0 text-xs" style={{ color: 'var(--text-muted)' }}>picks priced higher now than when {isOwnProfile ? 'you' : 'they'} backed them</p>
+              </div>
+              <div>
+                <p className="m-0 num font-bold text-xl" style={{ color: (track.medianChangePct ?? 0) > FLAT_BAND_PCT ? 'var(--up)' : (track.medianChangePct ?? 0) < -FLAT_BAND_PCT ? 'var(--down)' : undefined }}>
+                  {track.medianChangePct != null && track.medianChangePct > 0 ? '+' : ''}{track.medianChangePct ?? 0}%
+                </p>
+                <p className="m-0 text-xs" style={{ color: 'var(--text-muted)' }}>typical (median) price change since backing</p>
+              </div>
+              <div>
+                <p className="m-0 num font-bold text-xl">{track.laterBackers.toLocaleString()}</p>
+                <p className="m-0 text-xs" style={{ color: 'var(--text-muted)' }}>{track.laterBackers === 1 ? 'person' : 'people'} backed {isOwnProfile ? 'your' : 'their'} picks afterwards</p>
+              </div>
+            </div>
+            <p className="m-0 text-[11.5px]" style={{ color: 'var(--text-faint)' }}>
+              Measured on NEXT only: the NEXT Price (set by players trading virtual credits) and NEXT backer counts since each first
+              backing. It isn&apos;t a measure of an artist&apos;s real-world success.
+            </p>
+          </div>
+        )}
         {founded.map((f) => (
           <Link
             key={f.id}
@@ -176,6 +203,18 @@ export default async function ScoutProfilePage(props: { params: Promise<{ userId
               <div className="font-display font-semibold truncate">{f.artist_name}</div>
               <div className="text-sm" style={{ color: 'var(--text-faint)' }}>
                 Backed {new Date(f.purchased_at).toLocaleDateString()}
+                {track.byRecord[f.id] && (
+                  <>
+                    {' · '}
+                    <span
+                      className="num"
+                      style={{ color: track.byRecord[f.id].changePct > FLAT_BAND_PCT ? 'var(--up)' : track.byRecord[f.id].changePct < -FLAT_BAND_PCT ? 'var(--down)' : undefined }}
+                    >
+                      {track.byRecord[f.id].changePct > 0 ? '+' : ''}{track.byRecord[f.id].changePct}%
+                    </span>{' '}
+                    price since
+                  </>
+                )}
                 {f.followers_count != null && ` · ${f.followers_count.toLocaleString()} followers then`}
                 {isOwnProfile && ' · View full receipt →'}
               </div>

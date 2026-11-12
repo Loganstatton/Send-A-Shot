@@ -7,6 +7,8 @@ import {
 } from '@/lib/next-market';
 import { TRADE_RATE_LIMIT_PER_MINUTE } from '@/lib/db';
 import { getFoundingBelieverTier } from '@/lib/founding-believer';
+import { STREAK_MIN } from '@/lib/challenges';
+import { EARLY_DISCOVERY_RANK_THRESHOLD } from '@/lib/scout-score';
 
 export const metadata: Metadata = {
   title: 'How NEXT works',
@@ -41,7 +43,7 @@ export default function HowItWorksPage() {
           worked out — and what it doesn&apos;t measure.
         </p>
         <nav aria-label="On this page" className="flex flex-wrap gap-2 text-[13px]">
-          {[['score', 'NEXT Score'], ['price', 'NEXT Price'], ['gap', 'Scouts vs. market'], ['proof', 'Founding Believer'], ['ranks', 'Leaderboards'], ['fair', 'Fair play'], ['limits', "What NEXT doesn't measure"]].map(([id, label]) => (
+          {[['score', 'NEXT Score'], ['price', 'NEXT Price'], ['gap', 'Scouts vs. market'], ['proof', 'Founding Believer'], ['ranks', 'Leaderboards'], ['challenges', 'Challenges'], ['fair', 'Fair play'], ['limits', "What NEXT doesn't measure"]].map(([id, label]) => (
             <a key={id} href={`#${id}`} className="next-pill">{label}</a>
           ))}
         </nav>
@@ -126,6 +128,11 @@ export default function HowItWorksPage() {
             <li key={tier.key}><strong style={{ color: 'var(--text)' }}>{tier.label}</strong> — backer {tierRange[i]}</li>
           ))}
         </ul>
+        <p className="m-0">
+          Each player&apos;s profile shows a <strong style={{ color: 'var(--text)' }}>track record</strong> built from these records: how
+          many of their picks are priced higher on NEXT now than when they backed them, the typical (median) price change, and how
+          many people backed those artists afterwards. It&apos;s measured on NEXT only, not in the real world.
+        </p>
       </Section>
 
       <Section id="ranks" title="Leaderboards">
@@ -143,6 +150,15 @@ export default function HowItWorksPage() {
           <strong style={{ color: 'var(--text)' }}>Private leagues</strong> rank just you and the friends you invite, by portfolio
           return since each person joined the league — so someone who joins late starts level instead of behind. Only
           members can see a league&apos;s standings; anyone with its invite link can see its name and size.
+        </p>
+      </Section>
+
+      <Section id="challenges" title="Weekly challenges">
+        <p className="m-0">
+          Five challenges reset every Monday at 00:00 UTC: be one of the first {EARLY_DISCOVERY_RANK_THRESHOLD} backers of an artist,
+          back a genre you&apos;ve never backed, back an artist while Scouts rate them higher than the market, listen to previews from
+          five different artists, and get someone to join a league you run. Finish {STREAK_MIN} in a week to extend your streak.
+          They&apos;re counted from your activity on NEXT, and there are no prizes.
         </p>
       </Section>
 

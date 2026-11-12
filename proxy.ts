@@ -18,7 +18,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // the page instead of as an HTTP redirect — fine for browsers, wrong for
 // anything that reads status codes.
 const LOGIN_REQUIRED = [
-  '/next/activity', '/next/feed', '/next/leagues', '/next/my-artist', '/next/notifications', '/next/portfolio',
+  '/next/activity', '/next/challenges', '/next/feed', '/next/leagues', '/next/my-artist', '/next/notifications', '/next/portfolio',
   '/next/submit-artist', '/next/watchlist', '/settings', '/admin', '/artists', '/artist-claims', '/discovery', '/metrics', '/screener',
 ];
 const PUBLIC_EXCEPTIONS = ['/next/leagues/join/'];

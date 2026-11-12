@@ -12,6 +12,8 @@ import DiscoverGrid from '@/components/next/DiscoverGrid';
 import NextStatTile from '@/components/next/NextStatTile';
 import FeaturedArtist from '@/components/next/FeaturedArtist';
 import { getGenrePrefs } from '@/lib/genre-prefs';
+import { getWeeklyChallenges } from '@/lib/challenges';
+import ChallengesCard from '@/components/next/ChallengesCard';
 
 export const metadata: Metadata = {
   title: { absolute: "NEXT — Discover tomorrow's biggest artists" },
@@ -37,6 +39,7 @@ export default async function NextMarketPage() {
   const backerCounts = await getBackerCountsByArtist();
   const scoreChanges = await getScoreChanges();
   const genrePrefs = user ? await getGenrePrefs(user.id) : [];
+  const challenges = user && rows.length > 0 ? await getWeeklyChallenges(user.id) : null;
 
   // Batched, not per-card impression tracking (no client-side scroll
   // observer or one network round trip per card) — "viewed" here means
@@ -140,6 +143,8 @@ export default async function NextMarketPage() {
           </p>
         </section>
       )}
+
+      {challenges && <ChallengesCard week={challenges} />}
 
       {stats.length > 0 && (
         <div
