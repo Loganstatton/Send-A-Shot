@@ -6,7 +6,7 @@ import { track } from '@/lib/track';
 import { matchesGenrePrefs } from '@/lib/genre-match';
 import ArtistCard, { SinceWatched } from '@/components/next/ArtistCard';
 
-type SortMode = 'score' | 'gain' | 'loss' | 'new' | 'gap' | 'watched' | 'backed' | 'trending' | 'momentum';
+export type SortMode = 'score' | 'gain' | 'loss' | 'new' | 'gap' | 'watched' | 'backed' | 'fewest' | 'trending' | 'momentum';
 
 const SORT_LABELS: Record<SortMode, string> = {
   score: 'NEXT Score',
@@ -16,6 +16,7 @@ const SORT_LABELS: Record<SortMode, string> = {
   gap: 'Biggest Score-vs-Price gap',
   watched: 'Most watched',
   backed: 'Most backed',
+  fewest: 'Fewest backers (be early)',
   trending: 'Trending today',
   // "Momentum" and "NEXT Score change" are the same underlying number in
   // this codebase — see momentumStatus() in lib/scoring.ts and its use in
@@ -61,6 +62,8 @@ export default function DiscoverGrid({
   sinceWatchedByArtist = {},
   emptyMessage = 'No artists match these filters yet.',
   genrePrefs = [],
+  initialSort,
+  initialScoutsHigher = false,
 }: {
   rows: NextMarketRow[];
   watchedIds?: number[];
@@ -75,6 +78,10 @@ export default function DiscoverGrid({
   // Genres the player picked (onboarding or Settings). Adds a "For you"
   // filter, which is on by default when it has enough artists to show.
   genrePrefs?: string[];
+  // Set from Discover's URL (?sort=…, ?view=scouts-higher) so other pages
+  // can link straight to a filtered view.
+  initialSort?: string;
+  initialScoutsHigher?: boolean;
 }) {
   const watchedSet = useMemo(() => new Set(watchedIds), [watchedIds]);
   const genres = useMemo(() => {
@@ -87,10 +94,10 @@ export default function DiscoverGrid({
   }, [rows]);
 
   const forYouCount = useMemo(() => rows.filter((r) => matchesGenrePrefs(r.artist.genre, genrePrefs)).length, [rows, genrePrefs]);
-  const [genre, setGenre] = useState<string | null>(forYouCount >= FOR_YOU_MIN_ARTISTS ? FOR_YOU : null);
-  const [signalOnly, setSignalOnly] = useState(false);
+  const [genre, setGenre] = useState<string | null>(forYouCount >= FOR_YOU_MIN_ARTISTS && !initialSort && !initialScoutsHigher ? FOR_YOU : null);
+  const [signalOnly, setSignalOnly] = useState(initialScoutsHigher);
   const [watchlistOnly, setWatchlistOnly] = useState(false);
-  const [sort, setSort] = useState<SortMode>('score');
+  const [sort, setSort] = useState<SortMode>(initialSort && initialSort in SORT_LABELS ? (initialSort as SortMode) : 'score');
   const [search, setSearch] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [scoreRange, setScoreRange] = useState<RangeFilter>(EMPTY_RANGE);
@@ -138,6 +145,7 @@ export default function DiscoverGrid({
       case 'gap': sorted.sort((a, b) => Math.abs(marketSentiment(b.score, b.priceCents).diff) - Math.abs(marketSentiment(a.score, a.priceCents).diff)); break;
       case 'watched': sorted.sort((a, b) => (watchCounts[b.artist.id] ?? 0) - (watchCounts[a.artist.id] ?? 0)); break;
       case 'backed': sorted.sort((a, b) => (backerCounts[b.artist.id] ?? 0) - (backerCounts[a.artist.id] ?? 0)); break;
+      case 'fewest': sorted.sort((a, b) => (backerCounts[a.artist.id] ?? 0) - (backerCounts[b.artist.id] ?? 0) || b.score - a.score); break;
       case 'trending': sorted.sort((a, b) => changePctForWindow(b, 24) - changePctForWindow(a, 24)); break;
       case 'momentum': sorted.sort((a, b) => (scoreChanges[b.artist.id]?.changeAbs ?? -Infinity) - (scoreChanges[a.artist.id]?.changeAbs ?? -Infinity)); break;
     }
@@ -205,6 +213,7 @@ export default function DiscoverGrid({
             setSignalOnly(next);
             if (next) track('filter_used', { filter: 'undervalued' });
           }}
+          aria-pressed={signalOnly}
           className={signalOnly ? 'next-pill next-pill-signal' : 'next-pill'}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={signalOnly ? 'var(--ember)' : 'currentColor'} strokeWidth={2.5}><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" /></svg>
@@ -217,11 +226,12 @@ export default function DiscoverGrid({
             setWatchlistOnly(next);
             if (next) track('filter_used', { filter: 'watchlisted' });
           }}
+          aria-pressed={watchlistOnly}
           className={chip(watchlistOnly)}
         >
           Watchlisted
         </button>
-        <button type="button" onClick={() => setFiltersOpen((v) => !v)} className={chip(filtersOpen || activeRangeCount > 0)}>
+        <button type="button" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((v) => !v)} className={chip(filtersOpen || activeRangeCount > 0)}>
           Filters{activeRangeCount > 0 ? ` (${activeRangeCount})` : ''}
         </button>
       </div>

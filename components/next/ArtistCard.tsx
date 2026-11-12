@@ -1,8 +1,9 @@
 'use client';
+import { TimeAgo } from '@/components/LocalTime';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { NextMarketRow } from '@/lib/types';
-import { formatCents, timeAgo } from '@/lib/format';
+import { formatCents } from '@/lib/format';
 import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, marketSentiment } from '@/lib/next-market';
 import YouTubePreviewButton from '@/components/next/YouTubePreviewButton';
 import ScoreGapBar from '@/components/next/ScoreGapBar';
@@ -159,7 +160,7 @@ export default function ArtistCard({
         >
           <span>
             {showAlertFlag && '⚡ '}
-            Since you added ({timeAgo(sinceWatched.watchedAt)}):{' '}
+            Since you added (<TimeAgo iso={sinceWatched.watchedAt} />):{' '}
             {scoreChangeSinceWatch != null ? `Score ${scoreChangeSinceWatch >= 0 ? '+' : ''}${scoreChangeSinceWatch.toFixed(1)}` : 'Score —'}
             {' · '}
             {priceChangePctSinceWatch != null ? `Price ${priceChangePctSinceWatch >= 0 ? '+' : ''}${priceChangePctSinceWatch.toFixed(1)}%` : 'Price —'}

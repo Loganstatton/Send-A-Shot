@@ -1,4 +1,5 @@
 'use client';
+import { LocalDateTime } from '@/components/LocalTime';
 import { useEffect, useState } from 'react';
 import { LOG_TYPE_LABELS, LOG_TYPES, LogEntry, LogType } from '@/lib/types';
 
@@ -113,7 +114,7 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="badge" style={TYPE_STYLE[entry.type]}>{LOG_TYPE_LABELS[entry.type]}</span>
                 <span className="num text-xs" style={{ color: 'var(--text-faint)' }}>
-                  {new Date(entry.created_at).toLocaleString()}
+                  <LocalDateTime iso={entry.created_at} />
                   {entry.author ? ` · ${entry.author}` : ''}
                 </span>
                 {entry.follow_up_at && (

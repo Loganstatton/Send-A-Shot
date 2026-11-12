@@ -1,7 +1,7 @@
 'use client';
+import { TimeAgo } from '@/components/LocalTime';
 import { useState } from 'react';
 import Link from 'next/link';
-import { timeAgo } from '@/lib/format';
 
 type MyTake = { id: number; body: string; artistId: number; artistName: string; createdAt: string };
 
@@ -32,7 +32,7 @@ export default function MyTakesList({ initial }: { initial: MyTake[] }) {
           <div className="min-w-0 flex-1">
             <Link href={`/next/artists/${t.artistId}`} className="text-sm font-semibold hover:underline">{t.artistName}</Link>
             <p className="mt-1 mb-0 text-sm" style={{ color: 'var(--text-muted)' }}>{t.body}</p>
-            <p className="mt-1 mb-0 text-xs" style={{ color: 'var(--text-faint)' }}>{timeAgo(t.createdAt)}</p>
+            <p className="mt-1 mb-0 text-xs" style={{ color: 'var(--text-faint)' }}><TimeAgo iso={t.createdAt} /></p>
           </div>
           <button
             type="button"

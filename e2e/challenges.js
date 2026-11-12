@@ -39,6 +39,26 @@ const signup = (ctx, name, email) => ctx.post('/api/auth/signup', { data: { name
     check('header fits at 1280px with the new links', navOverflow === false && header === true, `nav overflow ${navOverflow}, header fits ${header}`);
     await page.screenshot({ path: `${SHOTS}/challenges-discover-1280.png` });
 
+    // A new player sees all five challenge buttons; each goes where it says.
+    await page.goto(BASE + '/next/challenges', { waitUntil: 'networkidle' });
+    const startHrefs = {};
+    for (const label of ['Artists with fewest backers', 'Browse genres', 'See who Scouts rate higher', 'Start listening', 'Your leagues']) {
+      startHrefs[label] = await page.getByRole('link', { name: label }).getAttribute('href').catch(() => null);
+    }
+    check('new player sees every challenge button pointing at the right page',
+      startHrefs['Artists with fewest backers'] === '/next?sort=fewest#artists' && startHrefs['Browse genres'] === '/next/genres', JSON.stringify(startHrefs));
+    await page.getByRole('link', { name: 'Browse genres' }).click();
+    await page.waitForURL(/\/next\/genres$/);
+    // The URL changes before the new page renders, so wait for its heading.
+    const genreHeading = await page.getByRole('heading', { level: 1, name: /genre/i }).waitFor({ timeout: 10000 }).then(() => true, () => false);
+    check('"Browse genres" opens the genre list', genreHeading);
+    await page.goto(BASE + '/next/challenges', { waitUntil: 'networkidle' });
+    await page.getByRole('link', { name: 'Artists with fewest backers' }).click();
+    await page.waitForURL(/sort=fewest/);
+    await page.waitForLoadState('networkidle');
+    check('"Artists with fewest backers" opens Discover sorted that way',
+      (await page.locator('select').filter({ has: page.locator('option[value="fewest"]') }).first().inputValue().catch(() => null)) === 'fewest');
+
     // Back an artist first (Early call + New sound), listen to 3 previews.
     const t = await ctx.request.post(`/api/next/artists/${ids[1]}/trade`, { data: { type: 'buy', credits_amount_cents: 20000, idempotencyKey: 'ch-1' } });
     check('first backing went through', t.status() === 200);
@@ -54,6 +74,16 @@ const signup = (ctx, name, email) => ctx.post('/api/auth/signup', { data: { name
     const listenBar = page.getByRole('progressbar', { name: 'Crate digger progress' });
     check('Crate digger shows 3/5 with an accessible progress bar', (await listenBar.getAttribute('aria-valuenow')) === '3' && (await listenBar.getAttribute('aria-valuemax')) === '5');
     check('streak is 0 with only 2 done', /Streak\s*0 weeks/i.test(body));
+    // Each unfinished challenge's button goes where its label says.
+    const actionHref = async (label) => page.getByRole('link', { name: label }).getAttribute('href').catch(() => null);
+    check('challenge buttons point at the matching page',
+      (await actionHref('See who Scouts rate higher')) === '/next?view=scouts-higher#artists' && (await actionHref('Start listening')) === '/next#artists' && (await actionHref('Your leagues')) === '/next/leagues');
+    await page.getByRole('link', { name: 'See who Scouts rate higher' }).click();
+    await page.waitForURL(/view=scouts-higher/);
+    await page.waitForLoadState('networkidle');
+    check('"See who Scouts rate higher" opens Discover with that filter on',
+      (await page.getByRole('button', { name: 'Scouts rate higher' }).getAttribute('aria-pressed')) === 'true');
+    await page.goto(BASE + '/next/challenges', { waitUntil: 'networkidle' });
     await page.screenshot({ path: `${SHOTS}/challenges-page.png`, fullPage: true });
 
     // Two others back the same artist afterwards -> track record.

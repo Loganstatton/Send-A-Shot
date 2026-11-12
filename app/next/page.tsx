@@ -36,7 +36,8 @@ const NEW_ARTIST_DAYS = 14;
 
 // Public: a signed-out visitor gets the pitch and can browse every artist;
 // backing, watching and everything personal asks them to sign up first.
-export default async function NextMarketPage() {
+export default async function NextMarketPage(props: { searchParams: Promise<{ sort?: string; view?: string }> }) {
+  const { sort: initialSort, view } = await props.searchParams;
   const user = await getSessionUser();
   const rows = await getNextMarket();
   const watchedIds = user ? await getWatchlistArtistIds(user.id) : [];
@@ -226,7 +227,7 @@ export default async function NextMarketPage() {
               ))}
             </nav>
           )}
-          <DiscoverGrid key={genrePrefs.join('|')} rows={rows} watchedIds={watchedIds} watchCounts={watchCounts} backerCounts={backerCounts} scoreChanges={scoreChanges} genrePrefs={genrePrefs} />
+          <DiscoverGrid key={`${genrePrefs.join('|')}:${initialSort ?? ''}:${view ?? ''}`} initialSort={initialSort} initialScoutsHigher={view === 'scouts-higher'} rows={rows} watchedIds={watchedIds} watchCounts={watchCounts} backerCounts={backerCounts} scoreChanges={scoreChanges} genrePrefs={genrePrefs} />
         </div>
       )}
     </div>

@@ -144,15 +144,17 @@ export default async function FoundingBelieverReceiptPage(props: { params: Promi
               <span>Edition · {tier.edition}</span>
               <span>Issued {lockedDate}</span>
             </div>
-
-            <div className="flex items-center gap-3 flex-wrap">
-              <CopyProofLinkButton recordId={record.id} artistName={artist.name} />
-              <ShareReceiptButton artistId={id} artistName={artist.name} />
-              <ShareToFeedButton artistId={id} />
-            </div>
           </div>
         </div>
       </HoloCard>
+
+      {/* Outside the card on purpose: the card sways and tilts under the
+          pointer, and buttons that never hold still are hard to hit. */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <CopyProofLinkButton recordId={record.id} artistName={artist.name} />
+        <ShareReceiptButton artistId={id} artistName={artist.name} />
+        <ShareToFeedButton artistId={id} />
+      </div>
     </div>
   );
 }

@@ -14,10 +14,10 @@ function resetsIn(endIso: string): string {
 }
 
 const ACTIONS: Record<string, { href: string; label: string }> = {
-  early_call: { href: '/next', label: 'Find an artist' },
-  new_genre: { href: '/next', label: 'Browse genres' },
-  scouts_call: { href: '/next', label: 'See who Scouts rate higher' },
-  listen: { href: '/next', label: 'Start listening' },
+  early_call: { href: '/next?sort=fewest#artists', label: 'Artists with fewest backers' },
+  new_genre: { href: '/next/genres', label: 'Browse genres' },
+  scouts_call: { href: '/next?view=scouts-higher#artists', label: 'See who Scouts rate higher' },
+  listen: { href: '/next#artists', label: 'Start listening' },
   recruit: { href: '/next/leagues', label: 'Your leagues' },
 };
 
@@ -54,7 +54,7 @@ export default async function ChallengesPage() {
 
       <ul className="flex flex-col gap-2.5 list-none p-0 m-0">
         {week.challenges.map((c) => (
-          <li key={c.key} className="next-card px-5 py-4 flex items-center gap-4" style={c.done ? { borderColor: 'var(--up)' } : undefined}>
+          <li key={c.key} className="next-card px-5 py-4 flex items-center gap-4 flex-wrap" style={c.done ? { borderColor: 'var(--up)' } : undefined}>
             <span
               aria-hidden="true"
               className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm font-bold"
@@ -86,7 +86,7 @@ export default async function ChallengesPage() {
               )}
             </div>
             {!c.done && (
-              <Link href={ACTIONS[c.key].href} className="next-btn-ghost text-xs px-3 py-2 rounded-[9px] shrink-0 hidden sm:inline-block">{ACTIONS[c.key].label}</Link>
+              <Link href={ACTIONS[c.key].href} className="next-btn-ghost text-xs px-3 py-2 rounded-[9px] shrink-0 inline-block">{ACTIONS[c.key].label}</Link>
             )}
           </li>
         ))}

@@ -1,4 +1,5 @@
 'use client';
+import { LocalDateTime } from '@/components/LocalTime';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { NextTransaction } from '@/lib/types';
@@ -65,7 +66,7 @@ export default function TransactionHistory({ transactions }: { transactions: Tra
             <tbody>
               {visible.map((t) => (
                 <tr key={t.id} style={{ borderTop: '1px solid var(--border-soft)' }}>
-                  <td className="py-2.5" style={{ color: 'var(--text-faint)' }}>{new Date(t.created_at).toLocaleDateString()}</td>
+                  <td className="py-2.5" style={{ color: 'var(--text-faint)' }}><LocalDateTime iso={t.created_at} dateOnly /></td>
                   <td className="py-2.5">
                     <Link href={`/next/artists/${t.artist_id}`} className="hover:underline">{t.artist_name}</Link>
                   </td>

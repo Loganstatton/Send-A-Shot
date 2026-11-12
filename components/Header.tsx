@@ -31,7 +31,7 @@ export default function Header({ user, newCandidateCount = 0, pendingArtistClaim
           <span className="w-1.5 h-1.5 rounded-sm" style={{ background: 'var(--accent)', boxShadow: '0 0 8px var(--accent-line)' }} />
           {isInternal ? 'SCOUT' : 'NEXT'}
         </Link>
-        <nav className="flex items-center gap-2">
+        <nav className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
           {user ? (
             <>
               <Link className={navClass(pathname === '/next' || pathname?.startsWith('/next/artists'))} style={navStyle(pathname === '/next' || (pathname?.startsWith('/next/artists') ?? false))} href="/next">Discover</Link>

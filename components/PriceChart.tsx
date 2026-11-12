@@ -114,6 +114,7 @@ export default function PriceChart({
             <button
               key={r.key}
               type="button"
+              aria-pressed={range === r.key}
               onClick={() => { setRange(r.key); setHoverIndex(null); }}
               className="px-3 py-2 text-xs rounded-lg"
               style={

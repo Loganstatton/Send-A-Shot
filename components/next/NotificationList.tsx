@@ -1,8 +1,8 @@
 'use client';
+import { TimeAgo } from '@/components/LocalTime';
 import { useState } from 'react';
 import Link from 'next/link';
 import type { Notification, NotificationCategory } from '@/lib/notifications';
-import { timeAgo } from '@/lib/format';
 
 const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   watchlist_moves: 'Watchlist',
@@ -86,7 +86,7 @@ export default function NotificationList({ notifications }: { notifications: Not
                 <span className="text-[11px] font-mono uppercase tracking-[0.04em]" style={{ color: n.read ? 'var(--text-faint)' : 'var(--ember)' }}>
                   {CATEGORY_LABELS[n.category]}
                 </span>
-                <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{timeAgo(n.occurredAt)}</span>
+                <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}><TimeAgo iso={n.occurredAt} /></span>
               </div>
               <p className="m-0 text-sm" style={{ color: n.read ? 'var(--text-muted)' : 'var(--text)' }}>
                 {n.artistId ? (

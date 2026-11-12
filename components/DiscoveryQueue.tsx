@@ -1,4 +1,5 @@
 'use client';
+import { LocalDateTime } from '@/components/LocalTime';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { DiscoveryCandidate } from '@/lib/types';
@@ -74,13 +75,13 @@ export default function DiscoveryQueue({ initial }: { initial: DiscoveryCandidat
                 </p>
               )}
               <div className="num text-xs mt-1 flex gap-3 flex-wrap" style={{ color: 'var(--text-faint)' }}>
-                {c.followers_count != null && <span>{c.followers_count.toLocaleString()} Spotify followers</span>}
-                {c.yt_view_count != null && <span>{c.yt_view_count.toLocaleString()} YouTube views</span>}
-                {c.yt_channel_subscriber_count != null && <span>{c.yt_channel_subscriber_count.toLocaleString()} subscribers</span>}
+                {c.followers_count != null && <span>{c.followers_count.toLocaleString('en-US')} Spotify followers</span>}
+                {c.yt_view_count != null && <span>{c.yt_view_count.toLocaleString('en-US')} YouTube views</span>}
+                {c.yt_channel_subscriber_count != null && <span>{c.yt_channel_subscriber_count.toLocaleString('en-US')} subscribers</span>}
                 {c.yt_hype_comment_rate != null && (
                   <span>{Math.round(c.yt_hype_comment_rate * 1000) / 10}% hype comments{c.yt_comments_analyzed != null ? ` (of ${c.yt_comments_analyzed})` : ''}</span>
                 )}
-                <span>Detected {new Date(c.discovered_at).toLocaleDateString()}</span>
+                <span>Detected <LocalDateTime iso={c.discovered_at} dateOnly /></span>
               </div>
             </div>
             <div className="flex gap-2 shrink-0">

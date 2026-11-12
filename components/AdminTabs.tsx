@@ -18,17 +18,18 @@ const TABS = [
 export default function AdminTabs() {
   const pathname = usePathname();
   return (
-    <div className="flex gap-2">
+    <nav aria-label="Admin sections" className="flex flex-wrap gap-2">
       {TABS.map((tab) => (
         <Link
           key={tab.href}
           href={tab.href}
+          aria-current={pathname === tab.href ? 'page' : undefined}
           className={`btn text-sm ${pathname === tab.href ? 'font-semibold' : ''}`}
           style={pathname === tab.href ? { background: 'var(--accent-dim)', borderColor: 'var(--accent-line)', color: 'var(--accent)' } : {}}
         >
           {tab.label}
         </Link>
       ))}
-    </div>
+    </nav>
   );
 }
