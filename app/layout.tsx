@@ -13,11 +13,14 @@ const sans = Inter({ subsets: ['latin'], weight: ['400', '500', '600', '700'], v
 const mono = JetBrains_Mono({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-scout-mono' });
 
 export const metadata: Metadata = {
+  // Makes relative preview-image paths (e.g. an early-proof card) absolute
+  // in link previews, which messaging apps and social sites require.
+  metadataBase: new URL(process.env.APP_URL ?? 'http://localhost:3000'),
   title: {
-    default: 'NEXT — Back the next breakout artist',
+    default: "NEXT — Discover tomorrow's biggest artists",
     template: '%s · NEXT',
   },
-  description: 'Paper-trade emerging artists with NEXT Credits. NEXT Score predicts breakout momentum; NEXT Price is what the community pays.',
+  description: "Discover tomorrow's biggest artists and prove you found them first. Back emerging musicians with free virtual credits, compete with other music scouts, and earn a permanent record of your early calls.",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

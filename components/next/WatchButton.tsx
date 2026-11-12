@@ -1,5 +1,7 @@
 'use client';
 import { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useViewer } from '@/lib/viewer-context';
 
 // A bookmark, not a purchase — lets a user track an artist with zero
 // credits spent. Optimistic toggle against /api/next/artists/[id]/watchlist,
@@ -15,10 +17,19 @@ export default function WatchButton({
 }) {
   const [watching, setWatching] = useState(initialWatching);
   const [pending, setPending] = useState(false);
+  const { guest } = useViewer();
+  const router = useRouter();
+  const pathname = usePathname();
 
   async function toggle(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
+    // A watchlist belongs to an account — a signed-out visitor is sent to
+    // sign up, and comes back to this same page afterwards.
+    if (guest) {
+      router.push(`/signup?next=${encodeURIComponent(pathname ?? '/next')}`);
+      return;
+    }
     if (pending) return;
     const next = !watching;
     setPending(true);

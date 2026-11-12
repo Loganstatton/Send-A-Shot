@@ -6,9 +6,12 @@ import Link from 'next/link';
 type Props = {
   mode: 'login' | 'signup';
   inviteRequired?: boolean;
+  // Already validated server-side (safeReturnPath) — always a path on this site.
+  returnTo?: string;
 };
 
-export default function AuthForm({ mode, inviteRequired = false }: Props) {
+export default function AuthForm({ mode, inviteRequired = false, returnTo = '/' }: Props) {
+  const otherHref = (base: string) => (returnTo && returnTo !== '/' ? `${base}?next=${encodeURIComponent(returnTo)}` : base);
   const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -41,7 +44,7 @@ export default function AuthForm({ mode, inviteRequired = false }: Props) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? 'Something went wrong.');
       }
-      router.push('/');
+      router.push(returnTo);
       router.refresh();
     } catch (err: any) {
       setError(err.message ?? 'Something went wrong.');
@@ -58,23 +61,25 @@ export default function AuthForm({ mode, inviteRequired = false }: Props) {
           NEXT is paper trading — every account starts with virtual NEXT Credits, and no real money ever changes hands.
         </p>
       )}
-      {error && <div className="text-sm text-red-300">{error}</div>}
+      {error && <div role="alert" className="text-sm text-red-300">{error}</div>}
       <form onSubmit={handleSubmit} className="space-y-3">
         {mode === 'signup' && (
           <div>
-            <label className="label">Name</label>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+            <label className="label" htmlFor="auth-name">Name</label>
+            <input id="auth-name" className="input" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required />
           </div>
         )}
         <div>
-          <label className="label">Email</label>
-          <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <label className="label" htmlFor="auth-email">Email</label>
+          <input id="auth-email" type="email" className="input" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </div>
         <div>
-          <label className="label">Password</label>
+          <label className="label" htmlFor="auth-password">Password</label>
           <input
+            id="auth-password"
             type="password"
             className="input"
+            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             minLength={mode === 'signup' ? 8 : undefined}
@@ -88,8 +93,8 @@ export default function AuthForm({ mode, inviteRequired = false }: Props) {
         </div>
         {mode === 'signup' && inviteRequired && (
           <div>
-            <label className="label">Invite code</label>
-            <input className="input" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} required />
+            <label className="label" htmlFor="auth-invite">Invite code</label>
+            <input id="auth-invite" className="input" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} required />
           </div>
         )}
         {mode === 'signup' && (
@@ -113,9 +118,9 @@ export default function AuthForm({ mode, inviteRequired = false }: Props) {
       </form>
       <p className="text-sm text-neutral-400">
         {mode === 'signup' ? (
-          <>Already have an account? <Link href="/login" className="underline">Log in</Link></>
+          <>Already have an account? <Link href={otherHref('/login')} className="underline">Log in</Link></>
         ) : (
-          <>Need an account? <Link href="/signup" className="underline">Sign up</Link></>
+          <>Need an account? <Link href={otherHref('/signup')} className="underline">Sign up</Link></>
         )}
       </p>
     </div>

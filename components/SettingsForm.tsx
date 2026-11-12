@@ -156,13 +156,13 @@ export default function SettingsForm({ user }: { user: User }) {
             </div>
           )}
           <div className="flex-1">
-            <label className="label">Avatar URL</label>
-            <input className="input" value={avatarUrl} onChange={(e) => { setAvatarUrl(e.target.value); setAvatarFailed(false); }} placeholder="https://…" />
+            <label className="label" htmlFor="settings-avatar">Avatar URL</label>
+            <input id="settings-avatar" type="url" className="input" value={avatarUrl} onChange={(e) => { setAvatarUrl(e.target.value); setAvatarFailed(false); }} placeholder="https://…" />
           </div>
         </div>
         <div>
-          <label className="label">Name</label>
-          <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
+          <label className="label" htmlFor="settings-name">Name</label>
+          <input id="settings-name" className="input" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
         <div className="text-sm text-neutral-500">
           Email: {user.email}{' '}
@@ -206,7 +206,7 @@ export default function SettingsForm({ user }: { user: User }) {
           What shows up in your notification bell. All on by default except email, which stays opt-in.
         </p>
         {[
-          { label: 'Watchlist moves', hint: 'Score/Price jumps, undervalued/overheated, trending today', checked: notifyWatchlistMoves, set: setNotifyWatchlistMoves },
+          { label: 'Watchlist moves', hint: 'Score/Price jumps, Scout-vs-market gaps, trending today', checked: notifyWatchlistMoves, set: setNotifyWatchlistMoves },
           { label: 'New artists in your genres', hint: 'Based on the genres you’ve backed the most', checked: notifyNewArtists, set: setNotifyNewArtists },
           { label: 'Founding Believer milestones', hint: 'An artist you backed early crosses a backer-count milestone', checked: notifyFoundingBeliever, set: setNotifyFoundingBeliever },
           { label: 'Portfolio milestones', hint: 'Your all-time return crosses a round number, up or down', checked: notifyPortfolioMilestones, set: setNotifyPortfolioMilestones },
@@ -240,12 +240,12 @@ export default function SettingsForm({ user }: { user: User }) {
       <form onSubmit={changePassword} className="card space-y-3">
         <h2 className="font-semibold text-neutral-100">Change password</h2>
         <div>
-          <label className="label">Current password</label>
-          <input type="password" className="input" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
+          <label className="label" htmlFor="settings-current-password">Current password</label>
+          <input id="settings-current-password" type="password" className="input" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
         </div>
         <div>
-          <label className="label">New password</label>
-          <input type="password" className="input" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} required />
+          <label className="label" htmlFor="settings-new-password">New password</label>
+          <input id="settings-new-password" type="password" className="input" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} required />
         </div>
         {passwordError && <div className="text-sm text-red-300">{passwordError}</div>}
         {passwordMessage && <div className="text-sm text-green-400">{passwordMessage}</div>}

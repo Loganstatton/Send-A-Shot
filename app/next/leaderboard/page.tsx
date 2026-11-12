@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getAvailableGenres, getDiscoveryLeaderboard, getGenreLeaderboard, getScoutLeaderboard } from '@/lib/db';
-import { requireUser } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
 import { LeaderboardWindow } from '@/lib/types';
 import ArtistAvatar from '@/components/ArtistAvatar';
@@ -24,7 +23,8 @@ function RankChange({ change }: { change: number | null }) {
 }
 
 export default async function LeaderboardPage({ searchParams }: { searchParams: { genre?: string; window?: string; board?: string } }) {
-  await requireUser();
+  // Public, like the rest of what a shared link can point to: names,
+  // return %, and discovery counts only — nothing private.
   const genres = await getAvailableGenres();
   const activeDiscoverers = searchParams.board === 'discoverers';
   const activeGenre = !activeDiscoverers && searchParams.genre && genres.includes(searchParams.genre) ? searchParams.genre : null;

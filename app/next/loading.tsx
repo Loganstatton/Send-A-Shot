@@ -9,21 +9,12 @@ export default function DiscoverLoading() {
     <div className="flex flex-col gap-10">
       <div className="flex flex-col gap-5 max-w-[720px]">
         <h1 className="font-display font-bold text-[32px] sm:text-[40px] lg:text-[46px] leading-[1.08] lg:leading-[1.05] tracking-[-0.015em] m-0" style={{ textWrap: 'balance' } as React.CSSProperties}>
-          Back breakout artists before <span style={{ color: 'var(--ember)' }}>everyone else does.</span>
+          Discover tomorrow&apos;s biggest artists. <span style={{ color: 'var(--ember)' }}>Prove you found them first.</span>
         </h1>
-        <p className="text-base leading-relaxed m-0 max-w-[58ch]" style={{ color: 'var(--text-muted)' }}>
-          NEXT Score is our Scouts&apos; own call on an artist&apos;s potential. NEXT Price is what the market
-          currently pays. When the two disagree — that&apos;s the signal.
+        <p className="text-base leading-relaxed m-0 max-w-[60ch]" style={{ color: 'var(--text-muted)' }}>
+          Listen to emerging musicians our Scouts are tracking, back the ones you believe in with free virtual
+          credits, and get a permanent, dated record that you were early.
         </p>
-      </div>
-
-      <div
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px rounded-2xl overflow-hidden border animate-pulse"
-        style={{ background: 'var(--border-soft)', borderColor: 'var(--border-soft)' }}
-      >
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-[76px]" style={{ background: 'var(--surface)' }} />
-        ))}
       </div>
 
       <div className="next-card h-[220px] md:h-[320px] animate-pulse" style={{ background: 'var(--surface-2)' }} />

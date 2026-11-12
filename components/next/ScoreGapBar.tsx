@@ -12,8 +12,10 @@ export default function ScoreGapBar({ score, sentiment }: { score: number; senti
   const glow = sentiment.tone === 'undervalued' ? '0 0 6px var(--ember)' : 'none';
   const caption =
     sentiment.tone === 'fair'
-      ? 'fair value'
-      : `${sentiment.tone === 'undervalued' ? '+' : ''}${Math.round(sentiment.diff)} vs price · ${sentiment.tone}`;
+      ? 'Scouts and market agree'
+      : sentiment.tone === 'undervalued'
+      ? `Scouts +${Math.round(sentiment.diff)} vs. market`
+      : `market +${Math.round(Math.abs(sentiment.diff))} vs. Scouts`;
 
   return (
     <div className="flex flex-col gap-[3px]">

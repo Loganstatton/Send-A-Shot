@@ -130,8 +130,8 @@ async function watchlistNotifications(watchlist: WatchlistEntry[], trendingIds: 
         kind: 'watchlist_sentiment',
         category: 'watchlist_moves',
         message: sentiment.tone === 'undervalued'
-          ? `${artist.name} looks undervalued right now — Score is running ahead of Price.`
-          : `${artist.name} looks overheated right now — Price is running ahead of Score.`,
+          ? `Our Scouts now rate ${artist.name} higher than the market — Score is running ahead of Price.`
+          : `The market has moved ahead of our Scouts on ${artist.name} — Price is running ahead of Score.`,
         artistId: artist.id,
         occurredAt: new Date().toISOString(),
         read: false,
