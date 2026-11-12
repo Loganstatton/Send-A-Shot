@@ -6,3 +6,5 @@ prev*/
 *.wav
 *.mp4
 *.blend1
+__pycache__/
+out/
