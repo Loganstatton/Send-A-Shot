@@ -18,6 +18,8 @@ import VideoBanner from '@/components/next/VideoBanner';
 import WatchButton from '@/components/next/WatchButton';
 import InfoTip from '@/components/next/InfoTip';
 import ScoreExplainer from '@/components/next/ScoreExplainer';
+import ArtistRequestForm from '@/components/next/ArtistRequestForm';
+import { PUBLIC_KINDS, REQUEST_KIND_LABELS } from '@/lib/artist-requests';
 import RecentActivity from '@/components/next/RecentActivity';
 import ClaimArtistPanel from '@/components/next/ClaimArtistPanel';
 import MobileTradeBar from '@/components/next/MobileTradeBar';
@@ -364,6 +366,37 @@ export default async function NextArtistPage(
         />
         )}
       </div>
+
+      <details className="next-card px-5 py-4 text-sm">
+        <summary className="cursor-pointer" style={{ color: 'var(--text-faint)' }}>Report a problem with this profile</summary>
+        <div className="mt-4">
+          {user ? (
+            claimState === 'owned_by_me' ? (
+              <p className="m-0" style={{ color: 'var(--text-muted)' }}>
+                This is your profile — use your <Link href={`/next/my-artist/${id}`} className="underline">artist dashboard</Link> for corrections, rating reviews or removal.
+              </p>
+            ) : (
+              <ArtistRequestForm
+                artistId={id}
+                idPrefix="public-request"
+                kinds={PUBLIC_KINDS.map((k) => ({
+                  value: k,
+                  label: REQUEST_KIND_LABELS[k],
+                  hint: k === 'correction'
+                    ? 'Something here is factually wrong (name, genre, links, photo).'
+                    : k === 'impersonation'
+                    ? 'This profile, photo or link pretends to be someone it isn’t.'
+                    : 'Someone who isn’t this artist has claimed the profile. If you are the artist, say how we can verify you.',
+                }))}
+              />
+            )
+          ) : (
+            <p className="m-0" style={{ color: 'var(--text-muted)' }}>
+              <Link href={`/login?next=${encodeURIComponent(`/next/artists/${id}`)}`} className="underline">Log in</Link> to report a problem, so we can follow up with you.
+            </p>
+          )}
+        </div>
+      </details>
 
       <MobileTradeBar artistName={artist.name} priceCents={priceCents} changePct={todayChangePct} />
     </div>

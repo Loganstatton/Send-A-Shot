@@ -14,7 +14,7 @@ function navStyle(active: boolean): React.CSSProperties {
     : {};
 }
 
-export default function Header({ user, newCandidateCount = 0, pendingArtistClaimCount = 0 }: { user: User | null; newCandidateCount?: number; pendingArtistClaimCount?: number }) {
+export default function Header({ user, newCandidateCount = 0, pendingArtistClaimCount = 0, openArtistRequestCount = 0 }: { user: User | null; newCandidateCount?: number; pendingArtistClaimCount?: number; openArtistRequestCount?: number }) {
   const pathname = usePathname();
   const is = (p: string) => pathname === p || (p !== '/' && pathname?.startsWith(p));
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
@@ -49,6 +49,9 @@ export default function Header({ user, newCandidateCount = 0, pendingArtistClaim
                   </Link>
                   <Link className={navClass(is('/artist-claims'))} style={navStyle(is('/artist-claims'))} href="/artist-claims">
                     Artist Claims{pendingArtistClaimCount > 0 && <span className="num ml-1.5 badge text-xs px-1.5" style={{ background: 'var(--fire-dim)', borderColor: 'var(--fire-line)', color: 'var(--fire)' }}>{pendingArtistClaimCount}</span>}
+                  </Link>
+                  <Link className={navClass(is('/artist-requests'))} style={navStyle(is('/artist-requests'))} href="/artist-requests">
+                    Requests{openArtistRequestCount > 0 && <span className="num ml-1.5 badge text-xs px-1.5" style={{ background: 'var(--fire-dim)', borderColor: 'var(--fire-line)', color: 'var(--fire)' }}>{openArtistRequestCount}</span>}
                   </Link>
                   <Link className="btn btn-primary text-sm" href="/artists/new">+ Add Artist</Link>
                 </>

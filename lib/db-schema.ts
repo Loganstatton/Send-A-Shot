@@ -604,4 +604,27 @@ CREATE TABLE IF NOT EXISTS next_collection_items (
 );
 `,
   },
+  {
+    // Requests about an artist profile: corrections, rating reviews and
+    // opt-outs from the claimed artist; impersonation reports and claim
+    // disputes from anyone signed in. Reviewed by staff in /artist-requests.
+    id: '008_artist_requests',
+    sql: `
+CREATE TABLE IF NOT EXISTS artist_requests (
+  id BIGSERIAL PRIMARY KEY,
+  artist_id BIGINT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  kind TEXT COLLATE "C" NOT NULL,
+  message TEXT COLLATE "C" NOT NULL,
+  from_owner BIGINT NOT NULL DEFAULT 0,
+  status TEXT COLLATE "C" NOT NULL DEFAULT 'open',
+  created_at TEXT COLLATE "C" NOT NULL,
+  resolved_at TEXT COLLATE "C",
+  resolved_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  resolution_note TEXT COLLATE "C"
+);
+CREATE INDEX IF NOT EXISTS idx_artist_requests_status ON artist_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_artist_requests_artist ON artist_requests(artist_id);
+`,
+  },
 ];
