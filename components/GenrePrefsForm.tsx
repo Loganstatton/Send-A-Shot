@@ -39,7 +39,7 @@ export default function GenrePrefsForm({ options, initial }: { options: string[]
     <form onSubmit={save} className="card space-y-3">
       <fieldset className="space-y-3">
         <legend className="font-semibold text-neutral-100">Genres you listen to</legend>
-        <p className="text-xs text-neutral-500 -mt-1">
+        <p className="text-xs text-neutral-400 -mt-1">
           Up to {MAX}. NEXT&apos;s Discover page shows a &ldquo;For you&rdquo; filter with artists in these genres.
         </p>
         <div className="grid grid-cols-2 gap-2">

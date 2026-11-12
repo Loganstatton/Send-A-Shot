@@ -15,7 +15,7 @@
   --border-soft: oklch(42% 0.02 240 / 0.3);
   --text: oklch(95% 0.006 240);
   --text-muted: oklch(70% 0.02 240);
-  --text-faint: oklch(50% 0.02 240);
+  --text-faint: oklch(63% 0.02 240); /* 4.7:1+ on every surface (WCAG AA); was 50% (3.0:1) */
   --accent: oklch(78% 0.13 220);
   --accent-dim: oklch(78% 0.13 220 / 0.14);
   --accent-line: oklch(78% 0.13 220 / 0.4);
@@ -95,4 +95,10 @@ a { color: var(--accent); }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Keyboard focus ring for the Scout tool. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

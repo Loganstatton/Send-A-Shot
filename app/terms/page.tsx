@@ -1,10 +1,14 @@
 export const metadata = { title: 'Terms of Service' };
 
+// A fixed revision date — change it whenever the text changes. (It used
+// to print today's date, so it looked freshly updated every day.)
+const LAST_UPDATED = 'November 12, 2026';
+
 export default function TermsPage() {
   return (
     <div className="max-w-2xl mx-auto card space-y-4 text-sm leading-relaxed text-neutral-300">
       <h1 className="text-xl font-semibold text-neutral-100">Terms of Service</h1>
-      <p className="text-xs text-neutral-500">Beta version — last updated {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.</p>
+      <p className="text-xs text-neutral-400">Beta version — last updated {LAST_UPDATED}.</p>
 
       <section className="space-y-2">
         <h2 className="font-semibold text-neutral-100">1. What NEXT is</h2>
@@ -23,6 +27,7 @@ export default function TermsPage() {
 
       <section className="space-y-2">
         <h2 className="font-semibold text-neutral-100">4. Your account</h2>
+        <p>You must be at least 13 years old to create an account. If you&apos;re under the age of majority where you live, you need a parent or guardian&apos;s permission.</p>
         <p>You're responsible for keeping your login credentials secure and for all activity under your account. You must provide accurate information at signup and keep it reasonably current. We may suspend or terminate accounts that violate these terms, abuse the platform, or attempt to manipulate NEXT Price or the Leaderboard.</p>
       </section>
 
@@ -46,7 +51,7 @@ export default function TermsPage() {
         <p>We may update these terms as the product evolves. Continued use of NEXT after a change means you accept the updated terms.</p>
       </section>
 
-      <p className="text-xs text-neutral-500">See also our <a href="/privacy" className="underline">Privacy Policy</a>.</p>
+      <p className="text-xs text-neutral-400">See also our <a href="/privacy" className="underline">Privacy Policy</a>.</p>
     </div>
   );
 }

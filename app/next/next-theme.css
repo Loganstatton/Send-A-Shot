@@ -12,7 +12,7 @@
   --border-soft: oklch(38% 0.014 40 / 0.28);
   --text: oklch(96% 0.006 90);
   --text-muted: oklch(72% 0.014 60);
-  --text-faint: oklch(52% 0.013 60);
+  --text-faint: oklch(63% 0.013 60); /* 4.7:1+ on every surface (WCAG AA); was 52% (3.0:1) */
   --ember: oklch(70% 0.19 35);
   --ember-dim: oklch(70% 0.19 35 / 0.14);
   --ember-line: oklch(70% 0.19 35 / 0.4);
@@ -263,4 +263,25 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Keyboard focus: always visible on NEXT (several inputs use outline-none
+   for their mouse styling, which also hid keyboard focus). */
+.next-theme :focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+}
+.next-theme .skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 100;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--ember);
+  color: var(--bg);
+  font-weight: 700;
+}
+.next-theme .skip-link:focus {
+  left: 12px;
 }

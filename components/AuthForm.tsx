@@ -107,7 +107,7 @@ export default function AuthForm({ mode, inviteRequired = false, returnTo = '/' 
               required
             />
             <span>
-              I agree to the <Link href="/terms" target="_blank" className="underline">Terms of Service</Link> and{' '}
+              I&apos;m at least 13 and agree to the <Link href="/terms" target="_blank" className="underline">Terms of Service</Link> and{' '}
               <Link href="/privacy" target="_blank" className="underline">Privacy Policy</Link>.
             </span>
           </label>

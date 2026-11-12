@@ -39,10 +39,11 @@ export default async function NextLayout({ children }: { children: React.ReactNo
           'var(--bg)',
       }}
     >
+      <a href="#main-content" className="skip-link">Skip to content</a>
       <NextHeader user={user} unreadNotifications={unreadNotifications} hasClaimedArtist={hasClaimedArtist} />
       {showOnboarding && <NextOnboarding startingCreditsCents={NEXT_STARTING_CREDITS_CENTS} genreOptions={genreOptions} />}
       <ViewerProvider guest={!user}>
-        <main className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14">{children}</main>
+        <main id="main-content" tabIndex={-1} className="max-w-[1280px] mx-auto px-5 sm:px-8 md:px-12 py-8 sm:py-14 outline-none">{children}</main>
       </ViewerProvider>
       <NextFooter signedIn={!!user} />
     </div>

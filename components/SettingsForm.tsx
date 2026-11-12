@@ -17,7 +17,7 @@ function SessionsCard() {
   return (
     <div className="card space-y-2">
       <h2 className="font-semibold text-neutral-100">Signed-in devices</h2>
-      <p className="text-xs text-neutral-500">Signed in somewhere you no longer use? This signs out every other browser and phone.</p>
+      <p className="text-xs text-neutral-400">Signed in somewhere you no longer use? This signs out every other browser and phone.</p>
       <button type="button" className="btn" onClick={revoke} disabled={state === 'busy'}>
         {state === 'busy' ? 'Signing out…' : 'Log out of all other devices'}
       </button>
@@ -192,7 +192,7 @@ export default function SettingsForm({ user, genreOptions, genrePrefs, mutedArti
           <label className="label" htmlFor="settings-name">Name</label>
           <input id="settings-name" className="input" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
-        <div className="text-sm text-neutral-500">
+        <div className="text-sm text-neutral-400">
           Email: {user.email}{' '}
           {user.email_verified_at ? (
             <span className="text-green-400">— verified</span>
@@ -215,7 +215,7 @@ export default function SettingsForm({ user, genreOptions, genrePrefs, mutedArti
           />
           <span>
             Show my current NEXT positions on my public Scout Profile
-            <span className="block text-xs text-neutral-500 mt-0.5">
+            <span className="block text-xs text-neutral-400 mt-0.5">
               Off by default. Your rank, return %, and Founding Believer history are always visible to other
               Scouts — this only controls whether your live holdings (shares, value, P&amp;L per artist) are too.
             </span>
@@ -230,7 +230,7 @@ export default function SettingsForm({ user, genreOptions, genrePrefs, mutedArti
 
       <form onSubmit={saveNotificationPreferences} className="card space-y-3">
         <h2 className="font-semibold text-neutral-100">Notifications</h2>
-        <p className="text-xs text-neutral-500 -mt-1">
+        <p className="text-xs text-neutral-400 -mt-1">
           What shows up in your notification bell. All on by default except email, which stays opt-in.
         </p>
         {[
@@ -246,7 +246,7 @@ export default function SettingsForm({ user, genreOptions, genrePrefs, mutedArti
             <input type="checkbox" checked={pref.checked} onChange={(e) => pref.set(e.target.checked)} className="mt-0.5" />
             <span>
               {pref.label}
-              <span className="block text-xs text-neutral-500 mt-0.5">{pref.hint}</span>
+              <span className="block text-xs text-neutral-400 mt-0.5">{pref.hint}</span>
             </span>
           </label>
         ))}
@@ -255,7 +255,7 @@ export default function SettingsForm({ user, genreOptions, genrePrefs, mutedArti
           <input type="checkbox" checked={emailNotificationsEnabled} onChange={(e) => setEmailNotificationsEnabled(e.target.checked)} className="mt-0.5" />
           <span>
             Also email me
-            <span className="block text-xs text-neutral-500 mt-0.5">
+            <span className="block text-xs text-neutral-400 mt-0.5">
               A digest of what&apos;s new, sent next time you check your notifications — not a scheduled email.
             </span>
           </span>
