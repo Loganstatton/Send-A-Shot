@@ -190,6 +190,7 @@ export default function TradePanel({
       <div className="flex gap-2">
         <button
           type="button"
+          aria-pressed={mode === 'buy'}
           className="flex-1 text-center py-2.5 rounded-[10px] text-[13.5px] font-bold"
           style={mode === 'buy' ? { background: 'var(--ember)', color: 'var(--on-ember)' } : { border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
           onClick={() => { setMode('buy'); setSellAllIntent(false); resetAfterAction(); }}
@@ -198,6 +199,7 @@ export default function TradePanel({
         </button>
         <button
           type="button"
+          aria-pressed={mode === 'sell'}
           className="flex-1 text-center py-2.5 rounded-[10px] text-[13.5px] font-bold disabled:opacity-40"
           style={mode === 'sell' ? { background: 'var(--down)', color: 'var(--on-ember)' } : { border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
           onClick={() => { setMode('sell'); resetAfterAction(); }}

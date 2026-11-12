@@ -1,4 +1,5 @@
 'use client';
+import { LocalDateTime } from '@/components/LocalTime';
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -38,7 +39,7 @@ function QueueItem({ row }: { row: QueueRow }) {
           {row.kindLabel} — <Link className="underline" href={`/artists/${row.artistId}`}>{row.artistName}</Link>
           {row.fromOwner && <span className="badge text-xs ml-2">from the verified artist</span>}
         </div>
-        <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{new Date(row.createdAt).toLocaleString()}</span>
+        <span className="text-xs" style={{ color: 'var(--text-faint)' }}><LocalDateTime iso={row.createdAt} /></span>
       </div>
       <p className="text-sm whitespace-pre-wrap">{row.message}</p>
       <p className="text-xs" style={{ color: 'var(--text-faint)' }}>From {row.reporterName ?? 'deleted account'}{row.reporterEmail ? ` <${row.reporterEmail}>` : ''}</p>

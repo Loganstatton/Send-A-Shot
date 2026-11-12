@@ -1,4 +1,5 @@
 'use client';
+import { LocalDateTime } from '@/components/LocalTime';
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -53,7 +54,7 @@ export default function ArtistClaimQueue({ initial }: { initial: ArtistClaim[] }
               </div>
               {claim.message && <p className="text-sm mt-1" style={{ color: 'var(--accent)' }}>{claim.message}</p>}
               <p className="num text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
-                Submitted {new Date(claim.created_at).toLocaleString()}
+                Submitted <LocalDateTime iso={claim.created_at} />
               </p>
             </div>
             <div className="flex gap-2 shrink-0">

@@ -171,7 +171,7 @@ export default function RosterList({ artists }: { artists: RosterArtist[] }) {
                       {artist.genre && <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{artist.genre}</span>}
                     </div>
                     <div className="text-sm mt-1 flex gap-4 flex-wrap" style={{ color: 'var(--text-muted)' }}>
-                      {artist.followers_count != null && <span className="num">{artist.followers_count.toLocaleString()} followers</span>}
+                      {artist.followers_count != null && <span className="num">{artist.followers_count.toLocaleString('en-US')} followers</span>}
                       {artist.growth_velocity_pct != null && <span className="num" style={{ color: 'var(--up)' }}>+{artist.growth_velocity_pct}%/mo</span>}
                       {artist.engagement_rate_pct != null && <span className="num">{artist.engagement_rate_pct}% engagement</span>}
                       {artist.scout_name && <span>Scout: {artist.scout_name}</span>}

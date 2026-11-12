@@ -1,4 +1,5 @@
 'use client';
+import { LocalDateTime } from '@/components/LocalTime';
 import { useState } from 'react';
 import { ROLE_LABELS, ROLES, Role, User } from '@/lib/types';
 
@@ -36,7 +37,7 @@ function UserRow({ user, currentAdminId }: { user: User; currentAdminId: number 
         <div className="text-xs" style={{ color: 'var(--text-faint)' }}>{user.email}</div>
       </td>
       <td className="num py-2 pr-3 text-sm whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-        {new Date(user.created_at).toLocaleDateString()}
+        <LocalDateTime iso={user.created_at} dateOnly />
       </td>
       <td className="py-2 pr-3">
         <span className="badge" style={ROLE_BADGE_STYLE[role]}>{ROLE_LABELS[role]}</span>

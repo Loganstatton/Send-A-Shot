@@ -1,8 +1,9 @@
 'use client';
+import { TimeAgo } from '@/components/LocalTime';
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { MarketTrade } from '@/lib/db';
-import { formatCents, timeAgo } from '@/lib/format';
+import { formatCents } from '@/lib/format';
 
 type TypeFilter = 'all' | 'buy' | 'sell';
 
@@ -18,9 +19,9 @@ export default function MarketActivityFeed({ trades }: { trades: MarketTrade[] }
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="font-display font-bold text-lg m-0">Market activity</h2>
         <div className="flex items-center gap-2.5">
-          <button type="button" onClick={() => setType('all')} className={chip(type === 'all')}>All</button>
-          <button type="button" onClick={() => setType('buy')} className={chip(type === 'buy')}>Buys</button>
-          <button type="button" onClick={() => setType('sell')} className={chip(type === 'sell')}>Sells</button>
+          <button type="button" aria-pressed={type === 'all'} onClick={() => setType('all')} className={chip(type === 'all')}>All</button>
+          <button type="button" aria-pressed={type === 'buy'} onClick={() => setType('buy')} className={chip(type === 'buy')}>Buys</button>
+          <button type="button" aria-pressed={type === 'sell'} onClick={() => setType('sell')} className={chip(type === 'sell')}>Sells</button>
         </div>
       </div>
 
@@ -43,7 +44,7 @@ export default function MarketActivityFeed({ trades }: { trades: MarketTrade[] }
               </div>
               <div className="flex items-center gap-2.5 shrink-0">
                 <span className="num" style={{ color: 'var(--text)' }}>{formatCents(Math.abs(t.credits_delta_cents))}</span>
-                <span className="text-[11.5px]" style={{ color: 'var(--text-faint)' }}>{timeAgo(t.created_at)}</span>
+                <span className="text-[11.5px]" style={{ color: 'var(--text-faint)' }}><TimeAgo iso={t.created_at} /></span>
               </div>
             </div>
           ))}

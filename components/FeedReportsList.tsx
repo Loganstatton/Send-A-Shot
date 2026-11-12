@@ -1,4 +1,5 @@
 'use client';
+import { LocalDateTime } from '@/components/LocalTime';
 import { useState } from 'react';
 import Link from 'next/link';
 
@@ -45,7 +46,7 @@ export default function FeedReportsList({ initial }: { initial: ReportedPost[] }
               <span className="badge">{p.reportCount} report{p.reportCount === 1 ? '' : 's'}</span>
               {p.hidden && <span className="badge">Hidden</span>}
               <span>· about {p.artistName}</span>
-              <span>· posted {new Date(p.createdAt).toLocaleString()}</span>
+              <span>· posted <LocalDateTime iso={p.createdAt} /></span>
             </div>
             <p className="mt-1.5 mb-0 text-sm">{p.body}</p>
             <p className="mt-1.5 mb-0 text-xs" style={{ color: 'var(--text-muted)' }}>

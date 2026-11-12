@@ -124,6 +124,7 @@ export default function FeedView({
           <button
             key={t.key}
             type="button"
+            aria-pressed={tab === t.key}
             onClick={() => changeTab(t.key)}
             className={`next-pill ${tab === t.key ? 'next-pill-active' : ''}`}
           >

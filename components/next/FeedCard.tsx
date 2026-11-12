@@ -1,8 +1,9 @@
 'use client';
+import { TimeAgo } from '@/components/LocalTime';
 import { useState } from 'react';
 import Link from 'next/link';
 import { FeedItemDTO } from '@/lib/feed-items';
-import { formatCents, timeAgo } from '@/lib/format';
+import { formatCents } from '@/lib/format';
 import { track } from '@/lib/track';
 import YouTubePreviewButton from '@/components/next/YouTubePreviewButton';
 import WatchButton from '@/components/next/WatchButton';
@@ -26,7 +27,7 @@ function cardContent(item: FeedItemDTO, viewerUserId: number): { icon: string; e
         icon: '💎',
         eyebrow: 'Early discovery',
         headline: `${item.actor?.name ?? 'Someone'} found ${artistName} early`,
-        body: num('followersAtDiscovery') != null ? `${(num('followersAtDiscovery') as number).toLocaleString()} followers at the time` : undefined,
+        body: num('followersAtDiscovery') != null ? `${(num('followersAtDiscovery') as number).toLocaleString('en-US')} followers at the time` : undefined,
       };
     case 'artist_update':
       return { icon: '📣', eyebrow: `Update from ${artistName}`, headline: item.extra?.logMessage ?? 'Posted an update', body: undefined };
@@ -196,7 +197,7 @@ export default function FeedCard({
             {content.icon} {content.eyebrow}
           </span>
           <span style={{ color: 'var(--text-faint)' }}>·</span>
-          <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>{timeAgo(item.createdAt)}</span>
+          <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}><TimeAgo iso={item.createdAt} /></span>
         </div>
 
         <p className="m-0 text-[14.5px] font-semibold leading-snug">{content.headline}</p>
