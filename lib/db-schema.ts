@@ -644,4 +644,37 @@ CREATE TABLE IF NOT EXISTS beta_feedback (
 CREATE INDEX IF NOT EXISTS idx_beta_feedback_created ON beta_feedback(created_at);
 `,
   },
+  {
+    // Security hardening:
+    //  - session_version: every session token carries it; bumping it (on a
+    //    password change/reset or "log out other devices") ends every
+    //    other session at once.
+    //  - login_attempts: failed logins per email and per network address
+    //    (both stored only as SHA-256 hashes) for rate limiting.
+    //  - admin_audit_log: who did what in the admin/staff tools.
+    id: '010_security',
+    sql: `
+ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version BIGINT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id BIGSERIAL PRIMARY KEY,
+  email_key TEXT COLLATE "C" NOT NULL,
+  ip_key TEXT COLLATE "C",
+  kind TEXT COLLATE "C" NOT NULL,
+  ok BIGINT NOT NULL,
+  created_at TEXT COLLATE "C" NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_email ON login_attempts(email_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip_key, created_at);
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  actor_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT COLLATE "C" NOT NULL,
+  target_type TEXT COLLATE "C",
+  target_id TEXT COLLATE "C",
+  detail TEXT COLLATE "C",
+  created_at TEXT COLLATE "C" NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at);
+`,
+  },
 ];

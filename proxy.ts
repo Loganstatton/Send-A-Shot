@@ -30,8 +30,38 @@ function needsLogin(pathname: string): boolean {
   return LOGIN_REQUIRED.some((p) => pathname === p || pathname.startsWith(p + '/'));
 }
 
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+// Defence in depth against cross-site request forgery, on top of the
+// SameSite=Lax session cookie: a browser request that changes something
+// (POST/PATCH/PUT/DELETE) must come from a page on this same site. Browsers
+// always send Origin on such requests; server-to-server callers (scheduled
+// jobs with a secret) send none and are unaffected.
+export function crossSiteApiWrite(req: NextRequest): boolean {
+  if (SAFE_METHODS.has(req.method)) return false;
+  const origin = req.headers.get('origin');
+  if (!origin) return false;
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return true; // "null" or garbage
+  }
+  const allowed = new Set(
+    [req.headers.get('x-forwarded-host'), req.headers.get('host'), req.nextUrl.host]
+      .concat(process.env.APP_URL ? [new URL(process.env.APP_URL).host] : [])
+      .filter((h): h is string => !!h)
+      .flatMap((h) => h.split(',').map((x) => x.trim())),
+  );
+  return !allowed.has(originHost);
+}
+
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
+  if (pathname.startsWith('/api/')) {
+    if (crossSiteApiWrite(req)) return NextResponse.json({ error: 'Cross-site request blocked.' }, { status: 403 });
+    return NextResponse.next();
+  }
   const signedOut = !req.cookies.has('scout_session');
   if (pathname === '/' && signedOut) {
     return NextResponse.redirect(new URL('/next', req.url));
@@ -47,6 +77,7 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Pages only — not API routes, Next's own assets, or files with an extension.
-  matcher: ['/((?!api/|_next/|.*\\..*).*)'],
+  // Pages (not Next's own assets or files with an extension), plus API
+  // routes for the cross-site check above.
+  matcher: ['/((?!_next/|.*\\..*).*)', '/api/:path*'],
 };

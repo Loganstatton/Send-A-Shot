@@ -201,6 +201,8 @@ export type User = {
   email_notifications_enabled: boolean;
   notifications_emailed_through?: string;
   last_login_at?: string;
+  // Bumped to end every existing session — see lib/auth.ts.
+  session_version?: number;
 };
 
 export type LogType = 'note' | 'outreach' | 'response' | 'meeting' | 'status_change' | 'claim';

@@ -12,6 +12,7 @@ const TABS = [
   { href: '/admin/feedback', label: 'Beta feedback' },
   { href: '/admin/errors', label: 'Errors' },
   { href: '/admin/backups', label: 'Backups' },
+  { href: '/admin/audit', label: 'Audit log' },
 ];
 
 export default function AdminTabs() {

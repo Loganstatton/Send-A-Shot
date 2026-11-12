@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logAdminAction } from '@/lib/audit';
 import { getAdminUser } from '@/lib/auth';
 import { restoreBackup } from '@/lib/db-backup';
 import { logServerError } from '@/lib/error-log';
@@ -22,6 +23,9 @@ export async function POST(req: Request, props: { params: Promise<{ fileName: st
 
   try {
     const result = await restoreBackup(params.fileName);
+    // Logged after the restore so the entry survives it (the restore
+    // replaces this table's contents with the snapshot's).
+    await logAdminAction(admin.id, 'database_restored', { type: 'snapshot', id: params.fileName });
     return NextResponse.json(result);
   } catch (err: any) {
     // Best-effort: the restore's own transaction rolled back, so the
