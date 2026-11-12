@@ -161,8 +161,14 @@ async function crawl(ctx, role, starts, { buttons = true } = {}) {
     if (vw < 500) {
       // Wider than the phone's screen means sideways scrolling and cut-off,
       // hard-to-tap controls (a mobile browser widens the page to fit).
-      const width = await page.evaluate(() => document.documentElement.scrollWidth);
-      if (width > vw + 1) report('too wide on phone', `${role} ${key}`, `${width}px on a ${vw}px screen`);
+      // Anything sticking out past the screen that isn't inside its own
+      // sideways-scrolling box (a wide table in a scroll box is fine).
+      const sticksOut = await page.evaluate((w) => {
+        const clipped = (e) => { for (let a = e.parentElement; a; a = a.parentElement) { const o = getComputedStyle(a).overflowX; if (o === 'auto' || o === 'scroll' || o === 'hidden' || o === 'clip') return a !== document.documentElement && a !== document.body; } return false; };
+        const bad = [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > w + 1 && getComputedStyle(e).position !== 'fixed' && !clipped(e));
+        return bad.slice(0, 2).map((e) => `${e.tagName.toLowerCase()} "${(e.textContent || '').trim().slice(0, 30)}" reaches ${Math.round(e.getBoundingClientRect().right)}px`);
+      }, vw);
+      if (sticksOut.length) report('too wide on phone', `${role} ${key}`, `${sticksOut.join('; ')} on a ${vw}px screen`);
     }
     const links = await page.evaluate(() => [...document.querySelectorAll('a[href]')].map((a) => a.getAttribute('href')));
     for (const href of links) {
