@@ -701,4 +701,28 @@ CREATE TABLE IF NOT EXISTS feed_muted_artists (
 );
 `,
   },
+  {
+    // Every email the app tries to send, and how it went — so a lost
+    // verification or reset email is visible (admin Email page) instead of
+    // silent, and so the daily send count can keep room under the
+    // provider's daily cap for the emails that matter most.
+    id: '012_email_log',
+    sql: `
+CREATE TABLE IF NOT EXISTS email_log (
+  id BIGSERIAL PRIMARY KEY,
+  kind TEXT COLLATE "C" NOT NULL,
+  -- CASCADE: deleting an account deletes its email records (and address).
+  user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+  to_email TEXT COLLATE "C" NOT NULL,
+  subject TEXT COLLATE "C" NOT NULL,
+  status TEXT COLLATE "C" NOT NULL,
+  attempts BIGINT NOT NULL DEFAULT 0,
+  provider_id TEXT COLLATE "C",
+  error TEXT COLLATE "C",
+  created_at TEXT COLLATE "C" NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_log_created ON email_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_email_log_status ON email_log(status, created_at);
+`,
+  },
 ];

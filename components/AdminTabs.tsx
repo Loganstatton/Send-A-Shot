@@ -10,6 +10,7 @@ const TABS = [
   { href: '/admin/market-integrity', label: 'Market integrity' },
   { href: '/admin/feed-reports', label: 'Feed reports' },
   { href: '/admin/feedback', label: 'Beta feedback' },
+  { href: '/admin/email', label: 'Email' },
   { href: '/admin/errors', label: 'Errors' },
   { href: '/admin/backups', label: 'Backups' },
   { href: '/admin/audit', label: 'Audit log' },

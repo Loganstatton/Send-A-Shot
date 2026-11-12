@@ -368,6 +368,6 @@ export async function maybeSendNotificationDigestEmail(user: User, notifications
     <ul>${unsent.map((n) => `<li>${n.message}</li>`).join('')}</ul>
     <p style="color:#888;font-size:12px;">You're getting this because email notifications are on in your NEXT settings.</p>
   `;
-  const result = await sendEmail({ to: user.email, subject: `${unsent.length} new update${unsent.length === 1 ? '' : 's'} on NEXT`, html });
+  const result = await sendEmail({ to: user.email, subject: `${unsent.length} new update${unsent.length === 1 ? '' : 's'} on NEXT`, html, kind: 'digest', userId: user.id });
   if (result.ok) await setNotificationsEmailedThrough(user.id, new Date().toISOString());
 }

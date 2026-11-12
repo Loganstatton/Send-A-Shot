@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getUserByEmail } from '@/lib/db';
 import { createActionToken } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
+import { resetPasswordMessage } from '@/lib/email-templates';
 import { clientIp, recordAttempt, resetEmailBlocked } from '@/lib/login-guard';
 
 export const dynamic = 'force-dynamic';
@@ -25,11 +26,10 @@ export async function POST(req: Request) {
   if (user) {
     const token = await createActionToken(user.id, 'reset-password', RESET_TOKEN_TTL_SEC, user.password_hash);
     const appUrl = process.env.APP_URL ?? new URL(req.url).origin;
-    sendEmail({
-      to: user.email,
-      subject: 'Reset your Send-A-Shot password',
-      html: `<p>Reset your password — this link expires in 1 hour and stops working as soon as it's used.</p><p><a href="${appUrl}/reset-password?token=${token}">Reset password</a></p><p>If you didn't request this, you can ignore this email.</p>`,
-    }).catch((err) => console.error('[forgot-password] email failed to send', err?.message));
+    // Not awaited: waiting would make the response slower for real
+    // accounts than for unknown emails, revealing which exist. sendEmail
+    // retries and records the outcome either way.
+    sendEmail({ to: user.email, ...resetPasswordMessage(appUrl, token), kind: 'reset', userId: user.id }).catch((err) => console.error('[forgot-password] email failed to send', err?.message));
   }
 
   return NextResponse.json({ ok: true, message: 'If an account exists for that email, a reset link is on its way.' });

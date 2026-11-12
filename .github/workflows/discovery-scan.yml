@@ -114,6 +114,7 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
       - name: Back up database
+        id: backup
         run: |
           status=$(curl -sS -o /tmp/response.json -w '%{http_code}' -X POST "$APP_URL/api/admin/backup" \
             -H "x-cron-secret: $CRON_SECRET")
@@ -121,5 +122,42 @@ jobs:
           echo
           echo "HTTP $status"
           [ "$status" -lt 400 ]
+          echo "file=$(jq -r '.fileName // empty' /tmp/response.json)" >> "$GITHUB_OUTPUT"
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+      # Off-site copy. The snapshot is encrypted ON THE SERVER with
+      # BACKUP_ENCRYPTION_KEY (set only in Render's Environment tab and kept
+      # in the owner's password manager), so this public repository's
+      # artifacts only ever hold ciphertext. If the key isn't set, the server
+      # refuses (503) and this step skips the upload rather than ever storing
+      # a readable copy. Decrypt with scripts/decrypt-backup.js.
+      - name: Fetch encrypted off-site copy
+        id: offsite
+        if: steps.backup.outputs.file != ''
+        run: |
+          mkdir -p offsite
+          out="offsite/${FILE}.enc"
+          status=$(curl -sS -o "$out" -w '%{http_code}' "$APP_URL/api/admin/backup/${FILE}/encrypted" \
+            -H "x-cron-secret: $CRON_SECRET")
+          echo "HTTP $status"
+          if [ "$status" = "503" ]; then
+            echo "::warning::Off-site backup skipped: BACKUP_ENCRYPTION_KEY is not set on the server."
+            rm -f "$out"; exit 0
+          fi
+          [ "$status" -lt 400 ]
+          # Refuse to upload anything that isn't our encrypted format.
+          [ "$(head -c 7 "$out")" = "NXTBAK1" ] || { echo "::error::Not an encrypted backup; not uploading."; rm -f "$out"; exit 1; }
+          echo "ready=1" >> "$GITHUB_OUTPUT"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          FILE: ${{ steps.backup.outputs.file }}
+
+      - name: Keep encrypted copy for 30 days
+        if: steps.offsite.outputs.ready == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-backup-${{ steps.backup.outputs.file }}
+          path: offsite/*.enc
+          retention-days: 30
+          if-no-files-found: error

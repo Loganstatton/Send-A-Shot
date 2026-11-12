@@ -125,7 +125,7 @@ export default function SettingsForm({ user, genreOptions, genrePrefs, mutedArti
       const res = await fetch('/api/auth/resend-verification', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? 'Could not resend.');
-      setResendMessage(data.delivered === false ? 'Email is not configured on this server yet — check server logs for the link.' : 'Verification email sent.');
+      setResendMessage(data.delivered === false ? "We couldn't send the email just now. Please try again in a few minutes." : 'Verification email sent — check your inbox (and spam folder).');
     } catch (err: any) {
       setResendMessage(err.message ?? 'Could not resend.');
     } finally {
