@@ -1043,7 +1043,12 @@ describe('Leaderboard — time windows and rank movement', () => {
     await db.prepare('UPDATE users SET created_at = ? WHERE id = ?').run(thirtyDaysAgo, user.id);
     const earlyBuy = await executeTrade(user.id, artist.id, 'buy', 600_000);
     if (!earlyBuy.ok) throw new Error(earlyBuy.error);
-    await db.prepare('UPDATE next_transactions SET created_at = ? WHERE user_id = ?').run(twentyDaysAgo, user.id);
+    // Someone else then pushes the price well up, also before the window:
+    // a real all-time gain that the 'week' baseline must already include.
+    const pusher = await createUser({ name: 'Week Window Pusher', email: 'week-window-pusher@example.com', password_hash: 'hash' });
+    const push = await executeTrade(pusher.id, artist.id, 'buy', 900_000);
+    if (!push.ok) throw new Error(push.error);
+    await db.prepare('UPDATE next_transactions SET created_at = ? WHERE user_id IN (?, ?)').run(twentyDaysAgo, user.id, pusher.id);
     await db.prepare('UPDATE next_price_history SET recorded_at = ? WHERE artist_id = ?').run(twentyDaysAgo, artist.id);
 
     // A second trade lands "now" — inside the window.
@@ -1058,6 +1063,24 @@ describe('Leaderboard — time windows and rank movement', () => {
     // (includes only the recent trade) — different baselines, so different
     // numbers, proving 'week' isn't secretly just re-running the all-time math.
     expect(weekEntry.totalReturnPct).not.toBe(allEntry.totalReturnPct);
+  });
+
+  it("'week' shows 0% for a big position nobody has touched all week (baseline and current value are both what it would sell for)", async () => {
+    // Regression: the window baseline used to value holdings at the quoted
+    // price while the current value used sell proceeds, so any large,
+    // untouched position showed a phantom weekly loss.
+    const user = await createUser({ name: 'Idle Whale', email: 'idle-whale@example.com', password_hash: 'hash' });
+    const artist = await makeArtist('Idle Whale Artist');
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    await db.prepare('UPDATE users SET created_at = ? WHERE id = ?').run(thirtyDaysAgo, user.id);
+    const buy = await executeTrade(user.id, artist.id, 'buy', 900_000);
+    if (!buy.ok) throw new Error(buy.error);
+    await db.prepare('UPDATE next_transactions SET created_at = ? WHERE user_id = ?').run(twentyDaysAgo, user.id);
+    await db.prepare('UPDATE next_price_history SET recorded_at = ? WHERE artist_id = ?').run(twentyDaysAgo, artist.id);
+
+    const weekEntry = (await getScoutLeaderboard('week')).find((e) => e.user.id === user.id)!;
+    expect(weekEntry.totalReturnPct).toBe(0);
   });
 
   it('getRankMovements is null for an account that did not exist 7 days ago, and non-null for one that did', async () => {

@@ -49,7 +49,10 @@ export default async function LeaderboardPage(
     <div className="flex flex-col gap-8">
       <div>
         <h1 className="font-display font-bold text-[34px] m-0 tracking-[-0.01em]">Leaderboard</h1>
-        <p className="mt-1 mb-0 text-sm" style={{ color: 'var(--text-faint)' }}>Ranked by paper-trading performance. No real money changes hands.</p>
+        <p className="mt-1 mb-0 text-sm" style={{ color: 'var(--text-faint)' }}>
+          Ranked by paper-trading performance. No real money changes hands.{' '}
+          <Link href="/next/leagues" className="underline underline-offset-2" style={{ color: 'var(--text-muted)' }}>Compete with just your friends in a private league</Link>
+        </p>
       </div>
 
       <div className="flex items-center justify-between flex-wrap gap-3">

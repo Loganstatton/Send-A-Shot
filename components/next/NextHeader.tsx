@@ -32,6 +32,7 @@ export default function NextHeader({
     { href: '/next/activity', label: 'Activity', active: is('/next/activity') },
     { href: '/next/portfolio', label: 'Portfolio', active: is('/next/portfolio') },
     { href: '/next/leaderboard', label: 'Leaderboard', active: is('/next/leaderboard') },
+    { href: '/next/leagues', label: 'Leagues', active: is('/next/leagues') },
     { href: '/next/watchlist', label: 'Watchlist', active: is('/next/watchlist') },
     { href: '/next/submit-artist', label: 'Submit artist', active: is('/next/submit-artist') },
     ...(hasClaimedArtist ? [{ href: '/next/my-artist', label: 'My Artist', active: is('/next/my-artist') }] : []),

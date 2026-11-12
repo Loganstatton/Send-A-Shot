@@ -139,6 +139,11 @@ export default function HowItWorksPage() {
           then added to NEXT — finding someone before they were on NEXT at all. Genre boards rank by profit made on that
           genre&apos;s artists.
         </p>
+        <p className="m-0">
+          <strong style={{ color: 'var(--text)' }}>Private leagues</strong> rank just you and the friends you invite, by portfolio
+          return since each person joined the league — so someone who joins late starts level instead of behind. Only
+          members can see a league&apos;s standings; anyone with its invite link can see its name and size.
+        </p>
       </Section>
 
       <Section id="fair" title="Fair play">

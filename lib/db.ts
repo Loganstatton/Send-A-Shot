@@ -1660,7 +1660,16 @@ type HistoryPricePoint = { artist_id: number; recorded_at: string; price_cents: 
 //
 // Pure: `transactions` is one user's trades oldest-first; `pricePoints` is
 // the price history of every artist they've traded, oldest-first per artist.
-function buildPortfolioValueHistory(transactions: HistoryTransaction[], pricePoints: HistoryPricePoint[]): PortfolioValuePoint[] {
+// valuation 'quoted' (the Portfolio chart): holdings at shares × price.
+// 'liquidation' (leaderboard baselines): holdings at what selling them would
+// actually return, the same way a scout's CURRENT value is computed in
+// getScoutStandings — so a "return since <date>" compares like with like
+// instead of penalizing big positions for the sell-side price impact.
+function buildPortfolioValueHistory(
+  transactions: HistoryTransaction[],
+  pricePoints: HistoryPricePoint[],
+  valuation: 'quoted' | 'liquidation' = 'quoted',
+): PortfolioValuePoint[] {
   if (transactions.length === 0) return [];
 
   const moments = new Map<string, { txs: HistoryTransaction[]; prices: HistoryPricePoint[] }>();
@@ -1682,7 +1691,14 @@ function buildPortfolioValueHistory(transactions: HistoryTransaction[], pricePoi
     for (const p of m.prices) latestPriceByArtist.set(p.artist_id, p.price_cents);
 
     let holdingsValueCents = 0;
-    for (const [artistId, shares] of sharesByArtist) holdingsValueCents += shares * (latestPriceByArtist.get(artistId) ?? 0);
+    for (const [artistId, shares] of sharesByArtist) {
+      const price = latestPriceByArtist.get(artistId) ?? 0;
+      if (valuation === 'liquidation') {
+        if (shares > 0 && price > 0) holdingsValueCents += quoteSell(price, shares).proceedsCents;
+      } else {
+        holdingsValueCents += shares * price;
+      }
+    }
     return { recorded_at: at, value_cents: Math.round(cashCents + holdingsValueCents) };
   });
 }
@@ -1943,7 +1959,7 @@ async function getScoutStandings(): Promise<ScoutStanding[]> {
 
     const transactions = txByUser.get(user.id) ?? [];
     const tradedArtistIds = [...new Set(transactions.map((t) => t.artist_id))];
-    const history = buildPortfolioValueHistory(transactions, tradedArtistIds.flatMap((id) => pricesByArtist.get(id) ?? []));
+    const history = buildPortfolioValueHistory(transactions, tradedArtistIds.flatMap((id) => pricesByArtist.get(id) ?? []), 'liquidation');
 
     return {
       user,
@@ -2037,6 +2053,35 @@ export async function getRankMovementsCached(): Promise<Record<number, number | 
   const value = await getRankMovements();
   rankMovementsCache = { key, at: Date.now(), value };
   return value;
+}
+
+export type StandingSince = {
+  user: { id: number; name: string; avatar_url?: string };
+  returnSincePct: number;
+  totalReturnPct: number;
+  portfolioValueCents: number;
+  artistsBackedCount: number;
+};
+
+// Each listed scout's return measured from their own start date (e.g. when
+// they joined a private league) instead of from signup — so someone who
+// joins a league late, or after a big run, starts level with everyone else.
+// Same portfolio-value reconstruction the weekly/monthly leaderboards use.
+// Unranked and unsorted; callers order it.
+export async function getStandingsSince(sinceByUser: Map<number, string>): Promise<StandingSince[]> {
+  if (sinceByUser.size === 0) return [];
+  const standings = (await getScoutStandings()).filter((s) => sinceByUser.has(s.user.id));
+  return standings.map((s) => {
+    const baselineCents = pastPortfolioValueCents(s, sinceByUser.get(s.user.id)!) ?? NEXT_STARTING_CREDITS_CENTS;
+    const valueCents = s.portfolio.totalValueCents;
+    return {
+      user: { id: s.user.id, name: s.user.name, avatar_url: s.user.avatar_url },
+      returnSincePct: baselineCents !== 0 ? Math.round(((valueCents - baselineCents) / baselineCents) * 1000) / 10 : 0,
+      totalReturnPct: s.portfolio.totalReturnPct,
+      portfolioValueCents: valueCents,
+      artistsBackedCount: s.artistsBackedCount,
+    };
+  });
 }
 
 // Ranked by total return % over `window`; ties broken by artists backed

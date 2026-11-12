@@ -473,6 +473,11 @@ export type AnalyticsEventType =
   // user_take — so "did a user's opinion actually cause a listen/watch/
   // trade" is answerable on its own, not blended into every other post
   // type's numbers.
+  // Private leagues — see lib/leagues.ts.
+  | 'league_created'
+  | 'league_joined'
+  | 'league_left'
+  | 'league_invite_viewed'
   | 'feed_user_post_created'
   | 'feed_user_post_deleted'
   | 'feed_user_post_reported'
