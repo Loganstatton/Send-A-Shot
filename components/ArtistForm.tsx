@@ -217,28 +217,28 @@ export default function ArtistForm({ artist }: Props) {
         <h2 className="font-bold text-lg">Basics</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="label">Name *</label>
-            <input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} required />
+            <label className="label" htmlFor="artist-form-name">Name *</label>
+            <input id="artist-form-name" className="input" value={form.name} onChange={(e) => set('name', e.target.value)} required />
           </div>
           <div>
-            <label className="label">Stage</label>
-            <select className="input" value={form.stage} onChange={(e) => set('stage', e.target.value as any)}>
+            <label className="label" htmlFor="artist-form-stage">Stage</label>
+            <select id="artist-form-stage" className="input" value={form.stage} onChange={(e) => set('stage', e.target.value as any)}>
               {STAGES.map((s) => (
                 <option key={s} value={s}>{STAGE_LABELS[s]}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="label">Genre</label>
-            <input className="input" value={form.genre ?? ''} onChange={(e) => set('genre', e.target.value)} placeholder="Pop/R&B" />
+            <label className="label" htmlFor="artist-form-genre">Genre</label>
+            <input id="artist-form-genre" className="input" value={form.genre ?? ''} onChange={(e) => set('genre', e.target.value)} placeholder="Pop/R&B" />
           </div>
           <div>
-            <label className="label">Location</label>
-            <input className="input" value={form.location ?? ''} onChange={(e) => set('location', e.target.value)} placeholder="Austin, TX" />
+            <label className="label" htmlFor="artist-form-location">Location</label>
+            <input id="artist-form-location" className="input" value={form.location ?? ''} onChange={(e) => set('location', e.target.value)} placeholder="Austin, TX" />
           </div>
           <div>
-            <label className="label">Scout</label>
-            <input className="input" value={form.scout_name ?? ''} onChange={(e) => set('scout_name', e.target.value)} placeholder="Who found them" />
+            <label className="label" htmlFor="artist-form-scout">Scout</label>
+            <input id="artist-form-scout" className="input" value={form.scout_name ?? ''} onChange={(e) => set('scout_name', e.target.value)} placeholder="Who found them" />
           </div>
         </div>
       </div>
@@ -247,8 +247,8 @@ export default function ArtistForm({ artist }: Props) {
         <h2 className="font-bold text-lg">Media <span className="font-normal text-sm" style={{ color: 'var(--text-faint)' }}>— what NEXT users actually see</span></h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="label">Photo URL</label>
-            <input className="input" value={form.photo_url ?? ''} onChange={(e) => setPhotoUrlManually(e.target.value)} placeholder="https://…jpg" />
+            <label className="label" htmlFor="artist-form-photo-url">Photo URL</label>
+            <input id="artist-form-photo-url" className="input" value={form.photo_url ?? ''} onChange={(e) => setPhotoUrlManually(e.target.value)} placeholder="https://…jpg" />
             {form.photo_source_type === 'WIKIMEDIA_COMMONS' && (
               <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>
                 🖼️ Wikimedia Commons — {form.photo_attribution}. Editing this URL by hand clears that attribution.
@@ -281,32 +281,32 @@ export default function ArtistForm({ artist }: Props) {
             )}
           </div>
           <div>
-            <label className="label">Website URL</label>
-            <input className="input" value={form.website_url ?? ''} onChange={(e) => set('website_url', e.target.value)} placeholder="https://…" />
+            <label className="label" htmlFor="artist-form-website-url">Website URL</label>
+            <input id="artist-form-website-url" className="input" value={form.website_url ?? ''} onChange={(e) => set('website_url', e.target.value)} placeholder="https://…" />
           </div>
           <div>
-            <label className="label">30-second preview clip URL</label>
-            <input className="input" value={form.song_preview_url ?? ''} onChange={(e) => set('song_preview_url', e.target.value)} placeholder="Direct link to an audio file (.mp3, .m4a…)" />
+            <label className="label" htmlFor="artist-form-30-second-preview-clip-url">30-second preview clip URL</label>
+            <input id="artist-form-30-second-preview-clip-url" className="input" value={form.song_preview_url ?? ''} onChange={(e) => set('song_preview_url', e.target.value)} placeholder="Direct link to an audio file (.mp3, .m4a…)" />
             <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Deezer sync fills this automatically when it finds a top track — only type one in to override it</p>
           </div>
           <div>
-            <label className="label">Top song link</label>
-            <input className="input" value={form.top_song_url ?? ''} onChange={(e) => set('top_song_url', e.target.value)} placeholder="Link to their best/most popular track" />
+            <label className="label" htmlFor="artist-form-top-song-link">Top song link</label>
+            <input id="artist-form-top-song-link" className="input" value={form.top_song_url ?? ''} onChange={(e) => set('top_song_url', e.target.value)} placeholder="Link to their best/most popular track" />
             <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Deezer sync fills this automatically (dashboard) — only type one in to override it</p>
           </div>
           <div>
-            <label className="label">Why they&apos;re trending</label>
-            <input className="input" value={form.why_trending ?? ''} onChange={(e) => set('why_trending', e.target.value)} placeholder="One line — shown right on the card" />
+            <label className="label" htmlFor="artist-form-why-they-re-trending">Why they&apos;re trending</label>
+            <input id="artist-form-why-they-re-trending" className="input" value={form.why_trending ?? ''} onChange={(e) => set('why_trending', e.target.value)} placeholder="One line — shown right on the card" />
           </div>
           <div>
-            <label className="label">Featured video</label>
-            <input className="input" value={form.featured_video_id ?? ''} onChange={(e) => set('featured_video_id', e.target.value)} placeholder="YouTube link — plays behind their NEXT profile" />
+            <label className="label" htmlFor="artist-form-featured-video">Featured video</label>
+            <input id="artist-form-featured-video" className="input" value={form.featured_video_id ?? ''} onChange={(e) => set('featured_video_id', e.target.value)} placeholder="YouTube link — plays behind their NEXT profile" />
             <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Filled automatically when approved from a YouTube discovery candidate — paste a link to override it</p>
           </div>
         </div>
         <div>
-          <label className="label">Short bio</label>
-          <textarea className="input min-h-[70px]" value={form.bio ?? ''} onChange={(e) => set('bio', e.target.value)} placeholder="A couple sentences for their NEXT page" />
+          <label className="label" htmlFor="artist-form-short-bio">Short bio</label>
+          <textarea id="artist-form-short-bio" className="input min-h-[70px]" value={form.bio ?? ''} onChange={(e) => set('bio', e.target.value)} placeholder="A couple sentences for their NEXT page" />
         </div>
       </div>
 
@@ -314,24 +314,24 @@ export default function ArtistForm({ artist }: Props) {
         <h2 className="font-bold text-lg">Platforms</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="label">TikTok URL</label>
-            <input className="input" value={form.tiktok_url ?? ''} onChange={(e) => set('tiktok_url', e.target.value)} />
+            <label className="label" htmlFor="artist-form-tiktok-url">TikTok URL</label>
+            <input id="artist-form-tiktok-url" className="input" value={form.tiktok_url ?? ''} onChange={(e) => set('tiktok_url', e.target.value)} />
           </div>
           <div>
-            <label className="label">Instagram URL</label>
-            <input className="input" value={form.instagram_url ?? ''} onChange={(e) => set('instagram_url', e.target.value)} />
+            <label className="label" htmlFor="artist-form-instagram-url">Instagram URL</label>
+            <input id="artist-form-instagram-url" className="input" value={form.instagram_url ?? ''} onChange={(e) => set('instagram_url', e.target.value)} />
           </div>
           <div>
-            <label className="label">YouTube URL</label>
-            <input className="input" value={form.youtube_url ?? ''} onChange={(e) => set('youtube_url', e.target.value)} />
+            <label className="label" htmlFor="artist-form-youtube-url">YouTube URL</label>
+            <input id="artist-form-youtube-url" className="input" value={form.youtube_url ?? ''} onChange={(e) => set('youtube_url', e.target.value)} />
           </div>
           <div>
-            <label className="label">Spotify URL</label>
-            <input className="input" value={form.spotify_url ?? ''} onChange={(e) => set('spotify_url', e.target.value)} />
+            <label className="label" htmlFor="artist-form-spotify-url">Spotify URL</label>
+            <input id="artist-form-spotify-url" className="input" value={form.spotify_url ?? ''} onChange={(e) => set('spotify_url', e.target.value)} />
           </div>
           <div>
-            <label className="label">SoundCloud URL</label>
-            <input className="input" value={form.soundcloud_url ?? ''} onChange={(e) => set('soundcloud_url', e.target.value)} />
+            <label className="label" htmlFor="artist-form-soundcloud-url">SoundCloud URL</label>
+            <input id="artist-form-soundcloud-url" className="input" value={form.soundcloud_url ?? ''} onChange={(e) => set('soundcloud_url', e.target.value)} />
           </div>
         </div>
       </div>
@@ -346,23 +346,23 @@ export default function ArtistForm({ artist }: Props) {
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="label">Followers</label>
-            <input type="number" min={0} className="input" value={form.followers_count ?? ''} onChange={(e) => set('followers_count', e.target.value === '' ? undefined : Number(e.target.value))} />
+            <label className="label" htmlFor="artist-form-followers">Followers</label>
+            <input id="artist-form-followers" type="number" min={0} className="input" value={form.followers_count ?? ''} onChange={(e) => set('followers_count', e.target.value === '' ? undefined : Number(e.target.value))} />
             <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Soundcharts sync fills this when linked</p>
           </div>
           <div>
-            <label className="label">Monthly listeners</label>
-            <input type="number" min={0} className="input" value={form.monthly_listeners ?? ''} onChange={(e) => set('monthly_listeners', e.target.value === '' ? undefined : Number(e.target.value))} />
+            <label className="label" htmlFor="artist-form-monthly-listeners">Monthly listeners</label>
+            <input id="artist-form-monthly-listeners" type="number" min={0} className="input" value={form.monthly_listeners ?? ''} onChange={(e) => set('monthly_listeners', e.target.value === '' ? undefined : Number(e.target.value))} />
             <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>Manual only — Spotify doesn&apos;t expose this via any API</p>
           </div>
           <div>
-            <label className="label">30-day growth %</label>
-            <input type="number" step="0.1" className="input" value={form.growth_velocity_pct ?? ''} onChange={(e) => set('growth_velocity_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
+            <label className="label" htmlFor="artist-form-30-day-growth">30-day growth %</label>
+            <input id="artist-form-30-day-growth" type="number" step="0.1" className="input" value={form.growth_velocity_pct ?? ''} onChange={(e) => set('growth_velocity_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
             <p className="text-xs mt-1" style={{ color: 'var(--accent)' }}>✓ Soundcharts sync fills this when linked</p>
           </div>
           <div>
-            <label className="label">Engagement rate %</label>
-            <input type="number" step="0.1" className="input" value={form.engagement_rate_pct ?? ''} onChange={(e) => set('engagement_rate_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
+            <label className="label" htmlFor="artist-form-engagement-rate">Engagement rate %</label>
+            <input id="artist-form-engagement-rate" type="number" step="0.1" className="input" value={form.engagement_rate_pct ?? ''} onChange={(e) => set('engagement_rate_pct', e.target.value === '' ? undefined : Number(e.target.value))} />
             <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>Manual only — not returned by Soundcharts on this plan</p>
           </div>
         </div>
@@ -382,16 +382,18 @@ export default function ArtistForm({ artist }: Props) {
           {RATED_SCORE_FIELDS.map((field) => (
             <div key={field}>
               <div className="flex items-center justify-between">
-                <label className="label mb-0">{SCORE_LABELS[field]}</label>
+                <label className="label mb-0" htmlFor={`artist-form-score-${field}`}>{SCORE_LABELS[field]}</label>
                 <span className="num text-sm" style={{ color: 'var(--text-muted)' }}>
                   {(form[field] as number) ?? 0}/10 · weight {SCORE_WEIGHTS[field]}%
                 </span>
               </div>
               <input
+                id={`artist-form-score-${field}`}
                 type="range"
                 min={0}
                 max={10}
                 step={0.5}
+                aria-valuetext={`${(form[field] as number) ?? 0} out of 10`}
                 className="slider"
                 value={(form[field] as number) ?? 0}
                 onChange={(e) => set(field, Number(e.target.value) as any)}
@@ -401,10 +403,10 @@ export default function ArtistForm({ artist }: Props) {
         </div>
         {hasHighRating && (
           <div className="space-y-2 rounded-lg px-4 py-3" style={{ border: '1px solid var(--fire-line)', background: 'var(--fire-dim)' }}>
-            <label className="label mb-0" style={{ color: 'var(--fire)' }}>
+            <label className="label mb-0" style={{ color: 'var(--fire)' }} htmlFor="artist-form-at-least-one-category-is-rated-why">
               ⚠ At least one category is rated {HIGH_RATING_THRESHOLD}+ — why?
             </label>
-            <textarea
+            <textarea id="artist-form-at-least-one-category-is-rated-why"
               className="input min-h-[60px]"
               value={form.high_rating_note ?? ''}
               onChange={(e) => set('high_rating_note', e.target.value)}
@@ -415,8 +417,8 @@ export default function ArtistForm({ artist }: Props) {
       </div>
 
       <div className="card space-y-2">
-        <label className="label">Notes</label>
-        <textarea
+        <label className="label" htmlFor="artist-form-notes">Notes</label>
+        <textarea id="artist-form-notes"
           className="input min-h-[100px]"
           value={form.notes ?? ''}
           onChange={(e) => set('notes', e.target.value)}

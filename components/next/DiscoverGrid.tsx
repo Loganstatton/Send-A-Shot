@@ -157,12 +157,14 @@ export default function DiscoverGrid({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search artists"
             placeholder="Search artists…"
             className="w-full pl-9 pr-3 py-2 rounded-lg text-sm border"
             style={{ background: 'var(--surface)', borderColor: 'var(--border-soft)', color: 'var(--text)' }}
           />
         </div>
         <select
+          aria-label="Sort artists"
           value={sort}
           onChange={(e) => {
             setSort(e.target.value as SortMode);

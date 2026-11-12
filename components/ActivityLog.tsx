@@ -77,14 +77,14 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
 
       <form onSubmit={handleAdd} className="space-y-2">
         <div className="flex gap-2 flex-wrap">
-          <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value as LogType)}>
+          <select aria-label="Entry type" className="input w-auto" value={type} onChange={(e) => setType(e.target.value as LogType)}>
             {LOG_TYPES.map((t) => (
               <option key={t} value={t}>{LOG_TYPE_LABELS[t]}</option>
             ))}
           </select>
           <div className="flex items-center gap-2">
-            <label className="text-xs whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>Follow up on</label>
-            <input
+            <label className="text-xs whitespace-nowrap" style={{ color: 'var(--text-faint)' }} htmlFor="activity-log-follow-up-on">Follow up on</label>
+            <input id="activity-log-follow-up-on"
               type="date"
               className="input w-auto"
               value={followUpAt}
@@ -93,6 +93,7 @@ export default function ActivityLog({ artistId }: { artistId: number }) {
           </div>
         </div>
         <textarea
+          aria-label="What happened"
           className="input min-h-[70px]"
           placeholder="What happened? e.g. 'Sent an intro DM about her original music.'"
           value={message}

@@ -209,8 +209,8 @@ export default function TradePanel({
 
       {!confirming ? (
         <form onSubmit={startConfirm} className="flex flex-col gap-2">
-          <label className="text-[12.5px]" style={rowLabel}>{mode === 'buy' ? 'Spend' : 'Sell'} (NEXT Credits $)</label>
-          <input
+          <label className="text-[12.5px]" style={rowLabel} htmlFor="trade-panel-next-credits">{mode === 'buy' ? 'Spend' : 'Sell'} (NEXT Credits $)</label>
+          <input id="trade-panel-next-credits"
             type="number"
             inputMode="decimal"
             step="0.01"

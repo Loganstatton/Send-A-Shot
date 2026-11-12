@@ -100,7 +100,7 @@ export default function FeedComposer({ onPosted, openSignal = 0 }: { onPosted: (
   return (
     <div className="next-card p-5 flex flex-col gap-3">
       <div>
-        <label className="text-[11px] font-mono uppercase tracking-[0.06em]" style={{ color: 'var(--text-faint)' }}>
+        <label className="text-[11px] font-mono uppercase tracking-[0.06em]" style={{ color: 'var(--text-faint)' }} htmlFor="feed-composer-artist-search">
           What artist are you talking about?
         </label>
         <div ref={searchBoxRef} className="relative mt-1.5">
@@ -122,6 +122,7 @@ export default function FeedComposer({ onPosted, openSignal = 0 }: { onPosted: (
           ) : (
             <>
               <input
+                id="feed-composer-artist-search"
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -165,10 +166,10 @@ export default function FeedComposer({ onPosted, openSignal = 0 }: { onPosted: (
       </div>
 
       <div>
-        <label className="text-[11px] font-mono uppercase tracking-[0.06em]" style={{ color: 'var(--text-faint)' }}>
+        <label className="text-[11px] font-mono uppercase tracking-[0.06em]" style={{ color: 'var(--text-faint)' }} htmlFor="feed-composer-what-s-your-take">
           What&apos;s your take?
         </label>
-        <textarea
+        <textarea id="feed-composer-what-s-your-take"
           value={body}
           onChange={(e) => setBody(e.target.value)}
           maxLength={BODY_MAX_LENGTH}
