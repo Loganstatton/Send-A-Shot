@@ -9,6 +9,7 @@ live app serves, so the commercial's type matches the product exactly.
 import glob, os
 from fontTools.ttLib import TTFont
 from fontTools.varLib import instancer
+from fontTools.ttLib.removeOverlaps import removeOverlaps   # needs skia-pathops
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MEDIA = os.path.join(HERE, '..', '..', '.next', 'static', 'media')
@@ -26,6 +27,9 @@ def static(path, weight, out):
     t = TTFont(path)
     if 'fvar' in t:
         t = instancer.instantiateVariableFont(t, {a.axisTag: (weight if a.axisTag == 'wght' else a.defaultValue) for a in t['fvar'].axes})
+    # Variable fonts build letters like T from overlapping shapes; Blender's
+    # even-odd fill would punch holes where they overlap, so merge them.
+    removeOverlaps(t)
     t.flavor = None
     t.save(os.path.join(OUT, out))
 

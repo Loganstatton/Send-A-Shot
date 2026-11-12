@@ -96,7 +96,7 @@ the camera dives through it.
 
 ```bash
 python3.11 -m venv blender-venv && blender-venv/bin/pip install bpy   # ~375 MB
-python3.11 -m venv post-venv && post-venv/bin/pip install opencv-python-headless numpy pillow scipy fonttools brotli
+python3.11 -m venv post-venv && post-venv/bin/pip install opencv-python-headless numpy pillow scipy fonttools brotli skia-pathops
 post-venv/bin/python extract_fonts.py
 blender-venv/bin/python opener.py -- --frames 1-90 --out frames --save NEXT-opener.blend
 ./assemble.sh        # post + sound + encode -> NEXT-opener-test.mp4

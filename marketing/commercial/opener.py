@@ -111,6 +111,7 @@ nt.links.new(tc.outputs['Object'], mapr.inputs['Vector']); nt.links.new(mapr.out
 nt.links.new(grad.outputs['Fac'], ramp.inputs['Fac']); nt.links.new(ramp.outputs['Color'], b.inputs['Roughness'])
 
 label_mat, _, _ = principled('Label', EMBER, rough=0.35, coat=0.6, emission=EMBER, estr=0.6)
+label_dot_mat, _, _ = principled('LabelDot', INK, rough=0.5)
 ink_mat, _, _ = principled('Ink', INK, rough=0.5)
 core_mat, cnt, cb = principled('Core', (0, 0, 0), emission=EMBER_HOT, estr=0.0)
 
@@ -128,8 +129,12 @@ pr.color_ramp.elements[0].color = (*EMBER, 1); pr.color_ramp.elements[1].color =
 pr.color_ramp.elements[1].position = 0.95
 em = pn.new('ShaderNodeEmission'); out = pn.new('ShaderNodeOutputMaterial')
 mul = pn.new('ShaderNodeMath'); mul.operation = 'MULTIPLY_ADD'; mul.inputs[1].default_value = 14.0; mul.inputs[2].default_value = 6.0
+fl = pn.new('ShaderNodeAttribute'); fl.attribute_name = 'flight'
+dim = pn.new('ShaderNodeMath'); dim.operation = 'MULTIPLY_ADD'; dim.inputs[1].default_value = -0.6; dim.inputs[2].default_value = 1.0
+pl.new(fl.outputs['Fac'], dim.inputs[0])
+mul2 = pn.new('ShaderNodeMath'); mul2.operation = 'MULTIPLY'
 pl.new(attr.outputs['Fac'], pr.inputs['Fac']); pl.new(pr.outputs['Color'], em.inputs['Color'])
-pl.new(attr.outputs['Fac'], mul.inputs[0]); pl.new(mul.outputs[0], em.inputs['Strength'])
+pl.new(attr.outputs['Fac'], mul.inputs[0]); pl.new(mul.outputs[0], mul2.inputs[0]); pl.new(dim.outputs[0], mul2.inputs[1]); pl.new(mul2.outputs[0], em.inputs['Strength'])
 pl.new(em.outputs[0], out.inputs['Surface'])
 
 # ---------------------------------------------------------------- record
@@ -220,20 +225,30 @@ hole = bpy.context.active_object; hole.data.materials.append(ink_mat); hole.pare
 font = bpy.data.fonts.load(FONT)
 cu = bpy.data.curves.new('Wordmark', 'FONT'); cu.body = 'NEXT'; cu.font = font
 cu.size = 0.2; cu.align_x = 'CENTER'; cu.align_y = 'CENTER'; cu.extrude = 0.0015
+cu.align_x = 'LEFT'
 word = link(bpy.data.objects.new('Wordmark', cu)); word.data.materials.append(ink_mat)
-word.parent = spinner; word.location = (-0.03, 0.17, THICK / 2 + 0.004)
+word.parent = spinner
+bpy.context.view_layer.update()
+WORD_W = word.dimensions.x
+DOT_R, DOT_GAP = 0.02, 0.03
+LOCK_W = WORD_W + DOT_GAP + 2 * DOT_R
+word.location = (-LOCK_W / 2, 0.17, THICK / 2 + 0.004)
 dotc = bpy.data.curves.new('Dot', 'CURVE'); dotc.dimensions = '2D'
-bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=0.018, depth=0.003, location=(0.21, 0.17, THICK / 2 + 0.004))
-dot = bpy.context.active_object; dot.data.materials.append(ink_mat); dot.parent = spinner
+bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=DOT_R, depth=0.003, location=(-LOCK_W / 2 + WORD_W + DOT_GAP + DOT_R, 0.17, THICK / 2 + 0.004))
+dot = bpy.context.active_object; dot.data.materials.append(label_dot_mat); dot.parent = spinner
 # Glowing core between the shards: seams of light before the break.
 bpy.ops.mesh.primitive_cylinder_add(vertices=96, radius=R_OUT - 0.02, depth=THICK * 0.6)
 core = bpy.context.active_object; core.data.materials.append(core_mat); core.parent = spinner
 
 # Spin: fast, constant, slowing slightly as it cracks.
-spinner.rotation_euler = (0, 0, 0); spinner.keyframe_insert('rotation_euler', frame=1, index=2)
-spinner.rotation_euler = (0, 0, -math.radians(360 * 1.15)); spinner.keyframe_insert('rotation_euler', frame=F_SHATTER, index=2)
-spinner.rotation_euler = (0, 0, -math.radians(360 * 1.15 + 50)); spinner.keyframe_insert('rotation_euler', frame=F_SHATTER + 20, index=2)
+SPIN0 = math.radians(8)    # wordmark reads level to the camera at the start
+for f_, deg in ((1, 0), (18, -14), (F_SHATTER, -14 - 330), (F_SHATTER + 20, -14 - 330 - 60)):
+    spinner.rotation_euler = (0, 0, SPIN0 + math.radians(deg)); spinner.keyframe_insert('rotation_euler', frame=f_, index=2)
 set_interp(spinner, 'LINEAR')
+for fc in iter_fcurves(spinner.animation_data.action):
+    for kp in fc.keyframe_points:
+        if round(kp.co.x) == 18: kp.interpolation = 'QUAD'; kp.easing = 'EASE_IN'
+        if round(kp.co.x) == F_SHATTER: kp.interpolation = 'QUAD'; kp.easing = 'EASE_OUT'
 # Core glow ramps up through the cracks, flashes, then is gone.
 cs = cb.inputs['Emission Strength']
 for f, v in ((1, 0.0), (24, 0.0), (33, 6.0), (F_SHATTER - 1, 30.0), (F_SHATTER, 120.0), (F_SHATTER + 2, 0.0)):
@@ -400,7 +415,9 @@ twinkle = math_('ADD', 0.75, math_('MULTIPLY', 0.25, math_('SINE', math_('ADD', 
 size = math_('ADD', 0.0042, math_('MULTIPLY', arc, 0.0075))
 size = math_('MULTIPLY', math_('MULTIPLY', size, twinkle), math_('ADD', 0.6, math_('MULTIPLY', a_rnd.outputs['Attribute'], 0.8)))
 radius = math_('MULTIPLY', size, alive)
-m2p = N_.new('GeometryNodeMeshToPoints'); L_.new(setpos.outputs[0], m2p.inputs['Mesh']); L_.new(radius, m2p.inputs['Radius'])
+store = N_.new('GeometryNodeStoreNamedAttribute'); store.data_type = 'FLOAT'; store.inputs['Name'].default_value = 'flight'
+L_.new(setpos.outputs[0], store.inputs['Geometry']); L_.new(arc, store.inputs['Value'])
+m2p = N_.new('GeometryNodeMeshToPoints'); L_.new(store.outputs[0], m2p.inputs['Mesh']); L_.new(radius, m2p.inputs['Radius'])
 smat = N_.new('GeometryNodeSetMaterial'); smat.inputs['Material'].default_value = pmat
 L_.new(m2p.outputs[0], smat.inputs['Geometry']); L_.new(smat.outputs[0], go.inputs[0])
 mod = parts.modifiers.new('Flow', 'NODES'); mod.node_group = ng
