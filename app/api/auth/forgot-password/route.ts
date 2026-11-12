@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getUserByEmail } from '@/lib/db';
 import { createActionToken } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
+import { clientIp, recordAttempt, resetEmailBlocked } from '@/lib/login-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,11 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'A valid email is required.' }, { status: 400 });
 
-  const user = await getUserByEmail(parsed.data.email);
+  // At most a few reset emails per address per hour, so this can't be used
+  // to flood someone's inbox. Same response either way.
+  const blocked = await resetEmailBlocked(parsed.data.email);
+  await recordAttempt('reset', parsed.data.email, clientIp(req.headers), !blocked);
+  const user = blocked ? undefined : await getUserByEmail(parsed.data.email);
   // Always the same response whether or not the account exists — a
   // different message here would let anyone probe which emails have
   // accounts on this app.

@@ -433,7 +433,7 @@ export async function getDueFollowUps(): Promise<DueFollowUp[]> {
 const USER_COLUMNS =
   'id, created_at, name, email, role, next_credits_cents, next_onboarded_at, avatar_url, email_verified_at, tos_accepted_at, privacy_accepted_at, ' +
   'show_positions_publicly, notify_watchlist_moves, notify_new_artists, notify_founding_believer, notify_portfolio_milestones, ' +
-  'notify_leaderboard_rank, email_notifications_enabled, notifications_emailed_through, last_login_at';
+  'notify_leaderboard_rank, email_notifications_enabled, notifications_emailed_through, last_login_at, session_version';
 
 const BOOLEAN_USER_COLUMNS = [
   'show_positions_publicly', 'notify_watchlist_moves', 'notify_new_artists', 'notify_founding_believer',
@@ -505,8 +505,15 @@ export async function updateUserProfile(
   return await getUserById(userId);
 }
 
+// Changing the password also ends every existing session (see
+// session_version in lib/auth.ts); callers that want the current device to
+// stay signed in set a fresh session cookie afterwards.
 export async function updateUserPasswordHash(userId: number, password_hash: string): Promise<void> {
-  await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(password_hash, userId);
+  await db.prepare('UPDATE users SET password_hash = ?, session_version = session_version + 1 WHERE id = ?').run(password_hash, userId);
+}
+
+export async function bumpSessionVersion(userId: number): Promise<void> {
+  await db.prepare('UPDATE users SET session_version = session_version + 1 WHERE id = ?').run(userId);
 }
 
 // The notification center's read/dismiss state — see the notification_reads

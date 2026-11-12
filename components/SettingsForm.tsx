@@ -4,6 +4,28 @@ import { useRouter } from 'next/navigation';
 import { User } from '@/lib/types';
 import GenrePrefsForm from './GenrePrefsForm';
 
+// Ends every other signed-in session (other browsers and phones); this one
+// stays signed in. Changing the password does the same automatically.
+function SessionsCard() {
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  async function revoke() {
+    setState('busy');
+    const res = await fetch('/api/account/sessions', { method: 'POST' });
+    setState(res.ok ? 'done' : 'error');
+  }
+  return (
+    <div className="card space-y-2">
+      <h2 className="font-semibold text-neutral-100">Signed-in devices</h2>
+      <p className="text-xs text-neutral-500">Signed in somewhere you no longer use? This signs out every other browser and phone.</p>
+      <button type="button" className="btn" onClick={revoke} disabled={state === 'busy'}>
+        {state === 'busy' ? 'Signing out…' : 'Log out of all other devices'}
+      </button>
+      {state === 'done' && <p role="status" className="text-sm text-green-400">Done — every other device is signed out.</p>}
+      {state === 'error' && <p role="alert" className="text-sm text-red-300">That didn't work — try again.</p>}
+    </div>
+  );
+}
+
 export default function SettingsForm({ user, genreOptions, genrePrefs }: { user: User; genreOptions: string[]; genrePrefs: string[] }) {
   const router = useRouter();
 
@@ -256,6 +278,8 @@ export default function SettingsForm({ user, genreOptions, genrePrefs }: { user:
           {passwordSaving ? 'Saving…' : 'Change password'}
         </button>
       </form>
+
+      <SessionsCard />
 
       <div className="card space-y-3" style={{ borderColor: 'var(--down, #f87171)' }}>
         <h2 className="font-semibold text-red-300">Delete account</h2>

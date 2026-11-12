@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logAdminAction } from '@/lib/audit';
 import { getInternalUser } from '@/lib/auth';
 import { resolveArtistRequest } from '@/lib/artist-requests';
 
@@ -14,5 +15,6 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
   const body = await req.json().catch(() => null);
   const result = await resolveArtistRequest(id, body?.decision, body?.note, { id: user.id, name: user.name });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+  await logAdminAction(user.id, `artist_request_${body?.decision}`, { type: 'artist_request', id });
   return NextResponse.json({ ok: true });
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logAdminAction } from '@/lib/audit';
 import { getAdminUser } from '@/lib/auth';
 import { setUserRole } from '@/lib/db';
 import { ROLES, Role } from '@/lib/types';
@@ -23,5 +24,6 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
 
   const user = await setUserRole(id, body.role);
   if (!user) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  await logAdminAction(admin.id, 'role_changed', { type: 'user', id }, `to ${body.role}`);
   return NextResponse.json(user);
 }

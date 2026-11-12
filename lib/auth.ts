@@ -43,7 +43,7 @@ async function sign(payload: object): Promise<string> {
   return `${body}.${sig}`;
 }
 
-async function verify(token: string): Promise<{ uid: number; exp: number } | null> {
+async function verify(token: string): Promise<{ uid: number; exp: number; sv?: number } | null> {
   const [body, sig] = token.split('.');
   if (!body || !sig) return null;
   const expected = crypto.createHmac('sha256', await getSecret()).update(body).digest('base64url');
@@ -60,8 +60,13 @@ async function verify(token: string): Promise<{ uid: number; exp: number } | nul
   }
 }
 
+// The token carries the account's current session_version; when that is
+// bumped (password change/reset, "log out other devices"), every token
+// issued before stops working. Tokens from before this existed carry no
+// version and count as version 0, so nobody was signed out by the change.
 export async function setSessionCookie(userId: number) {
-  const token = await sign({ uid: userId, exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SEC });
+  const row = (await db.prepare('SELECT session_version FROM users WHERE id = ?').get(userId)) as { session_version: number } | undefined;
+  const token = await sign({ uid: userId, sv: row?.session_version ?? 0, exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SEC });
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -99,6 +104,7 @@ export const getSessionUser = perRequest(async (): Promise<User | null> => {
   if (!payload) return null;
   const user = await getUserById(payload.uid);
   if (!user) return null;
+  if ((payload.sv ?? 0) !== (user.session_version ?? 0)) return null;
   return await maybeBootstrapAdmin(user);
 });
 

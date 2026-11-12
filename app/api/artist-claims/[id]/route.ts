@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logAdminAction } from '@/lib/audit';
 import { reviewArtistClaim } from '@/lib/db';
 import { getInternalUser } from '@/lib/auth';
 
@@ -20,6 +21,7 @@ export async function PATCH(req: Request, props: { params: Promise<{ id: string 
 
   const claim = await reviewArtistClaim(id, decision, user);
   if (!claim) return NextResponse.json({ error: 'not found or already reviewed' }, { status: 404 });
+  await logAdminAction(user.id, `artist_claim_${decision}`, { type: 'artist_claim', id }, `artist ${claim.artist_id}`);
 
   return NextResponse.json(claim);
 }

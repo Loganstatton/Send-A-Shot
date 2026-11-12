@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserPasswordHash, updateUserPasswordHash } from '@/lib/db';
-import { getSessionUser, hashPassword, verifyPassword } from '@/lib/auth';
+import { getSessionUser, hashPassword, setSessionCookie, verifyPassword } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +23,7 @@ export async function POST(req: Request) {
   }
 
   const newHash = await hashPassword(parsed.data.newPassword);
-  await updateUserPasswordHash(user.id, newHash);
+  await updateUserPasswordHash(user.id, newHash); // also signs out every other device
+  await setSessionCookie(user.id); // …but keeps this one signed in
   return NextResponse.json({ ok: true });
 }
