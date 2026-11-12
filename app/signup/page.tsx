@@ -1,7 +1,8 @@
 import AuthForm from '@/components/AuthForm';
 import { safeReturnPath } from '@/lib/return-path';
 
-export default function SignupPage({ searchParams }: { searchParams: { next?: string } }) {
+export default async function SignupPage(props: { searchParams: Promise<{ next?: string }> }) {
+  const searchParams = await props.searchParams;
   return (
     <AuthForm
       mode="signup"

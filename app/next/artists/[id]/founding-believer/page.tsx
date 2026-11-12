@@ -12,7 +12,8 @@ import ShareToFeedButton from '@/components/next/ShareToFeedButton';
 import CopyProofLinkButton from '@/components/next/CopyProofLinkButton';
 import HoloCard from '@/components/next/HoloCard';
 
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const row = await getNextArtist(Number(params.id));
   return { title: row ? `You Were Early — ${row.artist.name}` : 'Founding Believer' };
 }
@@ -52,7 +53,8 @@ function StatComparison({ label, then, now, tone }: { label: string; then: strin
   );
 }
 
-export default async function FoundingBelieverReceiptPage({ params }: { params: { id: string } }) {
+export default async function FoundingBelieverReceiptPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await requireUser();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();

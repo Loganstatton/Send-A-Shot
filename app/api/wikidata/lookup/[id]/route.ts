@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 // is just data for ArtistForm to show a Scout, who decides whether to Fill
 // + Save. A null match is a normal 200, not an error — absence of a
 // Wikidata entry is the expected outcome for most artists this small.
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

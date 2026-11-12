@@ -12,14 +12,16 @@ import InvestmentLedger from '@/components/InvestmentLedger';
 import ArtistFieldHistory from '@/components/ArtistFieldHistory';
 import ScoreBreakdown from '@/components/ScoreBreakdown';
 
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const artist = await getArtist(Number(params.id));
   return { title: { absolute: artist ? `${artist.name} — Scout` : 'Scout' } };
 }
 
 export const dynamic = 'force-dynamic';
 
-export default async function ArtistDetailPage({ params }: { params: { id: string } }) {
+export default async function ArtistDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   await requireInternal();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();

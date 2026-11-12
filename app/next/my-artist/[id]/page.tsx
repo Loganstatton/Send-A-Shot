@@ -10,7 +10,8 @@ import ArtistDashboardNoteForm from '@/components/next/ArtistDashboardNoteForm';
 import ArtistProfileEditForm from '@/components/next/ArtistProfileEditForm';
 import ArtistPhotoSubmitForm from '@/components/next/ArtistPhotoSubmitForm';
 
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const id = Number(params.id);
   const row = Number.isInteger(id) ? await getNextArtist(id) : undefined;
   return { title: row ? `${row.artist.name} — My Artist` : 'My Artist' };
@@ -36,7 +37,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 // notes, the Breakout Score inputs, internal discovery info) stays
 // Scout-only; an artist wanting a change there sends it via
 // ArtistDashboardNoteForm below instead.
-export default async function MyArtistDashboardPage({ params }: { params: { id: string } }) {
+export default async function MyArtistDashboardPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
   const { artist } = await requireArtistOwner(id);

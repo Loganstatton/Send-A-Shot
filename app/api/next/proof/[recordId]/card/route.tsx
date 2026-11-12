@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 // (/next/proof/[recordId]). Shows only what that page shows publicly — the
 // holder's display name, the artist, backer number, date, and then-vs-now
 // Score and Price.
-export async function GET(_req: Request, { params }: { params: { recordId: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ recordId: string }> }) {
+  const params = await props.params;
   const recordId = Number(params.recordId);
   if (!Number.isInteger(recordId)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const record = await getFoundingBelieverRecordById(recordId);

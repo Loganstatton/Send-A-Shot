@@ -5,7 +5,8 @@ import { ROLES, Role } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = await getAdminUser();
   if (!admin) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 

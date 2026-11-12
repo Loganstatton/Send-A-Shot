@@ -62,7 +62,7 @@ async function verify(token: string): Promise<{ uid: number; exp: number } | nul
 
 export async function setSessionCookie(userId: number) {
   const token = await sign({ uid: userId, exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SEC });
-  cookies().set(SESSION_COOKIE, token, {
+  (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
@@ -71,8 +71,8 @@ export async function setSessionCookie(userId: number) {
   });
 }
 
-export function clearSessionCookie() {
-  cookies().delete(SESSION_COOKIE);
+export async function clearSessionCookie() {
+  (await cookies()).delete(SESSION_COOKIE);
 }
 
 // Bootstrap mechanism for the very first admin(s): comma-separated emails in
@@ -88,12 +88,12 @@ async function maybeBootstrapAdmin(user: User): Promise<User> {
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
   if (!adminEmails.includes(user.email.toLowerCase())) return user;
-  return await setUserRole(user.id, 'admin') ?? user;
+  return (await setUserRole(user.id, 'admin')) ?? user;
 }
 
 // Server-only: read + verify the session cookie and load the user.
 export const getSessionUser = perRequest(async (): Promise<User | null> => {
-  const token = cookies().get(SESSION_COOKIE)?.value;
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const payload = await verify(token);
   if (!payload) return null;
@@ -104,10 +104,10 @@ export const getSessionUser = perRequest(async (): Promise<User | null> => {
 
 // For server components/pages: redirect to /login if not authenticated.
 // Signed-out visitors go to /login, carrying the page they asked for (set
-// by middleware.ts) so logging in brings them straight back to it.
+// by proxy.ts) so logging in brings them straight back to it.
 export async function requireUser(): Promise<User> {
   const user = await getSessionUser();
-  if (!user) redirect(withReturnPath('/login', headers().get('x-request-path')));
+  if (!user) redirect(withReturnPath('/login', (await headers()).get('x-request-path')));
   return user;
 }
 

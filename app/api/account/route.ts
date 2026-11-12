@@ -31,6 +31,6 @@ export async function DELETE() {
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   await deleteUser(user.id);
-  clearSessionCookie();
+  await clearSessionCookie();
   return NextResponse.json({ ok: true });
 }

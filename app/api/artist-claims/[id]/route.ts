@@ -4,7 +4,8 @@ import { getInternalUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 // FeedEvent comment) — the log entry stays the single source of truth for
 // the message itself; the feed event is just a pointer to it plus a
 // timestamp, not a second copy of the update.
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

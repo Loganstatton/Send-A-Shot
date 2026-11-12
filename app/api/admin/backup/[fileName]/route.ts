@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 // lives somewhere other than the database it came from. Admin session only
 // (no cron-secret access: a snapshot contains every account's email and
 // password hash, so it's never handed to anything but a signed-in admin).
-export async function GET(_req: Request, { params }: { params: { fileName: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ fileName: string }> }) {
+  const params = await props.params;
   const admin = await getAdminUser();
   if (!admin) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

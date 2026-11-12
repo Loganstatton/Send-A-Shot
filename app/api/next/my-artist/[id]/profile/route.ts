@@ -14,7 +14,8 @@ export const dynamic = 'force-dynamic';
 // (app/api/next/my-artist/[id]/note/route.ts) — same auth check, same
 // "this is the only thing they can write here" scoping, just for profile
 // fields instead of an activity-log note.
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

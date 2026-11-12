@@ -11,3 +11,4 @@ data/pre-restore-*.db
 *.log
 *.tsbuildinfo
 data/pg/
+next-env.d.ts

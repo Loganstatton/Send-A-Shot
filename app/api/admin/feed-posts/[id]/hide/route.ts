@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 // the one place this is actually called from. getInternalUser (not
 // requireInternal) since this is a route handler, not a page — a route
 // should 401 with JSON for a fetch() caller, not throw a page redirect.
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+export async function POST(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = await getInternalUser();
   if (!admin) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = Number(params.id);
@@ -17,7 +18,8 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   return NextResponse.json({ ok: hidden });
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = await getInternalUser();
   if (!admin) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = Number(params.id);

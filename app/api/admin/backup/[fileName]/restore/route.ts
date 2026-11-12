@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic';
 // as `confirm` — a deliberate second step so this can't happen from a stray
 // click or a replayed request for a different file. restoreBackup() itself
 // takes a 'pre-restore' snapshot first, so the restore can be undone.
-export async function POST(req: Request, { params }: { params: { fileName: string } }) {
+export async function POST(req: Request, props: { params: Promise<{ fileName: string }> }) {
+  const params = await props.params;
   const admin = await getAdminUser();
   if (!admin) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

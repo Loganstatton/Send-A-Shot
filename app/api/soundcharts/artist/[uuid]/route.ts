@@ -4,7 +4,8 @@ import { getArtistData, soundchartsConfigured } from '@/lib/soundcharts';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: Request, { params }: { params: { uuid: string } }) {
+export async function GET(req: Request, props: { params: Promise<{ uuid: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

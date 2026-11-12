@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic';
 // pick from in the artist edit form. Picking one fills photo_url +
 // provenance fields into the form same as SoundchartsSearch; nothing is
 // written to the database until the Scout hits Save.
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

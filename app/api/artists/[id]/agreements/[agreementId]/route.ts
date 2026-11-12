@@ -5,7 +5,11 @@ import { AgreementInput } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
-export async function PATCH(req: Request, { params }: { params: { id: string; agreementId: string } }) {
+export async function PATCH(
+  req: Request,
+  props: { params: Promise<{ id: string; agreementId: string }> }
+) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const artistId = Number(params.id);
@@ -19,7 +23,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string; ag
   return NextResponse.json(agreement);
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string; agreementId: string } }) {
+export async function DELETE(
+  _req: Request,
+  props: { params: Promise<{ id: string; agreementId: string }> }
+) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const artistId = Number(params.id);
