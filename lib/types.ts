@@ -507,7 +507,8 @@ export type AnalyticsEventType =
   | 'feed_user_post_artist_opened'
   | 'feed_user_post_audio_played'
   | 'feed_user_post_watch'
-  | 'feed_user_post_trade_initiated';
+  | 'feed_user_post_trade_initiated'
+  | 'pro_survey_answered';
 
 export type AnalyticsEvent = {
   id: number;

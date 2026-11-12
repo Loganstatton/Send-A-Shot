@@ -6,6 +6,10 @@ import { sendEmail } from '@/lib/email';
 import { verifyEmailMessage } from '@/lib/email-templates';
 import { isUniqueViolation } from '@/lib/pg';
 import { classifySignupSource } from '@/lib/attribution';
+import { checkInvite, claimInvite, inviteOnly } from '@/lib/invites';
+import { db } from '@/lib/pg';
+
+class InviteTakenError extends Error {}
 
 export const dynamic = 'force-dynamic';
 
@@ -34,12 +38,20 @@ export async function POST(req: Request) {
   }
   const { name, email, password, inviteCode, returnTo } = parsed.data;
 
-  // Closed-beta gate: unset (the default) means open signup. Set it in
-  // Render's Environment tab to switch to invite-only without a code
-  // change — see components/AuthForm.tsx for the matching client prompt.
-  const requiredInviteCode = process.env.SIGNUP_INVITE_CODE;
-  if (requiredInviteCode && inviteCode !== requiredInviteCode) {
-    return NextResponse.json({ error: 'That invite code is not valid.' }, { status: 403 });
+  // Invite-only beta (lib/invites.ts): SIGNUP_MODE=invite requires a
+  // per-person invite code. The older single shared code (SIGNUP_INVITE_CODE,
+  // used on staging) is accepted too. In open mode a valid code is still
+  // used up, so the invites page shows who joined from which invite.
+  const sharedCode = process.env.SIGNUP_INVITE_CODE;
+  const usedSharedCode = Boolean(sharedCode) && inviteCode === sharedCode;
+  let inviteId: number | null = null;
+  if (inviteCode && !usedSharedCode) {
+    const check = await checkInvite(inviteCode);
+    if (check.ok) inviteId = check.id;
+    else if (inviteOnly()) return NextResponse.json({ error: check.error }, { status: 403 });
+  }
+  if (inviteOnly() && !usedSharedCode && inviteId == null) {
+    return NextResponse.json({ error: 'NEXT is invite-only right now — enter the invite code you were sent.' }, { status: 403 });
   }
 
   if (await getUserByEmail(email)) {
@@ -57,8 +69,15 @@ export async function POST(req: Request) {
   const password_hash = await hashPassword(password);
   let user;
   try {
-    user = await createUser({ name, email, password_hash });
+    user = await db.transaction(async () => {
+      const created = await createUser({ name, email, password_hash });
+      if (inviteId != null && !(await claimInvite(inviteId, created.id))) throw new InviteTakenError();
+      return created;
+    });
   } catch (err) {
+    if (err instanceof InviteTakenError) {
+      return NextResponse.json({ error: 'That invite code was just used, or the beta is full.' }, { status: 403 });
+    }
     // Two signups for the same address arriving together both pass the
     // checks above; the unique index on email lets exactly one through.
     if (isUniqueViolation(err)) {

@@ -18,7 +18,7 @@ const { chromium } = require('playwright');
 const PORT = 3121, BASE = `http://localhost:${PORT}`;
 const SCHEMA = `e2e_dead_${Date.now()}`;
 const sql = (q) => execFileSync('psql', [DEV_DB, '-At', '-c', `SET search_path=${SCHEMA}; ${q}`], { encoding: 'utf8' }).trim().split('\n').pop();
-const DESTRUCTIVE = /delete|remove|leave league|restore|log ?out|sign out|reset link|unpublish|reject|resolve|remove from next|log out of all|unmute|^sell|sell all|demote|cancel/i;
+const DESTRUCTIVE = /delete|remove|revoke|leave league|restore|log ?out|sign out|reset link|unpublish|reject|resolve|remove from next|log out of all|unmute|^sell|sell all|demote|cancel/i;
 const PER_PATTERN = 2; // visit at most this many pages per route shape (e.g. /next/artists/:id)
 const problems = [];
 const skipped = new Set();

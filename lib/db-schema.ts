@@ -725,4 +725,43 @@ CREATE INDEX IF NOT EXISTS idx_email_log_created ON email_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_email_log_status ON email_log(status, created_at);
 `,
   },
+  {
+    // Per-person invite codes for the invite-only beta: each works once,
+    // carries a label saying who it's for, and records who used it.
+    id: '013_beta_invites',
+    sql: `
+CREATE TABLE IF NOT EXISTS beta_invites (
+  id BIGSERIAL PRIMARY KEY,
+  code TEXT COLLATE "C" NOT NULL UNIQUE,
+  label TEXT COLLATE "C",
+  created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT COLLATE "C" NOT NULL,
+  used_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  used_at TEXT COLLATE "C",
+  revoked_at TEXT COLLATE "C"
+);
+CREATE INDEX IF NOT EXISTS idx_beta_invites_used ON beta_invites(used_at);
+`,
+  },
+  {
+    // NEXT Pro willingness-to-pay survey (no payments exist): one answer
+    // per player, editable.
+    id: '014_pro_interest',
+    sql: `
+CREATE TABLE IF NOT EXISTS pro_interest (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  features TEXT COLLATE "C" NOT NULL,
+  top_feature TEXT COLLATE "C",
+  intent TEXT COLLATE "C" NOT NULL,
+  too_cheap_cents BIGINT,
+  bargain_cents BIGINT,
+  expensive_cents BIGINT,
+  too_expensive_cents BIGINT,
+  comment TEXT COLLATE "C",
+  created_at TEXT COLLATE "C" NOT NULL,
+  updated_at TEXT COLLATE "C" NOT NULL
+);
+`,
+  },
 ];

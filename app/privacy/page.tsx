@@ -15,6 +15,7 @@ export default function PrivacyPage() {
         <p>When you create an account, we store your name, email address, and a securely hashed password (we never store your password in plain text). We also store your activity within the app — trades, Watchlist entries, balances, leagues you join, genres you pick, previews you play, and feedback or reports you send — so the product works.</p>
         <p>We record usage events (for example, which pages were opened) to understand what people use and improve NEXT. When you sign up we note which part of NEXT you signed up from (for example, a league invite) — not who shared it with you.</p>
         <p>To protect accounts from password guessing, we keep a short-lived record of login attempts. The email address and network address in it are stored only as one-way hashes and deleted after about a day.</p>
+        <p>We keep a record of each email we send you (the kind of email, its subject, and whether it was delivered) for up to 90 days, so we can tell when account emails fail. If you joined with an invite code, we record which invite you used. If you answer the optional NEXT Pro survey, we store your answers with your account.</p>
       </section>
 
       <section className="space-y-2">
@@ -24,7 +25,7 @@ export default function PrivacyPage() {
 
       <section className="space-y-2">
         <h2 className="font-semibold text-neutral-100">Third-party services</h2>
-        <p>We use third-party services to power parts of the app — for example, sending transactional emails, and pulling public artist data from free sources like Wikidata and Wikimedia Commons. These services may process limited data (like your email address, for delivery) as needed to provide that function.</p>
+        <p>We use third-party services to power parts of the app: our hosting and database provider (Render, in the United States); an email delivery provider (Resend) that receives your email address and the message in order to deliver account emails; and free public sources of artist data such as Wikidata and Wikimedia Commons. These services process only the data needed for their function.</p>
       </section>
 
       <section className="space-y-2">
@@ -39,7 +40,8 @@ export default function PrivacyPage() {
 
       <section className="space-y-2">
         <h2 className="font-semibold text-neutral-100">Your data, your control</h2>
-        <p>You can edit your name and avatar at any time from Settings. You can permanently delete your account and its associated NEXT activity (holdings, trade history, Watchlist) from Settings as well — this can't be undone.</p>
+        <p>You can edit your name and avatar at any time from Settings. You can permanently delete your account and its associated NEXT activity (holdings, trade history, Watchlist, email records and survey answers) from Settings as well — this can't be undone.</p>
+        <p>We back up the database daily so data can be recovered after a failure. Backups are kept for about two weeks inside our database, and an encrypted copy is kept off-site for 30 days; a deleted account disappears from backups as they age out.</p>
       </section>
 
       <section className="space-y-2">
