@@ -22,7 +22,10 @@ function RankChange({ change }: { change: number | null }) {
   );
 }
 
-export default async function LeaderboardPage({ searchParams }: { searchParams: { genre?: string; window?: string; board?: string } }) {
+export default async function LeaderboardPage(
+  props: { searchParams: Promise<{ genre?: string; window?: string; board?: string }> }
+) {
+  const searchParams = await props.searchParams;
   // Public, like the rest of what a shared link can point to: names,
   // return %, and discovery counts only — nothing private.
   const genres = await getAvailableGenres();

@@ -10,7 +10,8 @@ function parseId(idParam: string) {
   return Number.isInteger(id) ? id : null;
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
@@ -20,7 +21,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   return NextResponse.json(artist);
 }
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
@@ -31,7 +33,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   return NextResponse.json(artist);
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);

@@ -10,21 +10,23 @@ function parseId(idParam: string) {
   return Number.isInteger(id) ? id : null;
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
   if (id === null) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  if (!await getArtist(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (!(await getArtist(id))) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json(await getArtistLog(id));
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const id = parseId(params.id);
   if (id === null) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  if (!await getArtist(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (!(await getArtist(id))) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   const body = (await req.json()) as LogEntryInput;
   if (!body.message || !body.message.trim()) {

@@ -4,7 +4,8 @@ import { getInternalUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function PATCH(req: Request, { params }: { params: { id: string; logId: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string; logId: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const artistId = Number(params.id);
@@ -18,7 +19,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string; lo
   return NextResponse.json(entry);
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string; logId: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string; logId: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const artistId = Number(params.id);

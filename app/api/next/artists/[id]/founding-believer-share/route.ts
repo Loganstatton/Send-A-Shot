@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic';
 // The one explicit, user-initiated NEXT Feed event — see
 // shareFoundingBelieverToFeed's own comment in lib/db.ts. Never triggered
 // automatically; this route only exists because a person clicked "Share."
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+export async function POST(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
@@ -17,7 +18,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   // Checked separately from the share call itself so a real error (you
   // never backed this artist) and a benign no-op (you already shared it
   // today — dedupe_key) don't collapse into the same response.
-  if (!await getFoundingBelieverRecord(user.id, artistId)) {
+  if (!(await getFoundingBelieverRecord(user.id, artistId))) {
     return NextResponse.json({ error: 'no founding believer record for this artist' }, { status: 404 });
   }
 

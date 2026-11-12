@@ -6,7 +6,8 @@ import { getTopSongForArtist } from '@/lib/deezer';
 
 export const dynamic = 'force-dynamic';
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
@@ -32,7 +33,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         return null;
       });
       if (result?.ok) {
-        artist = await updateArtist(artist.id, result.data as ArtistInput) ?? artist;
+        artist = (await updateArtist(artist.id, result.data as ArtistInput)) ?? artist;
       } else if (result) {
         console.log('[deezer-lookup] on-approve lookup found no top song for', artist.name, `(${result.reason})`, result.error ?? '');
       }

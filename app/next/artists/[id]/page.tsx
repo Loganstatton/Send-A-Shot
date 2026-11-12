@@ -25,7 +25,8 @@ import GuestBackPanel from '@/components/next/GuestBackPanel';
 
 // What a shared artist link previews as (iMessage, X, Discord, etc.).
 // Built from the public projection only — nothing Scout-internal.
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const id = Number(params.id);
   const row = Number.isInteger(id) ? await getNextArtist(id) : undefined;
   if (!row) return { title: 'Artist' };
@@ -48,7 +49,11 @@ export const dynamic = 'force-dynamic';
 // scout_name, notes, created_by — that's Scout's internal view, not NEXT's.
 // Viewable signed out (this is the page shared links land on); the
 // personal parts — holding, watch state, claim, trading — need an account.
-export default async function NextArtistPage({ params, searchParams }: { params: { id: string }; searchParams: { ref?: string; feedEventId?: string } }) {
+export default async function NextArtistPage(
+  props: { params: Promise<{ id: string }>; searchParams: Promise<{ ref?: string; feedEventId?: string }> }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const user = await getSessionUser();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
@@ -86,7 +91,7 @@ export default async function NextArtistPage({ params, searchParams }: { params:
     !user
       ? null
       : rawArtist.claimed_by_user_id == null
-      ? (await getPendingClaimForUserAndArtist(user.id, id) ? 'pending' as const : 'unclaimed' as const)
+      ? ((await getPendingClaimForUserAndArtist(user.id, id)) ? 'pending' as const : 'unclaimed' as const)
       : rawArtist.claimed_by_user_id === user.id
       ? 'owned_by_me' as const
       : 'claimed_by_other' as const;

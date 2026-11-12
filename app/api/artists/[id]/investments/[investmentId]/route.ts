@@ -4,7 +4,11 @@ import { getInternalUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function DELETE(_req: Request, { params }: { params: { id: string; investmentId: string } }) {
+export async function DELETE(
+  _req: Request,
+  props: { params: Promise<{ id: string; investmentId: string }> }
+) {
+  const params = await props.params;
   const user = await getInternalUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const artistId = Number(params.id);

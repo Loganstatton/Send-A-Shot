@@ -10,7 +10,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // site root to NEXT with a real redirect, before any page renders — so the
 // bare site URL, when shared, previews as NEXT rather than a login form.
 // (Whether a cookie is actually valid is still checked by the page itself.)
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   if (req.nextUrl.pathname === '/' && !req.cookies.has('scout_session')) {
     return NextResponse.redirect(new URL('/next', req.url));
   }

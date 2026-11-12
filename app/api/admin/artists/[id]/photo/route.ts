@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic';
 // since this is a moderation action on someone's self-submitted content.
 // A no-op, not an error, on an artist whose photo isn't ARTIST_PROVIDED —
 // see removeArtistProvidedPhoto in lib/db.ts.
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = await getAdminUser();
   if (!admin) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 

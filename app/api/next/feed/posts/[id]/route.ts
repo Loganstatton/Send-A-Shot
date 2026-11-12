@@ -7,7 +7,8 @@ export const dynamic = 'force-dynamic';
 // Soft-delete — only the author may do this. deleteUserTakePost's own
 // WHERE clause (id + user_id + not already deleted) makes ownership
 // enforcement atomic rather than a separate read-then-check.
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

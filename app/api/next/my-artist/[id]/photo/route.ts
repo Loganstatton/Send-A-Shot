@@ -13,7 +13,8 @@ export const dynamic = 'force-dynamic';
 // a direct link to an image they host themselves; the rights-confirmation
 // checkbox, uploader id, and both timestamps are still stored exactly as
 // the brief specifies (see setArtistPhotoByOwner in lib/db.ts).
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

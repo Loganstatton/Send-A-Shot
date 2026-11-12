@@ -26,7 +26,8 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-export async function generateMetadata({ params }: { params: { recordId: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ recordId: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const data = await load(params.recordId);
   if (!data) return { title: 'Early proof' };
   const { record, row, holder } = data;
@@ -61,7 +62,8 @@ function Comparison({ label, then, now, tone }: { label: string; then: string; n
 // Everything on it was written at the moment of the first backing and is
 // never edited afterwards (next_founding_believers rows are insert-only),
 // which is what makes it proof rather than a claim.
-export default async function EarlyProofPage({ params }: { params: { recordId: string } }) {
+export default async function EarlyProofPage(props: { params: Promise<{ recordId: string }> }) {
+  const params = await props.params;
   const data = await load(params.recordId);
   if (!data) notFound();
   const { record, row, holder } = data;

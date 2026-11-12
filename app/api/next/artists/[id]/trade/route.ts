@@ -14,7 +14,8 @@ function respond(status: number, body: unknown) {
   return NextResponse.json(body, { status });
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   // Any logged-in user can paper-trade — public, internal, and admin alike.
   const user = await getSessionUser();
   if (!user) return respond(401, { error: 'unauthorized' });
@@ -56,7 +57,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   // replay returned above, before reaching here).
   // Re-checks the feed_events row actually exists so a tampered/garbage id
   // can't poison analytics with a fake reference.
-  if (body.referralSource === 'feed' && Number.isInteger(body.referralFeedEventId) && await getFeedEvent(body.referralFeedEventId!)) {
+  if (body.referralSource === 'feed' && Number.isInteger(body.referralFeedEventId) && (await getFeedEvent(body.referralFeedEventId!))) {
     await logEvent(user.id, 'feed_trade_completed', {
       artistId, feedEventId: body.referralFeedEventId, tradeType: body.type, creditsAmountCents: body.credits_amount_cents,
     });

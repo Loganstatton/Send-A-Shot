@@ -8,7 +8,8 @@ export const dynamic = 'force-dynamic';
 // The signed-in Scout's own Founding Believer card for an artist, as a
 // downloadable PNG. The public, shareable version of the same card (with
 // the holder's name on it) is /api/next/proof/[recordId]/card.
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 

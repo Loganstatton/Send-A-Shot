@@ -17,7 +17,8 @@ const DISCOVERY_STATUS_LABELS: Record<DiscoveryCandidateStatus, string> = {
   passed: "Didn't make the roster",
 };
 
-export async function generateMetadata({ params }: { params: { userId: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ userId: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const profile = await getScoutProfile(Number(params.userId));
   return { title: profile ? `${profile.user.name}'s Scout Profile` : 'Scout Profile' };
 }
@@ -28,7 +29,8 @@ export const dynamic = 'force-dynamic';
 // what's already public-safe is shown: name, Scout Score, portfolio return,
 // rank, and the Founding Believer trophy case. No email, no credits balance
 // beyond the return %.
-export default async function ScoutProfilePage({ params }: { params: { userId: string } }) {
+export default async function ScoutProfilePage(props: { params: Promise<{ userId: string }> }) {
+  const params = await props.params;
   const userId = Number(params.userId);
   if (!Number.isInteger(userId)) notFound();
   const profile = await getScoutProfile(userId);
