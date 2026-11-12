@@ -8,7 +8,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const path = require('path');
 const { DEV_DB } = require('./env');
 
-const SUITES = ['main', 'guest', 'leagues', 'onboarding', 'challenges', 'discovery', 'artist-requests', 'analytics', 'security', 'social', 'keyboard-check'];
+const SUITES = ['main', 'guest', 'leagues', 'onboarding', 'challenges', 'discovery', 'artist-requests', 'analytics', 'security', 'social', 'keyboard-check', 'dead-ends'];
 const stamp = Date.now();
 const fresh = (name) => {
   const db = `e2e_${name}_${stamp}`;
@@ -21,7 +21,7 @@ for (const suite of process.argv.length > 2 ? process.argv.slice(2) : SUITES) {
   const env = { ...process.env };
   if (suite === 'main' || suite === 'guest') env.E2E_DATABASE_URL = fresh(suite);
   console.log(`\n=== ${suite} ===`);
-  const r = spawnSync('node', [path.join(__dirname, `${suite}.js`)], { env, stdio: 'inherit', timeout: 10 * 60_000 });
+  const r = spawnSync('node', [path.join(__dirname, `${suite}.js`)], { env, stdio: 'inherit', timeout: (suite === 'dead-ends' ? 45 : 10) * 60_000 });
   if (r.status !== 0) failed++;
 }
 console.log(failed === 0 ? '\nAll browser suites passed.' : `\n${failed} suite(s) failed.`);

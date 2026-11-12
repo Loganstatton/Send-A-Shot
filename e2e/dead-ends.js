@@ -157,6 +157,13 @@ async function crawl(ctx, role, starts, { buttons = true } = {}) {
     const dead = await isDeadPage(page);
     if (dead || res.status() >= 400) { report('dead link target', `${role} ${key}`, `${res.status()} ${dead ?? ''}`.trim()); continue; }
     if (finalPath.startsWith('/login') && !key.startsWith('/login')) continue; // a login-only page for this role — fine
+    const vw = page.viewportSize()?.width ?? 1280;
+    if (vw < 500) {
+      // Wider than the phone's screen means sideways scrolling and cut-off,
+      // hard-to-tap controls (a mobile browser widens the page to fit).
+      const width = await page.evaluate(() => document.documentElement.scrollWidth);
+      if (width > vw + 1) report('too wide on phone', `${role} ${key}`, `${width}px on a ${vw}px screen`);
+    }
     const links = await page.evaluate(() => [...document.querySelectorAll('a[href]')].map((a) => a.getAttribute('href')));
     for (const href of links) {
       if (!href || href.startsWith('mailto:') || href.startsWith('tel:')) continue;
@@ -207,6 +214,8 @@ async function crawl(ctx, role, starts, { buttons = true } = {}) {
     counts.admin = (await crawl(s.admin, 'admin', ['/', '/screener', '/metrics', '/collections', '/artist-requests', '/artist-claims', '/discovery', '/admin/users', '/admin/sync', '/admin/discovery', '/admin/scout-accuracy', '/admin/market-integrity', '/admin/feed-reports', '/admin/feedback', '/admin/errors', '/admin/backups', '/admin/audit', `/artists/${s.ids[1]}`, '/artists/new', '/artists/bulk-add'])).size;
     counts.phoneGuest = (await crawl(phone, 'phone-guest', ['/next', `/next/artists/${s.ids[1]}`, '/next/leaderboard'], { buttons: true })).size;
     counts.phonePlayer = (await crawl(phonePlayer, 'phone-player', ['/next', '/next/challenges', '/next/leagues'], { buttons: true })).size;
+    const phoneAdmin = await browser.newContext({ baseURL: BASE, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, storageState: await s.admin.storageState() });
+    counts.phoneAdmin = (await crawl(phoneAdmin, 'phone-admin', ['/', '/screener', '/metrics', '/collections', '/artist-requests', '/admin/users', '/settings', `/artists/${s.ids[1]}`], { buttons: false })).size;
     console.log('pages visited:', JSON.stringify(counts));
     await browser.close();
   } catch (e) {

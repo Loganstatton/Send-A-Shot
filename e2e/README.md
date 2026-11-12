@@ -31,6 +31,7 @@ other's data. Screenshots land in `e2e/screenshots/` (git-ignored).
 | `security` | Headers, login limits, sessions, CSRF, authorization, injection |
 | `social` | Notification settings, feed hide/mute, league activity |
 | `keyboard-check` | Skip link and focus outlines |
+| `dead-ends` | Every page as guest, player, artist, admin and phone: follows each link, clicks each non-destructive button, flags anything that does nothing, leads nowhere, overflows a phone screen or throws in a far-off timezone (~20 min) |
 | `axe-audit` | WCAG 2.1 A/AA scan with axe-core (needs `npm i -D axe-core`, or `AXE_PATH`) |
 
 `E2E_DEV_DB` overrides the database URL (default
