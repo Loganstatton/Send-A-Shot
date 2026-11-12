@@ -8,6 +8,8 @@ import ScoreExplainer from '@/components/next/ScoreExplainer';
 import ArtistDashboardNoteForm from '@/components/next/ArtistDashboardNoteForm';
 import ArtistProfileEditForm from '@/components/next/ArtistProfileEditForm';
 import ArtistPhotoSubmitForm from '@/components/next/ArtistPhotoSubmitForm';
+import ArtistRequestForm from '@/components/next/ArtistRequestForm';
+import { getArtistProfileStats, getOwnerRequests, OWNER_KINDS, REQUEST_KIND_LABELS } from '@/lib/artist-requests';
 
 export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const params = await props.params;
@@ -40,7 +42,7 @@ export default async function MyArtistDashboardPage(props: { params: Promise<{ i
   const params = await props.params;
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
-  const { artist } = await requireArtistOwner(id);
+  const { artist, user } = await requireArtistOwner(id);
 
   const row = await getNextArtist(id);
   if (!row) notFound();
@@ -50,6 +52,8 @@ export default async function MyArtistDashboardPage(props: { params: Promise<{ i
   const backerCount = (await getBackerCountsByArtist())[id] ?? 0;
   const earlyBackerCount = await getFoundingBelieverCountForArtist(id);
   const watchCount = (await getWatchCountsByArtist())[id] ?? 0;
+  const stats = await getArtistProfileStats(id, 30);
+  const requests = await getOwnerRequests(id, user.id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -84,9 +88,24 @@ export default async function MyArtistDashboardPage(props: { params: Promise<{ i
 
       {earlyBackerCount > 0 && (
         <p className="m-0 text-sm" style={{ color: 'var(--text-faint)' }}>
-          {earlyBackerCount} Scout{earlyBackerCount === 1 ? '' : 's'} backed you before anyone else did.
+          {earlyBackerCount} {earlyBackerCount === 1 ? 'person has' : 'people have'} backed you on NEXT so far, each with a permanent,
+          dated record of when they did.
         </p>
       )}
+
+      <section aria-labelledby="profile-analytics" className="next-card p-6 flex flex-col gap-4">
+        <h2 id="profile-analytics" className="font-display font-bold text-lg m-0">Your profile on NEXT — last {stats.days} days</h2>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <Stat label="Page views" value={stats.pageViews.toLocaleString()} />
+          <Stat label="Preview plays" value={stats.previewPlays.toLocaleString()} />
+          <Stat label="Listeners" value={stats.listeners.toLocaleString()} />
+          <Stat label="New watchers" value={stats.newWatchers.toLocaleString()} />
+          <Stat label="New backers" value={stats.newBackers.toLocaleString()} />
+        </div>
+        <p className="m-0 text-xs" style={{ color: 'var(--text-faint)' }}>
+          Activity on NEXT only. Listeners are signed-in players who played your preview here; plays on YouTube itself aren&apos;t counted.
+        </p>
+      </section>
 
       <ArtistPhotoSubmitForm artistId={id} currentPhotoUrl={artist.photo_url} />
 
@@ -100,6 +119,38 @@ export default async function MyArtistDashboardPage(props: { params: Promise<{ i
       />
 
       <ArtistDashboardNoteForm artistId={id} />
+
+      <section aria-labelledby="artist-requests" className="next-card p-6 flex flex-col gap-4">
+        <h2 id="artist-requests" className="font-display font-bold text-lg m-0">Corrections, rating reviews and removal</h2>
+        <ArtistRequestForm
+          artistId={id}
+          idPrefix="owner-request"
+          intro="A person at NEXT reviews every request and replies here."
+          kinds={OWNER_KINDS.map((k) => ({
+            value: k,
+            label: REQUEST_KIND_LABELS[k],
+            hint: k === 'correction'
+              ? 'Something on your profile that you can’t edit yourself (like your name) is wrong.'
+              : k === 'rating_review'
+              ? 'Ask a Scout to look at your rating again — for example after a new release. Ratings can’t be bought or negotiated.'
+              : 'Your profile is taken off NEXT: nobody can newly back you. Existing backers keep their records and can still sell.',
+          }))}
+        />
+        {requests.length > 0 && (
+          <ul className="list-none p-0 m-0 flex flex-col gap-2 pt-3" style={{ borderTop: '1px solid var(--border-soft)' }}>
+            {requests.map((r) => (
+              <li key={r.id} className="text-sm">
+                <span className="font-semibold">{REQUEST_KIND_LABELS[r.kind]}</span>
+                <span style={{ color: 'var(--text-faint)' }}> · {new Date(r.created_at).toLocaleDateString()} · </span>
+                <span style={{ color: r.status === 'open' ? 'var(--text-muted)' : r.status === 'resolved' ? 'var(--up)' : 'var(--down)' }}>
+                  {r.status === 'open' ? 'Waiting for review' : r.status === 'resolved' ? 'Done' : 'Not changed'}
+                </span>
+                {r.resolution_note && <span className="block text-xs" style={{ color: 'var(--text-muted)' }}>NEXT: {r.resolution_note}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { Inter, JetBrains_Mono } from 'next/font/google';
+import { getOpenRequestCount } from '@/lib/artist-requests';
 import './globals.css';
 import Header from '@/components/Header';
 import { getSessionUser } from '@/lib/auth';
@@ -28,10 +29,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
   const newCandidateCount = isInternal ? await getNewDiscoveryCandidateCount() : 0;
   const pendingArtistClaimCount = isInternal ? await getPendingArtistClaimCount() : 0;
+  const openArtistRequestCount = isInternal ? await getOpenRequestCount() : 0;
   return (
     <html lang="en">
       <body className={`${sans.variable} ${mono.variable}`}>
-        <Header user={user} newCandidateCount={newCandidateCount} pendingArtistClaimCount={pendingArtistClaimCount} />
+        <Header user={user} newCandidateCount={newCandidateCount} pendingArtistClaimCount={pendingArtistClaimCount} openArtistRequestCount={openArtistRequestCount} />
         <main className="container py-6">{children}</main>
       </body>
     </html>
