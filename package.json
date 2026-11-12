@@ -35,7 +35,8 @@
   "overrides": {
     "source-map-js": "^1.2.2",
     "postcss-selector-parser": "^6.1.5",
-    "vite": "^8.3.8"
+    "vite": "^8.3.8",
+    "@vitest/mocker": "4.1.12"
   },
   "engines": {
     "node": ">=20.9.0"
