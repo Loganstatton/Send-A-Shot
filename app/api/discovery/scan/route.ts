@@ -29,28 +29,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Soundcharts is not configured on this server.' }, { status: 503 });
   }
 
-  const run = createDiscoveryRun();
+  const run = await createDiscoveryRun();
 
   try {
     const topResult = await topArtists();
     if (!topResult.ok) {
-      completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: topResult.error });
+      await completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: topResult.error });
       await notifyAdminsOfRunFailure('Soundcharts discovery scan', topResult.error);
       return NextResponse.json({ error: topResult.error, runId: run.id }, { status: 502 });
     }
 
-    const alreadyKnown = new Set([...getTrackedSoundchartsUuids(), ...getKnownDiscoveryUuids()]);
+    const alreadyKnown = new Set([...await getTrackedSoundchartsUuids(), ...await getKnownDiscoveryUuids()]);
     const { candidates, searchedCount } = await evaluateCandidates(topResult.data, alreadyKnown);
 
     for (const candidate of candidates) {
-      insertDiscoveryCandidate({ ...candidate, discovery_run_id: run.id });
+      await insertDiscoveryCandidate({ ...candidate, discovery_run_id: run.id });
     }
 
-    completeDiscoveryRun(run.id, { status: 'completed', searchedCount, candidatesFound: candidates.length });
+    await completeDiscoveryRun(run.id, { status: 'completed', searchedCount, candidatesFound: candidates.length });
     return NextResponse.json({ runId: run.id, searchedCount, candidatesFound: candidates.length });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during scan.';
-    completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: message });
+    await completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: message });
     await notifyAdminsOfRunFailure('Soundcharts discovery scan', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }

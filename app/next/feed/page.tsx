@@ -16,12 +16,12 @@ const INITIAL_BATCH_SIZE = 40;
 export default async function FeedPage() {
   const user = await requireUser();
 
-  const events = getFeedEvents(INITIAL_BATCH_SIZE);
-  const ctx = buildFeedAssemblyContext(user.id, events);
-  const items = buildFeedItems(events, ctx);
+  const events = await getFeedEvents(INITIAL_BATCH_SIZE);
+  const ctx = await buildFeedAssemblyContext(user.id, events);
+  const items = await buildFeedItems(events, ctx);
 
-  logEvent(user.id, 'feed_opened');
-  logFeedItemImpressions(user.id, items.map((i) => i.id));
+  await logEvent(user.id, 'feed_opened');
+  await logFeedItemImpressions(user.id, items.map((i) => i.id));
 
   return (
     <div className="flex flex-col gap-6">
@@ -35,7 +35,7 @@ export default async function FeedPage() {
         initialItems={items}
         initialNextBeforeId={events.length > 0 ? events[events.length - 1].id : null}
         initialHasMore={events.length === INITIAL_BATCH_SIZE}
-        watchedArtistIds={getWatchlistArtistIds(user.id)}
+        watchedArtistIds={await getWatchlistArtistIds(user.id)}
         viewerUserId={user.id}
       />
     </div>

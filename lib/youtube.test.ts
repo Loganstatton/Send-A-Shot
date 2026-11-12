@@ -18,37 +18,37 @@ describe('currentYoutubeQuotaDay', () => {
 });
 
 describe('getYoutubeQuotaStatus', () => {
-  it('defaults to a 10,000-unit budget with nothing used yet', () => {
+  it('defaults to a 10,000-unit budget with nothing used yet', async () => {
     delete process.env.YOUTUBE_DAILY_QUOTA_BUDGET;
-    const status = getYoutubeQuotaStatus();
+    const status = await getYoutubeQuotaStatus();
     expect(status.budget).toBe(10_000);
     expect(status.usedToday).toBe(0);
     expect(status.remaining).toBe(10_000);
     expect(status.warning).toBe(false);
   });
 
-  it('reflects usage recorded for today, and warns at 80% of budget', () => {
-    recordYoutubeQuotaUsage(7_999, '/search', currentYoutubeQuotaDay());
-    let status = getYoutubeQuotaStatus();
+  it('reflects usage recorded for today, and warns at 80% of budget', async () => {
+    await recordYoutubeQuotaUsage(7_999, '/search', currentYoutubeQuotaDay());
+    let status = await getYoutubeQuotaStatus();
     expect(status.usedToday).toBe(7_999);
     expect(status.remaining).toBe(10_000 - 7_999);
     expect(status.warning).toBe(false); // just under 80% of 10,000
 
-    recordYoutubeQuotaUsage(1, '/channels', currentYoutubeQuotaDay());
-    status = getYoutubeQuotaStatus();
+    await recordYoutubeQuotaUsage(1, '/channels', currentYoutubeQuotaDay());
+    status = await getYoutubeQuotaStatus();
     expect(status.usedToday).toBe(8_000);
     expect(status.warning).toBe(true); // exactly 80%
   });
 
-  it('ignores usage recorded for a different quota day', () => {
-    const before = getYoutubeQuotaStatus().usedToday;
-    recordYoutubeQuotaUsage(500, '/search', '2020-01-01');
-    expect(getYoutubeQuotaStatus().usedToday).toBe(before);
+  it('ignores usage recorded for a different quota day', async () => {
+    const before = (await getYoutubeQuotaStatus()).usedToday;
+    await recordYoutubeQuotaUsage(500, '/search', '2020-01-01');
+    expect((await getYoutubeQuotaStatus()).usedToday).toBe(before);
   });
 
-  it('respects a custom YOUTUBE_DAILY_QUOTA_BUDGET override', () => {
+  it('respects a custom YOUTUBE_DAILY_QUOTA_BUDGET override', async () => {
     process.env.YOUTUBE_DAILY_QUOTA_BUDGET = '50000';
-    expect(getYoutubeQuotaStatus().budget).toBe(50_000);
+    expect((await getYoutubeQuotaStatus()).budget).toBe(50_000);
     delete process.env.YOUTUBE_DAILY_QUOTA_BUDGET;
   });
 });
@@ -63,7 +63,7 @@ describe('youtubeFetch pre-flight budget check (exercised via exported lookups)'
     // instead attempt a real network call to googleapis.com with a fake key
     // and either hang or return a different (auth) error — the tight
     // timeout below is itself part of what's being verified.
-    recordYoutubeQuotaUsage(100, '/search', currentYoutubeQuotaDay());
+    await recordYoutubeQuotaUsage(100, '/search', currentYoutubeQuotaDay());
 
     const result = await searchRecentMusicVideos('test query', { publishedAfter: new Date().toISOString(), maxResults: 10 });
     expect(result.ok).toBe(false);

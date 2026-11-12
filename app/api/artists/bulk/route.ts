@@ -19,6 +19,6 @@ export async function POST(req: Request) {
   if (ids.length === 0) return NextResponse.json({ error: 'ids is required' }, { status: 400 });
   if (!STAGES.includes(stage)) return NextResponse.json({ error: 'invalid stage' }, { status: 400 });
 
-  const updated = bulkSetArtistStage(ids, stage, user);
+  const updated = await bulkSetArtistStage(ids, stage, user);
   return NextResponse.json({ updated });
 }

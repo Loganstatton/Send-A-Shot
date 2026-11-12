@@ -25,7 +25,7 @@ function RankChange({ change }: { change: number | null }) {
 
 export default async function LeaderboardPage({ searchParams }: { searchParams: { genre?: string; window?: string; board?: string } }) {
   await requireUser();
-  const genres = getAvailableGenres();
+  const genres = await getAvailableGenres();
   const activeDiscoverers = searchParams.board === 'discoverers';
   const activeGenre = !activeDiscoverers && searchParams.genre && genres.includes(searchParams.genre) ? searchParams.genre : null;
   const activeWindow: LeaderboardWindow = WINDOWS.includes(searchParams.window as LeaderboardWindow) ? (searchParams.window as LeaderboardWindow) : 'all';
@@ -36,9 +36,9 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
   // genre board already applies (see getGenreLeaderboard) — deeper abuse
   // detection (wash trading, coordinated accounts) is Phase 8 scope, for
   // once real prizes/rewards are on the table.
-  const topScouts = activeGenre || activeDiscoverers ? null : getScoutLeaderboard(activeWindow).filter((e) => e.artistsBackedCount > 0);
-  const genreBoard = activeGenre ? getGenreLeaderboard(activeGenre) : null;
-  const discoveryBoard = activeDiscoverers ? getDiscoveryLeaderboard().filter((e) => e.approvedDiscoveriesCount > 0) : null;
+  const topScouts = activeGenre || activeDiscoverers ? null : (await getScoutLeaderboard(activeWindow)).filter((e) => e.artistsBackedCount > 0);
+  const genreBoard = activeGenre ? await getGenreLeaderboard(activeGenre) : null;
+  const discoveryBoard = activeDiscoverers ? (await getDiscoveryLeaderboard()).filter((e) => e.approvedDiscoveriesCount > 0) : null;
 
   const pillClass = (active: boolean) => `next-pill ${active ? 'next-pill-active' : ''}`;
 

@@ -13,9 +13,9 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  if (!getUserTakePostById(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (!await getUserTakePostById(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-  reportUserTakePost(user.id, id);
-  logEvent(user.id, 'feed_user_post_reported', { postId: id });
+  await reportUserTakePost(user.id, id);
+  await logEvent(user.id, 'feed_user_post_reported', { postId: id });
   return NextResponse.json({ ok: true });
 }

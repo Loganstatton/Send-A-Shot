@@ -12,7 +12,7 @@ import { emailConfigured, sendEmail } from './email';
 
 export async function notifyAdminsOfRunFailure(kind: string, detail: string): Promise<void> {
   if (!emailConfigured()) return;
-  const admins = getAllUsers().filter((u) => u.role === 'admin');
+  const admins = (await getAllUsers()).filter((u) => u.role === 'admin');
   if (admins.length === 0) return;
 
   const html = `

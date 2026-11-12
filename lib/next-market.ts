@@ -112,8 +112,9 @@ export function quoteSell(currentPriceCents: number, shares: number): SellQuote 
 // artist's actual NEXT Score is how NEXT surfaces its own headline idea —
 // "when they disagree, that's the signal" — as an actual number instead of
 // just a sentence. A price above what the score would set on its own means
-// the market is pricing in more than the fundamentals show (overheated); a
-// price below means the market hasn't caught up yet (undervalued).
+// the market has pushed past what our Scouts' rating supports (overheated);
+// a price below means the market hasn't caught up to that rating yet
+// (undervalued).
 export function impliedScoreFromPrice(priceCents: number): number {
   const dollars = priceCents / 100;
   const normalized = Math.pow(Math.max(0, (dollars - 1) / 49), 1 / 1.8);

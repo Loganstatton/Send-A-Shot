@@ -17,12 +17,12 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   // Checked separately from the share call itself so a real error (you
   // never backed this artist) and a benign no-op (you already shared it
   // today — dedupe_key) don't collapse into the same response.
-  if (!getFoundingBelieverRecord(user.id, artistId)) {
+  if (!await getFoundingBelieverRecord(user.id, artistId)) {
     return NextResponse.json({ error: 'no founding believer record for this artist' }, { status: 404 });
   }
 
-  const event = shareFoundingBelieverToFeed(user.id, artistId);
+  const event = await shareFoundingBelieverToFeed(user.id, artistId);
   if (event === null) return NextResponse.json({ shared: false, reason: 'already shared today' }, { status: 200 });
-  logEvent(user.id, 'feed_collectible_shared', { artistId, feedEventId: event.id });
+  await logEvent(user.id, 'feed_collectible_shared', { artistId, feedEventId: event.id });
   return NextResponse.json({ shared: true, event }, { status: 201 });
 }

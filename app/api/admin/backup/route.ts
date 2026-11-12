@@ -17,7 +17,7 @@ async function isAuthorized(req: Request): Promise<boolean> {
 export async function POST(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   try {
-    const result = runBackup();
+    const result = await runBackup();
     return NextResponse.json(result);
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? 'Backup failed.' }, { status: 500 });
@@ -27,5 +27,5 @@ export async function POST(req: Request) {
 export async function GET() {
   const admin = await getAdminUser();
   if (!admin) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  return NextResponse.json(listBackups());
+  return NextResponse.json(await listBackups());
 }

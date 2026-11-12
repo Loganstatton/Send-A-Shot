@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
-import {
-  executeTrade, getFeedEvent, getRecentTradeCount, getStoredTradeResponse, logEvent, storeTradeResponse, TRADE_RATE_LIMIT_PER_MINUTE,
-} from '@/lib/db';
+import { executeTradeRequest, getFeedEvent, logEvent } from '@/lib/db';
 import { getSessionUser } from '@/lib/auth';
 import { NextTransactionType } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
+
+// Far above anything a real account can hold, and above the "sell
+// everything" sentinel (see SELL_ALL_SENTINEL_CENTS) — just a bound so an
+// absurd number never reaches the trade math.
+const MAX_TRADE_AMOUNT_CENTS = 1_000_000_000_000;
 
 function respond(status: number, body: unknown) {
   return NextResponse.json(body, { status });
@@ -19,50 +22,42 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const artistId = Number(params.id);
   if (!Number.isInteger(artistId)) return respond(400, { error: 'invalid id' });
 
-  const body = (await req.json()) as {
+  const body = (await req.json().catch(() => null)) as {
     type?: NextTransactionType; credits_amount_cents?: number; idempotencyKey?: string;
     referralSource?: string; referralFeedEventId?: number;
-  };
+  } | null;
+  if (!body || typeof body !== 'object') return respond(400, { error: 'invalid request body' });
   if (body.type !== 'buy' && body.type !== 'sell') {
     return respond(400, { error: "type must be 'buy' or 'sell'" });
   }
-  if (!Number.isFinite(body.credits_amount_cents) || (body.credits_amount_cents ?? 0) <= 0) {
+  if (
+    typeof body.credits_amount_cents !== 'number' || !Number.isFinite(body.credits_amount_cents) ||
+    body.credits_amount_cents <= 0 || body.credits_amount_cents > MAX_TRADE_AMOUNT_CENTS
+  ) {
     return respond(400, { error: 'credits_amount_cents must be a positive number' });
   }
 
-  // Idempotency: a retried/duplicated request carrying the same
-  // client-generated key gets back the ORIGINAL trade's result instead of
-  // executing a second real trade. Checked before anything else — a hit
-  // here means this exact attempt was already fully handled.
-  const idempotencyKey = typeof body.idempotencyKey === 'string' ? body.idempotencyKey.slice(0, 100) : undefined;
-  if (idempotencyKey) {
-    const stored = getStoredTradeResponse(user.id, idempotencyKey);
-    if (stored) return respond(stored.status, stored.body);
-  }
-
-  // Anti-spam rate limit — see TRADE_RATE_LIMIT_PER_MINUTE's own comment;
-  // this isn't stored under the idempotency key since a 429 isn't "the
-  // result of this trade attempt," it's "try again shortly."
-  if (getRecentTradeCount(user.id, 1) >= TRADE_RATE_LIMIT_PER_MINUTE) {
-    return respond(429, { error: "You're trading faster than we can keep up — wait a moment and try again." });
-  }
-
-  const result = executeTrade(user.id, artistId, body.type, body.credits_amount_cents!);
-  const status = result.ok ? 200 : 400;
-  const responseBody = result.ok ? result : { error: result.error };
-  if (idempotencyKey) storeTradeResponse(user.id, idempotencyKey, status, responseBody);
+  // Duplicate check, rate limit, the trade itself and remembering its
+  // response all happen inside executeTradeRequest as one atomic step — see
+  // its own comment for why they can't be separate calls from here. A
+  // retried/duplicated request carrying the same client-generated key gets
+  // back the ORIGINAL response (`replayed`) instead of trading twice.
+  const idempotencyKey = typeof body.idempotencyKey === 'string' && body.idempotencyKey ? body.idempotencyKey.slice(0, 100) : undefined;
+  const outcome = await executeTradeRequest(user.id, artistId, body.type, body.credits_amount_cents, idempotencyKey);
+  const { status, body: responseBody, result } = outcome;
+  if (outcome.replayed || !result) return respond(status, responseBody);
 
   if (!result.ok) return respond(status, responseBody);
-  logEvent(user.id, body.type === 'buy' ? 'buy_completed' : 'sell_completed', { artistId, creditsAmountCents: body.credits_amount_cents });
+  await logEvent(user.id, body.type === 'buy' ? 'buy_completed' : 'sell_completed', { artistId, creditsAmountCents: body.credits_amount_cents });
 
   // Feed referral attribution — additive only, never affects the trade
   // above (already fully executed and validated by this point). Only
-  // logged for a genuinely executed trade, not an idempotent replay (this
-  // whole block is unreachable on a replay — see the early return above).
+  // logged for a genuinely executed trade, never an idempotent replay (a
+  // replay returned above, before reaching here).
   // Re-checks the feed_events row actually exists so a tampered/garbage id
   // can't poison analytics with a fake reference.
-  if (body.referralSource === 'feed' && Number.isInteger(body.referralFeedEventId) && getFeedEvent(body.referralFeedEventId!)) {
-    logEvent(user.id, 'feed_trade_completed', {
+  if (body.referralSource === 'feed' && Number.isInteger(body.referralFeedEventId) && await getFeedEvent(body.referralFeedEventId!)) {
+    await logEvent(user.id, 'feed_trade_completed', {
       artistId, feedEventId: body.referralFeedEventId, tradeType: body.type, creditsAmountCents: body.credits_amount_cents,
     });
   }

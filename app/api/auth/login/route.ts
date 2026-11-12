@@ -17,14 +17,14 @@ export async function POST(req: Request) {
   }
   const { email, password } = parsed.data;
 
-  const user = getUserByEmail(email);
+  const user = await getUserByEmail(email);
   if (!user || !(await verifyPassword(password, user.password_hash))) {
     return NextResponse.json({ error: 'Invalid email or password.' }, { status: 401 });
   }
 
-  setSessionCookie(user.id);
-  const { returning } = recordLogin(user.id);
-  if (returning) logEvent(user.id, 'session_returned');
+  await setSessionCookie(user.id);
+  const { returning } = await recordLogin(user.id);
+  if (returning) await logEvent(user.id, 'session_returned');
   const { password_hash, ...publicUser } = user;
   return NextResponse.json(publicUser);
 }

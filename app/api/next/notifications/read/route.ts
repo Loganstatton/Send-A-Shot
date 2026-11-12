@@ -11,6 +11,6 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   if (typeof body.key !== 'string' || !body.key) return NextResponse.json({ error: 'key is required' }, { status: 400 });
 
-  markNotificationRead(user.id, body.key);
+  await markNotificationRead(user.id, body.key);
   return NextResponse.json({ ok: true });
 }

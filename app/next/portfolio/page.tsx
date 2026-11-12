@@ -14,9 +14,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function NextPortfolioPage() {
   const user = await requireUser();
-  const holdings = getUserHoldings(user.id);
-  const transactions = getUserTransactions(user.id);
-  const portfolio = getPortfolioValue(user.id);
+  const holdings = await getUserHoldings(user.id);
+  const transactions = await getUserTransactions(user.id);
+  const portfolio = await getPortfolioValue(user.id);
 
   const holdingsWithValue = holdings.map((h) => {
     const marketValueCents = h.exitValueCents; // what selling right now would actually net — see getUserHoldings' own comment
@@ -34,7 +34,7 @@ export default async function NextPortfolioPage() {
   // last one — appending the live total here keeps the chart's "current"
   // value and the Daily return stat both true as of this page load, not
   // as of whenever the last event happened to land.
-  const rawHistory = getPortfolioValueHistory(user.id);
+  const rawHistory = await getPortfolioValueHistory(user.id);
   const nowPoint = { recorded_at: new Date().toISOString(), value_cents: portfolio.totalValueCents };
   const valueHistory = [...rawHistory, nowPoint];
   const chartPoints = valueHistory.map((p) => ({ recorded_at: p.recorded_at, value: p.value_cents }));

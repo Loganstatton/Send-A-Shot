@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   if (user.email_verified_at) return NextResponse.json({ ok: true, alreadyVerified: true });
 
-  const token = createActionToken(user.id, 'verify-email', VERIFY_TOKEN_TTL_SEC);
+  const token = await createActionToken(user.id, 'verify-email', VERIFY_TOKEN_TTL_SEC);
   const appUrl = process.env.APP_URL ?? new URL(req.url).origin;
   const result = await sendEmail({
     to: user.email,

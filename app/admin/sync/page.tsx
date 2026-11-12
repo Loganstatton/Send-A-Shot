@@ -42,20 +42,20 @@ function SyncRunSummary({ label, run }: { label: string; run: SyncRun | undefine
 export default async function AdminSyncPage() {
   await requireAdmin();
 
-  const soundcharts = getLatestSyncRun('soundcharts');
-  const deezer = getLatestSyncRun('deezer');
-  const youtube = getLatestSyncRun('youtube_video');
-  const failures = getRecentSyncFailures(undefined, 20);
+  const soundcharts = await getLatestSyncRun('soundcharts');
+  const deezer = await getLatestSyncRun('deezer');
+  const youtube = await getLatestSyncRun('youtube_video');
+  const failures = await getRecentSyncFailures(undefined, 20);
 
-  const totalArtists = getAllArtists().length;
-  const soundchartsLinked = getArtistsWithSoundchartsLink().length;
-  const missingPreview = getArtistsMissingDeezerData().length;
-  const missingVideo = getArtistsMissingVideo().length;
-  const videoBackoff = getArtistsInVideoBackoff();
-  const unverifiedVideo = getUnverifiedVideoMatchCount();
-  const quota = youtubeConfigured() ? getYoutubeQuotaStatus() : null;
+  const totalArtists = (await getAllArtists()).length;
+  const soundchartsLinked = (await getArtistsWithSoundchartsLink()).length;
+  const missingPreview = (await getArtistsMissingDeezerData()).length;
+  const missingVideo = (await getArtistsMissingVideo()).length;
+  const videoBackoff = await getArtistsInVideoBackoff();
+  const unverifiedVideo = await getUnverifiedVideoMatchCount();
+  const quota = youtubeConfigured() ? await getYoutubeQuotaStatus() : null;
   const quotaPct = quota ? Math.min(100, Math.round((quota.usedToday / quota.budget) * 100)) : 0;
-  const linksImpact = getMissingPlatformLinksImpact();
+  const linksImpact = await getMissingPlatformLinksImpact();
   const linksImpactPct = linksImpact.totalArtistDetailViews > 0
     ? Math.round((linksImpact.viewsOnArtistsMissingAllLinks / linksImpact.totalArtistDetailViews) * 1000) / 10
     : null;

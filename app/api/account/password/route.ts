@@ -17,12 +17,12 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Current password and a new password of at least 8 characters are required.' }, { status: 400 });
 
-  const currentHash = getUserPasswordHash(user.id);
+  const currentHash = await getUserPasswordHash(user.id);
   if (!currentHash || !(await verifyPassword(parsed.data.currentPassword, currentHash))) {
     return NextResponse.json({ error: 'Current password is incorrect.' }, { status: 401 });
   }
 
   const newHash = await hashPassword(parsed.data.newPassword);
-  updateUserPasswordHash(user.id, newHash);
+  await updateUserPasswordHash(user.id, newHash);
   return NextResponse.json({ ok: true });
 }

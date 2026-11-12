@@ -11,6 +11,6 @@ export async function POST() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const updated = completeNextOnboarding(user.id);
+  const updated = await completeNextOnboarding(user.id);
   return NextResponse.json(updated ?? user);
 }

@@ -13,7 +13,7 @@ import ArtistFieldHistory from '@/components/ArtistFieldHistory';
 import ScoreBreakdown from '@/components/ScoreBreakdown';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-  const artist = getArtist(Number(params.id));
+  const artist = await getArtist(Number(params.id));
   return { title: { absolute: artist ? `${artist.name} — Scout` : 'Scout' } };
 }
 
@@ -23,13 +23,13 @@ export default async function ArtistDetailPage({ params }: { params: { id: strin
   await requireInternal();
   const id = Number(params.id);
   if (!Number.isInteger(id)) notFound();
-  const artist = getArtist(id);
+  const artist = await getArtist(id);
   if (!artist) notFound();
 
   const score = breakoutScore(artist);
-  const fieldHistory = getArtistFieldHistory(artist.id);
-  const scoreHistory = getScoreHistory(artist.id);
-  const claimedBy = artist.claimed_by_user_id != null ? getUserById(artist.claimed_by_user_id) : undefined;
+  const fieldHistory = await getArtistFieldHistory(artist.id);
+  const scoreHistory = await getScoreHistory(artist.id);
+  const claimedBy = artist.claimed_by_user_id != null ? await getUserById(artist.claimed_by_user_id) : undefined;
 
   return (
     <div className="space-y-6">

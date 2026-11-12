@@ -48,28 +48,28 @@ function metadataArtistId(e: AnalyticsEvent): number | null {
 
 export type ConversionFunnel = { totalUsers: number; viewedArtist: number; listened: number; traded: number };
 
-export function getSignupConversionFunnel(): ConversionFunnel {
-  const totalUsers = getAllUsers().length;
-  const viewedArtist = new Set(getAllEvents().filter((e) => e.event_type === 'artist_detail_opened').map((e) => e.user_id)).size;
-  const listened = new Set(getAllPreviewListenEvents().filter((l) => l.event === 'started').map((l) => l.user_id)).size;
-  const traded = new Set(getAllTransactionsForAnalytics().map((t) => t.user_id)).size;
+export async function getSignupConversionFunnel(): Promise<ConversionFunnel> {
+  const totalUsers = (await getAllUsers()).length;
+  const viewedArtist = new Set((await getAllEvents()).filter((e) => e.event_type === 'artist_detail_opened').map((e) => e.user_id)).size;
+  const listened = new Set((await getAllPreviewListenEvents()).filter((l) => l.event === 'started').map((l) => l.user_id)).size;
+  const traded = new Set((await getAllTransactionsForAnalytics()).map((t) => t.user_id)).size;
   return { totalUsers, viewedArtist, listened, traded };
 }
 
 export type TimeToFirstTradeResult = { avgHours: number; medianHours: number; tradedUserCount: number };
 
-function firstTradeByUser(): Map<number, { artistId: number; createdAt: string }> {
+async function firstTradeByUser(): Promise<Map<number, { artistId: number; createdAt: string }>> {
   const map = new Map<number, { artistId: number; createdAt: string }>();
-  for (const t of getAllTransactionsForAnalytics()) {
+  for (const t of await getAllTransactionsForAnalytics()) {
     if (!map.has(t.user_id)) map.set(t.user_id, { artistId: t.artist_id, createdAt: t.created_at });
   }
   return map;
 }
 
-export function getTimeToFirstTrade(): TimeToFirstTradeResult | null {
-  const usersById = new Map(getAllUsers().map((u) => [u.id, u]));
+export async function getTimeToFirstTrade(): Promise<TimeToFirstTradeResult | null> {
+  const usersById = new Map((await getAllUsers()).map((u) => [u.id, u]));
   const hours: number[] = [];
-  for (const [userId, first] of firstTradeByUser()) {
+  for (const [userId, first] of await firstTradeByUser()) {
     const user = usersById.get(userId);
     if (!user) continue;
     hours.push(Math.max(0, (new Date(first.createdAt).getTime() - new Date(user.created_at).getTime()) / (1000 * 60 * 60)));
@@ -84,10 +84,10 @@ export function getTimeToFirstTrade(): TimeToFirstTradeResult | null {
   };
 }
 
-export function getAvgArtistsViewedBeforeFirstTrade(): number | null {
-  const firstTrades = firstTradeByUser();
+export async function getAvgArtistsViewedBeforeFirstTrade(): Promise<number | null> {
+  const firstTrades = await firstTradeByUser();
   if (firstTrades.size === 0) return null;
-  const viewsByUser = groupByUser(getAllEvents().filter((e) => e.event_type === 'artist_detail_opened'));
+  const viewsByUser = groupByUser((await getAllEvents()).filter((e) => e.event_type === 'artist_detail_opened'));
 
   const counts: number[] = [];
   for (const [userId, first] of firstTrades) {
@@ -103,8 +103,8 @@ export function getAvgArtistsViewedBeforeFirstTrade(): number | null {
 // Reads next_transactions.listened_before_buy directly — that column is
 // already stamped on every buy by executeTrade (see lib/db.ts), so this
 // needed no new tracking, just an aggregate over data that already existed.
-export function getPctTradesPrecededByListen(): number | null {
-  const buys = getAllTransactionsForAnalytics().filter((t) => t.type === 'buy');
+export async function getPctTradesPrecededByListen(): Promise<number | null> {
+  const buys = (await getAllTransactionsForAnalytics()).filter((t) => t.type === 'buy');
   if (buys.length === 0) return null;
   const preceded = buys.filter((t) => t.listened_before_buy === 1).length;
   return Math.round((preceded / buys.length) * 1000) / 10;
@@ -121,8 +121,8 @@ export type SessionAverages = {
 // sessions vs. listen sessions), not one shared "browsing session" concept
 // — there's no session-start/end event to anchor a single definition to,
 // and per-stream sessionizing is a defensible, simple approximation.
-export function getSessionAverages(): SessionAverages {
-  const viewsByUser = groupByUser(getAllEvents().filter((e) => e.event_type === 'artist_detail_opened'));
+export async function getSessionAverages(): Promise<SessionAverages> {
+  const viewsByUser = groupByUser((await getAllEvents()).filter((e) => e.event_type === 'artist_detail_opened'));
   let artistViewSessionCount = 0;
   let totalDistinctArtists = 0;
   for (const events of viewsByUser.values()) {
@@ -132,7 +132,7 @@ export function getSessionAverages(): SessionAverages {
     }
   }
 
-  const listensByUser = groupByUser(getAllPreviewListenEvents().filter((l) => l.event === 'started'));
+  const listensByUser = groupByUser((await getAllPreviewListenEvents()).filter((l) => l.event === 'started'));
   let listenSessionCount = 0;
   let totalListens = 0;
   for (const events of listensByUser.values()) {
@@ -150,20 +150,20 @@ export function getSessionAverages(): SessionAverages {
   };
 }
 
-export function getAvgTradesPerUser(): number {
-  const totalUsers = getAllUsers().length;
+export async function getAvgTradesPerUser(): Promise<number> {
+  const totalUsers = (await getAllUsers()).length;
   if (totalUsers === 0) return 0;
-  return Math.round((getAllTransactionsForAnalytics().length / totalUsers) * 100) / 100;
+  return Math.round(((await getAllTransactionsForAnalytics()).length / totalUsers) * 100) / 100;
 }
 
-export function getAvgWatchlistAddsPerUser(): number {
-  const totalUsers = getAllUsers().length;
+export async function getAvgWatchlistAddsPerUser(): Promise<number> {
+  const totalUsers = (await getAllUsers()).length;
   if (totalUsers === 0) return 0;
-  const adds = getAllEvents().filter((e) => e.event_type === 'watchlist_added').length;
+  const adds = (await getAllEvents()).filter((e) => e.event_type === 'watchlist_added').length;
   return Math.round((adds / totalUsers) * 100) / 100;
 }
 
-function getAllActivityTimestampsByUser(): Map<number, number[]> {
+async function getAllActivityTimestampsByUser(): Promise<Map<number, number[]>> {
   const map = new Map<number, number[]>();
   const add = (userId: number | null, createdAt: string) => {
     if (userId == null) return;
@@ -171,9 +171,9 @@ function getAllActivityTimestampsByUser(): Map<number, number[]> {
     list.push(new Date(createdAt).getTime());
     map.set(userId, list);
   };
-  for (const e of getAllEvents()) add(e.user_id, e.created_at);
-  for (const l of getAllPreviewListenEvents()) add(l.user_id, l.created_at);
-  for (const t of getAllTransactionsForAnalytics()) add(t.user_id, t.created_at);
+  for (const e of await getAllEvents()) add(e.user_id, e.created_at);
+  for (const l of await getAllPreviewListenEvents()) add(l.user_id, l.created_at);
+  for (const t of await getAllTransactionsForAnalytics()) add(t.user_id, t.created_at);
   return map;
 }
 
@@ -204,9 +204,9 @@ function computeRetention(userIds: number[], days: number, usersById: Map<number
   return { eligibleUsers, retainedUsers, pct: eligibleUsers > 0 ? Math.round((retainedUsers / eligibleUsers) * 1000) / 10 : null };
 }
 
-export function getRetention(days: number): RetentionResult {
-  const users = getAllUsers();
-  return computeRetention(users.map((u) => u.id), days, new Map(users.map((u) => [u.id, u])), getAllActivityTimestampsByUser());
+export async function getRetention(days: number): Promise<RetentionResult> {
+  const users = await getAllUsers();
+  return computeRetention(users.map((u) => u.id), days, new Map(users.map((u) => [u.id, u])), await getAllActivityTimestampsByUser());
 }
 
 export type FilterEffectiveness = { filter: string; uses: number; conversions: number; pct: number };
@@ -216,8 +216,8 @@ const FILTER_CONVERSION_WINDOW_MS = 15 * 60 * 1000;
 // "Effective" = led to a real next step (opening an artist, or completing
 // a buy) within 15 minutes, by the same user. Filters used fewer than
 // minUses times are dropped rather than ranked on a tiny, noisy sample.
-export function getMostEffectiveFilters(minUses = 2): FilterEffectiveness[] {
-  const events = getAllEvents();
+export async function getMostEffectiveFilters(minUses = 2): Promise<FilterEffectiveness[]> {
+  const events = await getAllEvents();
   const filterEvents = events.filter((e) => e.event_type === 'filter_used' || e.event_type === 'search_used');
   const actionsByUser = groupByUser(events.filter((e) => e.event_type === 'artist_detail_opened' || e.event_type === 'buy_completed'));
 
@@ -247,7 +247,7 @@ export type ArtistEngagement = { artistId: number; artistName: string; views: nu
 // score weights active signals above a passive view (trade > watchlist add
 // > listen > view) — a deliberately simple, transparent formula, not a
 // tuned model.
-export function getTopEngagementArtists(limit = 10): ArtistEngagement[] {
+export async function getTopEngagementArtists(limit = 10): Promise<ArtistEngagement[]> {
   const counts = new Map<number, { views: number; listens: number; watchlistAdds: number; trades: number }>();
   const bump = (artistId: number, key: 'views' | 'listens' | 'watchlistAdds' | 'trades') => {
     const entry = counts.get(artistId) ?? { views: 0, listens: 0, watchlistAdds: 0, trades: 0 };
@@ -255,18 +255,18 @@ export function getTopEngagementArtists(limit = 10): ArtistEngagement[] {
     counts.set(artistId, entry);
   };
 
-  for (const e of getAllEvents()) {
+  for (const e of await getAllEvents()) {
     const artistId = metadataArtistId(e);
     if (artistId == null) continue;
     if (e.event_type === 'artist_detail_opened') bump(artistId, 'views');
     else if (e.event_type === 'watchlist_added') bump(artistId, 'watchlistAdds');
   }
-  for (const l of getAllPreviewListenEvents()) if (l.event === 'started') bump(l.artist_id, 'listens');
-  for (const t of getAllTransactionsForAnalytics()) bump(t.artist_id, 'trades');
+  for (const l of await getAllPreviewListenEvents()) if (l.event === 'started') bump(l.artist_id, 'listens');
+  for (const t of await getAllTransactionsForAnalytics()) bump(t.artist_id, 'trades');
 
   const results: ArtistEngagement[] = [];
   for (const [artistId, c] of counts) {
-    const artist = getArtist(artistId);
+    const artist = await getArtist(artistId);
     if (!artist) continue;
     results.push({ artistId, artistName: artist.name, ...c, score: c.views + c.listens * 2 + c.watchlistAdds * 3 + c.trades * 5 });
   }
@@ -279,18 +279,18 @@ export type GenreRetention = { genre: string; userCount: number; day7RetentionPc
 // belongs to — users who never traded have no defined cohort and are
 // excluded, same reasoning getFavoriteGenres (Public Profile section)
 // already established for "which genres are yours."
-export function getGenreRetention(): GenreRetention[] {
+export async function getGenreRetention(): Promise<GenreRetention[]> {
   const usersByGenre = new Map<string, number[]>();
-  for (const [userId, first] of firstTradeByUser()) {
-    const genre = getArtist(first.artistId)?.genre;
+  for (const [userId, first] of await firstTradeByUser()) {
+    const genre = (await getArtist(first.artistId))?.genre;
     if (!genre) continue;
     const list = usersByGenre.get(genre) ?? [];
     list.push(userId);
     usersByGenre.set(genre, list);
   }
 
-  const usersById = new Map(getAllUsers().map((u) => [u.id, u]));
-  const activityByUser = getAllActivityTimestampsByUser();
+  const usersById = new Map((await getAllUsers()).map((u) => [u.id, u]));
+  const activityByUser = await getAllActivityTimestampsByUser();
 
   return [...usersByGenre.entries()]
     .map(([genre, userIds]) => {

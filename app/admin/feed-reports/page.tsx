@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 // appropriate and expected, unlike anything shown on a public NEXT page.
 export default async function FeedReportsPage() {
   await requireAdmin();
-  const reported = getReportedUserTakePosts();
+  const reported = await getReportedUserTakePosts();
 
   return (
     <div className="space-y-6">

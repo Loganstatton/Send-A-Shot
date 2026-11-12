@@ -126,7 +126,7 @@ export default function ArtistCard({
               <ScoreGapBar score={score} sentiment={sentiment} />
               <InfoTip
                 label="NEXT Score vs. Price"
-                text="Score is our read on real momentum. Price is what the market currently pays. When Score runs ahead of Price, the artist is undervalued."
+                text="Score is our Scouts' own read on an artist's momentum. Price is what the market currently pays. When Score runs ahead of Price, the artist is undervalued."
               />
             </div>
           </div>

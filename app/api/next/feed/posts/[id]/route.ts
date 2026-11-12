@@ -14,9 +14,9 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
 
-  const deleted = deleteUserTakePost(user.id, id);
+  const deleted = await deleteUserTakePost(user.id, id);
   if (!deleted) return NextResponse.json({ error: 'not found, already deleted, or not yours' }, { status: 404 });
 
-  logEvent(user.id, 'feed_user_post_deleted', { postId: id });
+  await logEvent(user.id, 'feed_user_post_deleted', { postId: id });
   return NextResponse.json({ ok: true });
 }

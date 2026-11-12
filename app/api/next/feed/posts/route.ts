@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  if (getRecentUserTakePostCount(user.id, 10) >= USER_TAKE_RATE_LIMIT_PER_10_MIN) {
+  if (await getRecentUserTakePostCount(user.id, 10) >= USER_TAKE_RATE_LIMIT_PER_10_MIN) {
     return NextResponse.json({ error: "You're posting faster than we can keep up — wait a few minutes and try again." }, { status: 429 });
   }
 
@@ -23,9 +23,9 @@ export async function POST(req: Request) {
   const text = typeof body?.body === 'string' ? body.body : '';
   if (!Number.isInteger(artistId)) return NextResponse.json({ error: 'artistId is required' }, { status: 400 });
 
-  const result = createUserTakePost(user.id, artistId, text);
+  const result = await createUserTakePost(user.id, artistId, text);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
 
-  logEvent(user.id, 'feed_user_post_created', { artistId, feedEventId: result.event.id, postId: result.post.id });
+  await logEvent(user.id, 'feed_user_post_created', { artistId, feedEventId: result.event.id, postId: result.post.id });
   return NextResponse.json({ post: result.post, event: result.event }, { status: 201 });
 }

@@ -14,7 +14,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string; ag
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
   const body = (await req.json()) as AgreementInput;
-  const agreement = updateAgreement(artistId, agreementId, body);
+  const agreement = await updateAgreement(artistId, agreementId, body);
   if (!agreement) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json(agreement);
 }
@@ -27,7 +27,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string; 
   if (!Number.isInteger(artistId) || !Number.isInteger(agreementId)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
-  const ok = deleteAgreement(artistId, agreementId);
+  const ok = await deleteAgreement(artistId, agreementId);
   if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

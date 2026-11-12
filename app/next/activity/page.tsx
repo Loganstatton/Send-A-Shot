@@ -21,15 +21,15 @@ const WINDOW_HOURS = 24;
 
 export default async function MarketActivityPage() {
   await requireUser();
-  const rows = getNextMarket();
-  const trades = getRecentMarketTrades(50);
+  const rows = await getNextMarket();
+  const trades = await getRecentMarketTrades(50);
 
-  const volumeCents = getMarketVolumeCents(WINDOW_HOURS);
-  const { buys, sells } = getMarketTradeCounts(WINDOW_HOURS);
-  const activeArtists = getMostActiveArtists(WINDOW_HOURS, 5);
-  const recentBackerCounts = getRecentBackerCountsByArtist(WINDOW_HOURS);
-  const recentWatchCounts = getRecentWatchCountsByArtist(WINDOW_HOURS);
-  const newArtists = getNewArtistsThisWeek(7);
+  const volumeCents = await getMarketVolumeCents(WINDOW_HOURS);
+  const { buys, sells } = await getMarketTradeCounts(WINDOW_HOURS);
+  const activeArtists = await getMostActiveArtists(WINDOW_HOURS, 5);
+  const recentBackerCounts = await getRecentBackerCountsByArtist(WINDOW_HOURS);
+  const recentWatchCounts = await getRecentWatchCountsByArtist(WINDOW_HOURS);
+  const newArtists = await getNewArtistsThisWeek(7);
 
   const byId = new Map<number, NextMarketRow>(rows.map((r) => [r.artist.id, r]));
 

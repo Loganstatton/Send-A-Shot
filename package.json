@@ -6,24 +6,24 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
-    "postinstall": "node scripts/postinstall.js",
     "test": "vitest run",
     "backup": "node scripts/backup-db.js",
-    "restore": "node scripts/restore-db.js"
+    "restore": "node scripts/restore-db.js",
+    "db:dev": "node scripts/dev-db.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^13.0.3",
     "clsx": "^2.1.1",
     "next": "14.2.35",
+    "pg": "^8.23.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
-    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20.11.17",
+    "@types/pg": "^8.23.1",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.23",
     "autoprefixer": "^10.4.17",

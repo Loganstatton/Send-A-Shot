@@ -1,47 +1,34 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import bcrypt from 'bcryptjs';
-import { getArtist, getUserById, setUserRole } from './db';
-import { DATA_DIR } from './data-dir';
+import { db, getArtist, getUserById, setUserRole } from './db';
+import { perRequest } from './request-cache';
 import { Artist, User } from './types';
 
 export const SESSION_COOKIE = 'scout_session';
 const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60; // 30 days
 
-// Falls back to a secret persisted in data/.session-secret if SESSION_SECRET
-// isn't set, so the app still works out of the box. This file is generated
-// once and read by every module instance/route bundle — Next.js dev (and
-// some serverless setups) can instantiate lib/auth.ts more than once per
-// process, and an in-memory-only fallback would give each instance its own
-// secret, silently invalidating sessions signed by another instance. Set
-// SESSION_SECRET in .env.local for real deployments instead of relying on this.
-const FALLBACK_SECRET_FILE = path.join(DATA_DIR, '.session-secret');
+// The key every session cookie and emailed action link is signed with.
+// SESSION_SECRET, when set, is used as-is. Otherwise the app generates one
+// the first time it's needed and keeps it in the database (app_settings),
+// so every instance — and every restart and redeploy — signs and verifies
+// with the same key. (It used to be kept in a local file, which a host with
+// no persistent disk wipes on every restart: everyone was signed out, and
+// every emailed link broke, each time the server restarted.)
 let cachedSecret: string | null = null;
-function getSecret(): string {
+async function getSecret(): Promise<string> {
   if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
   if (cachedSecret) return cachedSecret;
-
-  try {
-    cachedSecret = fs.readFileSync(FALLBACK_SECRET_FILE, 'utf8').trim();
-    if (cachedSecret) return cachedSecret;
-  } catch {
-    // no fallback file yet
-  }
-
-  cachedSecret = crypto.randomBytes(32).toString('hex');
-  try {
-    fs.mkdirSync(path.dirname(FALLBACK_SECRET_FILE), { recursive: true });
-    fs.writeFileSync(FALLBACK_SECRET_FILE, cachedSecret, { mode: 0o600 });
-  } catch {
-    // best effort — worst case each instance regenerates its own secret
-  }
-  console.warn(
-    '[auth] SESSION_SECRET is not set — generated a fallback secret at data/.session-secret. ' +
-    'Set SESSION_SECRET in .env.local for real deployments.'
+  // Insert-if-absent then read back: when several instances start at once,
+  // exactly one candidate is stored and all of them end up reading it.
+  const candidate = crypto.randomBytes(32).toString('hex');
+  await db.query(
+    "INSERT INTO app_settings (key, value, created_at) VALUES ('session_secret', $1, $2) ON CONFLICT (key) DO NOTHING",
+    [candidate, new Date().toISOString()]
   );
+  const { rows } = await db.query("SELECT value FROM app_settings WHERE key = 'session_secret'");
+  cachedSecret = rows[0].value as string;
   return cachedSecret;
 }
 
@@ -49,16 +36,16 @@ function base64url(input: Buffer | string) {
   return Buffer.from(input).toString('base64url');
 }
 
-function sign(payload: object): string {
+async function sign(payload: object): Promise<string> {
   const body = base64url(JSON.stringify(payload));
-  const sig = crypto.createHmac('sha256', getSecret()).update(body).digest('base64url');
+  const sig = crypto.createHmac('sha256', await getSecret()).update(body).digest('base64url');
   return `${body}.${sig}`;
 }
 
-function verify(token: string): { uid: number; exp: number } | null {
+async function verify(token: string): Promise<{ uid: number; exp: number } | null> {
   const [body, sig] = token.split('.');
   if (!body || !sig) return null;
-  const expected = crypto.createHmac('sha256', getSecret()).update(body).digest('base64url');
+  const expected = crypto.createHmac('sha256', await getSecret()).update(body).digest('base64url');
   const sigBuf = Buffer.from(sig);
   const expectedBuf = Buffer.from(expected);
   if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;
@@ -72,8 +59,8 @@ function verify(token: string): { uid: number; exp: number } | null {
   }
 }
 
-export function setSessionCookie(userId: number) {
-  const token = sign({ uid: userId, exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SEC });
+export async function setSessionCookie(userId: number) {
+  const token = await sign({ uid: userId, exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SEC });
   cookies().set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -93,26 +80,26 @@ export function clearSessionCookie() {
 // admin-only /admin/users panel (setUserRole). Existing accounts are never
 // auto-upgraded just by having signed up earlier; only being named in this
 // env var does it.
-function maybeBootstrapAdmin(user: User): User {
+async function maybeBootstrapAdmin(user: User): Promise<User> {
   if (user.role === 'admin') return user;
   const adminEmails = (process.env.ADMIN_EMAILS ?? '')
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
   if (!adminEmails.includes(user.email.toLowerCase())) return user;
-  return setUserRole(user.id, 'admin') ?? user;
+  return await setUserRole(user.id, 'admin') ?? user;
 }
 
 // Server-only: read + verify the session cookie and load the user.
-export async function getSessionUser(): Promise<User | null> {
+export const getSessionUser = perRequest(async (): Promise<User | null> => {
   const token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const payload = verify(token);
+  const payload = await verify(token);
   if (!payload) return null;
-  const user = getUserById(payload.uid);
+  const user = await getUserById(payload.uid);
   if (!user) return null;
-  return maybeBootstrapAdmin(user);
-}
+  return await maybeBootstrapAdmin(user);
+});
 
 // For server components/pages: redirect to /login if not authenticated.
 export async function requireUser(): Promise<User> {
@@ -145,7 +132,7 @@ export async function requireAdmin(): Promise<User> {
 // non-owner belongs, not a dead end.
 export async function requireArtistOwner(artistId: number): Promise<{ user: User; artist: Artist }> {
   const user = await requireUser();
-  const artist = getArtist(artistId);
+  const artist = await getArtist(artistId);
   if (!artist || artist.claimed_by_user_id !== user.id) redirect('/next');
   return { user, artist };
 }
@@ -187,16 +174,16 @@ function fingerprint(value: string): string {
   return crypto.createHash('sha256').update(value).digest('base64url').slice(0, 16);
 }
 
-export function createActionToken(userId: number, purpose: ActionPurpose, ttlSec: number, currentPasswordHash?: string): string {
+export async function createActionToken(userId: number, purpose: ActionPurpose, ttlSec: number, currentPasswordHash?: string): Promise<string> {
   const payload: ActionPayload = { uid: userId, purpose, exp: Math.floor(Date.now() / 1000) + ttlSec };
   if (purpose === 'reset-password' && currentPasswordHash) payload.fp = fingerprint(currentPasswordHash);
-  return sign(payload);
+  return await sign(payload);
 }
 
-export function verifyActionToken(token: string, purpose: ActionPurpose, currentPasswordHash?: string): { uid: number } | null {
+export async function verifyActionToken(token: string, purpose: ActionPurpose, currentPasswordHash?: string): Promise<{ uid: number } | null> {
   const [body, sig] = token.split('.');
   if (!body || !sig) return null;
-  const expected = crypto.createHmac('sha256', getSecret()).update(body).digest('base64url');
+  const expected = crypto.createHmac('sha256', await getSecret()).update(body).digest('base64url');
   const sigBuf = Buffer.from(sig);
   const expectedBuf = Buffer.from(expected);
   if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null;

@@ -18,7 +18,7 @@ const DISCOVERY_STATUS_LABELS: Record<DiscoveryCandidateStatus, string> = {
 };
 
 export async function generateMetadata({ params }: { params: { userId: string } }): Promise<Metadata> {
-  const profile = getScoutProfile(Number(params.userId));
+  const profile = await getScoutProfile(Number(params.userId));
   return { title: profile ? `${profile.user.name}'s Scout Profile` : 'Scout Profile' };
 }
 
@@ -33,16 +33,16 @@ export default async function ScoutProfilePage({ params }: { params: { userId: s
   await requireUser();
   const userId = Number(params.userId);
   if (!Number.isInteger(userId)) notFound();
-  const profile = getScoutProfile(userId);
+  const profile = await getScoutProfile(userId);
   if (!profile) notFound();
 
   const viewer = await getSessionUser();
   const isOwnProfile = viewer?.id === userId;
-  const founded = getFoundingBelieverRecordsForUser(userId);
+  const founded = await getFoundingBelieverRecordsForUser(userId);
   // "View own posts" — a normal-user Feed control from the spec — lives
   // here rather than a new page, same reasoning as the Founding Believer
   // trophy case above: this profile already is the "my own stuff" view.
-  const myTakes = isOwnProfile ? getUserTakePostsForUser(userId) : [];
+  const myTakes = isOwnProfile ? await getUserTakePostsForUser(userId) : [];
 
   return (
     <div className="flex flex-col gap-8">

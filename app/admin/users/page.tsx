@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminUsersPage() {
   const admin = await requireAdmin();
-  const users = getAllUsers();
+  const users = await getAllUsers();
 
   return (
     <div className="space-y-6">

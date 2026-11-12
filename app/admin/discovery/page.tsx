@@ -71,11 +71,11 @@ function RunHistory({ source, runs }: { source: DiscoverySourceKey; runs: (Disco
 export default async function AdminDiscoveryPage() {
   await requireAdmin();
 
-  const youtubeRuns = getRecentDiscoveryRunsWithCandidateCounts('youtube', 10);
-  const soundchartsRuns = getRecentDiscoveryRunsWithCandidateCounts('soundcharts', 10);
-  const statusCounts = getDiscoveryCandidateCountsByStatus();
-  const genreCounts = getDiscoveryCandidateCountsByGenre();
-  const decisions = getRecentDiscoveryReviewDecisions(30);
+  const youtubeRuns = await getRecentDiscoveryRunsWithCandidateCounts('youtube', 10);
+  const soundchartsRuns = await getRecentDiscoveryRunsWithCandidateCounts('soundcharts', 10);
+  const statusCounts = await getDiscoveryCandidateCountsByStatus();
+  const genreCounts = await getDiscoveryCandidateCountsByGenre();
+  const decisions = await getRecentDiscoveryReviewDecisions(30);
 
   return (
     <div className="space-y-6">

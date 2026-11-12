@@ -37,9 +37,9 @@ function LastRunLine({ label, run }: { label: string; run?: DiscoveryRun }) {
 
 export default async function DiscoveryPage() {
   await requireInternal();
-  const candidates = getDiscoveryCandidates('new');
-  const watching = getDiscoveryCandidates('watching');
-  const lastYoutubeRun = getLatestDiscoveryRun('youtube');
+  const candidates = await getDiscoveryCandidates('new');
+  const watching = await getDiscoveryCandidates('watching');
+  const lastYoutubeRun = await getLatestDiscoveryRun('youtube');
 
   return (
     <div className="space-y-6">

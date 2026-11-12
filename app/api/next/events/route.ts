@@ -29,6 +29,6 @@ export async function POST(req: Request) {
   }
   const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : undefined;
 
-  logEvent(user.id, body.eventType, metadata);
+  await logEvent(user.id, body.eventType, metadata);
   return NextResponse.json({ ok: true });
 }

@@ -61,9 +61,9 @@ function cooldownCutoff(): string {
   return new Date(Date.now() - SIGNAL_COOLDOWN_DAYS * 24 * 60 * 60 * 1000).toISOString();
 }
 
-function maybePost(eventType: FeedEventType, artistId: number, cutoff: string, metadata: Record<string, unknown>): number {
-  if (hasFeedEventSince(eventType, artistId, cutoff)) return 0;
-  return createFeedEvent({ eventType, artistId, metadata }) ? 1 : 0;
+async function maybePost(eventType: FeedEventType, artistId: number, cutoff: string, metadata: Record<string, unknown>): Promise<number> {
+  if (await hasFeedEventSince(eventType, artistId, cutoff)) return 0;
+  return await createFeedEvent({ eventType, artistId, metadata }) ? 1 : 0;
 }
 
 // Called by the scheduled route. Walks the live roster once, checking each
@@ -71,26 +71,26 @@ function maybePost(eventType: FeedEventType, artistId: number, cutoff: string, m
 // scale (the same "load everything, filter in memory" approach
 // getNextMarket's other callers already use), not something that needs
 // its own SQL aggregation yet.
-export function generateFeedSignals(): FeedSignalResult {
+export async function generateFeedSignals(): Promise<FeedSignalResult> {
   const cutoff = cooldownCutoff();
   // getNextMarket() already excludes stage='passed' artists internally —
   // no need (and, since NextMarketRow.artist is now the public-safe
   // projection, no way) to re-filter on .artist.stage here.
-  const market = getNextMarket();
-  const scoreChanges = getScoreChanges();
+  const market = await getNextMarket();
+  const scoreChanges = await getScoreChanges();
   let created = 0;
 
   for (const { artist, score, priceCents, priceHistory } of market) {
     const change = scoreChanges[artist.id];
     if (change?.hasComparison && Math.abs(change.changeAbs) >= ALERT_SCORE_THRESHOLD) {
       const type: FeedEventType = change.changeAbs > 0 ? 'signal_score_up' : 'signal_score_down';
-      created += maybePost(type, artist.id, cutoff, { scoreAfter: score, changeAbs: change.changeAbs });
+      created += await maybePost(type, artist.id, cutoff, { scoreAfter: score, changeAbs: change.changeAbs });
     }
 
     const sentiment = marketSentiment(score, priceCents);
     if (sentiment.tone !== 'fair') {
       const type: FeedEventType = sentiment.tone === 'undervalued' ? 'signal_undervalued' : 'signal_overheated';
-      created += maybePost(type, artist.id, cutoff, {
+      created += await maybePost(type, artist.id, cutoff, {
         diff: Math.round(sentiment.diff * 10) / 10,
         impliedScore: Math.round(sentiment.impliedScore * 10) / 10,
         actualScore: score,
@@ -99,7 +99,7 @@ export function generateFeedSignals(): FeedSignalResult {
 
     const changePct = changePctForWindow(priceCents, priceHistory, MOMENTUM_WINDOW_HOURS);
     if (Math.abs(changePct) >= ALERT_PRICE_PCT_THRESHOLD) {
-      created += maybePost('market_momentum_mover', artist.id, cutoff, {
+      created += await maybePost('market_momentum_mover', artist.id, cutoff, {
         changePct: Math.round(changePct * 10) / 10,
         windowHours: MOMENTUM_WINDOW_HOURS,
         priceCents,
@@ -107,34 +107,34 @@ export function generateFeedSignals(): FeedSignalResult {
     }
   }
 
-  const backerCounts = getRecentBackerCountsByArtist(MOMENTUM_WINDOW_HOURS);
+  const backerCounts = await getRecentBackerCountsByArtist(MOMENTUM_WINDOW_HOURS);
   for (const [artistIdStr, count] of Object.entries(backerCounts)) {
     if (count < MIN_BACKERS_FOR_MOMENTUM) continue;
-    created += maybePost('market_momentum_backers', Number(artistIdStr), cutoff, { backerCount: count, windowHours: MOMENTUM_WINDOW_HOURS });
+    created += await maybePost('market_momentum_backers', Number(artistIdStr), cutoff, { backerCount: count, windowHours: MOMENTUM_WINDOW_HOURS });
   }
 
-  const watchCounts = getRecentWatchCountsByArtist(MOMENTUM_WINDOW_HOURS);
+  const watchCounts = await getRecentWatchCountsByArtist(MOMENTUM_WINDOW_HOURS);
   for (const [artistIdStr, count] of Object.entries(watchCounts)) {
     if (count < MIN_WATCHERS_FOR_MOMENTUM) continue;
-    created += maybePost('market_momentum_most_watched', Number(artistIdStr), cutoff, { watchCount: count, windowHours: MOMENTUM_WINDOW_HOURS });
+    created += await maybePost('market_momentum_most_watched', Number(artistIdStr), cutoff, { watchCount: count, windowHours: MOMENTUM_WINDOW_HOURS });
   }
 
-  const takeCounts = getRecentUserTakeCountsByArtist(DISCUSSION_WINDOW_HOURS);
+  const takeCounts = await getRecentUserTakeCountsByArtist(DISCUSSION_WINDOW_HOURS);
   for (const [artistIdStr, count] of Object.entries(takeCounts)) {
     if (count < MIN_TAKES_FOR_MOMENTUM) continue;
-    created += maybePost('market_momentum_most_discussed', Number(artistIdStr), cutoff, { takeCount: count, windowHours: DISCUSSION_WINDOW_HOURS });
+    created += await maybePost('market_momentum_most_discussed', Number(artistIdStr), cutoff, { takeCount: count, windowHours: DISCUSSION_WINDOW_HOURS });
   }
 
   // NEXT Volume: this week's trading volume vs the week before, per artist
   // still live on the market — only artists with real prior-week volume to
   // compare against (see VOLUME_CHANGE_PCT_THRESHOLD's own comment).
   for (const { artist } of market) {
-    const priorWeekVolume = getArtistTradeVolumeCentsInWindow(artist.id, VOLUME_WINDOW_HOURS * 2, VOLUME_WINDOW_HOURS);
+    const priorWeekVolume = await getArtistTradeVolumeCentsInWindow(artist.id, VOLUME_WINDOW_HOURS * 2, VOLUME_WINDOW_HOURS);
     if (priorWeekVolume <= 0) continue;
-    const thisWeekVolume = getArtistTradeVolumeCentsInWindow(artist.id, VOLUME_WINDOW_HOURS, 0);
+    const thisWeekVolume = await getArtistTradeVolumeCentsInWindow(artist.id, VOLUME_WINDOW_HOURS, 0);
     const changePct = ((thisWeekVolume - priorWeekVolume) / priorWeekVolume) * 100;
     if (changePct < VOLUME_CHANGE_PCT_THRESHOLD) continue;
-    created += maybePost('market_momentum_volume', artist.id, cutoff, {
+    created += await maybePost('market_momentum_volume', artist.id, cutoff, {
       changePct: Math.round(changePct * 10) / 10, thisWeekVolumeCents: thisWeekVolume, priorWeekVolumeCents: priorWeekVolume, windowHours: VOLUME_WINDOW_HOURS,
     });
   }

@@ -16,7 +16,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
 
-  const updated = removeArtistProvidedPhoto(id);
+  const updated = await removeArtistProvidedPhoto(id);
   if (!updated) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

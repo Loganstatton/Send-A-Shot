@@ -16,8 +16,8 @@ const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500'], variabl
 
 export default async function NextLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const unreadNotifications = getNotificationsForUser(user).filter((n) => !n.read).length;
-  const hasClaimedArtist = getArtistsClaimedByUser(user.id).length > 0;
+  const unreadNotifications = (await getNotificationsForUser(user)).filter((n) => !n.read).length;
+  const hasClaimedArtist = (await getArtistsClaimedByUser(user.id)).length > 0;
 
   return (
     <div

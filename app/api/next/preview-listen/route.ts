@@ -27,6 +27,6 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
 
-  recordPreviewListen(user.id, parsed.data.artistId, parsed.data.event);
+  await recordPreviewListen(user.id, parsed.data.artistId, parsed.data.event);
   return NextResponse.json({ ok: true });
 }

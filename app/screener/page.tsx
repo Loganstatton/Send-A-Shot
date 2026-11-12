@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function ScreenerPage() {
   await requireInternal();
-  const rows = getPortfolioSummary()
+  const rows = (await getPortfolioSummary())
     .filter((r) => r.artist.stage !== 'passed')
     .sort((a, b) => b.score - a.score);
 

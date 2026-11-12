@@ -157,13 +157,13 @@ function buildArtistDTO(row: NextMarketRow): FeedItemDTO['artist'] {
   };
 }
 
-function buildExtra(event: FeedEvent, ctx: FeedAssemblyContext): FeedItemDTO['extra'] {
+async function buildExtra(event: FeedEvent, ctx: FeedAssemblyContext): Promise<FeedItemDTO['extra']> {
   if (event.event_type === 'artist_update' && event.ref_type === 'contact_log' && event.ref_id != null) {
-    const entry = getLogEntryById(event.ref_id);
+    const entry = await getLogEntryById(event.ref_id);
     return entry ? { logMessage: entry.message } : undefined;
   }
   if (event.event_type === 'founding_believer_share' && event.ref_type === 'founding_believer' && event.ref_id != null) {
-    const record = getFoundingBelieverRecordById(event.ref_id);
+    const record = await getFoundingBelieverRecordById(event.ref_id);
     if (!record) return undefined;
     const tier = getFoundingBelieverTier(record.discovery_rank);
     return {
@@ -186,13 +186,13 @@ function buildExtra(event: FeedEvent, ctx: FeedAssemblyContext): FeedItemDTO['ex
   return undefined;
 }
 
-function buildFeedItem(event: FeedEvent, ctx: FeedAssemblyContext): FeedItemDTO {
+async function buildFeedItem(event: FeedEvent, ctx: FeedAssemblyContext): Promise<FeedItemDTO> {
   const metadata = parseMetadata(event.metadata);
   const marketRow = event.artist_id != null ? ctx.marketByArtistId.get(event.artist_id) : undefined;
   const artist = marketRow ? buildArtistDTO(marketRow) : undefined;
   const actorUser = event.actor_user_id != null ? ctx.usersById.get(event.actor_user_id) : undefined;
 
-  let extra = buildExtra(event, ctx);
+  let extra = await buildExtra(event, ctx);
   if (extra?.founding && artist) {
     extra = { founding: { ...extra.founding, serial: foundingBelieverSerial(artist.name, extra.founding.discoveryRank) } };
   }
@@ -231,15 +231,17 @@ function buildFeedItem(event: FeedEvent, ctx: FeedAssemblyContext): FeedItemDTO 
 // post was deleted by its author or hidden by a moderator is dropped the
 // same way — the feed_events row stays (so its id/timestamp never gets
 // reused), but nothing renders for it, for anyone.
-export function buildFeedItems(events: FeedEvent[], ctx: FeedAssemblyContext): FeedItemDTO[] {
-  return events
+export async function buildFeedItems(events: FeedEvent[], ctx: FeedAssemblyContext): Promise<FeedItemDTO[]> {
+  const visible = events
     .filter((e) => e.artist_id == null || ctx.marketByArtistId.has(e.artist_id))
     .filter((e) => {
       if (e.event_type !== 'user_take') return true;
       const post = e.ref_id != null ? ctx.userPostsByRefId.get(e.ref_id) : undefined;
       return post != null && !post.deleted_at && !post.hidden_at;
-    })
-    .map((e) => buildFeedItem(e, ctx));
+    });
+  const items: FeedItemDTO[] = [];
+  for (const e of visible) items.push(await buildFeedItem(e, ctx));
+  return items;
 }
 
 // Shared by the Feed page's initial server render and the pagination API
@@ -248,10 +250,10 @@ export function buildFeedItems(events: FeedEvent[], ctx: FeedAssemblyContext): F
 // market rows for every artist this batch of events references PLUS every
 // artist the viewer follows (so relevance/genre-affinity still work for a
 // followed artist even when this particular batch has no event for them).
-export function buildFeedAssemblyContext(userId: number, events: FeedEvent[]): FeedAssemblyContext {
-  const followedArtistIds = new Set([...getWatchlistArtistIds(userId), ...getBackedArtistIds(userId)]);
+export async function buildFeedAssemblyContext(userId: number, events: FeedEvent[]): Promise<FeedAssemblyContext> {
+  const followedArtistIds = new Set([...await getWatchlistArtistIds(userId), ...await getBackedArtistIds(userId)]);
   const eventArtistIds = events.map((e) => e.artist_id).filter((id): id is number => id != null);
-  const marketByArtistId = getNextArtistsByIds([...new Set([...eventArtistIds, ...followedArtistIds])]);
+  const marketByArtistId = await getNextArtistsByIds([...new Set([...eventArtistIds, ...followedArtistIds])]);
 
   const favoriteGenres = new Set<string>();
   for (const id of followedArtistIds) {
@@ -267,10 +269,10 @@ export function buildFeedAssemblyContext(userId: number, events: FeedEvent[]): F
     followedArtistIds,
     favoriteGenres,
     marketByArtistId,
-    scoreChanges: getScoreChanges(),
-    usersById: getUsersByIds(actorIds),
-    reactionCountsByEventId: getFeedReactionCountsForEvents(eventIds),
-    viewerReactionByEventId: getUserFeedReactionsForEvents(userId, eventIds),
-    userPostsByRefId: getUserTakePostsByIds(userPostRefIds),
+    scoreChanges: await getScoreChanges(),
+    usersById: await getUsersByIds(actorIds),
+    reactionCountsByEventId: await getFeedReactionCountsForEvents(eventIds),
+    viewerReactionByEventId: await getUserFeedReactionsForEvents(userId, eventIds),
+    userPostsByRefId: await getUserTakePostsByIds(userPostRefIds),
   };
 }

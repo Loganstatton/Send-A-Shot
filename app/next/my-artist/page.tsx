@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 // land here) explains how to get one.
 export default async function MyArtistEntryPage() {
   const user = await requireUser();
-  const claimed = getArtistsClaimedByUser(user.id);
+  const claimed = await getArtistsClaimedByUser(user.id);
 
   if (claimed.length === 1) redirect(`/next/my-artist/${claimed[0].id}`);
 

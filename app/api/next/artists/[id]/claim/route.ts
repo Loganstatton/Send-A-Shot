@@ -14,7 +14,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const body = await req.json().catch(() => null);
   const message = typeof body?.message === 'string' ? body.message.trim().slice(0, 2000) : undefined;
 
-  const result = createArtistClaim(id, user.id, message || undefined);
+  const result = await createArtistClaim(id, user.id, message || undefined);
   if (!result.ok) return NextResponse.json({ error: result.reason }, { status: 400 });
 
   return NextResponse.json(result.claim, { status: 201 });

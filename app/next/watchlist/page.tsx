@@ -8,9 +8,9 @@ export const dynamic = 'force-dynamic';
 
 export default async function WatchlistPage() {
   const user = await requireUser();
-  const entries = getUserWatchlist(user.id);
+  const entries = await getUserWatchlist(user.id);
   const watchedIds = entries.map((r) => r.artist.id);
-  const scoreChanges = getScoreChanges();
+  const scoreChanges = await getScoreChanges();
   const sinceWatchedByArtist = Object.fromEntries(
     entries.map((e) => [
       e.artist.id,

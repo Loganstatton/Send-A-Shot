@@ -13,6 +13,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'keys must be an array of strings' }, { status: 400 });
   }
 
-  markNotificationsRead(user.id, body.keys);
+  await markNotificationsRead(user.id, body.keys);
   return NextResponse.json({ ok: true });
 }

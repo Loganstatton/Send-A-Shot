@@ -19,15 +19,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
 
-  const artist = getArtist(id);
+  const artist = await getArtist(id);
   if (!artist || artist.claimed_by_user_id !== user.id) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   const message = typeof body?.message === 'string' ? body.message.trim() : '';
   if (!message) return NextResponse.json({ error: 'message is required' }, { status: 400 });
 
-  const entry = addLogEntry(id, { type: 'note', message: `Artist self-update: ${message}` }, user);
-  createFeedEvent({
+  const entry = await addLogEntry(id, { type: 'note', message: `Artist self-update: ${message}` }, user);
+  await createFeedEvent({
     eventType: 'artist_update',
     actorUserId: user.id,
     artistId: id,

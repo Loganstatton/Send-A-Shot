@@ -28,12 +28,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'YouTube is not configured on this server (set YOUTUBE_API_KEY).' }, { status: 503 });
   }
 
-  const run = createDiscoveryRun('youtube');
+  const run = await createDiscoveryRun('youtube');
 
   try {
     const known = {
-      soundchartsUuids: new Set([...getTrackedSoundchartsUuids(), ...getKnownDiscoveryUuids()]),
-      youtubeChannelIds: getKnownDiscoveryYoutubeChannelIds(),
+      soundchartsUuids: new Set([...await getTrackedSoundchartsUuids(), ...await getKnownDiscoveryUuids()]),
+      youtubeChannelIds: await getKnownDiscoveryYoutubeChannelIds(),
     };
     const { candidates, searchedCount, quotaUsed, rejectionBreakdown } = await youtubeDiscoverySource.scan(known);
 
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       // an otherwise-good scan — see roadmap requirement that a YouTube
       // failure never crashes the whole thing.
       try {
-        insertDiscoveryCandidate({ ...candidate, discovery_run_id: run.id });
+        await insertDiscoveryCandidate({ ...candidate, discovery_run_id: run.id });
         insertedCount++;
       } catch (err: any) {
         insertFailedCount++;
@@ -60,14 +60,14 @@ export async function POST(req: Request) {
       }
     }
 
-    completeDiscoveryRun(run.id, { status: 'completed', searchedCount, candidatesFound: insertedCount, quotaUsed, rejectionBreakdown });
+    await completeDiscoveryRun(run.id, { status: 'completed', searchedCount, candidatesFound: insertedCount, quotaUsed, rejectionBreakdown });
     return NextResponse.json({
       runId: run.id, searchedCount, candidatesFound: insertedCount, quotaUsed, rejectionBreakdown,
       insertFailedCount, lastInsertError,
     });
   } catch (err: any) {
     const message = err?.message ?? 'Unknown error during YouTube scan.';
-    completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: message });
+    await completeDiscoveryRun(run.id, { status: 'failed', searchedCount: 0, candidatesFound: 0, error: message });
     await notifyAdminsOfRunFailure('YouTube discovery scan', message);
     return NextResponse.json({ error: message, runId: run.id }, { status: 500 });
   }

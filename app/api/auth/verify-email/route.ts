@@ -11,10 +11,10 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Missing token.' }, { status: 400 });
 
-  const result = verifyActionToken(parsed.data.token, 'verify-email');
+  const result = await verifyActionToken(parsed.data.token, 'verify-email');
   if (!result) return NextResponse.json({ error: 'This verification link is invalid or has expired.' }, { status: 400 });
 
-  const user = markEmailVerified(result.uid);
+  const user = await markEmailVerified(result.uid);
   if (!user) return NextResponse.json({ error: 'Account not found.' }, { status: 404 });
   return NextResponse.json(user);
 }

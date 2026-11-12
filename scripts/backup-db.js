@@ -1,51 +1,45 @@
-// Standalone CLI equivalent of lib/db-backup.ts's runBackup() — for local
-// dev, or an environment with direct disk access rather than the running
-// app's own /api/admin/backup route. Duplicates the small amount of path
-// logic rather than importing the TS module directly (same tradeoff
-// postinstall.js already makes for DATA_DIR — this script runs as plain
-// CommonJS with no TypeScript loader configured).
+#!/usr/bin/env node
+// Writes a snapshot of the database to a local file — the standalone
+// equivalent of the admin Backups page's "Back up now" + "Download", for
+// anywhere with direct database access (local dev, or a machine allowed to
+// reach the production database).
+//
+// Usage:
+//   DATABASE_URL=postgresql://... node scripts/backup-db.js [output-file]
+//
+// Optional: DATABASE_SCHEMA (default "public"), DATABASE_SSL=1 for a server
+// that requires TLS (e.g. Render's external database URL).
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+const { Client, types } = require('pg');
+const { exportSnapshot } = require('../lib/snapshot-core');
 
-const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), 'data');
-const BACKUP_DIR = path.join(DATA_DIR, 'backups');
-const RETENTION_COUNT = 14;
+types.setTypeParser(20, (v) => Number(v));
+types.setTypeParser(1700, (v) => Number(v));
 
-function main() {
-  const dbFile = path.join(DATA_DIR, 'app.db');
-  if (!fs.existsSync(dbFile)) {
-    console.error(`[backup-db] no database found at ${dbFile}`);
-    process.exit(1);
-  }
+async function main() {
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set.');
+  const schema = process.env.DATABASE_SCHEMA || 'public';
+  const outFile = process.argv[2] || path.join(process.cwd(), `snapshot-${new Date().toISOString().replace(/[:.]/g, '-')}.json.gz`);
 
-  fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  // Random suffix so two runs in the same millisecond never collide —
-  // VACUUM INTO refuses to write to a path that already exists.
-  const suffix = Math.random().toString(36).slice(2, 8);
-  const fileName = `app-${new Date().toISOString().replace(/[:.]/g, '-')}-${suffix}.db`;
-  const filePath = path.join(BACKUP_DIR, fileName);
-
-  // Not opened readonly: VACUUM INTO reads the source and writes only the
-  // NEW target file, but SQLite's VACUUM family of commands expects a
-  // writable connection regardless of what they actually modify. WAL mode
-  // supports multiple simultaneous connections, so this is safe to run
-  // against a live database without stopping the app.
-  const db = new Database(dbFile);
-  db.prepare('VACUUM INTO ?').run(filePath);
-  db.close();
-
-  const sizeBytes = fs.statSync(filePath).size;
-  console.log(`[backup-db] wrote ${filePath} (${(sizeBytes / 1024).toFixed(1)} KB)`);
-
-  const existing = fs.readdirSync(BACKUP_DIR).filter((f) => f.startsWith('app-') && f.endsWith('.db')).sort();
-  let pruned = 0;
-  while (existing.length - pruned > RETENTION_COUNT) {
-    const toRemove = existing[pruned];
-    fs.unlinkSync(path.join(BACKUP_DIR, toRemove));
-    console.log(`[backup-db] pruned old backup ${toRemove}`);
-    pruned++;
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_SSL === '1' ? { rejectUnauthorized: false } : undefined,
+    options: `-c search_path=${schema}`,
+  });
+  await client.connect();
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const { data, rowCount } = await exportSnapshot(client);
+    await client.query('COMMIT');
+    fs.writeFileSync(outFile, data);
+    console.log(`[backup-db] wrote ${outFile} (${rowCount} rows, ${(data.length / 1024).toFixed(1)} KB)`);
+  } finally {
+    await client.end();
   }
 }
 
-main();
+main().catch((err) => {
+  console.error(`[backup-db] ${err.message}`);
+  process.exit(1);
+});

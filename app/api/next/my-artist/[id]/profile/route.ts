@@ -21,7 +21,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
 
-  const artist = getArtist(id);
+  const artist = await getArtist(id);
   if (!artist || artist.claimed_by_user_id !== user.id) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
 
   const body = await req.json().catch(() => null);
@@ -34,7 +34,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const input: Record<string, unknown> = {};
   for (const key of allowed) if (key in body) input[key] = typeof body[key] === 'string' ? body[key].trim() || null : body[key];
 
-  const updated = updateArtistByOwner(id, input as ArtistInput, { id: user.id, name: user.name });
+  const updated = await updateArtistByOwner(id, input as ArtistInput, { id: user.id, name: user.name });
   if (!updated) return NextResponse.json({ error: 'not found' }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

@@ -12,7 +12,7 @@ import ArtistPhotoSubmitForm from '@/components/next/ArtistPhotoSubmitForm';
 
 export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const id = Number(params.id);
-  const row = Number.isInteger(id) ? getNextArtist(id) : undefined;
+  const row = Number.isInteger(id) ? await getNextArtist(id) : undefined;
   return { title: row ? `${row.artist.name} — My Artist` : 'My Artist' };
 }
 
@@ -41,14 +41,14 @@ export default async function MyArtistDashboardPage({ params }: { params: { id: 
   if (!Number.isInteger(id)) notFound();
   const { artist } = await requireArtistOwner(id);
 
-  const row = getNextArtist(id);
+  const row = await getNextArtist(id);
   if (!row) notFound();
   const { score, priceCents, priceHistory } = row;
-  const scoreHistory = getScoreHistory(id);
+  const scoreHistory = await getScoreHistory(id);
   const scoreParts = scoreContributors(artist);
-  const backerCount = getBackerCountsByArtist()[id] ?? 0;
-  const earlyBackerCount = getFoundingBelieverCountForArtist(id);
-  const watchCount = getWatchCountsByArtist()[id] ?? 0;
+  const backerCount = (await getBackerCountsByArtist())[id] ?? 0;
+  const earlyBackerCount = await getFoundingBelieverCountForArtist(id);
+  const watchCount = (await getWatchCountsByArtist())[id] ?? 0;
 
   return (
     <div className="flex flex-col gap-6">

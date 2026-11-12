@@ -15,17 +15,17 @@ export const dynamic = 'force-dynamic';
 
 export default async function NextMarketPage() {
   const user = await requireUser();
-  const rows = getNextMarket();
-  const watchedIds = getWatchlistArtistIds(user.id);
-  const watchCounts = getWatchCountsByArtist();
-  const backerCounts = getBackerCountsByArtist();
-  const scoreChanges = getScoreChanges();
+  const rows = await getNextMarket();
+  const watchedIds = await getWatchlistArtistIds(user.id);
+  const watchCounts = await getWatchCountsByArtist();
+  const backerCounts = await getBackerCountsByArtist();
+  const scoreChanges = await getScoreChanges();
 
   // Batched, not per-card impression tracking (no client-side scroll
   // observer or one network round trip per card) — "viewed" here means
   // "was in the results this page load returned," logged in one write.
-  logEvent(user.id, 'discover_viewed');
-  logArtistCardViews(user.id, rows.map((r) => r.artist.id));
+  await logEvent(user.id, 'discover_viewed');
+  await logArtistCardViews(user.id, rows.map((r) => r.artist.id));
 
   // First-party in place of the old Soundcharts-derived "Avg. 30D growth"
   // stat — real NEXT activity (currently-held positions across the whole
@@ -82,7 +82,7 @@ export default async function NextMarketPage() {
           Back breakout artists before <span style={{ color: 'var(--ember)' }}>everyone else does.</span>
         </h1>
         <p className="text-base leading-relaxed m-0 max-w-[58ch]" style={{ color: 'var(--text-muted)' }}>
-          NEXT Score predicts momentum from real performance data. NEXT Price is what the market
+          NEXT Score is our Scouts&apos; own call on an artist&apos;s potential. NEXT Price is what the market
           currently pays. When the two disagree — that&apos;s the signal.
         </p>
       </div>

@@ -18,14 +18,14 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
   const id = Number(params.id);
   if (!Number.isInteger(id)) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
-  const artist = getArtist(id);
+  const artist = await getArtist(id);
   if (!artist) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   const result = await findWikidataMatch(artist.name);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 502 });
 
-  if (result.data) saveWikidataMatch(id, result.data.qid);
-  else saveWikidataNoMatch(id);
+  if (result.data) await saveWikidataMatch(id, result.data.qid);
+  else await saveWikidataNoMatch(id);
 
   return NextResponse.json({ match: result.data });
 }

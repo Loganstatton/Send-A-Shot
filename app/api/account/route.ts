@@ -18,7 +18,7 @@ export async function PATCH(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid input.' }, { status: 400 });
 
-  const updated = updateUserProfile(user.id, parsed.data);
+  const updated = await updateUserProfile(user.id, parsed.data);
   return NextResponse.json(updated);
 }
 
@@ -30,7 +30,7 @@ export async function DELETE() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  deleteUser(user.id);
+  await deleteUser(user.id);
   clearSessionCookie();
   return NextResponse.json({ ok: true });
 }

@@ -23,8 +23,8 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
   const isInternal = user?.role === 'internal' || user?.role === 'admin';
-  const newCandidateCount = isInternal ? getNewDiscoveryCandidateCount() : 0;
-  const pendingArtistClaimCount = isInternal ? getPendingArtistClaimCount() : 0;
+  const newCandidateCount = isInternal ? await getNewDiscoveryCandidateCount() : 0;
+  const pendingArtistClaimCount = isInternal ? await getPendingArtistClaimCount() : 0;
   return (
     <html lang="en">
       <body className={`${sans.variable} ${mono.variable}`}>

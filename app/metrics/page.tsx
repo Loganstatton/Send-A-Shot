@@ -22,19 +22,19 @@ function pctOrPending(value: number | null, eligibleUsers: number): string {
 export default async function MetricsPage() {
   await requireInternal();
 
-  const funnel = getSignupConversionFunnel();
-  const timeToFirstTrade = getTimeToFirstTrade();
-  const artistsViewedBeforeTrade = getAvgArtistsViewedBeforeFirstTrade();
-  const pctPrecededByListen = getPctTradesPrecededByListen();
-  const sessions = getSessionAverages();
-  const avgTradesPerUser = getAvgTradesPerUser();
-  const avgWatchlistAddsPerUser = getAvgWatchlistAddsPerUser();
-  const day1 = getRetention(1);
-  const day7 = getRetention(7);
-  const day30 = getRetention(30);
-  const filters = getMostEffectiveFilters();
-  const topArtists = getTopEngagementArtists();
-  const genreRetention = getGenreRetention();
+  const funnel = await getSignupConversionFunnel();
+  const timeToFirstTrade = await getTimeToFirstTrade();
+  const artistsViewedBeforeTrade = await getAvgArtistsViewedBeforeFirstTrade();
+  const pctPrecededByListen = await getPctTradesPrecededByListen();
+  const sessions = await getSessionAverages();
+  const avgTradesPerUser = await getAvgTradesPerUser();
+  const avgWatchlistAddsPerUser = await getAvgWatchlistAddsPerUser();
+  const day1 = await getRetention(1);
+  const day7 = await getRetention(7);
+  const day30 = await getRetention(30);
+  const filters = await getMostEffectiveFilters();
+  const topArtists = await getTopEngagementArtists();
+  const genreRetention = await getGenreRetention();
 
   return (
     <div className="space-y-6">
