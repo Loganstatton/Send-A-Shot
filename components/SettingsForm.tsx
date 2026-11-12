@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { User } from '@/lib/types';
 import GenrePrefsForm from './GenrePrefsForm';
+import MutedArtistsCard from './MutedArtistsCard';
 
 // Ends every other signed-in session (other browsers and phones); this one
 // stays signed in. Changing the password does the same automatically.
@@ -26,7 +27,7 @@ function SessionsCard() {
   );
 }
 
-export default function SettingsForm({ user, genreOptions, genrePrefs }: { user: User; genreOptions: string[]; genrePrefs: string[] }) {
+export default function SettingsForm({ user, genreOptions, genrePrefs, mutedArtists = [] }: { user: User; genreOptions: string[]; genrePrefs: string[]; mutedArtists?: { id: number; name: string }[] }) {
   const router = useRouter();
 
   // Profile
@@ -44,6 +45,8 @@ export default function SettingsForm({ user, genreOptions, genrePrefs }: { user:
   const [notifyFoundingBeliever, setNotifyFoundingBeliever] = useState(user.notify_founding_believer);
   const [notifyPortfolioMilestones, setNotifyPortfolioMilestones] = useState(user.notify_portfolio_milestones);
   const [notifyLeaderboardRank, setNotifyLeaderboardRank] = useState(user.notify_leaderboard_rank);
+  const [notifySocial, setNotifySocial] = useState(user.notify_social !== false);
+  const [notifyChallenges, setNotifyChallenges] = useState(user.notify_challenges !== false);
   const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(user.email_notifications_enabled);
   const [notificationsSaving, setNotificationsSaving] = useState(false);
   const [notificationsMessage, setNotificationsMessage] = useState<string | null>(null);
@@ -100,6 +103,8 @@ export default function SettingsForm({ user, genreOptions, genrePrefs }: { user:
           notify_founding_believer: notifyFoundingBeliever,
           notify_portfolio_milestones: notifyPortfolioMilestones,
           notify_leaderboard_rank: notifyLeaderboardRank,
+          notify_social: notifySocial,
+          notify_challenges: notifyChallenges,
           email_notifications_enabled: emailNotificationsEnabled,
         }),
       });
@@ -234,6 +239,8 @@ export default function SettingsForm({ user, genreOptions, genrePrefs }: { user:
           { label: 'Founding Believer milestones', hint: 'An artist you backed early crosses a backer-count milestone', checked: notifyFoundingBeliever, set: setNotifyFoundingBeliever },
           { label: 'Portfolio milestones', hint: 'Your all-time return crosses a round number, up or down', checked: notifyPortfolioMilestones, set: setNotifyPortfolioMilestones },
           { label: 'Leaderboard rank changes', hint: 'Your all-time rank moves up or down this week', checked: notifyLeaderboardRank, set: setNotifyLeaderboardRank },
+          { label: 'Leagues and artist updates', hint: 'Someone joins a league you run; an artist you back or watch posts an update', checked: notifySocial, set: setNotifySocial },
+          { label: 'Weekly challenges', hint: 'Last week’s result, and a weekend note if you’re close to keeping a streak', checked: notifyChallenges, set: setNotifyChallenges },
         ].map((pref) => (
           <label key={pref.label} className="flex items-start gap-2.5 text-sm text-neutral-300">
             <input type="checkbox" checked={pref.checked} onChange={(e) => pref.set(e.target.checked)} className="mt-0.5" />
@@ -261,6 +268,8 @@ export default function SettingsForm({ user, genreOptions, genrePrefs }: { user:
       </form>
 
       <GenrePrefsForm options={genreOptions} initial={genrePrefs} />
+
+      <MutedArtistsCard initial={mutedArtists} />
 
       <form onSubmit={changePassword} className="card space-y-3">
         <h2 className="font-semibold text-neutral-100">Change password</h2>

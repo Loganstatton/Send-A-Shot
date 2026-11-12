@@ -23,12 +23,16 @@ import {
 import { getGenrePrefs, matchesGenrePrefs } from './genre-prefs';
 import { ALERT_PRICE_PCT_THRESHOLD, ALERT_SCORE_THRESHOLD, changePctForWindow, marketSentiment } from './next-market';
 import { emailConfigured, sendEmail } from './email';
+import { db } from './pg';
+import { getWeeklyChallenges, STREAK_MIN, weekStartUtc } from './challenges';
 
 export type NotificationKind =
   | 'watchlist_score' | 'watchlist_price' | 'watchlist_growth' | 'watchlist_sentiment' | 'watchlist_trending'
-  | 'new_artist_genre' | 'founding_believer_milestone' | 'portfolio_milestone' | 'leaderboard_rank';
+  | 'new_artist_genre' | 'founding_believer_milestone' | 'portfolio_milestone' | 'leaderboard_rank'
+  | 'league_joined' | 'artist_update' | 'challenge_week' | 'challenge_streak';
 
-export type NotificationCategory = 'watchlist_moves' | 'new_artists' | 'founding_believer' | 'portfolio_milestones' | 'leaderboard_rank';
+export type NotificationCategory =
+  | 'watchlist_moves' | 'new_artists' | 'founding_believer' | 'portfolio_milestones' | 'leaderboard_rank' | 'social' | 'challenges';
 
 const CATEGORY_BY_KIND: Record<NotificationKind, NotificationCategory> = {
   watchlist_score: 'watchlist_moves',
@@ -40,6 +44,10 @@ const CATEGORY_BY_KIND: Record<NotificationKind, NotificationCategory> = {
   founding_believer_milestone: 'founding_believer',
   portfolio_milestone: 'portfolio_milestones',
   leaderboard_rank: 'leaderboard_rank',
+  league_joined: 'social',
+  artist_update: 'social',
+  challenge_week: 'challenges',
+  challenge_streak: 'challenges',
 };
 
 export type Notification = {
@@ -227,6 +235,84 @@ function leaderboardRankNotification(rankChange: number | null): Notification[] 
   }];
 }
 
+const SOCIAL_WINDOW_DAYS = 14;
+
+// Someone joined a league this player runs.
+async function leagueJoinNotifications(userId: number): Promise<Notification[]> {
+  const since = new Date(Date.now() - SOCIAL_WINDOW_DAYS * 86_400_000).toISOString();
+  const rows = (await db.prepare(`
+    SELECT l.id AS league_id, l.name AS league_name, u.id AS member_id, u.name AS member_name, m.joined_at
+    FROM next_league_members m
+    JOIN next_leagues l ON l.id = m.league_id
+    JOIN users u ON u.id = m.user_id
+    WHERE l.owner_id = ? AND m.user_id <> ? AND m.joined_at >= ?
+  `).all(userId, userId, since)) as { league_id: number; league_name: string; member_id: number; member_name: string; joined_at: string }[];
+  return rows.map((r) => ({
+    key: `league_joined:${r.league_id}:${r.member_id}`,
+    kind: 'league_joined' as const,
+    category: 'social' as const,
+    message: `${r.member_name} joined your league ${r.league_name}.`,
+    occurredAt: r.joined_at,
+    read: false,
+  }));
+}
+
+// A claimed artist this player backs or watches posted an update.
+async function artistUpdateNotifications(userId: number): Promise<Notification[]> {
+  const since = new Date(Date.now() - SOCIAL_WINDOW_DAYS * 86_400_000).toISOString();
+  const rows = (await db.prepare(`
+    SELECT f.id, f.artist_id, f.created_at, a.name AS artist_name
+    FROM feed_events f JOIN artists a ON a.id = f.artist_id
+    WHERE f.event_type = 'artist_update' AND f.created_at >= ?
+      AND (f.artist_id IN (SELECT artist_id FROM next_holdings WHERE user_id = ? AND shares > 0)
+        OR f.artist_id IN (SELECT artist_id FROM next_watchlist WHERE user_id = ?))
+  `).all(since, userId, userId)) as { id: number; artist_id: number; created_at: string; artist_name: string }[];
+  return rows.map((r) => ({
+    key: `artist_update:${r.id}`,
+    kind: 'artist_update' as const,
+    category: 'social' as const,
+    message: `${r.artist_name} posted an update.`,
+    artistId: r.artist_id,
+    occurredAt: r.created_at,
+    read: false,
+  }));
+}
+
+// Weekly challenges: last week's result (only if the player did any), and —
+// on the weekend only, and only for a player with a streak to keep — a
+// plain note of how many are left. Never more than one of each per week.
+export async function challengeNotifications(userId: number, now = new Date()): Promise<Notification[]> {
+  const out: Notification[] = [];
+  const thisWeek = weekStartUtc(now);
+  const lastWeek = await getWeeklyChallenges(userId, new Date(thisWeek.getTime() - 86_400_000));
+  if (lastWeek.completedCount > 0) {
+    out.push({
+      key: `challenge_week:${lastWeek.weekStart}`,
+      kind: 'challenge_week',
+      category: 'challenges',
+      message: `Last week you completed ${lastWeek.completedCount} of ${lastWeek.challenges.length} weekly challenges${lastWeek.streakWeeks > 0 ? ` — a ${lastWeek.streakWeeks}-week streak` : ''}.`,
+      occurredAt: thisWeek.toISOString(),
+      read: false,
+    });
+  }
+  const day = now.getUTCDay();
+  if (day === 6 || day === 0) {
+    const current = await getWeeklyChallenges(userId, now);
+    if (current.streakWeeks > 0 && current.completedCount < STREAK_MIN) {
+      const left = STREAK_MIN - current.completedCount;
+      out.push({
+        key: `challenge_streak:${current.weekStart}`,
+        kind: 'challenge_streak',
+        category: 'challenges',
+        message: `${left} more weekly ${left === 1 ? 'challenge' : 'challenges'} keeps your ${current.streakWeeks}-week streak. They reset Monday 00:00 UTC.`,
+        occurredAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString(),
+        read: false,
+      });
+    }
+  }
+  return out;
+}
+
 export async function getNotificationsForUser(user: User): Promise<Notification[]> {
   const watchlist = user.notify_watchlist_moves ? await getUserWatchlist(user.id) : [];
 
@@ -250,6 +336,10 @@ export async function getNotificationsForUser(user: User): Promise<Notification[
   if (user.notify_founding_believer) all = all.concat(await foundingBelieverNotifications(await getFoundingBelieverRecordsForUser(user.id)));
   if (user.notify_portfolio_milestones) all = all.concat(portfolioMilestoneNotifications((await getPortfolioValue(user.id)).totalReturnPct));
   if (user.notify_leaderboard_rank) all = all.concat(leaderboardRankNotification((await getRankMovementsCached())[user.id] ?? null));
+  if (user.notify_social !== false) {
+    all = all.concat(await leagueJoinNotifications(user.id), await artistUpdateNotifications(user.id));
+  }
+  if (user.notify_challenges !== false) all = all.concat(await challengeNotifications(user.id));
 
   const readKeys = await getReadNotificationKeys(user.id);
   all.forEach((n) => { n.read = readKeys.has(n.key); });

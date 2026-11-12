@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requireUser } from '@/lib/auth';
 import { formatCents } from '@/lib/format';
-import { getLeagueById, getLeagueStandings, isLeagueMember } from '@/lib/leagues';
+import { getLeagueActivity, getLeagueById, getLeagueStandings, isLeagueMember } from '@/lib/leagues';
 import ArtistAvatar from '@/components/ArtistAvatar';
 import { LeagueInvitePanel, LeaveLeagueButton, RemoveMemberButton } from '@/components/next/LeagueControls';
 
@@ -27,6 +27,7 @@ export default async function LeaguePage(props: { params: Promise<{ id: string }
   if (!league || !(await isLeagueMember(league.id, user.id))) notFound();
 
   const standings = await getLeagueStandings(league);
+  const activity = await getLeagueActivity(league.id);
   const isOwner = league.owner_id === user.id;
   const anyBacked = standings.some((s) => s.artistsBackedCount > 0);
 
@@ -77,6 +78,27 @@ export default async function LeaguePage(props: { params: Promise<{ id: string }
             );
           })}
         </ol>
+      </section>
+
+      <section aria-labelledby="league-activity" className="flex flex-col gap-2.5">
+        <h2 id="league-activity" className="text-xs uppercase tracking-[0.08em] font-mono m-0" style={{ color: 'var(--text-faint)' }}>Recent picks</h2>
+        {activity.length === 0 ? (
+          <p className="m-0 text-sm" style={{ color: 'var(--text-muted)' }}>Nobody has backed a new artist since joining yet.</p>
+        ) : (
+          <ul className="next-card list-none m-0 p-0 divide-y" style={{ borderColor: 'var(--border-soft)' }}>
+            {activity.map((a) => (
+              <li key={a.recordId} className="px-5 py-3 text-sm flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: 'var(--border-soft)' }}>
+                <span>
+                  <Link href={`/next/profile/${a.userId}`} className="font-semibold hover:underline">{a.userName}</Link>
+                  {' backed '}
+                  <Link href={`/next/artists/${a.artistId}`} className="font-semibold hover:underline">{a.artistName}</Link>
+                  <span style={{ color: 'var(--text-faint)' }}> as backer #{a.backerNumber}</span>
+                </span>
+                <span className="text-xs" style={{ color: 'var(--text-faint)' }}>{formatDate(a.at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <LeaveLeagueButton leagueId={league.id} isOwner={isOwner} memberCount={standings.length} />

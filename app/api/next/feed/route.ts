@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   const beforeId = beforeIdParam != null && Number.isInteger(Number(beforeIdParam)) ? Number(beforeIdParam) : undefined;
   const limit = Math.min(MAX_LIMIT, Math.max(1, Number(url.searchParams.get('limit')) || DEFAULT_LIMIT));
 
-  const events = await getFeedEvents(limit, beforeId);
+  const events = await getFeedEvents(limit, beforeId, user.id);
   const ctx = await buildFeedAssemblyContext(user.id, events);
   const items = await buildFeedItems(events, ctx);
 
