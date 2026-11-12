@@ -10,6 +10,7 @@ import ArtistAvatar from '@/components/ArtistAvatar';
 import NextStatTile from '@/components/next/NextStatTile';
 import MyTakesList from '@/components/next/MyTakesList';
 import { FLAT_BAND_PCT, getTrackRecord } from '@/lib/track-record';
+import { getReputation } from '@/lib/reputation';
 
 const DISCOVERY_STATUS_LABELS: Record<DiscoveryCandidateStatus, string> = {
   new: 'Awaiting review',
@@ -41,6 +42,7 @@ export default async function ScoutProfilePage(props: { params: Promise<{ userId
   const isOwnProfile = viewer?.id === userId;
   const founded = await getFoundingBelieverRecordsForUser(userId);
   const track = await getTrackRecord(userId);
+  const reputation = await getReputation(userId);
   // "View own posts" — a normal-user Feed control from the spec — lives
   // here rather than a new page, same reasoning as the Founding Believer
   // trophy case above: this profile already is the "my own stuff" view.
@@ -169,7 +171,13 @@ export default async function ScoutProfilePage(props: { params: Promise<{ userId
         {track.picks > 0 && (
           <div className="next-card p-5 flex flex-col gap-3">
             <p className="m-0 text-xs font-mono uppercase tracking-[0.08em]" style={{ color: 'var(--text-faint)' }}>Track record</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div>
+                <p className="m-0 num font-bold text-xl" style={{ color: reputation.reputation > 0 ? 'var(--ember)' : undefined }}>{reputation.reputation.toFixed(1)}</p>
+                <p className="m-0 text-xs" style={{ color: 'var(--text-muted)' }}>
+                  <Link href="/next/leaderboard?board=talent" className="underline underline-offset-2">discovery reputation</Link> — credit for players who backed {isOwnProfile ? 'your' : 'their'} picks later
+                </p>
+              </div>
               <div>
                 <p className="m-0 num font-bold text-xl">{track.upCount} of {track.picks}</p>
                 <p className="m-0 text-xs" style={{ color: 'var(--text-muted)' }}>picks priced higher now than when {isOwnProfile ? 'you' : 'they'} backed them</p>

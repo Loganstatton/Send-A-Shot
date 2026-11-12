@@ -126,3 +126,29 @@ export async function getWeeklyChallenges(userId: number, now: Date = new Date()
     streakWeeks,
   };
 }
+
+export type ChallengeLeaderboardEntry = { userId: number; name: string; avatar_url?: string; streakWeeks: number; completedThisWeek: number; rank: number };
+
+// Longest current streaks, then most challenges done this week. Only
+// players with some challenge activity in the streak window are worked
+// out at all, so this stays cheap while most accounts are idle.
+export async function getChallengeLeaderboard(limit = 50, now: Date = new Date()): Promise<ChallengeLeaderboardEntry[]> {
+  const since = new Date(weekStartUtc(now).getTime() - STREAK_LOOKBACK_WEEKS * WEEK_MS).toISOString();
+  const active = (await db.prepare(`
+    SELECT DISTINCT u.id, u.name, u.avatar_url FROM users u
+    WHERE EXISTS (SELECT 1 FROM next_founding_believers b WHERE b.user_id = u.id AND b.purchased_at >= ?)
+       OR EXISTS (SELECT 1 FROM preview_listens p WHERE p.user_id = u.id AND p.event = 'started' AND p.created_at >= ?)
+       OR EXISTS (SELECT 1 FROM next_leagues l JOIN next_league_members m ON m.league_id = l.id
+                  WHERE l.owner_id = u.id AND m.user_id <> u.id AND m.joined_at >= ?)
+  `).all(since, since, since)) as { id: number; name: string; avatar_url: string | null }[];
+
+  const entries: ChallengeLeaderboardEntry[] = [];
+  for (const u of active) {
+    const week = await getWeeklyChallenges(u.id, now);
+    if (week.streakWeeks === 0 && week.completedCount === 0) continue;
+    entries.push({ userId: u.id, name: u.name, avatar_url: u.avatar_url ?? undefined, streakWeeks: week.streakWeeks, completedThisWeek: week.completedCount, rank: 0 });
+  }
+  entries.sort((a, b) => b.streakWeeks - a.streakWeeks || b.completedThisWeek - a.completedThisWeek || a.name.localeCompare(b.name));
+  entries.forEach((e, i) => { e.rank = i + 1; });
+  return entries.slice(0, limit);
+}

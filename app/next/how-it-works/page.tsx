@@ -8,6 +8,7 @@ import {
 import { TRADE_RATE_LIMIT_PER_MINUTE } from '@/lib/db';
 import { getFoundingBelieverTier } from '@/lib/founding-believer';
 import { STREAK_MIN } from '@/lib/challenges';
+import { MISS_AFTER_DAYS, MISS_PENALTY, QUALIFYING_MIN_BACKINGS, REPUTATION_MIN_PICKS } from '@/lib/reputation';
 import { SCORING_GUIDELINES } from '@/lib/scoring-guidelines';
 import { EARLY_DISCOVERY_RANK_THRESHOLD } from '@/lib/scout-score';
 
@@ -142,9 +143,19 @@ export default function HowItWorksPage() {
 
       <Section id="ranks" title="Leaderboards">
         <p className="m-0">
-          <strong style={{ color: 'var(--text)' }}>Top Scouts</strong> ranks players by the return on their virtual portfolio
+          <strong style={{ color: 'var(--text)' }}>Top Traders</strong> ranks players by the return on their virtual portfolio
           (credits plus what their holdings would actually sell for right now, not the quoted price), with ties broken by how
           many artists they&apos;ve backed. Players who haven&apos;t backed anyone aren&apos;t ranked.
+        </p>
+        <p className="m-0">
+          <strong style={{ color: 'var(--text)' }}>Talent Scouts</strong> ranks players by discovery reputation — skill at finding
+          artists before other people do, separate from trading returns. Each artist you back earns credit only for the players
+          who back that same artist <em>after</em> you, counting only players who have backed at least {QUALIFYING_MIN_BACKINGS}{' '}
+          artists (so throwaway accounts can&apos;t inflate it). Credit grows with how many followed, but more slowly as the number
+          grows, so one hugely popular pick can&apos;t carry a whole record. Being one of an artist&apos;s first 10 backers earns full credit,
+          backers 11–50 earn half, and later backers a quarter. Backing someone who&apos;s already popular, or someone nobody else
+          ever backs, earns nothing — and a pick nobody has followed after {MISS_AFTER_DAYS} days costs {MISS_PENALTY} points, so
+          choosing well beats backing everything. You need {REPUTATION_MIN_PICKS} or more picks to be ranked.
         </p>
         <p className="m-0">
           <strong style={{ color: 'var(--text)' }}>Top Discoverers</strong> ranks players by artists they suggested that our Scouts
