@@ -39,6 +39,24 @@ const signup = (ctx, name, email) => ctx.post('/api/auth/signup', { data: { name
     check('header fits at 1280px with the new links', navOverflow === false && header === true, `nav overflow ${navOverflow}, header fits ${header}`);
     await page.screenshot({ path: `${SHOTS}/challenges-discover-1280.png` });
 
+    // A new player sees all five challenge buttons; each goes where it says.
+    await page.goto(BASE + '/next/challenges', { waitUntil: 'networkidle' });
+    const startHrefs = {};
+    for (const label of ['Artists with fewest backers', 'Browse genres', 'See who Scouts rate higher', 'Start listening', 'Your leagues']) {
+      startHrefs[label] = await page.getByRole('link', { name: label }).getAttribute('href').catch(() => null);
+    }
+    check('new player sees every challenge button pointing at the right page',
+      startHrefs['Artists with fewest backers'] === '/next?sort=fewest#artists' && startHrefs['Browse genres'] === '/next/genres', JSON.stringify(startHrefs));
+    await page.getByRole('link', { name: 'Browse genres' }).click();
+    await page.waitForURL(/\/next\/genres$/);
+    check('"Browse genres" opens the genre list', /genre/i.test(await page.locator('h1').first().innerText()));
+    await page.goto(BASE + '/next/challenges', { waitUntil: 'networkidle' });
+    await page.getByRole('link', { name: 'Artists with fewest backers' }).click();
+    await page.waitForURL(/sort=fewest/);
+    await page.waitForLoadState('networkidle');
+    check('"Artists with fewest backers" opens Discover sorted that way',
+      (await page.locator('select').filter({ has: page.locator('option[value="fewest"]') }).first().inputValue().catch(() => null)) === 'fewest');
+
     // Back an artist first (Early call + New sound), listen to 3 previews.
     const t = await ctx.request.post(`/api/next/artists/${ids[1]}/trade`, { data: { type: 'buy', credits_amount_cents: 20000, idempotencyKey: 'ch-1' } });
     check('first backing went through', t.status() === 200);
