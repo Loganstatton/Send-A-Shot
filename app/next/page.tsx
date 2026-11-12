@@ -101,7 +101,8 @@ export default async function NextMarketPage() {
         </h1>
         <p className="text-base leading-relaxed m-0 max-w-[60ch]" style={{ color: 'var(--text-muted)' }}>
           Listen to emerging musicians our Scouts are tracking, back the ones you believe in with free virtual
-          credits, and get a permanent, dated record that you were early.
+          credits, and get a permanent, dated record that you were early.{' '}
+          <Link href="/next/how-it-works" className="underline underline-offset-2" style={{ color: 'var(--text)' }}>How scoring works</Link>
         </p>
         {!user && (
           <div className="flex items-center gap-3 flex-wrap">
