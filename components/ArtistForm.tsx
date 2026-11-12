@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { breakoutScore } from '@/lib/scoring';
 import { Artist, ArtistInput, SCORE_LABELS, SCORE_WEIGHTS, STAGES, STAGE_LABELS, ScoreInputs } from '@/lib/types';
+import { RATIONALE_PROMPT_SCORE, SCORING_GUIDELINES } from '@/lib/scoring-guidelines';
 import { parseYoutubeVideoId } from '@/lib/youtube-url';
 import ScoreBadge from './ScoreBadge';
 import SoundchartsSearch from './SoundchartsSearch';
@@ -73,6 +74,7 @@ export default function ArtistForm({ artist }: Props) {
     soundcharts_uuid: artist?.soundcharts_uuid ?? undefined,
     featured_video_id: artist?.featured_video_id ?? '',
     high_rating_note: artist?.high_rating_note ?? '',
+    score_rationale: artist?.score_rationale ?? '',
     website_url: artist?.website_url ?? '',
   }));
 
@@ -398,8 +400,35 @@ export default function ArtistForm({ artist }: Props) {
                 value={(form[field] as number) ?? 0}
                 onChange={(e) => set(field, Number(e.target.value) as any)}
               />
+              <details className="mt-1 text-xs" style={{ color: 'var(--text-faint)' }}>
+                <summary className="cursor-pointer">Guideline</summary>
+                <p className="mt-1 mb-1">{SCORING_GUIDELINES[field].question}</p>
+                <ul className="m-0 pl-4">
+                  {SCORING_GUIDELINES[field].anchors.map((a) => (
+                    <li key={a.range}><span className="num">{a.range}</span> — {a.meaning}</li>
+                  ))}
+                </ul>
+              </details>
             </div>
           ))}
+        </div>
+        <div className="space-y-1.5">
+          <label className="label mb-0" htmlFor="artist-form-score-rationale">
+            Public reasoning <span className="font-normal" style={{ color: 'var(--text-faint)' }}>— shown on NEXT as &ldquo;Scout&apos;s notes&rdquo;</span>
+          </label>
+          <textarea
+            id="artist-form-score-rationale"
+            className="input min-h-[70px]"
+            value={form.score_rationale ?? ''}
+            onChange={(e) => set('score_rationale', e.target.value)}
+            maxLength={600}
+            placeholder="Two or three sentences a fan would find useful: what stands out, and what would move the rating. No private notes — everyone can read this."
+          />
+          {liveScore >= RATIONALE_PROMPT_SCORE && !(form.score_rationale ?? '').trim() && (
+            <p className="text-xs m-0" style={{ color: 'var(--fire)' }}>
+              A Score of {RATIONALE_PROMPT_SCORE}+ is shown prominently on NEXT — please add a sentence of reasoning.
+            </p>
+          )}
         </div>
         {hasHighRating && (
           <div className="space-y-2 rounded-lg px-4 py-3" style={{ border: '1px solid var(--fire-line)', background: 'var(--fire-dim)' }}>

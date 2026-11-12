@@ -130,6 +130,12 @@ export type Artist = ScoreInputs & {
   // A Scout's own explanation for an unusually high (9-10) rated category —
   // see the nudge in ArtistForm.tsx. Encouraged, never required to save.
   high_rating_note?: string;
+  // Scout Score transparency: the Scout's public reasoning for the current
+  // ratings (shown on NEXT), when the eight ratings last changed, and who
+  // changed them (internal only — never sent to NEXT).
+  score_rationale?: string;
+  scored_at?: string;
+  scored_by?: number;
   // The verified user account behind this artist, once an artist_claims
   // request has been approved (see reviewArtistClaim in lib/db.ts) — never
   // Scout-editable via ArtistForm/PATCH, only set through that review flow.
@@ -267,7 +273,16 @@ export type ScoreSnapshot = ScoreInputs & {
   monthly_listeners?: number;
   growth_velocity_pct?: number;
   engagement_rate_pct?: number;
+  // Who made the change that produced this snapshot (null for automated
+  // syncs) and the public reasoning in force at the time.
+  changed_by?: number | null;
+  rationale?: string | null;
 };
+
+// A change to an artist's NEXT Score as shown publicly: only snapshots
+// where the Score itself moved (a photo or link edit also writes a
+// snapshot), never who made it.
+export type PublicScoreChange = { recorded_at: string; from: number | null; to: number; rationale: string | null };
 
 export type AgreementType = 'development' | 'management' | 'investment' | 'other';
 
