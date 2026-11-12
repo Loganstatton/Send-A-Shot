@@ -433,11 +433,11 @@ export async function getDueFollowUps(): Promise<DueFollowUp[]> {
 const USER_COLUMNS =
   'id, created_at, name, email, role, next_credits_cents, next_onboarded_at, avatar_url, email_verified_at, tos_accepted_at, privacy_accepted_at, ' +
   'show_positions_publicly, notify_watchlist_moves, notify_new_artists, notify_founding_believer, notify_portfolio_milestones, ' +
-  'notify_leaderboard_rank, email_notifications_enabled, notifications_emailed_through, last_login_at, session_version';
+  'notify_leaderboard_rank, email_notifications_enabled, notifications_emailed_through, last_login_at, session_version, notify_social, notify_challenges';
 
 const BOOLEAN_USER_COLUMNS = [
   'show_positions_publicly', 'notify_watchlist_moves', 'notify_new_artists', 'notify_founding_believer',
-  'notify_portfolio_milestones', 'notify_leaderboard_rank', 'email_notifications_enabled',
+  'notify_portfolio_milestones', 'notify_leaderboard_rank', 'email_notifications_enabled', 'notify_social', 'notify_challenges',
 ] as const;
 
 // These flags are stored as 0/1 integers — normalizes each into
@@ -470,9 +470,9 @@ export async function createUser(input: { name: string; email: string; password_
 // password needs the current password; changing email isn't built yet).
 // The boolean notification-preference columns — looped over generically
 // in updateUserProfile below instead of six near-identical if-blocks.
-const NOTIFICATION_PREF_FIELDS = [
+export const NOTIFICATION_PREF_FIELDS = [
   'notify_watchlist_moves', 'notify_new_artists', 'notify_founding_believer',
-  'notify_portfolio_milestones', 'notify_leaderboard_rank', 'email_notifications_enabled',
+  'notify_portfolio_milestones', 'notify_leaderboard_rank', 'email_notifications_enabled', 'notify_social', 'notify_challenges',
 ] as const;
 type NotificationPrefField = (typeof NOTIFICATION_PREF_FIELDS)[number];
 
@@ -3079,11 +3079,38 @@ export async function hasFeedEventSince(eventType: FeedEventType, artistId: numb
 // between pages). No feed-ranking/personalization here yet — that's the
 // UI-facing PR; this is the plain chronological read the schema needs to
 // be genuinely useful and testable on its own.
-export async function getFeedEvents(limit = 50, beforeId?: number): Promise<FeedEvent[]> {
-  if (beforeId != null) {
-    return await db.prepare('SELECT * FROM feed_events WHERE id < ? ORDER BY id DESC LIMIT ?').all(beforeId, limit) as FeedEvent[];
+// With `viewerId`, leaves out what that player hid or muted (feed_hidden,
+// feed_muted_artists).
+export async function getFeedEvents(limit = 50, beforeId?: number, viewerId?: number): Promise<FeedEvent[]> {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (beforeId != null) { where.push('id < ?'); params.push(beforeId); }
+  if (viewerId != null) {
+    where.push('id NOT IN (SELECT feed_event_id FROM feed_hidden WHERE user_id = ?)');
+    where.push('(artist_id IS NULL OR artist_id NOT IN (SELECT artist_id FROM feed_muted_artists WHERE user_id = ?))');
+    params.push(viewerId, viewerId);
   }
-  return await db.prepare('SELECT * FROM feed_events ORDER BY id DESC LIMIT ?').all(limit) as FeedEvent[];
+  return await db.prepare(`SELECT * FROM feed_events ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY id DESC LIMIT ?`).all(...params, limit) as FeedEvent[];
+}
+
+export async function hideFeedEvent(userId: number, feedEventId: number): Promise<boolean> {
+  if (!(await getFeedEvent(feedEventId))) return false;
+  await db.prepare('INSERT INTO feed_hidden (user_id, feed_event_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING').run(userId, feedEventId, new Date().toISOString());
+  return true;
+}
+
+export async function setFeedArtistMuted(userId: number, artistId: number, muted: boolean): Promise<void> {
+  if (muted) {
+    await db.prepare('INSERT INTO feed_muted_artists (user_id, artist_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING').run(userId, artistId, new Date().toISOString());
+  } else {
+    await db.prepare('DELETE FROM feed_muted_artists WHERE user_id = ? AND artist_id = ?').run(userId, artistId);
+  }
+}
+
+export async function getMutedArtists(userId: number): Promise<{ id: number; name: string }[]> {
+  return await db.prepare(`
+    SELECT a.id, a.name FROM feed_muted_artists m JOIN artists a ON a.id = m.artist_id WHERE m.user_id = ? ORDER BY m.created_at DESC
+  `).all(userId) as { id: number; name: string }[];
 }
 
 export async function getFeedEventCount(): Promise<number> {

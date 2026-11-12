@@ -102,6 +102,8 @@ export default function FeedCard({
   watching,
   viewerUserId,
   onPostDeleted,
+  onHidden,
+  onArtistMuted,
 }: {
   item: FeedItemDTO;
   watching: boolean;
@@ -109,6 +111,10 @@ export default function FeedCard({
   // Feed items live in FeedView's client-side list — a successful delete
   // needs to remove this card from that list, not just this component.
   onPostDeleted?: (feedEventId: number) => void;
+  // "Hide" and "Show less about <artist>": the server remembers the choice;
+  // these just drop the affected cards from the list on screen.
+  onHidden?: (feedEventId: number) => void;
+  onArtistMuted?: (artistId: number) => void;
 }) {
   const content = cardContent(item, viewerUserId);
   const artist = item.artist;
@@ -290,7 +296,34 @@ export default function FeedCard({
           </div>
         )}
 
-        <ReactionBar feedEventId={item.id} initialCounts={item.reactionCounts} initialViewerReaction={item.viewerReaction} />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <ReactionBar feedEventId={item.id} initialCounts={item.reactionCounts} initialViewerReaction={item.viewerReaction} />
+          <div className="flex items-center gap-3 text-[11.5px]" style={{ color: 'var(--text-faint)' }}>
+            <button
+              type="button"
+              className="hover:underline"
+              aria-label="Hide this from my Feed"
+              onClick={async () => {
+                const res = await fetch(`/api/next/feed/${item.id}/hide`, { method: 'POST' });
+                if (res.ok) onHidden?.(item.id);
+              }}
+            >
+              Hide
+            </button>
+            {artist && !isOwnPost && (
+              <button
+                type="button"
+                className="hover:underline"
+                onClick={async () => {
+                  const res = await fetch('/api/next/feed/mute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artistId: artist.id }) });
+                  if (res.ok) onArtistMuted?.(artist.id);
+                }}
+              >
+                Show less about {artist.name}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

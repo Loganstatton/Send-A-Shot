@@ -9,6 +9,16 @@ const schema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   avatar_url: z.string().trim().max(2000).nullable().optional(),
   show_positions_publicly: z.boolean().optional(),
+  // Notification preferences (Settings → Notifications). These were missing
+  // here before, so zod silently dropped them and the toggles never saved.
+  notify_watchlist_moves: z.boolean().optional(),
+  notify_new_artists: z.boolean().optional(),
+  notify_founding_believer: z.boolean().optional(),
+  notify_portfolio_milestones: z.boolean().optional(),
+  notify_leaderboard_rank: z.boolean().optional(),
+  notify_social: z.boolean().optional(),
+  notify_challenges: z.boolean().optional(),
+  email_notifications_enabled: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request) {

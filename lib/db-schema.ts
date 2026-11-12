@@ -677,4 +677,28 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
 CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at);
 `,
   },
+  {
+    // Social notifications (league joins, artist updates) and weekly
+    // challenge notifications as their own opt-out categories; per-player
+    // feed controls (hide one item, mute an artist).
+    id: '011_social_notifications_feed_controls',
+    sql: `
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_social BIGINT NOT NULL DEFAULT 1;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_challenges BIGINT NOT NULL DEFAULT 1;
+CREATE TABLE IF NOT EXISTS feed_hidden (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  feed_event_id BIGINT NOT NULL REFERENCES feed_events(id) ON DELETE CASCADE,
+  created_at TEXT COLLATE "C" NOT NULL,
+  UNIQUE (user_id, feed_event_id)
+);
+CREATE TABLE IF NOT EXISTS feed_muted_artists (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  artist_id BIGINT NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+  created_at TEXT COLLATE "C" NOT NULL,
+  UNIQUE (user_id, artist_id)
+);
+`,
+  },
 ];

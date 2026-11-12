@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { Notification, NotificationCategory } from '@/lib/notifications';
+import type { Notification, NotificationCategory } from '@/lib/notifications';
 import { timeAgo } from '@/lib/format';
 
 const CATEGORY_LABELS: Record<NotificationCategory, string> = {
@@ -10,6 +10,8 @@ const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   founding_believer: 'Founding Believer',
   portfolio_milestones: 'Portfolio',
   leaderboard_rank: 'Leaderboard',
+  social: 'Social',
+  challenges: 'Challenges',
 };
 
 export default function NotificationList({ notifications }: { notifications: Notification[] }) {

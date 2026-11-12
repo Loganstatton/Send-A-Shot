@@ -45,6 +45,10 @@ export default function FeedView({
     setItems((prev) => prev.filter((i) => i.id !== feedEventId));
   }
 
+  function removeArtist(artistId: number) {
+    setItems((prev) => prev.filter((i) => i.artist?.id !== artistId));
+  }
+
   // Re-fetches the newest page and merges it into the head of the loaded
   // pool (by id) — used right after posting a User Take, so it shows up
   // immediately without a full page reload or losing scroll position/older
@@ -141,6 +145,8 @@ export default function FeedView({
               watching={item.artist ? watchedSet.has(item.artist.id) : false}
               viewerUserId={viewerUserId}
               onPostDeleted={removePost}
+              onHidden={removePost}
+              onArtistMuted={removeArtist}
             />
           ))}
         </div>

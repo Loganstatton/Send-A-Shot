@@ -198,6 +198,8 @@ export type User = {
   notify_founding_believer: boolean;
   notify_portfolio_milestones: boolean;
   notify_leaderboard_rank: boolean;
+  notify_social: boolean;
+  notify_challenges: boolean;
   email_notifications_enabled: boolean;
   notifications_emailed_through?: string;
   last_login_at?: string;

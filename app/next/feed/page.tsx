@@ -16,7 +16,7 @@ const INITIAL_BATCH_SIZE = 40;
 export default async function FeedPage() {
   const user = await requireUser();
 
-  const events = await getFeedEvents(INITIAL_BATCH_SIZE);
+  const events = await getFeedEvents(INITIAL_BATCH_SIZE, undefined, user.id);
   const ctx = await buildFeedAssemblyContext(user.id, events);
   const items = await buildFeedItems(events, ctx);
 

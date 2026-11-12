@@ -223,3 +223,21 @@ export async function getLeagueStandings(league: League): Promise<LeagueStanding
   ranked.forEach((r, i) => { r.rank = i + 1; });
   return ranked;
 }
+
+export type LeagueActivityItem = { userId: number; userName: string; artistId: number; artistName: string; backerNumber: number; at: string; recordId: number };
+
+// Members' first backings since they joined this league, newest first —
+// "who found what" within the group.
+export async function getLeagueActivity(leagueId: number, limit = 15): Promise<LeagueActivityItem[]> {
+  return (await db.prepare(`
+    SELECT b.user_id AS "userId", u.name AS "userName", b.artist_id AS "artistId", a.name AS "artistName",
+      b.discovery_rank AS "backerNumber", b.purchased_at AS at, b.id AS "recordId"
+    FROM next_league_members m
+    JOIN next_founding_believers b ON b.user_id = m.user_id AND b.purchased_at >= m.joined_at
+    JOIN users u ON u.id = b.user_id
+    JOIN artists a ON a.id = b.artist_id
+    WHERE m.league_id = ?
+    ORDER BY b.purchased_at DESC, b.id DESC
+    LIMIT ?
+  `).all(leagueId, limit)) as LeagueActivityItem[];
+}
