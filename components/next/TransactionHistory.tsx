@@ -29,11 +29,12 @@ export default function TransactionHistory({ transactions }: { transactions: Tra
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="font-display font-bold text-lg m-0">Recent activity</h2>
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button type="button" onClick={() => setType('all')} className={chip(type === 'all')}>All</button>
-          <button type="button" onClick={() => setType('buy')} className={chip(type === 'buy')}>Buys</button>
-          <button type="button" onClick={() => setType('sell')} className={chip(type === 'sell')}>Sells</button>
+          <button type="button" aria-pressed={type === 'all'} onClick={() => setType('all')} className={chip(type === 'all')}>All</button>
+          <button type="button" aria-pressed={type === 'buy'} onClick={() => setType('buy')} className={chip(type === 'buy')}>Buys</button>
+          <button type="button" aria-pressed={type === 'sell'} onClick={() => setType('sell')} className={chip(type === 'sell')}>Sells</button>
           {artists.length > 1 && (
             <select
+              aria-label="Filter by artist"
               value={artistId}
               onChange={(e) => setArtistId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
               className="px-3 py-1.5 rounded-lg text-sm border"

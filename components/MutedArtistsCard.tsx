@@ -12,7 +12,7 @@ export default function MutedArtistsCard({ initial }: { initial: { id: number; n
   return (
     <div className="card space-y-2">
       <h2 className="font-semibold text-neutral-100">Muted in your Feed</h2>
-      <p className="text-xs text-neutral-500">You chose to see less about these artists in the NEXT Feed.</p>
+      <p className="text-xs text-neutral-400">You chose to see less about these artists in the NEXT Feed.</p>
       <ul className="space-y-1.5">
         {artists.map((a) => (
           <li key={a.id} className="flex items-center justify-between gap-3 text-sm">
