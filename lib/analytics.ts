@@ -347,3 +347,66 @@ export async function getGrowthLoops(): Promise<GrowthLoops> {
     leagueJoins: await events('league_joined'),
   };
 }
+
+// --- Activity pulse ---
+// Active = did anything recorded on NEXT (a page view event, a preview
+// play or a trade) in the window. Signed-in players only: signed-out
+// visitors can't be told apart.
+export type ActivityPulse = {
+  dau: number; wau: number; mau: number;
+  returnedNextWeek: { eligible: number; returned: number };
+  signupsBySource: { via: string; count: number }[];
+  activeArtists7d: number; artistsOnNext: number;
+  claims: { requested: number; approved: number };
+  challengeParticipants: number;
+};
+
+export async function getActivityPulse(now: Date = new Date()): Promise<ActivityPulse> {
+  const iso = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
+  const activeSince = async (since: string) => ((await db.prepare(`
+    SELECT COUNT(DISTINCT user_id) AS c FROM (
+      SELECT user_id FROM analytics_events WHERE user_id IS NOT NULL AND created_at >= ?
+      UNION ALL SELECT user_id FROM preview_listens WHERE created_at >= ?
+      UNION ALL SELECT user_id FROM next_transactions WHERE created_at >= ?
+    ) a
+  `).get(since, since, since)) as { c: number }).c;
+
+  // "Came back the following week": accounts created 7–14 days ago that
+  // did something on NEXT 7+ days after signing up.
+  const cohort = (await db.prepare(`
+    SELECT u.id, u.created_at FROM users u WHERE u.created_at >= ? AND u.created_at < ?
+  `).all(iso(14), iso(7))) as { id: number; created_at: string }[];
+  let returned = 0;
+  for (const u of cohort) {
+    const after = new Date(new Date(u.created_at).getTime() + 7 * 86_400_000).toISOString();
+    const hit = await db.prepare(`
+      SELECT 1 AS x FROM analytics_events WHERE user_id = ? AND created_at >= ?
+      UNION ALL SELECT 1 FROM preview_listens WHERE user_id = ? AND created_at >= ?
+      UNION ALL SELECT 1 FROM next_transactions WHERE user_id = ? AND created_at >= ?
+      LIMIT 1
+    `).get(u.id, after, u.id, after, u.id, after);
+    if (hit) returned++;
+  }
+
+  const signupsBySource = (await db.prepare(`
+    SELECT COALESCE(CASE WHEN metadata IS NULL THEN NULL ELSE metadata::jsonb ->> 'via' END, 'unknown') AS via, COUNT(*) AS count
+    FROM analytics_events WHERE event_type = 'signup_completed' AND created_at >= ?
+    GROUP BY 1 ORDER BY 2 DESC
+  `).all(iso(30))) as { via: string; count: number }[];
+
+  const activeArtists7d = ((await db.prepare(`
+    SELECT COUNT(DISTINCT (metadata::jsonb ->> 'artistId')) AS c FROM analytics_events
+    WHERE event_type = 'artist_detail_opened' AND created_at >= ? AND metadata IS NOT NULL
+  `).get(iso(7))) as { c: number }).c;
+  const artistsOnNext = ((await db.prepare("SELECT COUNT(*) AS c FROM artists WHERE stage <> 'passed'").get()) as { c: number }).c;
+  const claims = (await db.prepare("SELECT COUNT(*) AS requested, COUNT(*) FILTER (WHERE status = 'approved') AS approved FROM artist_claims").get()) as { requested: number; approved: number };
+
+  const { getChallengeLeaderboard } = await import('./challenges');
+  const challengeParticipants = (await getChallengeLeaderboard(100_000, now)).filter((e) => e.completedThisWeek > 0).length;
+
+  return {
+    dau: await activeSince(iso(1)), wau: await activeSince(iso(7)), mau: await activeSince(iso(30)),
+    returnedNextWeek: { eligible: cohort.length, returned },
+    signupsBySource, activeArtists7d, artistsOnNext, claims, challengeParticipants,
+  };
+}

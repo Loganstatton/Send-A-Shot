@@ -627,4 +627,21 @@ CREATE INDEX IF NOT EXISTS idx_artist_requests_status ON artist_requests(status,
 CREATE INDEX IF NOT EXISTS idx_artist_requests_artist ON artist_requests(artist_id);
 `,
   },
+  {
+    // Beta feedback from players (/next/feedback): what they liked, what
+    // confused them, whether they understood the scoring.
+    id: '009_beta_feedback',
+    sql: `
+CREATE TABLE IF NOT EXISTS beta_feedback (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  page TEXT COLLATE "C",
+  understood_scoring TEXT COLLATE "C",
+  enjoyed TEXT COLLATE "C",
+  confused TEXT COLLATE "C",
+  created_at TEXT COLLATE "C" NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_beta_feedback_created ON beta_feedback(created_at);
+`,
+  },
 ];

@@ -33,7 +33,7 @@ export default function AuthForm({ mode, inviteRequired = false, returnTo = '/' 
       const url = mode === 'signup' ? '/api/auth/signup' : '/api/auth/login';
       const body =
         mode === 'signup'
-          ? { name, email, password, tosAccepted: true, privacyAccepted: true, inviteCode: inviteCode || undefined }
+          ? { name, email, password, tosAccepted: true, privacyAccepted: true, inviteCode: inviteCode || undefined, returnTo }
           : { email, password };
       const res = await fetch(url, {
         method: 'POST',

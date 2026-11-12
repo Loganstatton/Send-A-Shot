@@ -3,9 +3,11 @@ import { requireInternal } from '@/lib/auth';
 import {
   getAvgArtistsViewedBeforeFirstTrade, getAvgTradesPerUser, getAvgWatchlistAddsPerUser, getGenreRetention,
   getMostEffectiveFilters, getPctTradesPrecededByListen, getRetention, getSessionAverages,
-  getGrowthLoops, getSignupConversionFunnel, getTimeToFirstTrade, getTopEngagementArtists,
+  getActivityPulse, getGrowthLoops, getSignupConversionFunnel, getTimeToFirstTrade, getTopEngagementArtists,
 } from '@/lib/analytics';
 import StatTile from '@/components/StatTile';
+import { getFeedbackSummary } from '@/lib/feedback';
+import Link from 'next/link';
 
 export const metadata: Metadata = { title: { absolute: 'MVP Metrics — Scout' } };
 export const dynamic = 'force-dynamic';
@@ -36,6 +38,8 @@ export default async function MetricsPage() {
   const topArtists = await getTopEngagementArtists();
   const genreRetention = await getGenreRetention();
   const loops = await getGrowthLoops();
+  const pulse = await getActivityPulse();
+  const feedback = await getFeedbackSummary();
 
   return (
     <div className="space-y-6">
@@ -54,6 +58,45 @@ export default async function MetricsPage() {
           <StatTile label="→ Listened to a preview" value={pct(funnel.listened, funnel.totalUsers)} delta={`${funnel.listened} users`} />
           <StatTile label="→ Made a trade" value={pct(funnel.traded, funnel.totalUsers)} delta={`${funnel.traded} users`} />
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="font-semibold">Activity pulse</h2>
+        <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
+          Active = signed-in players who viewed a page, played a preview or traded in the window. Beta targets from the plan
+          (pilot goals, not benchmarks): of 100 users, 50 back an artist and 20 return the following week.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatTile label="Active today" value={String(pulse.dau)} />
+          <StatTile label="Active this week" value={String(pulse.wau)} delta={`${pulse.mau} in 30 days`} />
+          <StatTile
+            label="Came back the next week"
+            value={pulse.returnedNextWeek.eligible > 0 ? pct(pulse.returnedNextWeek.returned, pulse.returnedNextWeek.eligible) : 'Not enough time has passed yet'}
+            delta={`${pulse.returnedNextWeek.returned} of ${pulse.returnedNextWeek.eligible} who joined 7–14 days ago`}
+          />
+          <StatTile label="Did a weekly challenge" value={String(pulse.challengeParticipants)} delta="players, this week" />
+          <StatTile label="Artists viewed this week" value={`${pulse.activeArtists7d} / ${pulse.artistsOnNext}`} delta="artists on NEXT with a page view" />
+          <StatTile label="Artist claims" value={`${pulse.claims.approved} approved`} delta={`${pulse.claims.requested} requested`} />
+          <StatTile
+            label="Understood the scoring"
+            value={feedback.total > 0 ? pct(feedback.yes, feedback.yes + feedback.partly + feedback.no) : '—'}
+            delta={`${feedback.yes} yes · ${feedback.partly} partly · ${feedback.no} no`}
+          />
+        </div>
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>Where signups came from (30 days)</h3>
+        {pulse.signupsBySource.length === 0 ? (
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No signups in the last 30 days.</p>
+        ) : (
+          <ul className="text-sm space-y-1">
+            {pulse.signupsBySource.map((s) => (
+              <li key={s.via}><span className="num font-semibold">{s.count}</span> — {s.via.replace(/_/g, ' ')}</li>
+            ))}
+          </ul>
+        )}
+        <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
+          Source = the page a new player was sent back to after signing up (e.g. a league invite or a proof link). &ldquo;unknown&rdquo; =
+          signups from before this was recorded. <Link href="/admin/feedback" className="underline">Read beta feedback</Link>
+        </p>
       </section>
 
       <section className="space-y-3">

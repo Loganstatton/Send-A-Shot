@@ -4,6 +4,7 @@ import { createUser, findUserByNormalizedEmail, getUserByEmail, logEvent } from 
 import { createActionToken, hashPassword, setSessionCookie } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
 import { isUniqueViolation } from '@/lib/pg';
+import { classifySignupSource } from '@/lib/attribution';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,9 @@ const schema = z.object({
   tosAccepted: z.literal(true),
   privacyAccepted: z.literal(true),
   inviteCode: z.string().trim().max(200).optional(),
+  // The page the player is sent back to after signing up — used only to
+  // record which part of NEXT the signup came from (lib/attribution.ts).
+  returnTo: z.string().max(500).optional(),
 });
 
 export async function POST(req: Request) {
@@ -27,7 +31,7 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  const { name, email, password, inviteCode } = parsed.data;
+  const { name, email, password, inviteCode, returnTo } = parsed.data;
 
   // Closed-beta gate: unset (the default) means open signup. Set it in
   // Render's Environment tab to switch to invite-only without a code
@@ -62,7 +66,7 @@ export async function POST(req: Request) {
     throw err;
   }
   await setSessionCookie(user.id);
-  await logEvent(user.id, 'signup_completed');
+  await logEvent(user.id, 'signup_completed', classifySignupSource(returnTo));
 
   // Best-effort — never blocks account creation. Without RESEND_API_KEY
   // configured, sendEmail logs the link instead of delivering it (see
