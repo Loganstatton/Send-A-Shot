@@ -7,6 +7,7 @@ import {
 import { notifyAdminsOfRunFailure } from '@/lib/ops-alerts';
 import { youtubeDiscoverySource } from '@/lib/youtube-discovery';
 import { youtubeConfigured } from '@/lib/youtube';
+import { purgeExpiredYouTubeStats } from '@/lib/youtube-retention';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,11 @@ async function isAuthorized(req: Request): Promise<boolean> {
 
 export async function POST(req: Request) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  // First, and even if YouTube is no longer configured: clear statistics
+  // older than YouTube's 30-day storage limit (lib/youtube-retention.ts).
+  const purged = await purgeExpiredYouTubeStats();
+  if (purged > 0) console.log(`[youtube-retention] cleared expired YouTube statistics on ${purged} candidate(s)`);
 
   if (!youtubeConfigured()) {
     return NextResponse.json({ error: 'YouTube is not configured on this server (set YOUTUBE_API_KEY).' }, { status: 503 });

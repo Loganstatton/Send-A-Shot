@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createUser, findUserByNormalizedEmail, getUserByEmail, logEvent } from '@/lib/db';
 import { createActionToken, hashPassword, setSessionCookie } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
+import { verifyEmailMessage } from '@/lib/email-templates';
 import { isUniqueViolation } from '@/lib/pg';
 import { classifySignupSource } from '@/lib/attribution';
 
@@ -68,16 +69,11 @@ export async function POST(req: Request) {
   await setSessionCookie(user.id);
   await logEvent(user.id, 'signup_completed', classifySignupSource(returnTo));
 
-  // Best-effort — never blocks account creation. Without RESEND_API_KEY
-  // configured, sendEmail logs the link instead of delivering it (see
-  // lib/email.ts), so this is still testable in dev with no setup.
+  // Never blocks account creation. sendEmail retries and records the
+  // outcome (admin Email page); unconfigured, it prints the link in dev.
   const verifyToken = await createActionToken(user.id, 'verify-email', VERIFY_TOKEN_TTL_SEC);
   const appUrl = process.env.APP_URL ?? new URL(req.url).origin;
-  sendEmail({
-    to: user.email,
-    subject: 'Verify your email for Send-A-Shot',
-    html: `<p>Welcome to NEXT — confirm your email to finish setting up your account.</p><p><a href="${appUrl}/verify-email?token=${verifyToken}">Verify email</a></p><p>This link expires in 24 hours.</p>`,
-  }).catch((err) => console.error('[signup] verification email failed to send', err?.message));
+  sendEmail({ to: user.email, ...verifyEmailMessage(appUrl, verifyToken), kind: 'verify', userId: user.id }).catch((err) => console.error('[signup] verification email failed to send', err?.message));
 
   return NextResponse.json(user, { status: 201 });
 }

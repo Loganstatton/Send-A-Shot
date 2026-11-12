@@ -22,7 +22,7 @@ export async function notifyAdminsOfRunFailure(kind: string, detail: string): Pr
   `;
   await Promise.all(
     admins.map((admin) =>
-      sendEmail({ to: admin.email, subject: `⚠ ${kind} failed`, html }).catch((err) => {
+      sendEmail({ to: admin.email, subject: `⚠ ${kind} failed`, html, kind: 'ops', userId: admin.id }).catch((err) => {
         console.error('[ops-alerts] failed to send failure alert', err);
       })
     )
