@@ -6,17 +6,19 @@ import Link from 'next/link';
 type Props = {
   mode: 'login' | 'signup';
   inviteRequired?: boolean;
+  // From an invite link (/signup?invite=CODE).
+  initialInviteCode?: string;
   // Already validated server-side (safeReturnPath) — always a path on this site.
   returnTo?: string;
 };
 
-export default function AuthForm({ mode, inviteRequired = false, returnTo = '/' }: Props) {
+export default function AuthForm({ mode, inviteRequired = false, initialInviteCode = '', returnTo = '/' }: Props) {
   const otherHref = (base: string) => (returnTo && returnTo !== '/' ? `${base}?next=${encodeURIComponent(returnTo)}` : base);
   const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState(initialInviteCode);
   const [policyAccepted, setPolicyAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -91,10 +93,11 @@ export default function AuthForm({ mode, inviteRequired = false, returnTo = '/' 
             </p>
           )}
         </div>
-        {mode === 'signup' && inviteRequired && (
+        {mode === 'signup' && (inviteRequired || initialInviteCode) && (
           <div>
             <label className="label" htmlFor="auth-invite">Invite code</label>
-            <input id="auth-invite" className="input" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} required />
+            <input id="auth-invite" className="input" value={inviteCode} onChange={(e) => setInviteCode(e.target.value)} required={inviteRequired} autoCapitalize="characters" autoComplete="off" />
+            {inviteRequired && <p className="text-xs mt-1.5 text-neutral-400">NEXT is in an invite-only beta. Your code is in the invite you were sent.</p>}
           </div>
         )}
         {mode === 'signup' && (

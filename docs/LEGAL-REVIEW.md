@@ -3,6 +3,8 @@
 NEXT has not had a legal review. This lists what the product does today in
 each area the launch directive (§21) names, what has been done to reduce
 risk, and the specific questions for counsel. None of this is legal advice.
+The cover memo with context, data inventory and priorities is
+[LEGAL-REVIEW-PACKET.md](LEGAL-REVIEW-PACKET.md).
 
 | Area | What NEXT does today | Question for counsel |
 |---|---|---|
@@ -11,13 +13,13 @@ risk, and the specific questions for counsel. None of this is legal advice.
 | **Age** | Terms require users to be **13+** (parental permission below the local age of majority); signup checkbox says "I'm at least 13". No age verification. | Is 13 the right floor (COPPA), or should it be 16 (GDPR consent age in some EU states) or 18 given the market mechanics? |
 | **Privacy and retention** | Privacy page updated: what's collected (incl. usage events, signup source, hashed login attempts), what's public, account deletion. Login-attempt records are hashed and kept ~1 day. Backups (snapshots) are kept for the last 14. No cookie banner (one first-party session cookie; no ad/analytics trackers). | GDPR/CCPA: is a lawful-basis statement, DPA list, data-export request process, retention schedule and cookie notice required? How long may backups that include deleted accounts be kept? |
 | **Account deletion** | Self-service in Settings; deletes the account and its NEXT activity. Founding Believer records are deleted with the account. | Is deletion within backups acceptable as "rolling off" after 14 snapshots? |
-| **Email** | Only transactional email (verification, password reset) and an opt-in notification digest (off by default). | CAN-SPAM/GDPR: does the digest need an unsubscribe link and physical address? |
+| **Email** | Only transactional email (verification, password reset) and an opt-in notification digest (off by default). Each send's outcome is recorded for 90 days (deleted with the account). Provider: Resend, once enabled. | CAN-SPAM/GDPR: does the digest need an unsubscribe link and physical address? |
 | **Music and images** | Videos are official YouTube embeds (youtube-nocookie) under the YouTube API Terms; Deezer/Soundcharts photos are never shown publicly; Wikimedia Commons photos show their required attribution; artist-uploaded photos require a rights confirmation. | Confirm YouTube API compliance (including the earlier decision not to derive scores from YouTube data) and whether showing artist names/photos without consent needs an opt-out policy beyond the one now built. |
-| **Commercial API use** | Soundcharts integration exists but its data isn't shown publicly; no paid data source is licensed. | Before any "Verified Momentum" source: licence terms for display and derived scores. |
+| **Commercial API use** | Soundcharts integration exists but its data isn't shown publicly; no paid data source is licensed. YouTube statistics on Scout discovery candidates are deleted after 30 days (YouTube API policy); Scout-only figures computed from them (views/day, like rate) remain until then. | Before any "Verified Momentum" source: licence terms for display and derived scores. |
 | **Artist rights and impersonation** | Artists can claim profiles (staff-verified), request corrections, a rating review or removal (opt-out removes them from NEXT); anyone signed in can report impersonation or a wrong claim. Staff respond with a note; decisions are audit-logged. | Is the opt-out/takedown process adequate (response times, appeal)? Right of publicity for unclaimed artists. |
 | **Scout ratings about real people** | Scores are labelled as human opinion against published guidelines; only strengths are shown publicly; weak categories are never named. | Defamation/opinion risk in publishing ratings and Scout notes about named, real artists. |
 | **User-generated content** | User Takes in the Feed: report + admin hide; per-player hide/mute. | Is a DMCA agent / notice-and-takedown policy needed? Terms on UGC licence and conduct. |
 | **Sponsored placements** | None exist. Collections are labelled editorial and say artists can't pay to be included. | Disclosure rules (FTC) before any paid placement or artist promotion product. |
-| **Paid subscriptions (NEXT Pro)** | Not built. | Auto-renewal laws, refund/cancellation terms, processor requirements before launch. |
+| **Paid subscriptions (NEXT Pro)** | Not built. A survey (/next/pro) asks what players would pay for; nothing is sold and no payment data is collected. Design rule: Pro never sells credits or trading advantages. | Auto-renewal laws, refund/cancellation terms, processor requirements before launch. |
 | **Market manipulation** | Rate limits, idempotent trades, rapid-trading and coordinated-pair flags for staff review; one account per person (email alias blocking). | With no real money, is any further obligation triggered? What if prizes are introduced? |
 | **Marketing claims** | Public copy describes only shipped features; "Verified Momentum" is shown as "not available yet"; nothing claims predictive accuracy. | Review homepage and share-card copy before paid marketing. |

@@ -21,6 +21,7 @@ export default function NextFooter({ signedIn }: { signedIn: boolean }) {
           <Link href="/next/how-it-works" className="hover:underline">How it works</Link>
           <Link href="/terms" className="hover:underline">Terms</Link>
           <Link href="/privacy" className="hover:underline">Privacy</Link>
+          {signedIn && <Link href="/next/pro" className="hover:underline">NEXT Pro survey</Link>}
           <Link href={feedbackHref} className="hover:underline" style={{ color: 'var(--ember)' }}>Send feedback (beta)</Link>
         </nav>
       </div>

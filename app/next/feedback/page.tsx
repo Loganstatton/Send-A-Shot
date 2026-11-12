@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { requireUser } from '@/lib/auth';
 import { safeReturnPath } from '@/lib/return-path';
 import FeedbackForm from '@/components/next/FeedbackForm';
@@ -19,6 +20,9 @@ export default async function FeedbackPage(props: { searchParams: Promise<{ from
         </p>
       </div>
       <FeedbackForm fromPage={fromPage} />
+      <p className="m-0 text-sm" style={{ color: 'var(--text-muted)' }}>
+        Thinking about a paid tier? <Link href="/next/pro" className="underline underline-offset-2" style={{ color: 'var(--text)' }}>Tell us what NEXT Pro should include</Link> (nothing is for sale).
+      </p>
     </div>
   );
 }
