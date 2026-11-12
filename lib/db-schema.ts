@@ -533,4 +533,27 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 `,
   },
+  {
+    // Private leagues: a small group of friends who compete with each other
+    // instead of (as well as) the whole site. Joining is by invite code
+    // only — a league never appears in any public list.
+    id: '004_leagues',
+    sql: `
+CREATE TABLE IF NOT EXISTS next_leagues (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT COLLATE "C" NOT NULL,
+  invite_code TEXT COLLATE "C" NOT NULL UNIQUE,
+  owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT COLLATE "C" NOT NULL
+);
+CREATE TABLE IF NOT EXISTS next_league_members (
+  id BIGSERIAL PRIMARY KEY,
+  league_id BIGINT NOT NULL REFERENCES next_leagues(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  joined_at TEXT COLLATE "C" NOT NULL,
+  UNIQUE (league_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_next_league_members_user ON next_league_members(user_id);
+`,
+  },
 ];
