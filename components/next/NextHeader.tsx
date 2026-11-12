@@ -163,6 +163,9 @@ export default function NextHeader({
           <Link href="/settings" onClick={() => setMenuOpen(false)} className="px-2 py-3 text-[15px] rounded-lg" style={{ color: 'var(--text-muted)' }}>
             Settings
           </Link>
+          <Link href="/next/how-it-works" onClick={() => setMenuOpen(false)} className="px-2 py-3 text-[15px] rounded-lg" style={{ color: 'var(--text-muted)' }}>
+            How NEXT works
+          </Link>
           {isInternal && (
             <Link href="/" onClick={() => setMenuOpen(false)} className="px-2 py-3 text-[15px] rounded-lg" style={{ color: 'var(--text-faint)' }}>
               Switch to Scout →
@@ -186,6 +189,7 @@ function GuestHeader({ pathname }: { pathname: string }) {
   const links = [
     { href: '/next', label: 'Discover', active: pathname === '/next' || pathname.startsWith('/next/artists') },
     { href: '/next/leaderboard', label: 'Leaderboard', active: pathname.startsWith('/next/leaderboard') },
+    { href: '/next/how-it-works', label: 'How it works', active: pathname.startsWith('/next/how-it-works') },
   ];
   return (
     <div className="relative border-b border-[var(--border-soft)]">
