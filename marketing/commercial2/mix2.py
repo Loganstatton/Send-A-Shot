@@ -60,32 +60,98 @@ for k in range(3):                                               # the ring trav
     add(shimmer(0.7, 0.05), 2.05 + k * 0.55, pan=(-0.6, 0.6, -0.3)[k])
 add(shing(0.05), 2.4, pan=-0.3)                                  # reflection across the glass
 
+def g(frame): return (frame - 1) / 30.0                       # global frame -> seconds
+def tone(f, dur, level, decay=0.25, harm=0.3):
+    n = at(dur); t = np.arange(n) / SR
+    return (np.sin(2 * np.pi * f * t) + harm * np.sin(2 * np.pi * 2 * f * t)) * np.minimum(1, t / 0.003) * e(n, decay) * level
+def chime(notes, step=0.05, level=0.08):
+    out = np.zeros(at(1.4))
+    for i, nn in enumerate(notes):
+        x = tone(440 * 2 ** ((nn - 69) / 12), 1.0, 1.0, 0.3, 0.35); s0 = at(i * step); out[s0:s0 + len(x)] += x[:len(out) - s0]
+    return out * level
+def rnb_preview(dur=1.95):
+    """Juno Marrow's 'preview': an original late-night R&B sketch (warm keys, soft beat, a hummed line)."""
+    n = at(dur); t = np.arange(n) / SR; out = np.zeros(n)
+    def m(x): return 440 * 2 ** ((x - 69) / 12)
+    for c0, chord in ((0.0, (51, 55, 58, 62)), (0.98, (48, 51, 55, 58, 62))):          # Ebmaj7 → Cm9
+        s0 = at(c0); k = n - s0; tt = np.arange(k) / SR
+        keys_ = sum(np.sin(2 * np.pi * m(x) * tt + 0.8 * np.sin(2 * np.pi * m(x) * tt) * np.exp(-tt / 0.3)) for x in chord) / len(chord)
+        out[s0:] += keys_ * np.exp(-tt / 0.9) * 0.5
+    for b in np.arange(0, dur, 0.375 * 2):                                               # soft kick / rim
+        s0 = at(b); k = min(at(0.3), n - s0); tt = np.arange(k) / SR
+        out[s0:s0 + k] += np.sin(2 * np.pi * (50 + 60 * np.exp(-tt / 0.03)) * tt) * np.exp(-tt / 0.12) * 0.5
+        s1 = at(b + 0.375)
+        if s1 < n:
+            k2 = min(at(0.05), n - s1); out[s1:s1 + k2] += signal.sosfilt(sos('bandpass', [1500, 6000]), rng.standard_normal(k2)) * e(k2, 0.01) * 0.25
+    vib = np.sin(2 * np.pi * 5.2 * t) * 0.008
+    for nt, t0, d in ((70, 0.15, 0.5), (67, 0.7, 0.35), (65, 1.1, 0.75)):                 # the hummed line
+        s0 = at(t0); k = min(at(d), n - s0); tt = np.arange(k) / SR
+        v = signal.sawtooth(2 * np.pi * m(nt) * (1 + vib[:k]) * tt)
+        v = signal.sosfilt(sos('bandpass', [500, 1800]), v) * np.minimum(1, tt / 0.06) * np.minimum(1, (d - tt) / 0.08) * 0.35
+        out[s0:s0 + k] += v
+    out = signal.sosfilt(sos('lowpass', 7500), out)                                      # through a phone's preview player
+    return out * np.minimum(1, t / 0.05) * np.minimum(1, (dur - t) / 0.15) * 0.5
+
+PL = np.zeros(N); PR = np.zeros(N); prev_env = np.zeros(N)
+if LEN > 4.5:
+    # 3 DISCOVER
+    add(whoosh(0.4, 400, 7000, 0.08), g(121), pan=-0.2)
+    add(click(0.18, 2400), g(127))                                 # Discover slides to Juno
+    add(click(0.3, 2800), g(134))                                  # tap the card
+    add(whoosh(0.5, 300, 6000, 0.12), g(135), pan=0.3)            # the card lifts off the screen
+    pv = rnb_preview(1.95); add(pv, g(156), 1.0, 0.1, (PL, PR)); prev_env[at(g(156)):at(g(156)) + len(pv)] = 1.0
+    for k in range(4): add(shimmer(0.5, 0.025), g(158 + 14 * k), pan=0.3)
+    # 4 BACK / TRADE
+    add(click(0.32, 2600), g(211))                                 # Back this artist
+    add(whoosh(0.35, 800, 9000, 0.1), g(212), pan=-0.2)
+    add(click(0.25, 2400), g(228)); add(click(0.3, 2700), g(241)); add(click(0.34, 3000), g(259))
+    add(chime([68, 72, 75, 80, 84, 87], 0.05, 0.11), g(262), pan=0.1)      # bought
+    add(boom(0.45, 46), g(262))
+    for i, nn in enumerate((72, 75, 77, 79, 82, 84, 87, 89, 91)):          # market lines growing
+        add(tone(440 * 2 ** ((nn - 69) / 12), 0.25, 0.04, 0.08), g(264 + i * 3.5), pan=-0.7 + 1.4 * i / 8)
+    add(whoosh(1.1, 200, 8000, 0.15, rise=True), g(296) - 0.2)    # into the chart
+    # 5 TRACK
+    for k, fr in enumerate((338, 348, 358, 367, 376)):
+        add(whoosh(0.28, 1500, 10000, 0.06), g(fr), pan=(-0.7, 0.7)[k % 2])
+    add(whoosh(0.3, 600, 9000, 0.07), g(391))                      # portfolio → leaderboard
+    add(chime([77, 81, 84, 89], 0.045, 0.09), g(396))              # #1 lights up
+    # 6 BACKER #1
+    add(tone(130.8, 1.0, 0.05, 0.6, 0.1) * np.sin(np.pi * np.arange(at(1.0)) / at(1.0)), g(424))     # the small light appears
+    add(boom(1.0, 30), g(451)); add(shing(0.07), g(451), pan=0.2)
+    add(chime([84, 89, 91, 96], 0.03, 0.08), g(452))
+    add(shing(0.04), g(486), pan=-0.4)                             # glint across the foil
+    # 7 WHO'S NEXT
+    add(whoosh(0.9, 400, 9000, 0.12), g(556), pan=-0.3); add(whoosh(0.9, 400, 9000, 0.12), g(558), pan=0.3)
+    for k in range(10): add(tone(2000 + 300 * k, 0.08, 0.012, 0.03), g(560) + k * 0.06, pan=-0.8 + 0.16 * k)
+    add(chime([89, 96], 0.0, 0.09), g(588)); add(boom(0.5, 44), g(588))
+    add(click(0.2, 2000), g(612))
+
 # ---------------------------------------------------------------- voiceover
 VO = arg('--vo'); hook = arg('--hook', 'a')
 CUES = [('hook_' + hook, 0.12), ('prove', 2.08)]
 if LEN > 4.5:
     CUES += [('discover', 4.25), ('back', 7.3), ('track', 11.15), ('proof', 15.55), ('end', 18.3)]
 VL = np.zeros(N); VR = np.zeros(N); vo_env = np.zeros(N)
+lines = {}
 if VO:
+    import soundfile as sf
     for key, t0 in CUES:
         p = os.path.join(VO, f'{key}.wav')
         if not os.path.exists(p): continue
-        import soundfile as sf
         v, vsr = sf.read(p, dtype='float32')
         if v.ndim > 1: v = v.mean(1)
         v = signal.resample_poly(v, SR, vsr)
         v = signal.sosfilt(sos('highpass', 90), v)               # clean low end
-        v = v / (np.abs(v).max() + 1e-9) * 0.9
-        add(v, t0, 1.0, 0.0, (VL, VR))
+        lines[key] = (t0, v / (np.abs(v).max() + 1e-9) * 0.9)
+        add(lines[key][1], t0, 1.0, 0.0, (VL, VR))
         s0 = at(t0); vo_env[s0:s0 + len(v)] = 1.0
-    # duck everything else under the voice (60 ms attack, 250 ms release)
-    k_att, k_rel = np.exp(-1 / (0.06 * SR)), np.exp(-1 / (0.25 * SR))
-    g = np.zeros(N); y = 0.0
-    for i in range(N):
-        x = vo_env[i]; y = x + (y - x) * (k_att if x > y else k_rel); g[i] = y
-    duckg = 1 - 0.62 * g
-else:
-    duckg = np.ones(N)
+def follower(x, att, rel):
+    ka, kr = np.exp(-1 / (att * SR)), np.exp(-1 / (rel * SR)); out = np.zeros(len(x)); y = 0.0
+    for i in range(len(x)):
+        y = x[i] + (y - x[i]) * (ka if x[i] > y else kr); out[i] = y
+    return out
+duckg = 1 - 0.62 * follower(vo_env, 0.06, 0.25)
+prevg = 1 - 0.55 * follower(prev_env, 0.08, 0.3)                  # the score steps back for Juno's preview
 
 # ---------------------------------------------------------------- music + mix
 mus = np.zeros((N, 2))
@@ -93,11 +159,31 @@ if arg('--music'):
     msr, m = wavfile.read(arg('--music')); m = m.astype(np.float64) / 32768
     n_ = min(len(m), N); mus[:n_] = m[:n_]
 sfx = np.stack([L, R], 1); sfx = sfx / (np.abs(sfx).max() + 1e-9)
-bed = (mus / (np.abs(mus).max() + 1e-9) * 0.8 + sfx * 0.45) * duckg[:, None]
+prev = np.stack([PL, PR], 1)
+bed = (mus / (np.abs(mus).max() + 1e-9) * 0.8 * prevg[:, None] + sfx * 0.5 + prev * 0.9) * duckg[:, None]
 vo = np.stack([VL, VR], 1) * 0.95
+
+EDIT = arg('--edit')                  # e.g. "0-4,8-10,14-16,18-22": a condensed cut on bar lines
+if EDIT:
+    segs = [tuple(float(x) for x in sp.split('-')) for sp in EDIT.split(',')]
+    parts, vparts, t_out, newvo, last_end = [], None, 0.0, [], 0.0
+    xf = at(0.01)
+    for a, b in segs:
+        piece = bed[at(a):at(b)].copy(); piece[:xf] *= np.linspace(0, 1, xf)[:, None]; piece[-xf:] *= np.linspace(1, 0, xf)[:, None]
+        parts.append(piece)
+        for key, (t0, v) in sorted(lines.items(), key=lambda kv: kv[1][0]):
+            if a <= t0 < b:
+                nt = t_out + (t0 - a)
+                if nt >= last_end: newvo.append((nt, v)); last_end = nt + len(v) / SR
+        t_out += b - a
+    bed = np.concatenate(parts); N2 = len(bed)
+    vo = np.zeros((N2, 2)); ve = np.zeros(N2)
+    for nt, v in newvo:
+        s0 = at(nt); k = min(len(v), N2 - s0); vo[s0:s0 + k] += (v[:k] * 0.95)[:, None]; ve[s0:s0 + k] = 1
+    bed = bed * (1 - 0.35 * follower(ve, 0.06, 0.25))[:, None]
 mix = bed + vo
 mix = np.tanh(mix * 1.1) / np.tanh(1.1)
 mix *= 10 ** (-4.0 / 20) / np.abs(mix).max()                     # sample peak -4 dBFS (true-peak headroom for AAC)
 f_ = at(0.04); mix[-f_:] *= np.linspace(1, 0, f_)[:, None]
 wavfile.write(OUTP, SR, (mix * 32767).astype(np.int16))
-print('wrote', OUTP, f'{LEN}s', 'cues:', [c for c, _ in CUES])
+print('wrote', OUTP, f'{len(mix) / SR:.2f}s', 'cues:', [c for c, _ in CUES], '(edit)' if EDIT else '')

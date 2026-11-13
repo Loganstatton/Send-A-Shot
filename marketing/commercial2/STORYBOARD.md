@@ -41,3 +41,22 @@ Hooks (same body, frames 1–60 swap only): **A** "I FOUND THEM FIRST." (competi
 
 `opening.py` (frames 1–120), `phone2.py` (hero phone), `post2.py` (grade + type), `music2.py`, `mix2.py`, `vo.py`, `gpu_render2.py`.
 Rendered frames, audio and videos stay out of git (see `.gitignore`).
+
+## 5. Delivered (final render)
+
+| File | What | Checked |
+|---|---|---|
+| `NEXT-ad2-A-found-them-first.mp4` | main, hook A (competition) | 1080×1920, 660 frames, 22.0 s, −14.7 LUFS, −3.9 dBTP |
+| `NEXT-ad2-B-trade-artists.mp4` | hook B (trading curiosity): the studio phone shows the trade screen | 660 frames, 22.0 s, −14.6 LUFS |
+| `NEXT-ad2-C-next-big-artist.mp4` | hook C (discovery): the studio phone shows Juno's featured card | 660 frames, 22.0 s, −14.7 LUFS |
+| `NEXT-ad2-A-captions.mp4` | sound-off version: voiceover as captions | 660 frames |
+| `NEXT-ad2-12s.mp4` | condensed: 0–4 + 8–10 + 14–16 + 18–22 s, cut on bar lines | 360 frames, 12.0 s, −15.3 LUFS |
+| `NEXT-ad2-cover.png` | cover / thumbnail | 1080×1920 |
+
+All 3D is rendered at a true 1080×1920 (Blender Cycles on a RunPod GPU, OptiX denoise); type is composited at full resolution.
+Scene 1 is a 3D studio, not live action (stock footage was unreachable from this environment); a filmed 2 s clip can replace frames 1–60.
+Voice: Kokoro-82M `af_heart` (synthetic, Apache-2.0). Music and sound design: original (`music2.py`, `mix2.py`).
+CTA URL checked: `https://send-a-shot.onrender.com` → 200 at `/next`.
+
+Rebuild: render `opening.py`, `body.py`, `hero.py`, `opening.py@b`, `opening.py@c` with `gpu_render2.py`, then `assemble2.sh`.
+`blender-venv/bin/python <scene>.py -- --assets DIR --save scene.blend` writes an editable .blend of any scene.

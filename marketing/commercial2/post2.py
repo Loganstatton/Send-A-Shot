@@ -59,7 +59,7 @@ def grade(lin, frame):
 def layer_text(lines, size, colors, tracking=0.01, font_path=DISP, line_gap=0.98, max_w=980):
     """Centered multi-line block; colors(i_line, i_char) -> rgb. Returns RGBA (W, h)."""
     font = ImageFont.truetype(font_path, size)
-    while max(sum(font.getlength(c) + size * tracking for c in ln) for ln in lines) > max_w and size > 30:
+    while max(sum(font.getlength(c) + size * tracking for c in ln) for ln in lines) > max_w and size > 16:
         size -= 2; font = ImageFont.truetype(font_path, size)
     lh = int(size * line_gap); h = lh * len(lines) + int(size * 0.5)
     im = Image.new('RGBA', (W, h), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
@@ -93,8 +93,30 @@ _t = np.clip((_y - 560) / 260, 0, 1)
 SCRIM_TOP = (1 - _t * _t * (3 - 2 * _t))[:, None, None]
 
 HOOK = arg('--hook', 'a')
+INK = (16, 9, 8)
+CTA_URL = os.environ.get('NEXT_CTA_URL', 'send-a-shot.onrender.com')
+DISCLOSE = 'Virtual Credits · no cash value · no ownership of artists, music or earnings · demo artists'
+
+def pill(text, size, fg, bg, outline=None, font_path=SANS_SB, pad=1.0):
+    font = ImageFont.truetype(font_path, size)
+    while font.getlength(text) > W - 160 and size > 20:
+        size -= 1; font = ImageFont.truetype(font_path, size)
+    tw = font.getlength(text); h = int(size * 1.75 * pad); w = int(tw + size * 1.4)
+    im = Image.new('RGBA', (W, h + 20), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+    x0 = (W - w) // 2; d.rounded_rectangle((x0, 10, x0 + w, 10 + h), h // 2, fill=bg, outline=outline, width=3 if outline else 0)
+    d.text((x0 + size * 0.7, 10 + (h - size * 1.3) / 2), text, font=font, fill=fg)
+    return im
+def line(text, size, color=MUTED, font_path=SANS):
+    return layer_text([text], size, lambda li, ci: color, tracking=0.0, font_path=font_path, max_w=W - 120)
+def hot_after(word_start):
+    return lambda li, ci: EMBER if ci >= word_start else WHITE
+
+# Voiceover captions for the sound-off version (cue times match mix2.py)
+CAPTIONS = [(128, 182, 'Discover artists before the crowd.'), (219, 266, 'Back them with virtual Credits.'),
+            (335, 362, 'Track your picks.'), (467, 520, 'And if you’re first? You’ve got the proof.')]
+
 def typography(img, f):
-    # SCENE 1 (frames 2–57): the hook, readable from the second frame, sound off
+    # SCENE 1 (1–57): the hook, readable from the first frame, sound off
     if 1 <= f <= 57:
         o = fade(f, 53, 5); st = slam(f, 0, 4)
         if HOOK == 'a':
@@ -104,15 +126,67 @@ def typography(img, f):
         else:
             lay = layer_text(['CAN YOU FIND', 'THE NEXT BIG', 'ARTIST?'], 132, lambda li, ci: EMBER if li == 1 else WHITE)
         place(img, lay, 420, scale=st['scale'] * (1 + 0.08 * (1 - o)), alpha=st['alpha'] * o, blur=st['blur'] + (1 - o) * 8, glow=st['glow'])
-    # SCENE 2 (frames 61–118): PROVE IT.
-    if 61 <= f <= 118:
+    # SCENE 2 (60–118): PROVE IT.
+    if 60 <= f <= 118:
         st = slam(f, 60, 4); st['alpha'] *= fade(f, 114, 5)
         place(img, layer_text(['PROVE IT.'], 230, lambda li, ci: EMBER if ci >= 6 else WHITE), 300, **st)
+    # SCENE 3 (122–205): DISCOVER.
+    if 122 <= f <= 205:
+        st = slam(f, 122, 5); st['alpha'] *= fade(f, 200, 5)
+        place(img, layer_text(['DISCOVER.'], 200, lambda li, ci: WHITE if ci < 8 else EMBER), 230, **st)
+    # SCENE 4 (211–328): BACK ARTISTS. → TRADE VIRTUAL SHARES.
+    if 211 <= f <= 256:
+        st = slam(f, 211, 5); st['alpha'] *= fade(f, 252, 4)
+        place(img, layer_text(['BACK ARTISTS.'], 170, hot_after(5)), 220, **st)
+    if 258 <= f <= 328:
+        st = slam(f, 258, 5); st['alpha'] *= fade(f, 323, 5)
+        place(img, layer_text(['TRADE VIRTUAL', 'SHARES.'], 150, lambda li, ci: EMBER if li == 1 else WHITE), 270, **st)
+    if 213 <= f <= 410:
+        place(img, line(DISCLOSE, 26), 1855, alpha=min(ease_out((f - 213) / 8), fade(f, 404, 6)), shadow=0.8)
+    # SCENE 5 (331–410): TRACK YOUR PICKS.
+    if 331 <= f <= 410:
+        st = slam(f, 331, 5); st['alpha'] *= fade(f, 404, 6)
+        place(img, layer_text(['TRACK', 'YOUR PICKS.'], 170, lambda li, ci: EMBER if li == 1 and ci >= 5 else WHITE), 300, **st)
+    # SCENE 6 (451–538): YOU WERE EARLY.
+    if 451 <= f <= 538:
+        o = fade(f, 532, 6); st = slam(f, 451, 5); st['alpha'] *= o
+        place(img, layer_text(['YOU WERE', 'EARLY.'], 170, lambda li, ci: EMBER if li == 1 else WHITE), 245, **st)
+        if f >= 462:
+            a = ease_out((f - 462) / 8) * o
+            place(img, layer_text(['FOUNDING BELIEVER · BACKER #1'], 50, lambda li, ci: EMBER if ci >= 20 else WHITE, font_path=SANS_SB, tracking=0.04),
+                  1735, alpha=a, shadow=0.8)
+            place(img, line('Backer #1 = first recorded backer of this artist on NEXT. A permanent record, not a prediction.', 26),
+                  1808, alpha=a, shadow=0.8)
+    # SCENE 7 (541–660): THINK YOU KNOW WHO'S NEXT? → PROVE IT. → NEXT · FIND THEM FIRST. · TRY NEXT FREE
+    if 541 <= f <= 574:
+        st = slam(f, 541, 5); st['alpha'] *= fade(f, 570, 5)
+        place(img, layer_text(['THINK YOU KNOW', 'WHO’S NEXT?'], 140, lambda li, ci: EMBER if li == 1 else WHITE), 330, **st)
+    if 576 <= f <= 599:
+        st = slam(f, 576, 4); st['alpha'] *= fade(f, 595, 5)
+        place(img, layer_text(['PROVE IT.'], 220, lambda li, ci: EMBER if ci >= 6 else WHITE), 330, **st)
+    if f >= 600:
+        st = slam(f, 600, 6)
+        place(img, layer_text(['FIND THEM FIRST.'], 104, hot_after(10)), 1010, **st)
+    if f >= 612:
+        st = slam(f, 612, 6); st.pop('glow')
+        place(img, pill('TRY NEXT FREE', 64, INK, (*EMBER, 255)), 1190, **st)
+    if f >= 618:
+        place(img, line(CTA_URL, 46, WHITE, SANS_SB), 1302, alpha=ease_out((f - 618) / 8), shadow=0.8)
+    if f >= 624:
+        place(img, line('Virtual Credits. No cash value.', 32), 1372, alpha=ease_out((f - 624) / 8), shadow=0.8)
+    # captions (sound-off version)
+    if '--captions' in args:
+        for a, b, text in CAPTIONS:
+            if a <= f <= b:
+                al = min(ease_out((f - a) / 4), fade(f, b - 4, 4))
+                place(img, pill(text, 44, WHITE, (16, 9, 8, 215), outline=(80, 60, 52, 255)), 1600, alpha=al, shadow=0.0)
 
 def scrim(f):
-    if 1 <= f <= 57: return 0.55 * fade(f, 53, 5)
-    if 61 <= f <= 118: return 0.45 * smooth((f - 60) / 4) * fade(f, 114, 5)
+    for a, b in ((1, 57), (60, 118), (122, 205), (211, 328), (331, 410), (451, 538), (541, 599)):
+        if a <= f <= b: return 0.5 * smooth((f - a + 1) / 4) * fade(f, b - 4, 5)
     return 0.0
+def blackout(f):                     # "the market graphics fade into darkness" before the card
+    return 1 - smooth((f - 408) / 12) if 408 <= f <= 420 else (0.0 if 420 < f <= 421 else 1.0)
 
 OFFSET = int(arg('--offset', '0'))
 def process(f):
@@ -121,14 +195,23 @@ def process(f):
     lin = lin[..., :3].astype(np.float32)
     if lin.shape[1] != W: lin = cv2.resize(lin, (W, H), interpolation=cv2.INTER_CUBIC)
     g = f + OFFSET
-    lin *= {60: 1.25, 61: 1.9, 62: 1.35, 63: 1.1}.get(g, 1.0)          # the drop: a flash on the beat
+    lin *= {60: 1.25, 61: 1.9, 62: 1.35, 63: 1.1, 451: 1.5, 452: 1.2}.get(g, 1.0)   # the drop + the card hit: flashes on the beat
     img = grade(lin, g)[..., [2, 1, 0]].copy()
     k = scrim(g)
     if k > 0: img *= 1 - k * SCRIM_TOP
+    img *= blackout(g)
     if '--no-type' not in args: typography(img, g)
     Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)).save(os.path.join(OUT, f'p{g:04d}.png'), compress_level=1)
 
 os.makedirs(OUT, exist_ok=True)
+if arg('--thumb'):                   # cover: one graded frame + the campaign line
+    f = int(arg('--thumb'))
+    lin = cv2.imread(os.path.join(IN, f'f{f:04d}.hdr'), cv2.IMREAD_UNCHANGED)[..., :3].astype(np.float32)
+    img = grade(lin, f + OFFSET)[..., [2, 1, 0]].copy(); img *= 1 - 0.55 * SCRIM_TOP
+    place(img, layer_text(['I FOUND', 'THEM FIRST.'], 150, lambda li, ci: EMBER if (li == 1 and ci >= 5) else WHITE), 225, glow=0.08)
+    place(img, pill('PROVE IT ON NEXT', 54, INK, (*EMBER, 255)), 1750)
+    Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)).save(os.path.join(OUT, 'NEXT-ad2-cover.png'))
+    raise SystemExit(0)
 if arg('--list'): frames = [int(x) for x in arg('--list').split(',')]
 else:
     a, b = (int(x) for x in arg('--frames', '1-120').split('-')); frames = range(a, b + 1)
