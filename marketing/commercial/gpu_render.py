@@ -21,7 +21,8 @@ SCENES = [tuple(x.split(':')) for x in (args[args.index('--scenes') + 1].split('
 ASSET_DIR = args[args.index('--assets') + 1] if '--assets' in args else None
 def arg(n, d=None): return args[args.index(n) + 1] if n in args else d
 FRAMES = arg('--frames', '1-90')
-GPU_TYPES = [arg('--gpu-type')] if arg('--gpu-type') else ['NVIDIA GeForce RTX 4090', 'NVIDIA GeForce RTX 5090', 'NVIDIA L40S', 'NVIDIA RTX 6000 Ada Generation', 'NVIDIA RTX A6000']
+GPU_TYPES = [arg('--gpu-type')] if arg('--gpu-type') else ['NVIDIA GeForce RTX 4090', 'NVIDIA GeForce RTX 5090', 'NVIDIA L40S', 'NVIDIA RTX 6000 Ada Generation', 'NVIDIA RTX A6000',
+             'NVIDIA L40', 'NVIDIA A40', 'NVIDIA GeForce RTX 3090', 'NVIDIA RTX A5000']
 IMAGE = arg('--image', 'runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04')
 MAX_MIN = int(arg('--max-minutes', '45'))
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -96,16 +97,17 @@ def worker(method, path, data=None, headers=None, timeout=120, tries=6):
 pod_id = None
 try:
     pod = None
-    for gpu in GPU_TYPES:
+    for cloud, gpu in [(c, g) for c in ('SECURE', 'COMMUNITY') for g in GPU_TYPES]:
+        if pod and pod.get('id'): break
         try:
             pod = api('POST', '/pods', {
                 'name': 'next-commercial-render', 'imageName': IMAGE, 'gpuTypeIds': [gpu], 'gpuCount': 1,
-                'cloudType': 'SECURE', 'containerDiskInGb': 30, 'ports': ['8000/http'],
+                'cloudType': cloud, 'containerDiskInGb': 30, 'ports': ['8000/http'],
                 'env': {'WORKER_TOKEN': TOKEN}, 'dockerEntrypoint': ['bash', '-c'], 'dockerStartCmd': [start_cmd()],
             })
-            print('pod', pod.get('id'), 'on', gpu, flush=True); break
+            print('pod', pod.get('id'), 'on', gpu, cloud, flush=True)
         except SystemExit as e:
-            print('no', gpu, '-', str(e)[:160], flush=True)
+            print('no', gpu, cloud, '-', str(e)[:100], flush=True)
     if not pod or not pod.get('id'): raise SystemExit('could not get a GPU pod')
     pod_id = pod['id']
     BASE = f'https://{pod_id}-8000.proxy.runpod.net'
