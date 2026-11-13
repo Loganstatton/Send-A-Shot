@@ -1,7 +1,7 @@
 """Post for the NEXT reveal trailer: grade (bloom, hue-preserving tone map, lens,
 grain) and the trailer's title cards, composited at full resolution.
 
-  post-venv/bin/python post3.py IN_DIR OUT_DIR [--frames a-b|--list a,b] [--offset N] [--wide] [--no-type]
+  post-venv/bin/python post3.py IN_DIR OUT_DIR [--frames a-b|--list a,b] [--offset N] [--wide] [--no-type] [--cover N]
 
 Reads linear .hdr frames from Blender; writes p####.png named by global trailer frame.
 --wide composites for 1920x1080 (16:9) instead of 1080x1920.
@@ -79,21 +79,55 @@ def place(base, layer, cx, cy, alpha=1.0, blur=0.0, glow=0.25):
     reg *= 1 - 0.5 * cv2.GaussianBlur(a, (0, 0), 18)[..., None]          # soft local darkening for legibility
     reg[:] = reg * (1 - a) + src[..., :3] * a
 
-# (first frame, last frame, text, size, vertical position as a fraction of height)
+# (first frame, last frame, text, size, y as a fraction of height: vertical, wide)
 TITLES = [
-    (52, 100, 'EVERY GREAT ARTIST…', 46, 0.27),
-    (106, 162, 'STARTS SOMEWHERE.', 46, 0.27),
+    (52, 100, 'EVERY GREAT ARTIST…', 46, 0.27, 0.22),
+    (106, 162, 'STARTS SOMEWHERE.', 46, 0.27, 0.22),
+    (181, 250, 'MILLIONS OF ARTISTS.', 46, 0.5, 0.5),
+    (262, 326, "WHO'S NEXT?", 64, 0.5, 0.5),
+    (436, 505, 'INTRODUCING NEXT.', 50, 0.87, 0.86),
+    (526, 590, 'DISCOVER.', 58, 0.075, 0.1),
+    (601, 665, 'BACK.', 58, 0.075, 0.1),
+    (676, 744, 'TRADE.', 58, 0.075, 0.1),
+    (781, 836, 'FOUNDING BELIEVER.', 46, 0.905, 0.9),
+    (841, 896, 'BACKER #1.', 58, 0.905, 0.9),
+    (901, 958, 'YOU WERE EARLY.', 50, 0.905, 0.9),
+    (1066, 1188, 'THE FUTURE OF MUSIC DISCOVERY.', 31, 0.445, 0.66),
+]
+NOTES = [        # small print, same fades: (first, last, text, y vertical, y wide)
+    (596, 744, 'VIRTUAL CREDITS · GAME VALUES, NO CASH VALUE · DEMO ARTISTS', 0.955, 0.95),
+    (781, 958, 'DEMO DATA', 0.04, 0.06),
 ]
 FADE_IN, FADE_OUT = 18, 12
+TOP_SCRIM = (526, 744)           # darken the top of frame while the UI fills it, so the titles read
+_y = np.arange(H, dtype=np.float32)
+SCRIM = np.clip(1 - _y / (H * 0.2), 0, 1)[:, None, None] ** 1.5
+def env(f, a, b):
+    return min(smooth((f - a) / FADE_IN), 1 - smooth((f - (b - FADE_OUT)) / FADE_OUT))
 def typography(img, f):
-    for a, b, text, size, yf in TITLES:
+    if TOP_SCRIM[0] - 10 <= f <= TOP_SCRIM[1] + 10:
+        k = min(smooth((f - TOP_SCRIM[0] + 10) / 10), 1 - smooth((f - TOP_SCRIM[1]) / 10))
+        img *= 1 - 0.75 * k * SCRIM
+    for a, b, text, size, yv, yw in TITLES:
         if not a <= f <= b: continue
-        pin = smooth((f - a) / FADE_IN); pout = 1 - smooth((f - (b - FADE_OUT)) / FADE_OUT)
-        alpha = min(pin, pout)
+        alpha = env(f, a, b); pin = smooth((f - a) / FADE_IN); pout = 1 - smooth((f - (b - FADE_OUT)) / FADE_OUT)
         if alpha <= 0.001: continue
-        s = size * (1.25 if WIDE else 1.0)
-        rise = (1 - pin) * 14
-        place(img, card(text, int(s)), W / 2, H * yf + rise, alpha=alpha, blur=(1 - pin) * 6 + (1 - pout) * 3)
+        s = size * (1.15 if WIDE else 1.0)
+        place(img, card(text, int(s)), W / 2, H * (yw if WIDE else yv) + (1 - pin) * 14, alpha=alpha, blur=(1 - pin) * 6 + (1 - pout) * 3)
+    for a, b, text, yv, yw in NOTES:
+        if not a <= f <= b: continue
+        alpha = env(f, a, b) * 0.8
+        if alpha > 0.001: place(img, card(text, 20, tracking=0.18), W / 2, H * (yw if WIDE else yv), alpha=alpha, glow=0.0)
+
+def exposure(f):                 # the cuts: black before the reveal, the impact flash, fades between acts
+    if 377 <= f <= 390: return 0.0
+    if 371 <= f < 377: return 1 - smooth((f - 371) / 6)
+    if f == 391: return 2.2
+    if f == 392: return 1.5
+    if f == 393: return 1.15
+    if 736 <= f <= 750: return 1 - smooth((f - 736) / 14)
+    if 1186 <= f <= 1200: return 1 - smooth((f - 1186) / 14)
+    return 1.0
 
 OFFSET = int(arg('--offset', '0'))
 def process(f):
@@ -102,11 +136,31 @@ def process(f):
     lin = lin[..., :3].astype(np.float32)
     if lin.shape[:2] != (H, W): lin = cv2.resize(lin, (W, H), interpolation=cv2.INTER_CUBIC)
     g = f + OFFSET
+    lin *= exposure(g) if exposure(g) > 1 else 1.0
     img = grade(lin, g)[..., [2, 1, 0]].copy()
     if '--no-type' not in args: typography(img, g)
+    if exposure(g) < 1: img *= exposure(g)
     Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)).save(os.path.join(OUT, f'p{g:04d}.png'), compress_level=1)
 
 os.makedirs(OUT, exist_ok=True)
+if arg('--cover'):                 # cover image: one graded frame + the NEXT wordmark and the tagline
+    f = int(arg('--cover'))
+    lin = cv2.imread(os.path.join(IN, f'f{f:04d}.hdr'), cv2.IMREAD_UNCHANGED)[..., :3].astype(np.float32)
+    if lin.shape[:2] != (H, W): lin = cv2.resize(lin, (W, H), interpolation=cv2.INTER_CUBIC)
+    img = grade(lin, f + OFFSET)[..., [2, 1, 0]].copy()
+    sc_ = np.clip(1 - _y / (H * (0.3 if not WIDE else 0.45)), 0, 1)[:, None, None] ** 1.3
+    img *= 1 - 0.85 * sc_
+    size = 150 if not WIDE else 120
+    font = ImageFont.truetype(DISP, size); tw = font.getlength('NEXT'); r = size * 0.075
+    lay = Image.new('RGBA', (int(tw + r * 4 + 120), int(size * 1.4)), (0, 0, 0, 0)); d = ImageDraw.Draw(lay)
+    d.text((40, 0), 'NEXT', font=font, fill=WHITE); cx = 40 + tw + r * 1.9; cy = size * 0.86
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=EMBER)
+    yy0 = H * (0.075 if not WIDE else 0.13)
+    place(img, lay, W / 2, yy0 + size * 0.5, glow=0.15)
+    place(img, card('THE FUTURE OF MUSIC DISCOVERY', 34 if not WIDE else 30), W / 2, yy0 + size * 1.35, glow=0.1)
+    name = 'NEXT-trailer-cover' + ('-16x9' if WIDE else '') + '.png'
+    Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)).save(os.path.join(OUT, name)); print('wrote', name)
+    raise SystemExit(0)
 if arg('--list'): frames = [int(x) for x in arg('--list').split(',')]
 else:
     a, b = (int(x) for x in arg('--frames', '1-165').split('-')); frames = range(a, b + 1)

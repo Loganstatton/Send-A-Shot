@@ -140,6 +140,12 @@ for i in range(32):
     add(pluck([62, 65, 69, 74][i % 4] + (12 if i >= 16 else 0), 0.7, 3200), t0, 1.0, pan=-0.5 + (i % 4) / 3)
 add(pad(Dm, 4.2, 0.05, 1600), 17.0); add(pad(Bb, 4.2, 0.05, 1600), 21.0)
 add(riser(0.9, 0.22), 24.1)
+def click(level=1.0):                                        # a short glassy UI tap
+    t = np.arange(int(SR * 0.035)) / SR
+    return (np.sin(2 * np.pi * 2300 * t) + 0.4 * np.sin(2 * np.pi * 4100 * t)) * np.exp(-t / 0.006) * 0.22 * level
+for t0 in (18.5, 19.167, 19.6, 20.6): add(click(1.0), t0, pan=0.1)    # SFX: Trade · $250 · Review · Confirm (frames 556, 576, 589, 619)
+add(bell(81, 0.55, 1.6), 20.7, pan=0.1); add(bell(88, 0.4, 1.6), 20.78, pan=-0.1)      # SFX: "Bought" (frame 622)
+for t0 in (21.57, 21.97, 22.37): add(bell(93, 0.28, 1.2), t0, pan=0.3)               # SFX: the three panels pop out
 # 25–32: hush — the collectible
 add(pad(F_, 4.0, 0.06, 1000, 1.0), 25.0); add(pad(C_, 3.6, 0.065, 1200, 1.0), 28.4)
 for k in range(25, 32): add(pulse(0.55 + 0.05 * (k - 25)), float(k))
