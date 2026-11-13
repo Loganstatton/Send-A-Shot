@@ -189,7 +189,7 @@ def sock(sockets, name, kind):
     """Pick a Mix node socket by name AND type (Mix has float/vector/color sockets with the same names)."""
     return next(x for x in sockets if x.name == name and x.type == kind)
 
-def screen_material(name, states):
+def screen_material(name, states, glow=1.35):
     """states: [(image_path, start_frame, kind)] — kind 'cut'|'fade'|'push'|'up'.
     Each state cross-fades in over 5 frames, sliding in for push/up."""
     m = bpy.data.materials.new(name); m.use_nodes = True
@@ -221,11 +221,11 @@ def screen_material(name, states):
     b.inputs['Roughness'].default_value = 0.06
     b.inputs['Coat Weight'].default_value = 0.0
     L.new(prev, b.inputs['Emission Color'])
-    b.inputs['Emission Strength'].default_value = 1.35
+    b.inputs['Emission Strength'].default_value = glow
     L.new(b.outputs[0], out.inputs['Surface'])
     return m
 
-def build_phone(name, states, back_logo=True):
+def build_phone(name, states, back_logo=True, screen_glow=1.35):
     """Returns (root, screen_obj). Root's local +Z is the screen normal; the
     root is stood up to face -Y (towards a camera on -Y)."""
     root = link(bpy.data.objects.new(name, None))
@@ -237,7 +237,7 @@ def build_phone(name, states, back_logo=True):
     glass = principled(name + '_glass', (0.003, 0.003, 0.004), rough=0.04, coat=1.0)
     front = rounded_slab(name + '_front', PHONE_W - 0.012, PHONE_H - 0.012, 0.104, mat=glass); front.parent = holder
     front.location.z = PHONE_T / 2 + 0.0008
-    scr = rounded_mesh(name + '_screen', SCREEN_W, SCREEN_H, 0.085, mat=screen_material(name + '_screen', states)); scr.parent = holder
+    scr = rounded_mesh(name + '_screen', SCREEN_W, SCREEN_H, 0.085, mat=screen_material(name + '_screen', states, screen_glow)); scr.parent = holder
     scr.location.z = PHONE_T / 2 + 0.0016
     cam_dot = rounded_slab(name + '_cam', 0.03, 0.03, 0.0149, mat=glass); cam_dot.parent = holder
     cam_dot.location = (0, SCREEN_H / 2 - 0.035, PHONE_T / 2 + 0.0024)
@@ -371,7 +371,7 @@ def floor(z, mat_color=(0.006, 0.005, 0.005), grid=0.8, size=60):
     return fl
 
 # ---------------------------------------------------------------- particles
-def particle_material(name='Particles'):
+def particle_material(name='Particles', glow=1.0):
     m = bpy.data.materials.new(name); m.use_nodes = True
     n = m.node_tree.nodes; l = m.node_tree.links; n.clear()
     a = n.new('ShaderNodeAttribute'); a.attribute_name = 'rnd'
@@ -379,7 +379,7 @@ def particle_material(name='Particles'):
     r = n.new('ShaderNodeValToRGB')
     r.color_ramp.elements[0].color = (*EMBER, 1); r.color_ramp.elements[1].color = (1.0, 0.75, 0.45, 1); r.color_ramp.elements[1].position = 0.95
     e = n.new('ShaderNodeEmission'); o = n.new('ShaderNodeOutputMaterial')
-    mul = n.new('ShaderNodeMath'); mul.operation = 'MULTIPLY_ADD'; mul.inputs[1].default_value = 14.0; mul.inputs[2].default_value = 6.0
+    mul = n.new('ShaderNodeMath'); mul.operation = 'MULTIPLY_ADD'; mul.inputs[1].default_value = 14.0 * glow; mul.inputs[2].default_value = 6.0 * glow
     dim = n.new('ShaderNodeMath'); dim.operation = 'MULTIPLY_ADD'; dim.inputs[1].default_value = -0.6; dim.inputs[2].default_value = 1.0
     m2 = n.new('ShaderNodeMath'); m2.operation = 'MULTIPLY'
     l.new(a.outputs['Fac'], r.inputs['Fac']); l.new(r.outputs['Color'], e.inputs['Color'])
@@ -389,7 +389,7 @@ def particle_material(name='Particles'):
     return m
 
 def particles(name, starts, targets, bursts, delays, start_frame, settle=14.0, base=0.0042, fly=0.0075, noise_amp=0.7,
-              appear=None, vanish=None):
+              appear=None, vanish=None, glow=1.0):
     """Points fly from starts to targets (per-point delay), bursting and
     swirling on the way; hidden before `appear`, shrink away after `vanish`."""
     n_ = len(starts)
@@ -440,7 +440,7 @@ def particles(name, starts, targets, bursts, delays, start_frame, settle=14.0, b
     store = N.new('GeometryNodeStoreNamedAttribute'); store.data_type = 'FLOAT'; store.inputs['Name'].default_value = 'flight'
     L.new(sp.outputs[0], store.inputs['Geometry']); L.new(arc, store.inputs['Value'])
     m2p = N.new('GeometryNodeMeshToPoints'); L.new(store.outputs[0], m2p.inputs['Mesh']); L.new(M('MULTIPLY', size, alive), m2p.inputs['Radius'])
-    sm = N.new('GeometryNodeSetMaterial'); sm.inputs['Material'].default_value = particle_material(name + 'Mat')
+    sm = N.new('GeometryNodeSetMaterial'); sm.inputs['Material'].default_value = particle_material(name + 'Mat', glow)
     L.new(m2p.outputs[0], sm.inputs['Geometry']); L.new(sm.outputs[0], go.inputs[0])
     ob.modifiers.new('Flow', 'NODES').node_group = ng
     return ob
@@ -465,6 +465,22 @@ def surface_points(ob, n, jitter=0.0):
         out.append(p + Vector([random.gauss(0, jitter) for _ in range(3)]))
     ev.to_mesh_clear()
     return out
+
+# ---------------------------------------------------------------- projections for post captions
+def export_projection(path, tracks, frames, offset=0):
+    """tracks: {name: (camera_obj, object_or_callable)} -> JSON {name: {global_frame: [x_px, y_px]}}
+    so post can pin crisp 2D captions to moving 3D points."""
+    import json
+    from bpy_extras.object_utils import world_to_camera_view
+    sc = bpy.context.scene; out = {k: {} for k in tracks}
+    for f in frames:
+        sc.frame_set(f); bpy.context.view_layer.update()
+        for k, (cam, src) in tracks.items():
+            p = src() if callable(src) else src.matrix_world.translation
+            v = world_to_camera_view(sc, cam, p)
+            out[k][f + offset] = [round(v.x * 1080, 1), round((1 - v.y) * 1920, 1)]
+    json.dump(out, open(path, 'w'))
+    print('projections ->', path)
 
 # ---------------------------------------------------------------- render
 def render(default_out):

@@ -138,28 +138,44 @@ def reverse_swell(dur, level=0.18):
     return x * level
 
 if LEN > 3.5:
-    # scene 2 — phone in, taps, listen, backed
+    # v2 timeline (global frames): buy 91–252, chart 253–324, portfolio/leaderboard 325–414,
+    # darkness 415–450, THE HIT 451, card 451–576, logo 577+, JOIN NEXT 649
+    # the buy — phone lands, taps on the real buttons, the confirmation
     add(whoosh(0.7, 200, 5000, 0.16), g(91) - 0.1, pan=0.3)
-    for fr in (91 + 79, 91 + 136, 91 + 152):            # the three taps on real buttons
-        add(click(0.3), g(fr))
-    add(chime([77, 80, 84, 89], 0.09, 0.05), g(91 + 91), pan=-0.2)       # listen shimmer
-    add(chime([68, 72, 75, 80, 84], 0.06, 0.08), g(91 + 156), pan=0.2)  # backed: bright Ab arpeggio
-    add(whoosh(0.4, 600, 9000, 0.08), g(91 + 121))                       # slide up
-    # scene 3 — cut in, chart flythrough tags, phone, leaderboard swipe, card spin + landing
-    add(whoosh(0.6, 200, 7000, 0.16), g(271) - 0.15)
-    for k, fr in enumerate((271 + 40, 271 + 46, 271 + 52)):
-        add(chime([84 + 3 * k], 0.0, 0.035), g(fr), pan=-0.4 + 0.4 * k)
-    add(whoosh(0.4, 300, 6000, 0.1), g(271 + 72) - 0.1)
-    add(whoosh(0.35, 800, 9000, 0.08), g(271 + 108))
-    for k in range(6):                                                   # card spinning in
-        add(whoosh(0.18, 1500, 9000, 0.05 + 0.01 * k), g(271 + 144) + k * 0.12, pan=(-1) ** k * 0.5)
-    add(impact(0.45, 70), g(271 + 170)); add(chime([77, 81, 84, 89, 93], 0.04, 0.07), g(271 + 170))
-    # scene 4 — swell into the logo, collapse, the logo lands, call to action
-    add(reverse_swell(0.8, 0.2), g(487) - 0.8)
-    add(impact(0.9, 46), g(487))
-    add(whoosh(1.0, 300, 8000, 0.14), g(487) + 0.15, pan=-0.3); add(np.roll(whoosh(1.0, 300, 8000, 0.14), 900), g(487) + 0.15, pan=0.3)
-    add(chime([89, 96], 0.0, 0.08), g(487 + 46))                          # the logo "lands"
-    add(impact(0.7, 44), g(595))
+    add(impact(0.25, 80), g(108))
+    for fr in (90 + 50, 90 + 86, 90 + 104):                 # Trade · Review purchase · Confirm purchase
+        add(click(0.32), g(fr))
+    add(whoosh(0.4, 600, 9000, 0.08), g(144))                 # trade form slides up
+    add(click(0.18), g(181))                                  # confirm sheet
+    add(chime([68, 72, 75, 80, 84, 87], 0.055, 0.10), g(199), pan=0.15)   # bought: bright Ab arpeggio
+    # the price moves — data blips climbing with the line
+    add(whoosh(0.6, 200, 7000, 0.16), g(253) - 0.15)
+    climb = [65, 68, 70, 72, 75, 77, 80, 82, 84, 87, 89, 92]
+    for i, nn in enumerate(climb):
+        add(chime([nn], 0.0, 0.03), g(256 + i * 4), pan=-0.6 + 1.2 * i / len(climb))
+    add(chime([84, 89, 91], 0.05, 0.06), g(306))
+    # portfolio, leaderboard
+    add(whoosh(0.4, 300, 6000, 0.1), g(325) - 0.1)
+    add(whoosh(0.35, 800, 9000, 0.09), g(361))
+    add(chime([77, 81, 84, 89], 0.045, 0.08), g(366), pan=-0.1)          # #1 lights up
+    # darkness → THE HIT
+    add(reverse_swell(1.2, 0.24), g(451) - 1.2)
+    crack = np.zeros(at(1.2))
+    for k in rng.choice(len(crack) - 400, 90, replace=False):
+        crack[k:k + 80] += rng.standard_normal(80) * env_exp(80, 0.0005)
+    add(hp(crack, 2500) * 0.18 * np.linspace(0.3, 1.0, len(crack)), g(415))    # embers gathering
+    add(impact(1.25, 40), g(451)); add(impact(0.6, 70), g(451))
+    boom_n = at(2.0); bt = np.arange(boom_n) / SR
+    add(np.sin(2 * np.pi * np.cumsum(26 + 50 * np.exp(-bt / 0.1)) / SR) * env_exp(boom_n, 0.7) * 0.8, g(451))
+    shimmer = hp(rng.standard_normal(at(1.4)), 5000) * env_exp(at(1.4), 0.3) * 0.16
+    add(shimmer, g(451), pan=-0.4); add(np.roll(shimmer, 700), g(451), pan=0.4)
+    add(chime([77, 84, 89, 93, 96, 101], 0.035, 0.09), g(452))
+    add(whoosh(0.9, 2000, 10000, 0.05), g(486), pan=-0.5)                # light sweeps across the chrome
+    # the card becomes the logo, the logo lands, the call to action
+    add(reverse_swell(0.5, 0.14), g(577) - 0.5)
+    add(whoosh(1.0, 300, 8000, 0.14), g(578), pan=-0.3); add(np.roll(whoosh(1.0, 300, 8000, 0.14), 900), g(578), pan=0.3)
+    add(impact(0.55, 52), g(610)); add(chime([89, 96], 0.0, 0.08), g(610))
+    add(impact(0.8, 44), g(649))
 
 # Simple reverb (decaying-noise impulse response) for space.
 ir_n = at(1.4)
@@ -175,7 +191,7 @@ if '--music' in sys.argv:
     m = np.zeros_like(mix); n_ = min(len(mus), N); m[:n_] = mus[:n_]
     mix = mix / (np.abs(mix).max() + 1e-9) * 0.55 + m / (np.abs(m).max() + 1e-9) * 0.8
 mix = np.tanh(mix * 1.3) / np.tanh(1.3)
-mix *= 10 ** (-3.5 / 20) / np.abs(mix).max()
+mix *= 10 ** (-5.0 / 20) / np.abs(mix).max()          # leaves true-peak headroom for AAC
 fade = np.ones(N); fade[-at(0.05):] = np.linspace(1, 0, at(0.05))
 mix *= fade[:, None]
 from scipy.io import wavfile

@@ -85,11 +85,14 @@ def crash(level=1.0):
 F1, Ab1, Bb1, C2, Db2, Eb2, F2 = 29, 32, 34, 36, 37, 39, 41
 RIFF = [F1, F1, F2, F1,  F1, Ab1, F1, C2,  F1, F1, Eb2, F1,  Db2, F1, C2, Ab1,
         F1, F1, F2, F1,  F1, Ab1, F1, C2,  F1, F1, F2, Eb2,  Db2, C2, Bb1, Ab1]
-# Section markers (seconds), all on the beat grid. A 3 s render stops after the opener.
-S2, PEAK, LOGO, CTA = 3.0, 9.0, 16.2, 19.8
+# Section markers (seconds), all on the beat grid (v2, 24 s). A 3 s render stops after the opener.
+#   3.0 the buy · 8.4 the chart (peak) · 13.8 darkness, riser · 15.0 THE HIT (card) · 19.2 logo · 21.6 JOIN NEXT
+S2, PEAK, RISE, HIT, LOGO, CTA = 3.0, 8.4, 13.8, 15.0, 19.2, 21.6
 def section(t):
     if t < DROP: return 'intro'
     if t < PEAK: return 'groove'
+    if t < RISE: return 'peak'
+    if t < HIT: return 'rise'
     if t < LOGO: return 'peak'
     if t < CTA: return 'break'
     return 'outro'
@@ -128,9 +131,9 @@ for k in range(steps):
         add(hat(open_=(beat_pos == 2 and sec != 'intro'), accent=acc * (0.6 if sec == 'intro' else 1.0 if sec == 'groove' else 1.15)), t0, 1.0,
             pan=0.35 if k % 2 else -0.25)
     # snare rolls into the peak and into the logo
-    for roll_end in (PEAK, LOGO):
-        if roll_end - 0.6 <= t0 < roll_end - 1e-6:
-            add(snare(0.4 + 0.8 * (t0 - (roll_end - 0.6)) / 0.6), t0, 1.0, pan=-0.1)
+    for roll_end, span in ((PEAK, 0.6), (HIT, 1.2), (LOGO, 0.6)):
+        if roll_end - span <= t0 < roll_end - 1e-6:
+            add(snare(0.3 + 0.9 * (t0 - (roll_end - span)) / span), t0, 1.0, pan=-0.1)
     note = RIFF[k % len(RIFF)]
     if sec == 'intro':
         add(bass_note(note, S16 * 0.92, 250 + 500 * min(1, t0 / DROP) ** 2, drive=2.0), t0, 0.5)
@@ -138,8 +141,11 @@ for k in range(steps):
         add(bass_note(note, S16 * 0.92, 2600 if sec == 'groove' else 3400, drive=3.5 if sec == 'groove' else 4.2), t0, 1.1)
     elif sec == 'break' and k % 8 == 0:
         add(bass_note(F1, BEAT * 2, 400, drive=1.6), t0, 0.8)
+    if sec == 'rise' and k % 4 == 0:
+        add(bass_note(F1, BEAT, 300 + 900 * (t0 - RISE) / (HIT - RISE), drive=1.8), t0, 0.7)
     if sec == 'peak':
-        add(arp_note(ARP[k % len(ARP)], S16 * 0.9, 2200 + 1800 * ((t0 - PEAK) / (LOGO - PEAK))), t0, 1.0, pan=-0.5 + 1.0 * ((k % 8) / 7))
+        prog = (t0 - PEAK) / (RISE - PEAK) if t0 < RISE else (t0 - HIT) / (LOGO - HIT)
+        add(arp_note(ARP[k % len(ARP)], S16 * 0.9, 2200 + 2000 * min(1, prog)), t0, 1.0 if t0 < RISE else 1.1, pan=-0.5 + 1.0 * ((k % 8) / 7))
     if sec == 'break' and k % 2 == 0:
         add(arp_note(ARP[(k // 2) % len(ARP)] + 12, S16 * 1.8, 1500), t0, 0.45, pan=0.6 * np.sin(k))
 
@@ -151,6 +157,9 @@ add(stab([37, 41, 44, 49], 0.9, 3800), DROP + BEAT, 0.9)        # Db on the slam
 if LEN > 3.5:
     add(stab([41, 44, 48, 53], 0.8, 5000), S2, 0.8); add(crash(0.6), S2)
     add(stab([41, 44, 48, 53, 56, 60], 1.6, 7000), PEAK, 1.15); add(crash(1.1), PEAK)
+    add(crash(0.5), 10.8); add(crash(0.45), 12.0)                  # portfolio, leaderboard
+    add(kick(1.45), HIT, 1.2); add(crash(1.3), HIT)                 # THE HIT: the card lands
+    add(stab([41, 44, 48, 53, 56, 60, 65], 2.2, 7600), HIT, 1.25)
     add(kick(1.3), LOGO, 1.1); add(crash(1.2), LOGO)
     add(stab([37, 41, 44, 48, 53], 2.4, 5200), LOGO, 1.1)       # Dbmaj7-ish lift into the logo
     add(kick(1.3), CTA, 1.1); add(crash(1.0), CTA)
@@ -162,6 +171,7 @@ pad = sum(np.sin(2 * np.pi * midi(m) * t + np.sin(2 * np.pi * 0.2 * t) * 0.6) fo
 pad_env = np.ones(n) * 0.05
 if LEN > 3.5:
     pad_env += 0.10 * np.clip((t - LOGO) / 0.8, 0, 1) * (t < LEN)
+    pad_env += 0.12 * np.clip((t - RISE) / (HIT - RISE), 0, 1) * (t < HIT)   # swell in the dark before the card
 add(signal.sosfilt(sos('lowpass', 1400), pad) * pad_env, 0.0)
 
 # ---------------------------------------------------------------- mix

@@ -1,7 +1,13 @@
 // Captures real NEXT app screens for the commercial: the live app, run
 // locally on a fresh database seeded with invented artists and players and
 // a month of trading history (no real people). Phone screens are 390x844 at
-// 3x (1170x2532); floating artist cards are cropped from the desktop grid.
+// 4x (1560x3376, sharp in close-ups); floating artist cards are cropped from
+// the desktop grid.
+//
+// The story the ad tells, all produced by the app's own market engine:
+// Juno Marrow is brand new with no backers; Maya buys first on camera
+// (Backer #1 → Genesis Founder); then the other players pile in and the
+// price climbs. The real numbers are written to juno.json for the captions.
 //
 //   npm run db:dev && npm run build   (repo root, once)
 //   node marketing/commercial/capture_screens.js OUT_DIR COVERS_DIR
@@ -67,7 +73,7 @@ const PLAYERS = ['Maya Chen', 'Leo Brandt', 'Priya Nair', 'Sam Okoro', 'Hana Ito
     const buy = (ctx, a, dollars) => ctx.request.post(`/api/next/artists/${ids[a]}/trade`, { data: { type: 'buy', credits_amount_cents: dollars * 100, idempotencyKey: `s${k++}` } });
     const sell = (ctx, a, dollars) => ctx.request.post(`/api/next/artists/${ids[a]}/trade`, { data: { type: 'sell', credits_amount_cents: dollars * 100, idempotencyKey: `s${k++}` } });
     // Maya backs early (cheap); the crowd piles in later, so her picks are up.
-    await buy(maya, 'Velvet Static', 2500); await buy(maya, 'Sol Kaito', 2000); await buy(maya, 'Mira Solace', 1500); await buy(maya, 'Coral Thief', 800);
+    await buy(maya, 'Velvet Static', 3400); await buy(maya, 'Sol Kaito', 2800); await buy(maya, 'Mira Solace', 2100); await buy(maya, 'Coral Thief', 600);
     const others = players.slice(1);
     for (const [j, p] of others.entries()) {
       await buy(p, 'Velvet Static', 2600 + (j * 173) % 900);
@@ -76,8 +82,6 @@ const PLAYERS = ['Maya Chen', 'Leo Brandt', 'Priya Nair', 'Sam Okoro', 'Hana Ito
       if (j % 2) await buy(p, ['The Glass Arcade', 'Dex Vandal', 'Ashby Lane', 'Coral Thief'][j % 4], 900);
       if (j % 4 === 3) await sell(p, 'Sol Kaito', 700);      // a few dips on the way up
     }
-    // Juno Marrow: only a few early backers — the one Maya discovers on camera.
-    for (const p of others.slice(0, 3)) await buy(p, 'Juno Marrow', 300);
     // Spread everything so far over the last 28 days, in order.
     const spread = (table, col) => sql(`UPDATE ${table} t SET ${col} = to_char(((now() at time zone 'UTC') - interval '28 days') + (r.rn::float / (r.cnt + 1)) * interval '27 days', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') FROM (SELECT id, row_number() over (order by id) rn, count(*) over () cnt FROM ${table}) r WHERE t.id = r.id;`);
     spread('next_price_history', 'recorded_at');
@@ -85,7 +89,7 @@ const PLAYERS = ['Maya Chen', 'Leo Brandt', 'Priya Nair', 'Sam Okoro', 'Hana Ito
     sql(`UPDATE next_founding_believers f SET purchased_at = (SELECT MIN(created_at) FROM next_transactions t WHERE t.user_id = f.user_id AND t.artist_id = f.artist_id AND t.type = 'buy');`);
 
     // ---- phone screens, as Maya
-    const phone = await browser.newContext({ baseURL: BASE, viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
+    const phone = await browser.newContext({ baseURL: BASE, viewport: { width: 390, height: 844 }, deviceScaleFactor: 4, isMobile: true, hasTouch: true,
       storageState: await maya.storageState() });
     const page = await phone.newPage();
     const shot = async (name) => { await page.waitForTimeout(500); await page.screenshot({ path: path.join(OUT, `${name}.png`) }); console.log('screen', name); };
@@ -102,12 +106,27 @@ const PLAYERS = ['Maya Chen', 'Leo Brandt', 'Priya Nair', 'Sam Okoro', 'Hana Ito
     await page.getByRole('button', { name: /Confirm purchase/ }).click();
     await page.waitForLoadState('networkidle'); await page.waitForTimeout(1200);
     await page.evaluate(() => window.scrollBy(0, -80)); await shot('06-backed');
+    const juno = ids['Juno Marrow'];
+    const mayaBuy = JSON.parse(sql(`SELECT json_build_object('price', price_cents_per_share, 'shares', shares, 'credits', -credits_delta_cents) FROM next_transactions WHERE artist_id = ${juno} ORDER BY id LIMIT 1;`));
+    // The crowd finds Juno after Maya: each player spends most of what they have left.
+    for (const [i] of others.entries()) {
+      const cash = Number(sql(`SELECT next_credits_cents FROM users WHERE email = 'player${i + 1}@example.com';`));
+      const dollars = Math.min(2600, Math.floor(cash / 100) - 60);
+      if (dollars > 100) await buy(others[i], 'Juno Marrow', dollars);
+    }
+    await page.goto(`/next/artists/${juno}`, { waitUntil: 'networkidle' }); await shot('10-artist-chart');
     await page.goto('/next/portfolio', { waitUntil: 'networkidle' }); await shot('07-portfolio');
+    await page.evaluate(() => window.scrollBy(0, 640)); await shot('07b-holdings');
     await page.goto('/next/leaderboard', { waitUntil: 'networkidle' }); await shot('08-leaderboard');
-    await page.goto(`/next/artists/${ids['Velvet Static']}/founding-believer`, { waitUntil: 'networkidle' }); await shot('09-founding-believer');
-    await page.goto(`/next/artists/${ids['Velvet Static']}`, { waitUntil: 'networkidle' }); await shot('10-artist-chart');
-    // The Founding Believer card on its own, for its 3D reveal.
-    await page.goto(`/next/artists/${ids['Velvet Static']}/founding-believer`, { waitUntil: 'networkidle' });
+    await page.evaluate(() => window.scrollBy(0, 330)); await shot('08b-leaderboard-rows');
+    await page.goto(`/next/artists/${juno}/founding-believer`, { waitUntil: 'networkidle' }); await shot('09-founding-believer');
+    const fb = JSON.parse(sql(`SELECT json_build_object('rank', f.discovery_rank, 'at', f.purchased_at) FROM next_founding_believers f JOIN users u ON u.id = f.user_id WHERE f.artist_id = ${juno} AND u.email = 'player0@example.com';`));
+    const now = Number(sql(`SELECT next_current_price_cents FROM artists WHERE id = ${juno};`));
+    const hist = sql(`SELECT string_agg(price_cents::text, ',' ORDER BY recorded_at, id) FROM next_price_history WHERE artist_id = ${juno};`).split(',').filter(Boolean).map(Number);
+    fs.writeFileSync(path.join(OUT, 'juno.json'), JSON.stringify({ buy: mayaBuy, price_now_cents: now, history: hist, founding_believer: fb,
+      backers: Number(sql(`SELECT count(DISTINCT user_id) FROM next_transactions WHERE artist_id = ${juno} AND type = 'buy';`)) }, null, 2));
+    // The Founding Believer card on its own, for reference.
+    await page.goto(`/next/artists/${juno}/founding-believer`, { waitUntil: 'networkidle' });
     await page.addStyleTag({ content: '.holo-card-idle, .holo-card-idle-shine { animation: none !important; } .holo-card-tilt { transform: none !important; }' });
     await page.waitForTimeout(400);
     await page.locator('#founding-believer-receipt').screenshot({ path: path.join(OUT, 'card-founding-believer.png') });
