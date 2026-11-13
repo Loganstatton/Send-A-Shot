@@ -35,7 +35,11 @@ def keyed_energy(ob, pairs):
         ob.data.energy = v; ob.data.keyframe_insert('energy', frame=f)
 
 # ---------------------------------------------------------------- the phone (real NEXT Discover screen)
-phone, scr = build_phone2('Phone', [(S('01-discover.png'), 1, 'cut')], screen_glow=1.05)
+# Hook variants change only what the phone shows in the studio (frames 1–60); from the
+# cut (under the flash) every version shows Discover.  a: Discover · b: the trade screen · c: Juno's card
+HOOK = arg('--hook', 'a')
+first = {'a': '01-discover.png', 'b': '04-back-amount.png', 'c': '02-discover-grid.png'}[HOOK]
+phone, scr = build_phone2('Phone', [(S(first), 1, 'cut'), (S('01-discover.png'), CUT, 'cut')], screen_glow=1.05)
 float_ = link(bpy.data.objects.new('Float', None)); phone.parent = float_
 # On the desk stand: leaning back 12°. Lifts off into the void through the turn, then floats.
 keys(float_, 'location', [(1, (0, 0, 0)), (54, (0, 0, 0)), (68, (0, 0, 0.08)), (95, (0, 0, 0.11)), (120, (0, 0, 0.09))])

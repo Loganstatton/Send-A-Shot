@@ -133,7 +133,10 @@ try:
     for name, path in files.items():
         worker('PUT', f'/f/{name}', open(path, 'rb').read())
     a, b = FRAMES.split('-')
-    renders = [f'python3.11 {sc_} -- --gpu --assets assets --frames {fr} --out frames/{sc_[:-3]}' for sc_, fr in SCENES] or \
+    def job(sc_, fr):                       # "opening.py@b" renders hook b into frames/opening_b
+        base, _, hk = sc_.partition('@')
+        return f'python3.11 {base} -- --gpu --assets assets --frames {fr} --out frames/{base[:-3]}{"_" + hk if hk else ""}' + (f' --hook {hk}' if hk else '')
+    renders = [job(sc_, fr) for sc_, fr in SCENES] or \
               [f'python3.11 {os.path.basename(SCENE)} -- --gpu --frames {a}-{b} --out frames']
     cmd = ('apt-get update -qq && apt-get install -y -qq libxrender1 libxi6 libxkbcommon0 libsm6 libgl1 libegl1 >/dev/null; '
            'python3.11 -m pip install -q --timeout 120 --retries 10 bpy==5.0.1 && nvidia-smi -L && ' + ' && '.join(renders))
