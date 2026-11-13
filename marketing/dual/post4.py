@@ -91,15 +91,33 @@ TITLES = [
     (361, 404, 'DISCOVERED.', 54, 0.13, 0.12, SCOUT_W),
     (405, 448, 'EVALUATED.', 54, 0.13, 0.12, MID_W),
     (449, 506, 'APPROVED.', 54, 0.13, 0.12, NEXT_W),
+    (511, 578, "NOW, IT'S YOUR TURN.", 48, 0.085, 0.1, NEXT_W),
+    (600, 660, 'BACK.', 60, 0.075, 0.1, NEXT_W),
+    (664, 726, 'TRADE.', 60, 0.075, 0.1, NEXT_W),
+    (760, 826, 'COMPETE.', 60, 0.075, 0.1, NEXT_W),
+    (873, 925, 'FOUNDING BELIEVER', 44, 0.9, 0.88, NEXT_W),
+    (928, 976, 'BACKER #1', 58, 0.9, 0.88, NEXT_W),
+    (979, 1032, 'YOU WERE EARLY.', 50, 0.9, 0.88, NEXT_W),
+    (1124, 1160, 'ONE VISION.', 50, 0.86, 0.86, (243, 242, 237)),
+    (1162, 1199, "FIND WHAT'S NEXT.", 50, 0.86, 0.86, (243, 242, 237)),
 ]
 NOTES = [        # small print: (first, last, text, y vertical, y wide)
     (131, 356, 'INTERNAL TALENT DISCOVERY · HUMAN EVALUATION', 0.175, 0.17),
     (449, 520, 'APPROVED BY A SCOUT · NOW LISTED ON NEXT', 0.165, 0.165),
+    (596, 830, 'VIRTUAL CREDITS · NO CASH VALUE · NOT REAL SECURITIES · DEMO DATA', 0.955, 0.95),
+    (873, 1032, 'FIRST RECORDED NEXT BACKER · DEMO DATA', 0.945, 0.94),
+    (1128, 1199, 'SCOUT POWERS INTERNAL DISCOVERY · NEXT IS THE PUBLIC EXPERIENCE', 0.915, 0.92),
 ]
+TOP_SCRIM = (511, 830)           # darken the top of frame while the phone UI fills it, so the titles read
+_yy = np.arange(H, dtype=np.float32)
+SCRIM = np.clip(1 - _yy / (H * 0.2), 0, 1)[:, None, None] ** 1.5
 FADE_IN, FADE_OUT = 14, 10
 def env(f, a, b):
     return min(smooth((f - a) / FADE_IN), 1 - smooth((f - (b - FADE_OUT)) / FADE_OUT))
 def typography(img, f):
+    if TOP_SCRIM[0] - 10 <= f <= TOP_SCRIM[1] + 10:
+        k = min(smooth((f - TOP_SCRIM[0] + 10) / 10), 1 - smooth((f - TOP_SCRIM[1]) / 10))
+        img *= 1 - 0.7 * k * SCRIM
     for a, b, text, size, yv, yw, col in TITLES:
         if not a <= f <= b: continue
         alpha = env(f, a, b); pin = smooth((f - a) / FADE_IN); pout = 1 - smooth((f - (b - FADE_OUT)) / FADE_OUT)
@@ -112,8 +130,10 @@ def typography(img, f):
         alpha = env(f, a, b) * 0.85
         if alpha > 0.001: place(img, card(text, 21, tracking=0.2), W / 2, H * (yw if WIDE else yv), alpha=alpha, glow=0.0)
 
-def exposure(f):                 # flashes on the impacts (global frames)
-    return {496: 1.8, 497: 1.35, 498: 1.12}.get(f, 1.0)
+def exposure(f):                 # cuts and impacts (global frames)
+    if 826 <= f <= 840: return 1 - smooth((f - 826) / 14)          # the market fades to dark before the card
+    if 1192 <= f <= 1200: return 1 - smooth((f - 1192) / 8)
+    return {496: 1.8, 497: 1.35, 498: 1.12, 871: 1.45, 872: 1.15, 1111: 1.9, 1112: 1.4, 1113: 1.15}.get(f, 1.0)
 
 OFFSET = int(arg('--offset', '0'))
 def process(f):

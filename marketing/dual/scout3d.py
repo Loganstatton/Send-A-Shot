@@ -12,8 +12,9 @@ from mathutils import Vector
 
 CYAN = (0.20, 0.62, 1.0)              # SCOUT's accent, oklch(78% .13 220), as linear light
 CYAN_HOT = (0.42, 0.80, 1.0)
-FONT_INTER_B = os.path.join(HERE, 'fonts', 'Inter-700.ttf')
-FONT_INTER_M = os.path.join(HERE, 'fonts', 'Inter-500.ttf')
+_DUAL = os.path.dirname(os.path.abspath(__file__))            # (next3d's own HERE replaces this module's on import)
+FONT_INTER_B = os.path.join(_DUAL, 'fonts', 'Inter-700.ttf')
+FONT_INTER_M = os.path.join(_DUAL, 'fonts', 'Inter-500.ttf')
 
 def brushed(name, color=(0.055, 0.058, 0.064), rough=(0.18, 0.32), scale=(900.0, 6.0, 6.0)):
     """Dark brushed metal: anisotropic, with long fine streaks in the roughness."""

@@ -17,6 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 for p in (HERE, os.path.join(HERE, '..', 'commercial2'), os.path.join(HERE, '..', 'commercial')):
     if p not in sys.path: sys.path.insert(0, p)
 from scout3d import *
+from set4 import build_set, build_haze
 from phone2 import build_phone2
 from mathutils import Vector, Matrix
 
@@ -31,44 +32,8 @@ SLOT = json.load(open(S('slots.json')))['featured_card']
 LIFT, FLY, FLIP0, FLIP1, NEAR, LAND = 40, 72, 112, 136, 172, 196
 MID = (FLIP0 + FLIP1) // 2
 
-# ---------------------------------------------------------------- the SCOUT workstation
 MW = 4.0; MH = MW * 9 / 16; MZ = 1.35
-mon, mscr = build_monitor('Monitor', [(S('scout-profile-screen.png'), 1, 'cut')], width=MW, glow=1.2)
-mon.location = (0, 0, MZ)
-for nm, img, x, y, yaw in (('MonL', 's02-queue.png', -4.6, 1.2, 24), ('MonB', 's01-roster.png', -2.2, 5.0, 8)):
-    m2, _ = build_monitor(nm, [(S(img), 1, 'cut')], width=3.4, glow=0.75)
-    m2.location = (x, y, MZ - 0.15); m2.rotation_euler = (0, 0, math.radians(yaw))
-DESK_Z = MZ - (MH * 0.9 + 0.03) - 0.45 * 0 - 0.705 + 0.0
-desk = rounded_slab('Desk', 13.0, 3.2, 0.12, depth=0.06, bevel=0.02, mat=brushed('DeskMetal', (0.035, 0.037, 0.042), scale=(6.0, 900.0, 6.0)))
-desk.location = (0, -0.2, MZ - MH * 0.9 - 0.03 - 0.47)
-edge_m, edge_e = emissive('DeskEdge', CYAN, 2.2)                     # a thin cyan light line along the desk front edge
-bpy.ops.mesh.primitive_cube_add(size=1, location=(0, -1.81, desk.location.z + 0.02)); de = bpy.context.active_object
-de.scale = (13.0, 0.012, 0.012); de.data.materials.append(edge_m)
-
-# the floor: dark, with a fine lattice whose light is SCOUT cyan here and NEXT orange over there
-FLOOR_Z = desk.location.z - 0.9
-bpy.ops.mesh.primitive_plane_add(size=80, location=(0, 10, FLOOR_Z)); fl = bpy.context.active_object
-fm = principled('Floor', (0.006, 0.006, 0.007), rough=0.14, coat=0.5); nt = fm.node_tree; fb = nt.nodes['Principled BSDF']
-tc = nt.nodes.new('ShaderNodeTexCoord'); sep = nt.nodes.new('ShaderNodeSeparateXYZ'); nt.links.new(tc.outputs['Object'], sep.inputs[0])
-def node_math(op, a, b=None):
-    x = nt.nodes.new('ShaderNodeMath'); x.operation = op
-    for i, v in enumerate((a, b)):
-        if v is None: continue
-        if isinstance(v, (int, float)): x.inputs[i].default_value = v
-        else: nt.links.new(v, x.inputs[i])
-    return x.outputs[0]
-def line(coord, period=1.2, width=0.012):
-    f = node_math('FRACT', node_math('DIVIDE', coord, period))
-    d = node_math('MINIMUM', f, node_math('SUBTRACT', 1.0, f))
-    return node_math('LESS_THAN', d, width / period)
-grid = node_math('MAXIMUM', line(sep.outputs['X']), line(sep.outputs['Y']))
-fade = node_math('POWER', node_math('MAXIMUM', node_math('SUBTRACT', 1.0, node_math('DIVIDE', node_math('ABSOLUTE', node_math('SUBTRACT', sep.outputs['Y'], 2.0)), 16.0)), 0.0), 2.0)
-mixc = nt.nodes.new('ShaderNodeMix'); mixc.data_type = 'RGBA'
-mixc.inputs['A'].default_value = (*CYAN, 1); mixc.inputs['B'].default_value = (*EMBER_HOT, 1)
-nt.links.new(node_math('MINIMUM', node_math('MAXIMUM', node_math('DIVIDE', node_math('SUBTRACT', sep.outputs['X'], 1.2), 3.4), 0.0), 1.0), mixc.inputs['Factor'])
-nt.links.new(mixc.outputs['Result'], fb.inputs['Emission Color'])
-nt.links.new(node_math('MULTIPLY', node_math('MULTIPLY', grid, fade), 0.55), fb.inputs['Emission Strength'])
-fl.data.materials.append(fm)
+SET = build_set(S, [(S('scout-profile-screen.png'), 1, 'cut')]); mon, mscr = SET['mon'], SET['mscr']
 
 # ---------------------------------------------------------------- the glass panel: SCOUT profile on the front, NEXT card on the back
 flight = link(bpy.data.objects.new('Flight', None))
@@ -115,6 +80,7 @@ osp.use_cyclic_u = True; oc.bevel_depth = 0.006
 gr = link(bpy.data.objects.new('ApproveRim', oc)); gr.data.materials.append(gm)
 gr.location = START + Vector((0, 0.02, 0)); gr.rotation_euler = (math.radians(90), 0, 0)
 key_val(ge.inputs['Strength'], [(6, 0.0), (20, 9.0), (LIFT, 5.0), (LIFT + 10, 0.0)])
+visible(gr, [(6, LIFT + 10)])                                          # only while lit
 msb = next(n for n in mscr.data.materials[0].node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
 key_val(msb.inputs['Emission Strength'], [(LIFT, 1.2), (FLY, 0.5)])     # the screen dims as the profile leaves it
 
@@ -140,19 +106,7 @@ nrimL = area_l('NextRimL', PH + Vector((-1.6, 1.4, 0.6)), PH, 0.2, 0.0, EMBER, s
 nrimR = area_l('NextRimR', PH + Vector((1.6, 1.2, -0.2)), PH, 0.2, 0.0, (1.0, 0.62, 0.36), size_y=3.0)
 nkey = area_l('NextKey', PH + Vector((-1.4, -3.0, 2.4)), PH, 2.0, 0.0, (1.0, 0.93, 0.86))
 for l, e in ((nrimL, 240), (nrimR, 200), (nkey, 70)): key_energy(l, [(FLIP0, 0.0), (NEAR, e)])
-# an orange haze far behind the phone; a cool one behind the monitor
-HAZE = {}
-for nm, loc, col, e in (('HazeS', (0, 9, 1.5), CYAN, 0.05), ('HazeN', (7, 16, 1.5), EMBER, 0.05)):
-    bpy.ops.mesh.primitive_plane_add(size=40, location=loc, rotation=(math.radians(90), 0, 0)); hz = bpy.context.active_object
-    hm = bpy.data.materials.new(nm); hm.use_nodes = True; hn = hm.node_tree; hn.nodes.clear()
-    htc = hn.nodes.new('ShaderNodeTexCoord'); hgr = hn.nodes.new('ShaderNodeTexGradient'); hgr.gradient_type = 'SPHERICAL'
-    hmp = hn.nodes.new('ShaderNodeMapping'); hmp.inputs['Scale'].default_value = (0.06, 0.06, 0.06)
-    hpw = hn.nodes.new('ShaderNodeMath'); hpw.operation = 'POWER'; hpw.inputs[1].default_value = 3.0
-    hmu = hn.nodes.new('ShaderNodeMath'); hmu.operation = 'MULTIPLY'; hmu.inputs[1].default_value = e
-    hem = hn.nodes.new('ShaderNodeEmission'); hem.inputs['Color'].default_value = (*col, 1); ho = hn.nodes.new('ShaderNodeOutputMaterial')
-    hn.links.new(htc.outputs['Object'], hmp.inputs['Vector']); hn.links.new(hmp.outputs['Vector'], hgr.inputs['Vector'])
-    hn.links.new(hgr.outputs['Fac'], hpw.inputs[0]); hn.links.new(hpw.outputs[0], hmu.inputs[0]); hn.links.new(hmu.outputs[0], hem.inputs['Strength'])
-    hn.links.new(hem.outputs[0], ho.inputs['Surface']); hz.data.materials.append(hm); HAZE[nm] = hmu.inputs[1]
+HAZE = build_haze()
 key_val(HAZE['HazeS'], [(FLIP0, 0.05), (NEAR, 0.015)]); key_val(HAZE['HazeN'], [(FLIP0, 0.05), (NEAR, 0.24)])     # the world turns from cyan to orange
 for ob in bpy.data.objects:
     if ob.type == 'LIGHT': ob.visible_camera = False
@@ -172,4 +126,5 @@ sc.frame_set(END); bpy.context.view_layer.update()
 scr_c = pscr.matrix_world.translation.copy()
 cam.key(END, tuple(scr_c + (Vector((0.15, -3.0, 0.15)) @ Matrix.Rotation(-PH_YAW, 3, 'Z'))), tuple(scr_c), tuple(scr_c), 3.0)
 cam.smooth(); cam.bind(1)
+if arg('--save'): bpy.ops.file.pack_all()             # editable .blend: images packed inside, opens anywhere
 render(os.path.join(HERE, 'frames_transition'))

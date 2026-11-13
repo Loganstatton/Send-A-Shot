@@ -8,7 +8,9 @@ Writes into ASSETS_DIR:
                             breakdown placed exactly where the app draws them
                             (positions found by template matching, not guessed)
   scout-panel.png           Juno's evaluated SCOUT profile (header + breakdown) for the glass panel
+  scout-scores-screen.png   the same page scrolled to the rating panel (8 categories, weights, 86.0)
   next-card.png             Juno's real "Featured · Scouts' pick" card from NEXT Discover (rounded, RGBA)
+  panel-*.png               trade history, portfolio and leaderboard panels cut from the NEXT captures
   slots.json                where that card sits on the NEXT Discover screen (UV), so the panel lands on it
 """
 import json, os, sys
@@ -42,6 +44,23 @@ panel = np.full((ph, pw, 3), bg, np.uint8)
 panel[pad:pad + hdr_new.shape[0], pad:pad + hdr_new.shape[1]] = hdr_new
 panel[pad + hdr_new.shape[0] + 40:pad + hdr_new.shape[0] + 40 + brk_new.shape[0], pad:pad + brk_new.shape[1]] = brk_new
 cv2.imwrite(P('scout-panel.png'), panel)
+
+# the same page scrolled to the scout's rating panel (the real panel, on the page's own background)
+form = cv2.imread(P('s05-scorecard-form.png'))                     # the whole rating form, captured as one element
+cv2.imwrite(P('s05c-score-inputs.png'), form[4150:5370, :])         # its "Breakout Score inputs" block (read off the capture)
+scores = cv2.imread(P('s05c-score-inputs.png'))
+scr2 = np.full_like(page, bg)
+y0 = (scr2.shape[0] - scores.shape[0]) // 2
+scr2[y0:y0 + scores.shape[0], hx:hx + scores.shape[1]] = scores
+cv2.imwrite(P('scout-scores-screen.png'), scr2)
+
+# floating NEXT panels (same crop regions the reveal trailer used on the same app layout)
+def rounded(im, r):
+    m_ = Image.new('L', im.size, 0); ImageDraw.Draw(m_).rounded_rectangle((0, 0, im.width - 1, im.height - 1), r, fill=255)
+    im = im.convert('RGBA'); im.putalpha(m_); return im
+rounded(Image.open(P('n06-backed.png')).crop((82, 597, 1478, 1113)), 70).save(P('panel-history.png'))
+rounded(Image.open(P('n08-portfolio.png')).crop((82, 1150, 1478, 2560)), 70).save(P('panel-portfolio.png'))
+rounded(Image.open(P('n09b-leaderboard-rows.png')).crop((82, 1082, 1478, 2734)), 70).save(P('panel-leaders.png'))
 
 # Juno's featured card on NEXT Discover (bounds read off the capture)
 grid = Image.open(P('n02-discover-grid.png')).convert('RGB')
