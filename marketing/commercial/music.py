@@ -73,7 +73,7 @@ def stab(notes, dur, bright=3000):
         for det in (-0.012, -0.004, 0.004, 0.012):
             x += signal.sawtooth(2 * np.pi * midi(nn) * (1 + det) * t)
     x = signal.sosfilt(sos('lowpass', bright), x / (len(notes) * 4))
-    return np.tanh(x * 2.5) * np.exp(-t / (dur * 0.5)) * 0.35
+    return np.tanh(x * 2.5) * np.exp(-t / (dur * 0.5)) * np.minimum(1, t / 0.004) * 0.35   # 4 ms attack: no click
 
 def crash(level=1.0):
     n = at(2.2); t = np.arange(n) / SR
@@ -108,7 +108,7 @@ def arp_note(note, dur, bright):
     n = at(dur); t = np.arange(n) / SR; f = midi(note)
     x = signal.sawtooth(2 * np.pi * f * t) + 0.5 * signal.square(2 * np.pi * f * 2 * t, 0.3)
     x = signal.sosfilt(sos('lowpass', bright), x)
-    return np.tanh(x * 1.5) * np.exp(-t / (dur * 0.7)) * 0.13
+    return np.tanh(x * 1.5) * np.exp(-t / (dur * 0.7)) * np.minimum(1, t / 0.003) * 0.13
 
 steps = int(LEN / S16) + 2
 for k in range(steps):

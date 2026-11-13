@@ -58,13 +58,13 @@ VIGNETTE = (1 - 0.42 * (((xx - W / 2) / (W * 0.75)) ** 2 + ((yy - H / 2) / (H * 
 # channel, keep the ratios) for the hottest pixels keeps them ember-coloured
 # and keeps detail in the bursts. Bursts also get a short exposure dip.
 HUE_KEEP = float(os.environ.get('HUE_KEEP', '0.7'))
-BURSTS = ((33, 86, 0.58), (577, 616, 0.8)) if os.environ.get('BURSTS', '1') == '1' else ()   # (first, last global frame, exposure at peak)
+BURSTS = ((30, 86, 0.5), (577, 616, 0.8)) if os.environ.get('BURSTS', '1') == '1' else ()   # (first, last global frame, exposure at peak)
 def burst(frame):
     """0..1 envelope over the particle bursts: quick attack, long release."""
     for a, b, lo in BURSTS:
         if a <= frame <= b:
             t = (frame - a) / (b - a)
-            return (smooth(t / 0.15) if t < 0.15 else 1 - smooth((t - 0.55) / 0.45) if t > 0.55 else 1.0), lo
+            return (smooth(t / 0.1) if t < 0.1 else 1 - smooth((t - 0.55) / 0.45) if t > 0.55 else 1.0), lo
     return 0.0, 1.0
 
 def tonemap(x, k):
