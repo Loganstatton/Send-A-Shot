@@ -110,11 +110,15 @@ nrimR = look_light('NextRimR', tuple(P0 + Vector((1.6, 1.2, -0.2))), tuple(P0), 
 nkey = look_light('NextKey', tuple(P0 + Vector((-1.4, -3.0, 2.4))), tuple(P0), 2.0, 70, color=(1.0, 0.93, 0.86))
 for nm, loc, size, e, col, sy in (('ScoutKey', (-3.2, -3.4, 4.6), 3.0, 260 * 0.35, (0.78, 0.9, 1.0), None), ('ScoutRim', (2.6, 2.2, 3.4), 1.2, 340 * 0.35, CYAN, 4.0),
                                   ('ScoutFill', (3.8, -3.0, 1.0), 2.0, 40 * 0.35, (0.6, 0.8, 1.0), None)):
-    look_light(nm, loc, (0, 0, MZ), size, e, color=col, size_y=sy)
+    sl_ = look_light(nm, loc, (0, 0, MZ), size, e, color=col, size_y=sy)
+    key_energy(sl_, [(1, e), (8, e), (30, 0.0)])                   # only for the cut; their reflections would sit on the phone screen
 glass = look_light('GlassStrip', W_((-2.6, -2.4, 1.0)), W_((0, 0, 0)), 0.9, 0.0, size_y=4.0)
-key_energy(glass, [(40, 0.0), (52, 4.0), (90, 4.0), (100, 0.0)])
+key_energy(glass, [(40, 0.0), (52, 2.0), (90, 2.0), (100, 0.0)])
 keys(glass, 'location', [(40, W_((-2.6, -2.4, 1.0))), (100, W_((2.6, -2.4, 0.2)))], interp='SINE', easing='EASE_IN_OUT')
-for l, e in ((nrimL, 240), (nrimR, 200), (nkey, 70)): key_energy(l, [(1, e), (LEAD + 20, e), (END, e * 0.25)])
+for l, e in ((nrimL, 240), (nrimR, 200)): key_energy(l, [(1, e), (LEAD + 20, e), (END, e * 0.25)])
+key_energy(nkey, [(1, 70.0), (8, 70.0), (30, 0.0)])          # matches transition.py at the cut, then gives way: its reflection sat on the screen
+top = look_light('NextTop', W_((0.2, -1.2, 4.2)), W_((0, 0, 0)), 2.2, 0.0, color=(1.0, 0.93, 0.86))   # from above: lights the metal, never mirrors into the glass
+key_energy(top, [(1, 0.0), (8, 0.0), (30, 110.0), (LEAD + 20, 110.0), (END, 40.0)])
 for ob in bpy.data.objects:
     if ob.type == 'LIGHT': ob.visible_camera = False
 

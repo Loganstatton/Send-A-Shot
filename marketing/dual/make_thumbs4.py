@@ -3,7 +3,7 @@
   post-venv/bin/python make_thumbs4.py OUT_DIR      (reads OUT_DIR/frames_v, frames_w)
 
   SCOUT-NEXT-thumb-reveal[-16x9].png      both products and SCOUT × NEXT (global frame 1120), with the campaign title
-  SCOUT-NEXT-thumb-connection[-16x9].png  the glass panel turning from SCOUT cyan to NEXT orange (frame 418)
+  SCOUT-NEXT-thumb-connection[-16x9].png  the evaluated profile lifting off the SCOUT monitor as glass (frame 358, before any title)
 """
 import os, sys
 import numpy as np
@@ -18,7 +18,7 @@ def tracked(draw, cx, y, text, font, fill, tracking):
     for c, w in zip(text, ws): draw.text((x, y), c, font=font, fill=fill); x += w
 
 for fmt, sfx in (('v', ''), ('w', '-16x9')):
-    for name, frame, top in (('reveal', 1120, False), ('connection', 418, True)):
+    for name, frame, top in (('reveal', 1120, False), ('connection', 358, True)):
         im = Image.open(os.path.join(OUT, f'frames_{fmt}', f'p{frame:04d}.png')).convert('RGB')
         W, H = im.size
         # a soft dark band where the title sits

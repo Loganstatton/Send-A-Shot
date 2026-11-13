@@ -53,3 +53,13 @@ Not shown, on purpose: SCOUT's money pages (Screener totals, deals/revenue/inves
 - SCOUT is labelled internal; NEXT users never touch it.
 - NEXT is a game with virtual Credits: no cash value, not real securities, no ownership of artists, music or earnings.
 - Backer #1 = the first recorded NEXT backer of that artist. No claim that the artist became successful.
+
+## 5. Delivered
+
+See `QC_REPORT.md` for measurements and checks.
+`SCOUT-NEXT-before-the-breakout-vertical.mp4` (1080×1920, 40 s) · `SCOUT-NEXT-before-the-breakout-16x9.mp4` · `SCOUT-NEXT-15s.mp4` / `-16x9` ·
+`SCOUT-NEXT-soundtrack.wav` · `SCOUT-NEXT-thumb-*.png` · `editable/SCOUT-NEXT-*.blend`.
+
+Rebuild: `node capture_dual.js` → `prep_dual.py` → render `scout.py` (1–300), `transition.py` (1–240), `next4.py` (1–300),
+`finale4.py` (1–360), each also `@wide`, with `gpu_render4.py` → `assemble4.sh`.
+Video, audio, images and .blend files stay out of git.
