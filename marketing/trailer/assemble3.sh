@@ -18,6 +18,7 @@ post() {   # $1 frames dir  $2 range  $3 offset  $4 out dir  $5.. extra
 }
 for fmt in v w; do
   if [ $fmt = v ]; then D=$V; sfx=""; extra=""; else D=$WD; sfx="_wide"; extra="--wide"; fi
+  [ "$(ls "$OUT/frames_$fmt" 2>/dev/null | wc -l)" -eq 1200 ] && continue      # already posted
   for args in "opening3 1-130 0" "opening3 131-260 0" "opening3 261-390 0" "reveal3 1-180 390" "reveal3 181-360 390" \
               "finale3 1-150 750" "finale3 151-300 750" "finale3 301-450 750"; do
     set -- $args; post "$D/$1$sfx" "$2" "$3" "$OUT/frames_$fmt" $extra &
