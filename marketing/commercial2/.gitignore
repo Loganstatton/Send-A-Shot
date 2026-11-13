@@ -1,0 +1,6 @@
+frames*/
+*.hdr
+*.wav
+*.mp4
+__pycache__/
+out/
