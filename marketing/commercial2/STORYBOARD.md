@@ -26,7 +26,7 @@ Ad #1 (`../commercial/`) is untouched; this folder only imports its toolkit and 
 | 7–11 s | 211–330 | 4 BACK. TRADE. | Real trade screen fills the frame: price, Credits balance, $250, "Review purchase", "Confirm purchase", "Bought 5.6779 shares at $44.03", portfolio updates; on the purchase, orange market lines extend from the screen and a 3D chart forms around the phone | close-ups on each control, then pull back and fly into the chart | **BACK ARTISTS.** → **TRADE VIRTUAL SHARES.** + "Virtual Credits · no real money · no ownership" | "Back them with virtual Credits." | UI taps, success chime, energy lift at 7.0 |
 | 11–14 s | 331–420 | 5 TRACK YOUR PICKS | Through the chart into a dark space of floating real artist cards; parallax past them to the real portfolio (+16.1%) and Top Traders leaderboard (#1 lit) | dolly between the cards (parallax), land on the phone | **TRACK YOUR PICKS.** | "Track your picks." | Hat rolls, swish per card |
 | 14–18 s | 421–540 | 6 BACKER #1 | Market fades to black; a small orange light; the Founding Believer card (Ad #1 v2.1 design) rotates toward camera, light catches its thickness, settles front-on and holds | slow arc + push, settle and hold ~1.5 s | **YOU WERE EARLY.** + "Backer #1 = first recorded backer on NEXT" | "And if you're first? You've got the proof." | Riser, metallic hit at 15.0, sub |
-| 18–22 s | 541–660 | 7 WHO'S NEXT? | Card drifts back and dissolves into fine orange particles that form the NEXT logo on clean black with soft reflections | slow pull-back | **THINK YOU KNOW WHO'S NEXT?** → **PROVE IT.** → NEXT · **FIND THEM FIRST.** · **TRY NEXT FREE** · URL · "Virtual Credits. No cash value." | "Think you know who's next? Prove it." | Logo sound, final stab at 20.0 |
+| 18–22 s | 541–660 | 7 WHO'S NEXT? | Card drifts back and dissolves into fine orange particles that form the NEXT logo on clean black with soft reflections | slow pull-back | **THINK YOU KNOW WHO'S NEXT?** → **PROVE IT.** → NEXT · **FIND THEM FIRST.** · **COMING SOON** · "Be first in line." · "Virtual Credits. No cash value." | "Think you know who's next? Prove it." | Logo sound, final stab at 20.0 |
 
 Hooks (same body, frames 1–60 swap only): **A** "I FOUND THEM FIRST." (competition) · **B** "WAIT… YOU CAN TRADE MUSIC ARTISTS?" (opens on the trade screen) · **C** "CAN YOU FIND THE NEXT BIG ARTIST?" (opens on an emerging artist).
 
@@ -35,7 +35,7 @@ Hooks (same body, frames 1–60 swap only): **A** "I FOUND THEM FIRST." (competi
 - Every number on screen comes from the app's own engine on invented demo artists and players (Juno Marrow et al.); no real artists, no testimonials, no growth claims.
 - Trading is shown as virtual Credits with no cash value and no ownership of artists, music or earnings (on-screen line during the trade and at the end).
 - "Backer #1" is labelled as the first recorded backer on NEXT — a permanent record of the user's action, not proof of future success.
-- CTA says "Try NEXT free" (web app; no native app).
+- The end card says "COMING SOON · Be first in line." (NEXT is not open to the public yet), so no URL is shown.
 
 ## 4. Files
 

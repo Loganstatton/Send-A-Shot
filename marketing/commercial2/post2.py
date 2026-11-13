@@ -157,7 +157,7 @@ def typography(img, f):
                   1735, alpha=a, shadow=0.8)
             place(img, line('Backer #1 = first recorded backer of this artist on NEXT. A permanent record, not a prediction.', 26),
                   1808, alpha=a, shadow=0.8)
-    # SCENE 7 (541–660): THINK YOU KNOW WHO'S NEXT? → PROVE IT. → NEXT · FIND THEM FIRST. · TRY NEXT FREE
+    # SCENE 7 (541–660): THINK YOU KNOW WHO'S NEXT? → PROVE IT. → NEXT · FIND THEM FIRST. · COMING SOON
     if 541 <= f <= 574:
         st = slam(f, 541, 5); st['alpha'] *= fade(f, 570, 5)
         place(img, layer_text(['THINK YOU KNOW', 'WHO’S NEXT?'], 140, lambda li, ci: EMBER if li == 1 else WHITE), 330, **st)
@@ -169,9 +169,9 @@ def typography(img, f):
         place(img, layer_text(['FIND THEM FIRST.'], 104, hot_after(10)), 1010, **st)
     if f >= 612:
         st = slam(f, 612, 6); st.pop('glow')
-        place(img, pill('TRY NEXT FREE', 64, INK, (*EMBER, 255)), 1190, **st)
+        place(img, pill('COMING SOON', 64, INK, (*EMBER, 255)), 1190, **st)
     if f >= 618:
-        place(img, line(CTA_URL, 46, WHITE, SANS_SB), 1302, alpha=ease_out((f - 618) / 8), shadow=0.8)
+        place(img, line('Be first in line.', 46, WHITE, SANS_SB), 1302, alpha=ease_out((f - 618) / 8), shadow=0.8)
     if f >= 624:
         place(img, line('Virtual Credits. No cash value.', 32), 1372, alpha=ease_out((f - 624) / 8), shadow=0.8)
     # captions (sound-off version)
