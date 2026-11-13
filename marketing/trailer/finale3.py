@@ -158,4 +158,5 @@ cam.smooth()
 for f, (dx, dz) in ((HIT + 1, (0.012, -0.009)), (HIT + 3, (-0.008, 0.006)), (HIT + 5, (0.004, -0.003))):     # the impact
     sc.frame_set(f); cam.target.location = cam.target.location + Vector((dx, 0, dz)); cam.target.keyframe_insert('location', frame=f)
 cam.bind(1)
+if arg('--save'): bpy.ops.file.pack_all()             # editable .blend: images packed inside, opens anywhere
 render(os.path.join(HERE, 'frames_finale'))

@@ -54,6 +54,6 @@ for fmt in v w; do
      [0:v]trim=start_frame=390:end_frame=510,setpts=PTS-STARTPTS[c];[0:v]trim=start_frame=1020:end_frame=1185,setpts=PTS-STARTPTS,fade=t=out:st=5.0:d=0.5[d];\
      [a][b][c][d]concat=n=4:v=1:a=0[v]" -map "[v]" -map 1:a $ENC -shortest "$OUT/$name"
 done
-"$PY" post3.py "$V/reveal3" "$OUT" --cover 100 --offset 390
-"$PY" post3.py "$WD/reveal3_wide" "$OUT" --cover 100 --offset 390 --wide
+"$PY" post3.py "$V/reveal3" "$OUT" --cover 310 --offset 390
+"$PY" post3.py "$WD/reveal3_wide" "$OUT" --cover 310 --offset 390 --wide
 for f in "$OUT"/NEXT-trailer-*.mp4; do echo "$(basename "$f") $(ffprobe -v error -count_frames -select_streams v -show_entries stream=width,height,nb_read_frames:format=duration -of csv=p=0 "$f" | tr '\n' ' ')"; done

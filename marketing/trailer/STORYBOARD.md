@@ -57,16 +57,28 @@ The 3D wave in Scene 1 reads the score's loudness frame by frame, so the picture
 - The Founding Believer card is labelled demo data; "YOU WERE EARLY" describes the record of the user's action, not a promise of success.
 - No URL, download or sign-up message.
 
-## 6. Render budget (needs approval before the full production)
+## 6. Render cost (actual)
 
-| Option | Vertical 40 s | + 16:9 version | Cost |
-|---|---|---|---|
-| CPU in this session | ~8–10 h | another ~8–10 h | free (slow; each fix means hours) |
-| RunPod GPU (A40/L40 class, ~$0.40–0.90/h) | ~1–1.5 h incl. upload/download | ~1–1.5 h | about $1–2 per version, ~$3–5 total with one round of fixes |
+All 3D was rendered at true resolution on RunPod RTX 4090s (OptiX, 64–128 samples, motion blur): about 1 s per frame.
+The opening preview, both 1200-frame versions and a 609-frame re-render (the session's disk filled during one download) cost about $1.20 in total. No paid assets were used.
 
-The current RunPod balance is about $0.54, which is not enough for the GPU route.
+## 7. Delivered
 
-## 7. Files
+| File | What | Checked |
+|---|---|---|
+| `NEXT-trailer-vertical.mp4` | main trailer | 1080×1920, 1200 frames, 40.0 s, −14.9 LUFS, −2.4 dBFS peak |
+| `NEXT-trailer-16x9.mp4` | horizontal version (same shots, wider field of view; card cloud widened) | 1920×1080, 1200 frames, 40.0 s, −14.9 LUFS |
+| `NEXT-trailer-teaser-15s.mp4` / `-16x9` | teaser: 2–5.5 + 8.7–10.7 + 13–17 + 34–39.5 s | 450 frames, 15.0 s, −15.6 LUFS |
+| `NEXT-trailer-soundtrack.wav` | the score with its synchronized SFX, 48 kHz | 40.0 s |
+| `NEXT-trailer-cover.png` / `-16x9` | cover images | 1080×1920 / 1920×1080 |
+| `editable/NEXT-trailer-{opening3,reveal3,finale3}.blend` | editable Blender scenes, images packed | open in Blender 5.0 |
+| `NEXT-trailer-opening-preview.mp4` | the first 5.5 s preview | 165 frames |
 
-`music3.py` (score + loudness envelope), `opening3.py` (Scene 1), `post3.py` (grade + titles).
-Rendered frames, audio and videos stay out of git.
+Rebuild: render `opening3.py` (1–390), `reveal3.py` (1–360), `finale3.py` (1–450), each also with `@wide`, via `gpu_render3.py`; then `assemble3.sh`.
+Video, audio, images and .blend files stay out of git.
+
+## 8. Files
+
+`music3.py` (score + SFX + loudness envelope), `opening3.py` (scenes 1–3a), `reveal3.py` (3b–4), `finale3.py` (5–6),
+`make_cards3.py` / `make_panels3.py` (card and panel textures from the real captured UI), `post3.py` (grade, titles, cuts, covers),
+`gpu_render3.py`, `assemble3.sh`.

@@ -148,16 +148,17 @@ if arg('--cover'):                 # cover image: one graded frame + the NEXT wo
     lin = cv2.imread(os.path.join(IN, f'f{f:04d}.hdr'), cv2.IMREAD_UNCHANGED)[..., :3].astype(np.float32)
     if lin.shape[:2] != (H, W): lin = cv2.resize(lin, (W, H), interpolation=cv2.INTER_CUBIC)
     img = grade(lin, f + OFFSET)[..., [2, 1, 0]].copy()
-    sc_ = np.clip(1 - _y / (H * (0.3 if not WIDE else 0.45)), 0, 1)[:, None, None] ** 1.3
+    if WIDE: sc_ = np.clip(1 - xx / (W * 0.5), 0, 1)[..., None] ** 1.3
+    else: sc_ = np.clip(1 - _y / (H * 0.3), 0, 1)[:, None, None] ** 1.3
     img *= 1 - 0.85 * sc_
     size = 150 if not WIDE else 120
     font = ImageFont.truetype(DISP, size); tw = font.getlength('NEXT'); r = size * 0.075
     lay = Image.new('RGBA', (int(tw + r * 4 + 120), int(size * 1.4)), (0, 0, 0, 0)); d = ImageDraw.Draw(lay)
     d.text((40, 0), 'NEXT', font=font, fill=WHITE); cx = 40 + tw + r * 1.9; cy = size * 0.86
     d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=EMBER)
-    yy0 = H * (0.075 if not WIDE else 0.13)
-    place(img, lay, W / 2, yy0 + size * 0.5, glow=0.15)
-    place(img, card('THE FUTURE OF MUSIC DISCOVERY', 34 if not WIDE else 30), W / 2, yy0 + size * 1.35, glow=0.1)
+    yy0 = H * (0.075 if not WIDE else 0.3); cx = W / 2 if not WIDE else W * 0.24      # 16:9: the empty left third
+    place(img, lay, cx, yy0 + size * 0.5, glow=0.15)
+    place(img, card('THE FUTURE OF MUSIC DISCOVERY', 34 if not WIDE else 24), cx, yy0 + size * 1.35, glow=0.1)
     name = 'NEXT-trailer-cover' + ('-16x9' if WIDE else '') + '.png'
     Image.fromarray((np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)).save(os.path.join(OUT, name)); print('wrote', name)
     raise SystemExit(0)

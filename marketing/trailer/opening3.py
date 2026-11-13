@@ -269,4 +269,5 @@ if END > S2:                       # Scene 3a: rush toward the point where every
     cam.key(372, (0.3, 31.0, 0.75), CONV, CONV, 3.0)
     cam.key(END, (0.3, 33.5, 0.78), CONV, CONV)
 cam.smooth(); cam.bind(1)
+if arg('--save'): bpy.ops.file.pack_all()             # editable .blend: images packed inside, opens anywhere
 render(os.path.join(HERE, 'frames_s1'))
