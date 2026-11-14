@@ -33,7 +33,7 @@ WIDE = arg('--hook') == 'wide'
 if WIDE: sc.render.resolution_x, sc.render.resolution_y = 1920, 1080
 S = lambda n: os.path.join(ASSETS, n)
 
-LOCK, OPEN0, OPEN1, CROSS, LIT = 40, 50, 62, 62, 60
+LOCK, OPEN0, OPEN1, CROSS, LIT = 40, 47, 58, 62, 52
 BEATS = [8 + 16 * i for i in range(7)]                     # 112.5 BPM grid: 8, 24, 40, 56, 72, 88, 104
 YW, ZC = 15.0, 0.6                                         # the waveform's plane and centre line
 FLOOR_Z = -1.25
@@ -110,12 +110,12 @@ for k, lx in enumerate(LINES_X):
         # transformation sweeps from the far end of the chart toward the camera, so the waveform
         # assembles in front of us; each point lifts off, folds forward and lands
         far = i / (N - 1)
-        t0 = 20 + (1 - far) * 9 + random.uniform(-1.5, 1.5)
-        t1 = min(LOCK - 0.5, t0 + 10 + random.uniform(0, 2))
-        mid = pc.lerp(pw, 0.45) + Vector((0.35 * (1 if lx > 0 else -1), 0, 0.9 + 0.3 * random.random()))
-        if pc.y < cam_y(t0) + 4.0:                         # close to the lens: swing wide and high, out of frame first
-            mid = Vector((pc.x + math.copysign(2.4, lx), pc.y + 2.0, pc.z + 1.6))
-        po = pw + Vector((0, 0, open_dz(k, pw.x, 1.35)))
+        t0 = 19 + (1 - far) * 8 + 0.6 * k
+        t1 = min(LOCK - 0.5, t0 + 11)
+        mid = pc.lerp(pw, 0.5) + Vector((0.0, 0, 0.45 + 0.25 * TIER[k]))
+        if pc.y < cam_y(t0) + 4.0:                         # close to the lens: peel outward, out of frame first
+            mid = Vector((pc.x + math.copysign(1.8, lx), pc.y + 3.0, pc.z + 0.5))
+        po = pw + Vector((0, 0, open_dz(k, pw.x, 2.3)))
         p = sp.points[i]
         for f, q in ((1, pc), (t0, pc), ((t0 + t1) / 2, mid), (t1, pw), (OPEN0, pw), (OPEN1, po)):
             p.co = (q.x, q.y, q.z, 1); p.keyframe_insert('co', frame=f)
@@ -163,11 +163,10 @@ for n, (k, i, pc, h) in enumerate(sorted(BARS, key=lambda b: b[2].x * 100 + b[2]
     wh = 2 * envelope(x) * (0.75 + 0.25 * math.sin(n * 2.3)) + 0.08
     c_wave = Vector((x, YW + 0.35, ZC))
     far = pc.y / Y1
-    t0 = bar_t0(pc) + random.uniform(-1, 1); t1 = min(LOCK - 1, t0 + 11)
-    keys(root, 'location', [(1, tuple(c_chart)), (t0, tuple(c_chart)), ((t0 + t1) / 2, tuple(c_chart.lerp(c_wave, 0.5) + Vector((0, 0, 0.7)))),
+    t0 = bar_t0(pc) + 2; t1 = min(LOCK - 1, t0 + 10)
+    keys(root, 'location', [(1, tuple(c_chart)), (t0, tuple(c_chart)), ((t0 + t1) / 2, tuple(c_chart.lerp(c_wave, 0.5) + Vector((0, 0, -0.25)))),
                             (t1, tuple(c_wave)), (OPEN0, tuple(c_wave)),
-                            (OPEN1, tuple(c_wave + Vector((math.copysign(1.4, x) * math.exp(-(x / 1.3) ** 2), 0, 0))))])
-    keys(root, 'rotation_euler', [(t0, (0, 0, 0)), (t1, (0, 0, math.radians(180 if pc.x < 0 else -180)))])   # a half turn: it swings round
+                            (OPEN1, tuple(c_wave + Vector((math.copysign(2.0, x) * math.exp(-(x / 1.3) ** 2), 0, 0))))])
     pulse = [(t1, (1, 1, wh)), (OPEN0, (1, 1, wh))]
     for bt in BEATS:
         if t1 < bt < OPEN0: pulse += [(bt, (1, 1, wh * 1.22)), (bt + 6, (1, 1, wh))]
@@ -229,8 +228,8 @@ def haze(name, loc, col, pairs, size=40, radius=8.0):
     hz.visible_glossy = False
     return hz
 haze('HazeAhead', (0, 44, 2.0), EMBER, [(1, 0.35), (LIT - 6, 0.35), (LIT + 4, 0.0)], size=60, radius=16.0)
-haze('HazeS', (-2.6, 34, 3.6), CYAN, [(LIT - 6, 0.0), (LIT + 14, 0.3)], size=30, radius=6.0)
-haze('HazeN', (2.6, 34, 0.0), EMBER, [(LIT - 6, 0.0), (LIT + 14, 0.24)], size=30, radius=6.0)
+haze('HazeS', (-3.2, 33, 1.2), CYAN, [(LIT - 6, 0.0), (LIT + 14, 0.45)], size=30, radius=5.0)
+haze('HazeN', (3.2, 33, 0.2), EMBER, [(LIT - 6, 0.0), (LIT + 14, 0.16)], size=30, radius=5.0)
 
 # ---------------------------------------------------------------- the two worlds beyond the waveform
 P0 = Vector((0, 24.0, 0.8))                                # the middle of the far side

@@ -29,7 +29,7 @@ CUE = dict(
     open=0.0,                 # frame 1: the first impact
     lock=F(40),               # the waveform locks
     cross=F(62),              # the camera passes through the waveform
-    worlds=F(60),             # SCOUT and NEXT light up
+    worlds=F(52),             # SCOUT and NEXT light up (seen through the opening)
     drive=beat(4),            # frame 72: the drive starts
 )
 music, sfx = Bus(LEN + 3), Bus(LEN + 3)

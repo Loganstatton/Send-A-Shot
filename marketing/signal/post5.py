@@ -100,7 +100,7 @@ TITLES = {
     'a': [
         (1, 33, "THIS ISN'T A STOCK.", 106, 0.2, 0.18, WHITE, 0, 5),
         (38, 63, "IT'S AN ARTIST.", 128, 0.2, 0.18, (255, 226, 204), 2, 6),
-        (66, 105, None, 128, 0.195, 0.16, None, 8, 0),
+        (63, 105, None, 128, 0.195, 0.16, None, 8, 0),
     ],
 }[HOOK]
 def typography(img, f):
@@ -112,9 +112,10 @@ def typography(img, f):
         if alpha <= 0.001: continue
         s_ = size * (1.1 if WIDE else 1.0)
         layer = lockup(int(s_)) if text is None else card(text, int(s_), color=col)
+        fit = min(1.0, (W * (0.62 if WIDE else 0.86)) / max(1, layer.width - 80))     # never wider than the safe width
         # a hard-cut title arrives full size with a fast 4% settle; others drift up 12 px as they fade in
         settle = 1.0 + 0.04 * (1 - smooth((f - a) / 6)) if not fi else 1.0
-        place(img, layer, W / 2, H * (yw if WIDE else yv) + (1 - pin) * 12, alpha=alpha, blur=(1 - pin) * 5 + (1 - pout) * 4, scale=settle)
+        place(img, layer, W / 2, H * (yw if WIDE else yv) + (1 - pin) * 12, alpha=alpha, blur=(1 - pin) * 5 + (1 - pout) * 4, scale=settle * fit)
 
 FLASH = {40: 1.7, 41: 1.3, 42: 1.1}                  # the waveform locks
 OFFSET = int(arg('--offset', '0'))
