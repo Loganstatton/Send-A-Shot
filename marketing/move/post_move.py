@@ -99,7 +99,7 @@ HOOKS = {
           (1, 98, 'small', 'NO CASH VALUE · DEMO DATA', 20, 0.252, SOFT, 0, 8)],
     'c': None,
 }
-HOOKS['c'] = HOOKS['a']
+HOOKS['c'] = [(40, 98) + t[2:7] + (6, t[8]) for t in HOOKS['a']]          # hook C: the figure forms on the lock, so do its labels
 URL = 'send-a-shot.onrender.com/next'                     # verified: returns 200 (see QC_REPORT.md)
 BODY = [
     # the market landscape (shot 3): what the viewer is looking at, and the live price
@@ -107,8 +107,8 @@ BODY = [
     (300, 386, 'ticker', '', 92, 0.225, WHITE, 8, 8),
     (300, 386, 'small', 'EVERY TRADE MOVES THE PRICE · 5% PER 10,000 CREDITS', 20, 0.27, SOFT, 8, 8),
     # the reveal (shot 4)
-    (484, 598, 'pill', 'IN VIRTUAL CREDITS · NO CASH VALUE', 26, 0.735, SOFT, 6, 8),
-    (484, 598, 'small', 'ILLUSTRATIVE EXAMPLE · DEMO DATA · NOT REAL MONEY', 20, 0.77, SOFT, 6, 8),
+    (484, 624, 'pill', 'IN VIRTUAL CREDITS · NO CASH VALUE', 26, 0.735, SOFT, 6, 10),
+    (484, 624, 'small', 'ILLUSTRATIVE EXAMPLE · DEMO DATA · NOT REAL MONEY', 20, 0.77, SOFT, 6, 10),
     # the end card (shot 5)
     (636, 690, 'title', 'HOW GOOD ARE YOUR PICKS?', 64, 0.3, WHITE, 8, 6),
     (692, 750, 'title', 'TRY NEXT FREE.', 76, 0.3, (255, 226, 204), 6, 0),

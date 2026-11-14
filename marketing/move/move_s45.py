@@ -68,7 +68,8 @@ for ob in [disp, fig] + ch.objects() + monos:
         mw = ob.matrix_world.copy(); ob.parent = pivot; ob.matrix_parent_inverse = pivot.matrix_world.inverted()
 keys(pivot, 'scale', [(COLLAPSE, (1, 1, 1)), (LOGO - 4, (0.02, 0.02, 0.02))], interp='EXPO', easing='EASE_IN')
 keys(pivot, 'rotation_euler', [(COLLAPSE, (0, 0, 0)), (LOGO - 4, (0, 0, math.radians(35)))], interp='EXPO', easing='EASE_IN')
-for ob in pivot.children_recursive: visible(ob, [(451, LOGO - 3)])
+for ob in pivot.children_recursive:
+    visible(ob, [(REVEAL - 3, LOGO - 3)] if ob.name.startswith('Figure') else [(451, LOGO - 3)])     # the figure only from the reveal
 flash_m, flash_e = glow_material('Flash', (1.0, 0.7, 0.45), 0.0)
 bpy.ops.mesh.primitive_uv_sphere_add(radius=0.5, segments=32, ring_count=16, location=CORE); flash = bpy.context.active_object; flash.data.materials.append(flash_m)
 key_val = lambda sock_, pairs: [(sock_.__setattr__('default_value', v), sock_.keyframe_insert('default_value', frame=f)) for f, v in pairs]
