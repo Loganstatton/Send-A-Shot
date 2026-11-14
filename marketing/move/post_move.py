@@ -100,7 +100,6 @@ HOOKS = {
     'c': None,
 }
 HOOKS['c'] = [(40, 90) + t[2:7] + (6, t[8]) for t in HOOKS['a']]          # hook C: the figure forms on the lock, so do its labels
-URL = 'send-a-shot.onrender.com/next'                     # verified: returns 200 (see QC_REPORT.md)
 BODY = [
     # the market landscape (shot 3): what the viewer is looking at, and the live price
     (300, 386, 'label', 'SIMULATED MARKET · DEMO PLAYERS\' TRADES', 26, 0.17, EMBER, 8, 8),
@@ -111,9 +110,8 @@ BODY = [
     (484, 624, 'small', 'ILLUSTRATIVE EXAMPLE · DEMO DATA · NOT REAL MONEY', 20, 0.77, SOFT, 6, 10),
     # the end card (shot 5)
     (636, 690, 'title', 'HOW GOOD ARE YOUR PICKS?', 64, 0.3, WHITE, 8, 6),
-    (692, 750, 'title', 'TRY NEXT FREE.', 76, 0.3, (255, 226, 204), 6, 0),
-    (650, 750, 'url', URL, 34, 0.665, (236, 232, 226), 10, 0),
-    (650, 750, 'small', 'Virtual trading game. Credits have no cash value.', 26, 0.705, SOFT, 10, 0),
+    (692, 750, 'title', 'COMING SOON.', 84, 0.3, (255, 226, 204), 6, 0),
+    (650, 750, 'small', 'Virtual trading game. Credits have no cash value.', 26, 0.67, SOFT, 10, 0),
 ]
 TITLES = HOOKS[HOOK] + BODY
 # hook B's counter: the same curve as move_hook.py (the position's realistic exit value along the real price path)

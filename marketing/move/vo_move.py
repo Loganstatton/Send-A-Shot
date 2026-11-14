@@ -4,7 +4,7 @@ allowed; no real person's voice is imitated). One WAV per line + durations.json.
   tts-venv/bin/python vo_move.py MODEL.onnx VOICES.bin OUT_DIR [--voice af_heart] [--speed 1.0] [--only key,key]
   python vo_move.py - - OUT_DIR --split-only
 
-The lines come from the brief, except the end line, which reads the end card.
+The lines come from the brief, except the end line, which reads the end card (NEXT is coming soon).
 """
 import json, os, sys
 import numpy as np, soundfile as sf
@@ -17,11 +17,11 @@ LINES = {
     'pick':     'One artist. One early pick.',
     'discover': 'Discover the talent before the crowd.',
     'move':     'Back your picks. Watch the market move.',
-    'end':      'How good are your picks? Try NEXT free.',
+    'end':      'How good are your picks? NEXT is coming soon.',
 }
 # two-sentence lines are also written as two files, cut at their pause, so each sentence lands on its own picture beat
 SPLIT = {'pick': ('One artist.', 'One early pick.'), 'move': ('Back your picks.', 'Watch the market move.'),
-         'end': ('How good are your picks?', 'Try NEXT free.')}
+         'end': ('How good are your picks?', 'NEXT is coming soon.')}
 def split_lines(meta):
     for key, (t1, t2) in SPLIT.items():
         p = os.path.join(OUT, f'{key}.wav')
@@ -51,4 +51,8 @@ for key in keys_:
     sf.write(os.path.join(OUT, f'{key}.wav'), audio, sr)
     dur[key] = round(len(audio) / sr, 3)
     print(f'{key:9s} {dur[key]:.2f}s  {LINES[key]}')
-split_lines({'voice': VOICE, 'speed': SPEED, 'durations': dur, 'lines': {k_: LINES[k_] for k_ in keys_}})
+meta = {'voice': VOICE, 'speed': SPEED, 'durations': {}, 'lines': {}}
+old = os.path.join(OUT, 'durations.json')
+if only and os.path.exists(old): meta = json.load(open(old))       # --only: keep the other lines' records
+meta['durations'].update(dur); meta['lines'].update({k_: LINES[k_] for k_ in keys_})
+split_lines(meta)
