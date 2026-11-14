@@ -76,7 +76,7 @@ for nm, src in (('master', os.path.join(A, 'mix_a.wav')), ('voice', os.path.join
 # ---------------------------------------------------------------- 3. captions
 PLACE = {'scout': 3.4, 'review': 10.2, 'begins': 21.15, 'discover': 23.2, 'credits': 30.2, 'trade': 33.1, 'build': 40.5,
          'believer': 47.6, 'finds': 53.6, 'next': 56.9}
-HOOKS = {'a': {'stock': 0.2, 'artist': 1.36}, 'b': {'hook_b': 0.2}, 'c': {'hook_c': 0.1}}
+HOOKS = {'a': {'stock': 0.2, 'artist': 1.36}, 'b': {'hook_b': 0.2}, 'c': {'hook_c1': 0.1, 'hook_c2': 1.41}}
 VOJ = json.load(open(os.path.join(VO, 'durations.json')))
 def ts(t): h = int(t // 3600); m = int(t % 3600 // 60); s = t % 60; return f'{h:02d}:{m:02d}:{s:06.3f}'.replace('.', ',')
 def srt(lines, path):

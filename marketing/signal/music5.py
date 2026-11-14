@@ -28,7 +28,7 @@ F = lambda f: (f - 1) / 30.0                       # film frame -> seconds
 CUE = dict(
     open=0.0,                 # frame 1: the first impact
     lock=F(40),               # the waveform locks
-    cross=F(62),              # the camera passes through the waveform
+    cross=F(61.5),            # the camera passes through the waveform plane (measured: y=15.0 at frame 61.4–61.6)
     worlds=F(52),             # SCOUT and NEXT light up (seen through the opening)
     drive=beat(4),            # frame 72: the drive starts
 )
@@ -173,7 +173,7 @@ if HOOK == 'a':
     sfx.add(boom(1.0), CUE['lock']); sfx.add(metal_hit(0.35, 240.0), CUE['lock'], pan=0.1)
     music.add(pad((38, 50, 57), 1.3, 0.035, 500, 0.02), CUE['lock'])
     music.add(pulse(0.35), beat(3))
-    sfx.add(whoosh(0.55, 0.32, 250, 7000), CUE['cross'] - 0.33)
+    sfx.add(whoosh(0.55, 0.32, 250, 7000), CUE['cross'] - 0.32)      # its loudness peaks 0.32 s in (measured, A-weighted): on the crossing
 elif HOOK == 'b':                                           # tight on SCOUT's queue: a scan, two candidates light up
     sfx.add(sub_drop(0.8), 0.0); sfx.add(metal_hit(0.45, 260.0), 0.0, pan=-0.2)
     sfx.add(scan(1.4, 0.07, 900, 2400), F(4), pan=-0.2)

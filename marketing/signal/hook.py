@@ -49,7 +49,13 @@ key_val(line_b.inputs['Emission Strength'], [(1, 3.2), (LOCK - 2, 3.6), (LOCK, 1
 node_m, node_e = emissive('ChartNode', (1.0, 0.62, 0.34), 12.0)
 key_val(node_e.inputs['Strength'], [(18, 12.0), (30, 0.0)])
 glass = principled('SmokedGlass', (0.42, 0.30, 0.26), rough=0.06, transmission=1.0, ior=1.45)
+glass_dn = principled('SmokedGlassDown', (0.30, 0.10, 0.10), rough=0.08, transmission=1.0, ior=1.45, emission=(0.6, 0.06, 0.04), estr=0.6)
+_gdb = glass_dn.node_tree.nodes['Principled BSDF']                        # falling candles warm to the waveform's orange as they join it
+key_color(_gdb.inputs['Emission Color'], [(26, (0.6, 0.06, 0.04)), (LOCK - 2, EMBER_HOT)])
+key_color(_gdb.inputs['Base Color'], [(26, (0.30, 0.10, 0.10)), (LOCK - 2, (0.42, 0.30, 0.26))])
+key_val(_gdb.inputs['Emission Strength'], [(26, 0.6), (LOCK - 2, 0.25)])
 gb = glass.node_tree.nodes['Principled BSDF']
+gb.inputs['Emission Color'].default_value = (*EMBER_HOT, 1); key_val(gb.inputs['Emission Strength'], [(1, 0.55), (28, 0.55), (LOCK, 0.25)])  # rising candles glow
 gb.inputs['Coat Weight'].default_value = 0.4
 edge_m, edge_e = emissive('BarEdge', EMBER_HOT, 5.0)
 key_val(edge_e.inputs['Strength'], [(1, 2.5), (LOCK, 9.0), (LOCK + 8, 3.0)] + [(b, 5.0) for b in BEATS if b > LOCK] +
@@ -134,31 +140,48 @@ for k, (ob, pts_c, pts_w) in enumerate(lines):
 # smoked-glass volume bars under the lines → the waveform's bars
 BARS = []
 NB = 11
+CANDLE = {}
 for k, (ob, pts_c, pts_w) in enumerate(lines):
     for b in range(NB):
         i = 4 + b * (N - 8) // (NB - 1)
         pc = pts_c[i]; h = max(0.1, pc.z - FLOOR_Z - 0.05)
         BARS.append((k, i, pc, h))
+        move = pts_c[min(N - 1, i + 3)].z - pts_c[max(0, i - 3)].z           # the candle's open → close over its period
+        CANDLE[(k, i)] = (move >= 0, max(0.1, min(0.5, abs(move) * 1.4 + 0.08)), 0.06 + 0.12 * random.random(), 0.04 + 0.1 * random.random())
 def bar_t0(pc): return 21 + (1 - pc.y / Y1) * 9
 NEAR = [b for b in BARS if b[2].y < cam_y(bar_t0(b[2])) + 4.5]
 BARS = [b for b in BARS if b not in NEAR]
 for n, (k, i, pc, h) in enumerate(NEAR):                  # near the lens: they shatter into the particle stream
     bx = rounded_slab(f'NearBar{n}', 0.05, 1.0, 0.012, depth=0.18, bevel=0.006, mat=glass); bx.rotation_euler = (math.radians(90), 0, 0)
     root = link(bpy.data.objects.new(f'NearRoot{n}', None)); bx.parent = root
-    root.location = (pc.x, pc.y, FLOOR_Z + h / 2); t0 = bar_t0(pc)
-    keys(root, 'scale', [(1, (1, 1, h)), (t0 - 4, (1, 1, h)), (t0 + 2, (0.0, 0.0, 0.0))])
+    up, hb, wk_u, wk_d = CANDLE[(k, i)]
+    if not up: bx.data.materials[0] = glass_dn
+    root.location = (pc.x, pc.y, pc.z); t0 = bar_t0(pc)
+    keys(root, 'scale', [(1, (2.4, 0.33, hb)), (t0 - 4, (2.4, 0.33, hb)), (t0 + 2, (0.0, 0.0, 0.0))])
     visible(root, [(1, int(t0) + 3)]); visible(bx, [(1, int(t0) + 3)])
 NBAR = len(BARS)
 for n, (k, i, pc, h) in enumerate(sorted(BARS, key=lambda b: b[2].x * 100 + b[2].y)):
     # a fin of smoked glass: 0.05 wide (x), unit height (z, scaled per bar), 0.36 long (y, along the chart);
     # (a curve's extrude goes both ways, so depth=0.18 is 0.36 thick before the stand-up rotation)
-    bx = rounded_slab(f'Bar{n}', 0.05, 1.0, 0.012, depth=0.18, bevel=0.006, mat=glass)
+    up, hb, wk_u, wk_d = CANDLE[(k, i)]
+    bx = rounded_slab(f'Bar{n}', 0.05, 1.0, 0.012, depth=0.18, bevel=0.006, mat=glass if up else glass_dn)
     root = link(bpy.data.objects.new(f'BarRoot{n}', None)); bx.parent = root
     bx.rotation_euler = (math.radians(90), 0, 0)
     edge = rounded_slab(f'BarEdge{n}', 0.056, 0.012, 0.004, depth=0.185, mat=edge_m); edge.parent = root
     edge.rotation_euler = (math.radians(90), 0, 0); edge.location = (0, 0, 0.5)
-    # chart pose: centre at half height, standing on the floor
-    c_chart = Vector((pc.x, pc.y, FLOOR_Z + h / 2))
+    # chart pose: a candlestick — the body centred on the price line, square in plan like a real candle
+    c_chart = Vector((pc.x, pc.y, pc.z))
+    wm_, we_ = emissive(f'Wick{n}', EMBER_HOT if up else (0.9, 0.12, 0.08), 6.0 if up else 4.0)
+    wc = bpy.data.curves.new(f'Wick{n}', 'CURVE'); wc.dimensions = '3D'; ws = wc.splines.new('POLY'); ws.points.add(1)
+    ws.points[0].co = (pc.x, pc.y, pc.z - hb / 2 - wk_d, 1); ws.points[1].co = (pc.x, pc.y, pc.z + hb / 2 + wk_u, 1); wc.bevel_depth = 0.006
+    wick = link(bpy.data.objects.new(f'Wick{n}', wc)); wick.data.materials.append(wm_)
+    vh = 0.06 + 0.22 * random.random()                                     # traded volume, at the foot of the chart
+    vol = rounded_slab(f'Vol{n}', 0.11, 1.0, 0.01, depth=0.05, mat=glass if up else glass_dn); vol.rotation_euler = (math.radians(90), 0, 0)
+    vol.location = (pc.x, pc.y, FLOOR_Z + 0.02); vol.scale = (1, vh, 1)
+    for v in vol.data.splines[0].points: v.co.y += 0.5
+    t_off = bar_t0(pc) + 2
+    keys(wick, 'scale', [(t_off - 2, (1, 1, 1)), (t_off + 3, (1, 1, 0.0))]); visible(wick, [(1, int(t_off) + 4)])
+    keys(vol, 'scale', [(t_off - 4, (1, vh, 1)), (t_off + 2, (1, 0.0, 1))]); visible(vol, [(1, int(t_off) + 3)])
     # waveform pose: facing the camera, centred on the waveform line, height from the envelope
     x = -4.3 + 8.6 * (n + 0.5) / NBAR
     wh = 2 * envelope(x) * (0.75 + 0.25 * math.sin(n * 2.3)) + 0.08
@@ -171,8 +194,29 @@ for n, (k, i, pc, h) in enumerate(sorted(BARS, key=lambda b: b[2].x * 100 + b[2]
     pulse = [(t1, (1, 1, wh)), (OPEN0, (1, 1, wh))]
     for bt in BEATS:
         if t1 < bt < OPEN0: pulse += [(bt, (1, 1, wh * 1.22)), (bt + 6, (1, 1, wh))]
-    keys(root, 'scale', [(1, (1, 1, h)), (t0, (1, 1, h))] + sorted(pulse) + [(OPEN1, (1, 1, wh * (1 - 0.8 * math.exp(-(x / 1.3) ** 2))))])
+    keys(root, 'scale', [(1, (2.4, 0.33, hb)), (t0, (2.4, 0.33, hb))] + sorted(pulse) + [(OPEN1, (1, 1, wh * (1 - 0.8 * math.exp(-(x / 1.3) ** 2))))])
     visible(root, [(1, 80)]); visible(bx, [(1, 80)]); visible(edge, [(1, 80)])
+
+grid_m, grid_e = emissive('PriceGrid', (1.0, 0.72, 0.55), 0.0)
+key_val(grid_e.inputs['Strength'], [(1, 0.9), (22, 0.9), (34, 0.0)])
+for zl in [-0.6 + 0.45 * j for j in range(9)]:
+    for side in (-2.75, 2.75):
+        gc = bpy.data.curves.new('Grid', 'CURVE'); gc.dimensions = '3D'; gs = gc.splines.new('POLY'); gs.points.add(1)
+        gs.points[0].co = (side, Y0 - 1.0, zl, 1); gs.points[1].co = (side, Y1 + 2.0, zl, 1); gc.bevel_depth = 0.0035
+        g_ = link(bpy.data.objects.new('Grid', gc)); g_.data.materials.append(grid_m); visible(g_, [(1, 36)])
+        for t_ in range(int(Y0), int(Y1) + 1, 3):                         # tick marks along each price level
+            tc_ = bpy.data.curves.new('Tick', 'CURVE'); tc_.dimensions = '3D'; ts_ = tc_.splines.new('POLY'); ts_.points.add(1)
+            ts_.points[0].co = (side, t_, zl - 0.05, 1); ts_.points[1].co = (side, t_, zl + 0.05, 1); tc_.bevel_depth = 0.003
+            t_o = link(bpy.data.objects.new('Tick', tc_)); t_o.data.materials.append(grid_m); visible(t_o, [(1, 36)])
+last_z = max(pc_[-1].z for _, pc_, _ in lines)
+lp_m, lp_e = emissive('LastPrice', EMBER_HOT, 0.0); key_val(lp_e.inputs['Strength'], [(1, 4.0), (22, 4.0), (32, 0.0)])
+for j in range(22):                                                         # the dashed last-price line across the chart
+    x0_ = -2.7 + j * 0.25
+    lc_ = bpy.data.curves.new('Last', 'CURVE'); lc_.dimensions = '3D'; ls_ = lc_.splines.new('POLY'); ls_.points.add(1)
+    ls_.points[0].co = (x0_, Y1 + 0.5, last_z, 1); ls_.points[1].co = (x0_ + 0.14, Y1 + 0.5, last_z, 1); lc_.bevel_depth = 0.008
+    lo_ = link(bpy.data.objects.new('Last', lc_)); lo_.data.materials.append(lp_m); visible(lo_, [(1, 34)])
+tag = rounded_slab('PriceTag', 0.5, 0.18, 0.05, depth=0.01, mat=lp_m); tag.rotation_euler = (math.radians(90), 0, 0)
+tag.location = (2.95, Y1 + 0.5, last_z); visible(tag, [(1, 34)])
 
 # particles: from the chart lines to the waveform, with the transformation
 starts, targets, bursts, delays = [], [], [], []
@@ -187,7 +231,7 @@ parts = particles('Sparks', starts, targets, bursts, delays, 20, settle=12.0, ba
                   appear=20, vanish=(48, 64), glow=0.7)
 
 # ---------------------------------------------------------------- the world beyond the waveform (shared with every scene)
-from world5 import build_world, link_lights, haze, L_, P0, MON, PHN
+from world5 import build_world, link_lights, haze, L_, P0, MON, PHN, build_architecture, hook_cam_keys, BEHIND
 W = build_world(S, LIT, OPEN0, [(S('scout-queue-before.png'), 1, 'cut')], [(S('n04-back-amount.png'), 1, 'cut')])
 haze('HazeAhead', (0, 44, 2.0), EMBER, [(1, 0.35), (LIT - 6, 0.35), (LIT + 4, 0.0)], size=60, radius=16.0)
 # the chart's own light: a broad warm wash from above-ahead, for the glass and the metal tubes
@@ -195,6 +239,7 @@ L_('ChartTop', (0, 14, 6.0), (0, 10, 0), 6.0, (1.0, 0.62, 0.38), [(1, 60.0), (LI
 L_('ChartRimL', (-4.0, 22, 1.0), (0, 10, 0.3), 0.4, EMBER, [(1, 120.0), (LIT - 6, 120.0), (LIT + 6, 0.0)], size_y=8.0)
 L_('ChartRimR', (4.0, 22, 1.0), (0, 10, 0.3), 0.4, (1.0, 0.7, 0.45), [(1, 90.0), (LIT - 6, 90.0), (LIT + 6, 0.0)], size_y=8.0)
 link_lights(W, extra_floor_only=('ChartRimL', 'ChartRimR'))
+build_architecture(FLOOR_Z, 14.0, 46.0, (-4.6, -7.6), (10.8, 13.8), 48.0, [(LIT - 4, 0.0), (LIT + 14, 1.6)], appear=OPEN0, extra=BEHIND)
 
 # ---------------------------------------------------------------- camera
 cam = Camera(lens=24, fstop=2.8)
@@ -203,17 +248,13 @@ if WIDE:
     cam.key(24, (0.05, 6.2, 0.4), (0.0, 15.0, 0.6), (0, 12, 0.5))
     cam.key(LOCK, (0.0, 8.0, ZC), (0.0, YW, ZC), (0, YW, ZC), 5.6, 26)
     cam.key(OPEN0, (0.0, 9.0, ZC), (0.0, YW, ZC), (0, YW, ZC))
-    cam.key(CROSS, (0.0, YW + 0.2, ZC + 0.05), (0.0, 23.0, 0.75), (0, 23, 0.75), 5.6, 28)
-    cam.key(90, (0.0, 19.0, 0.85), P0 + Vector((0.0, 0, 0.0)), P0, 5.6, 30)
-    cam.key(END, (0.0, 19.4, 0.86), P0 + Vector((0.0, 0, 0.0)), P0)
+    for k_ in hook_cam_keys(WIDE): cam.key(*k_)                   # the shared closing pose (frames 62, 90, 105)
 else:
     cam.key(1, (0.0, -1.8, 0.25), (0.0, 8.0, 0.55), (0, 6, 0.4), 4.0, 24)
     cam.key(24, (0.05, 6.4, 0.4), (0.0, 15.0, 0.6), (0, 12, 0.5))
     cam.key(LOCK, (0.0, 9.2, ZC), (0.0, YW, ZC), (0, YW, ZC), 5.6, 28)
     cam.key(OPEN0, (0.0, 10.2, ZC), (0.0, YW, ZC), (0, YW, ZC))
-    cam.key(CROSS, (0.0, YW + 0.2, ZC + 0.05), (0.0, 23.0, 0.75), (0, 23, 0.75), 5.6, 28)
-    cam.key(90, (0.0, 18.7, 0.82), P0 + Vector((0.0, 0, 0.1)), P0, 5.6, 28)
-    cam.key(END, (0.0, 19.1, 0.84), P0 + Vector((0.0, 0, 0.1)), P0)
+    for k_ in hook_cam_keys(WIDE): cam.key(*k_)                   # the shared closing pose (frames 62, 90, 105)
 cam.smooth()
 
 if arg('--save'): bpy.ops.file.pack_all()             # editable .blend: images packed inside

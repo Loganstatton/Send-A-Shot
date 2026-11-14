@@ -27,7 +27,7 @@ for p in (HERE, os.path.join(HERE, '..', 'dual'), os.path.join(HERE, '..', 'comm
 from scout3d import *
 from card2 import build_card
 from phone2 import build_phone2
-from world5 import build_uw_monitor
+from world5 import build_uw_monitor, build_architecture
 from mathutils import Vector
 
 random.seed(1410)
@@ -78,6 +78,8 @@ key_val(pt_e.inputs['Strength'], [(POINT - 6, 0.0), (POINT, 60.0), (POINT + 10, 
 STUDIO_Z = -1.05
 bpy.ops.mesh.primitive_plane_add(size=120, location=(0, 20, STUDIO_Z)); fl = bpy.context.active_object
 fl.data.materials.append(principled('StudioFloor', (0.005, 0.005, 0.0055), rough=0.08, coat=0.6))
+build_architecture(STUDIO_Z, C.y - 8.0, C.y + 14.0, (-6.2, -9.4), (6.2, 9.4), C.y + 17.0, [(1, 0.0), (LIT, 0.0), (LIT + 30, 1.4)],
+                   back_span=(-16.0, 16.0), split_x=0.0, wall_gain=0.18)
 MON_W = 3.4
 mon, mscr = build_uw_monitor('Workstation', [(S('scout-queue.png'), 1, 'cut')], width=MON_W, glow=0.0)
 MON = C + Vector((-1.35, 1.9, 0.85))

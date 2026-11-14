@@ -21,7 +21,7 @@ for p in (HERE, os.path.join(HERE, '..', 'dual'), os.path.join(HERE, '..', 'comm
     if p not in sys.path: sys.path.insert(0, p)
 from scout3d import *
 from phone2 import build_phone2
-from world5 import build_floor, haze, L_, group, screen_bsdf
+from world5 import build_floor, haze, L_, group, screen_bsdf, build_architecture, FLOOR_Z, BEHIND
 from mathutils import Vector, Matrix
 
 random.seed(660)
@@ -43,6 +43,7 @@ T_SELL, T_SREV, T_SCONF = 1140, 1160, 1178
 PH2 = Vector((7.2, 30.2, 1.15))
 fl, floor_glow, floor_mix = build_floor(52)
 haze('HazeN2', (PH2.x + 1.5, PH2.y + 9, 0.8), EMBER, [(1, 0.3)], size=30, radius=6.0)
+build_architecture(FLOOR_Z, 14.0, 46.0, (-4.6, -7.6), (10.8, 13.8), 48.0, [(1, 1.6)], extra=BEHIND)
 states = [(S('n02-discover-grid.png'), 1, 'cut'), (S('n02s-search.png'), T_SEARCH + 2, 'up'), (S('n02f-filters.png'), T_FILT + 2, 'fade'),
           (S('n03-artist.png'), T_CARD + 4, 'push'), (S('n03w-watching.png'), T_WATCH + 2, 'fade'), (S('n03b-artist-score.png'), T_PRICE, 'up'),
           (S('n04a-trade-empty.png'), T_TRADE, 'up'), (S('n04-back-amount.png'), T_AMT + 2, 'fade'), (S('n05-confirm.png'), T_REV + 2, 'fade'),

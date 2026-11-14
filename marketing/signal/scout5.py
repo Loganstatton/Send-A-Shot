@@ -52,7 +52,8 @@ W = build_world(S, LIT, 1, [(S('scout-queue-before.png'), 1, 'cut'), (S('scout-q
                             (S('scout-rate-c.png'), SET2, 'fade'), (S('scout-rated.png'), RATED, 'fade')],
                 [(S('n04-back-amount.png'), 1, 'cut')])
 mon, mscr, phone = W['mon'], W['mscr'], W['phone']
-keys(mon, 'rotation_euler', [(105, (0, 0, math.radians(17))), (150, (0, 0, 0))], interp='SINE', easing='EASE_IN_OUT')
+keys(mon, 'rotation_euler', [(105, (0, 0, MON_YAW[1])), (150, (0, 0, 0))], interp='SINE', easing='EASE_IN_OUT')
+build_architecture(FLOOR_Z, 14.0, 46.0, (-4.6, -7.6), (10.8, 13.8), 48.0, [(1, 1.6)], extra=BEHIND)
 key_val(screen_bsdf(mscr).inputs['Emission Strength'], [(LIFT, 1.15), (FLY, 0.45)])     # the screen dims as the profile leaves it
 # NEXT's phone slips away into the orange dark (the transfer brings a phone back later)
 keys(phone, 'location', [(105, tuple(PHN)), (140, tuple(PHN + Vector((2.8, 3.2, 0.0))))], interp='SINE', easing='EASE_IN')
@@ -195,7 +196,7 @@ for i in range(NR):
     ring = link(bpy.data.objects.new(f'Ring{i}', oc)); ring.data.materials.append(m)
     ring.location = p; ring.rotation_euler = tg.to_track_quat('Z', 'Y').to_euler(); RINGS.append((ring, rp))
     on = FLY - 10 + int(t * (RISE - FLY))                 # they light up just ahead of the tile
-    key_val(e.inputs['Strength'], [(on - 6, 0.0), (on, 4.0), (on + 14, 1.4), (LAND + 10, 0.6), (END, 0.0)])
+    key_val(e.inputs['Strength'], [(on - 6, 0.0), (on, 2.6), (on + 14, 1.0), (LAND + 10, 0.5), (END, 0.0)])
     visible(ring, [(on - 6, END)])
     bpy.context.view_layer.update()
     for k_, (cx_, cy_) in enumerate(((-w_ / 2, -h_ / 2), (w_ / 2, -h_ / 2), (w_ / 2, h_ / 2), (-w_ / 2, h_ / 2))):
@@ -236,9 +237,8 @@ for nm in ('NKey2', 'NRimL2', 'NRimR2'):
 
 # ---------------------------------------------------------------- camera
 cam = Camera(lens=28, fstop=5.6)
-cam.key(62, (0.0, 15.2, 0.65), (0.0, 23.0, 0.75), (0, 23, 0.75), 5.6, 28)           # the hook's keys, so frame 90 matches exactly
-cam.key(90, (0.0, 18.7, 0.82), tuple(P0 + Vector((0.0, 0, 0.1))), tuple(P0), 5.6, 28)
-cam.key(105, (-0.1, 19.2, 0.86), tuple(P0 + Vector((-0.2, 0, 0.2))), tuple(MON), 5.6, 30)
+for k_ in hook_cam_keys(WIDE)[:2]: cam.key(*k_)                     # the hook's keys, so frame 90 matches exactly
+cam.key(105, (0.0, 20.4, 0.98), tuple(P0 + Vector((-0.25, 0, 0.2))), tuple(MON), 5.6, 30)
 c150 = MON + Matrix.Rotation(math.radians(-16), 3, 'Z') @ Vector((0, -4.4, 0.2))
 cam.key(150, tuple(c150), tuple(MON + Vector((0, 0, -0.1))), tuple(MON), 4.0, 35)
 cam.key(TILE1, front(AV, 1.55, 0.3, 0.24), tuple(AV + Vector((0.3, 0, 0.22))), tuple(AV), 3.2, 35)

@@ -24,11 +24,11 @@ def build(kind):
     W = build_world(S, -20, 1, [(S('scout-queue-before.png'), 1, 'cut')], [(S('n04-back-amount.png'), 1, 'cut')])
     mon, mscr, phone = W['mon'], W['mscr'], W['phone']
     # the same poses as Hook A from frame 46 on (Hook A lights the far side at 52)
-    for ob, a, b in ((mon, (0, 0, math.radians(30)), (0, 0, math.radians(17))),
-                     (phone, (math.radians(4), 0, math.radians(-34)), (math.radians(2), 0, math.radians(-16)))):
+    for ob, a, b in ((mon, (0, 0, MON_YAW[0]), (0, 0, MON_YAW[1])), (phone, PHN_ROT[0], PHN_ROT[1])):
         ob.animation_data_clear()
         keys(ob, 'rotation_euler', [(1, a), (46, a), (105, b)], interp='SINE', easing='EASE_OUT')
     link_lights(W)
+    build_architecture(FLOOR_Z, 14.0, 46.0, (-4.6, -7.6), (10.8, 13.8), 48.0, [(1, 1.6)], extra=BEHIND)
     sc.frame_set(1); bpy.context.view_layer.update()
     ROW = json.load(open(S('scout-slots.json')))['juno_row']
     NRM = (mscr.matrix_world.to_3x3() @ Vector((0, 0, 1))).normalized()
@@ -70,8 +70,7 @@ def build(kind):
     for ob in bpy.data.objects:
         if ob.type == 'LIGHT': ob.visible_camera = False
     # Hook A's last keys, exactly: frame 90 is identical in every hook
-    cam.key(90, (0.0, 18.7, 0.82), tuple(P0 + Vector((0.0, 0, 0.1))), tuple(P0), 5.6, 28)
-    cam.key(END, (0.0, 19.1, 0.84), tuple(P0 + Vector((0.0, 0, 0.1))), tuple(P0), 5.6, 28)
+    for k_ in hook_cam_keys(WIDE)[1:]: cam.key(*k_)
     cam.smooth()
     if arg('--save'): bpy.ops.file.pack_all()
     render(os.path.join(HERE, 'frames', 'hook' + kind))

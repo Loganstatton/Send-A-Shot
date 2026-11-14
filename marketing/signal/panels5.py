@@ -16,7 +16,7 @@ for p in (HERE, os.path.join(HERE, '..', 'dual'), os.path.join(HERE, '..', 'comm
     if p not in sys.path: sys.path.insert(0, p)
 from scout3d import *
 from phone2 import build_phone2
-from world5 import build_floor, haze, L_
+from world5 import build_floor, haze, L_, build_architecture, FLOOR_Z, BEHIND
 from mathutils import Vector, Matrix
 
 random.seed(1200)
@@ -35,6 +35,7 @@ PH2 = Vector((7.2, 30.2, 1.15))
 fl, floor_glow, floor_mix = build_floor(52)
 key_val(floor_glow, [(DARK0, 0.6), (DARK1, 0.0)])
 _, hz = haze('HazeN2', (PH2.x + 1.5, PH2.y + 9, 0.8), EMBER, [(START, 0.3), (DARK0, 0.3), (DARK1, 0.0)], size=30, radius=6.0)
+build_architecture(FLOOR_Z, 14.0, 46.0, (-4.6, -7.6), (10.8, 13.8), 48.0, [(1, 1.6), (DARK0, 1.6), (DARK1, 0.0)], extra=BEHIND)
 phone, pscr = build_phone2('NextPhone', [(S('n11c-sold.png'), 1, 'cut'), (S('n13-watchlist.png'), 1214, 'fade'), (S('n14-activity.png'), 1300, 'fade')], screen_glow=1.05)
 phone.location = PH2 + Vector((0, 0, 0.03)); phone.rotation_euler = (0, 0, 0)
 keys(phone, 'rotation_euler', [(1240, (0, 0, 0)), (1300, (0, 0, math.radians(8))), (1380, (0, 0, math.radians(-6)))], interp='SINE', easing='EASE_IN_OUT')

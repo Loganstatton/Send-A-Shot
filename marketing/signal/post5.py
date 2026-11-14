@@ -126,19 +126,20 @@ SCOUT_W, NEXT_W = (228, 244, 255), (255, 232, 214)
 # (first, last, text | 'lockup' | 'scout', size, y vertical, y wide, colour, fade in, fade out)
 HOOKS = {
     'a': [
-        (1, 33, "THIS ISN'T A STOCK.", 106, 0.2, 0.18, WHITE, 0, 5),
-        (38, 63, "IT'S AN ARTIST.", 128, 0.2, 0.18, (255, 226, 204), 2, 6),
-        (63, 98, 'lockup', 128, 0.195, 0.16, None, 8, 8),
+        # synced to the narration (speech frames 7.5–36 and 42–70), the lock impact (40) and the drive downbeat (72)
+        (1, 38, "THIS ISN'T A STOCK.", 106, 0.2, 0.18, WHITE, 0, 4),
+        (40, 72, "IT'S AN ARTIST.", 128, 0.2, 0.18, (255, 226, 204), 1, 4),   # gone by 72: no overlap with the lockup
+        (72, 100, 'lockup', 128, 0.195, 0.16, None, 3, 8),
     ],
     'b': [
-        (1, 62, 'THE NEXT BIG ARTIST', 92, 0.19, 0.17, WHITE, 0, 6),
-        (6, 62, 'IS STILL UNKNOWN.', 92, 0.245, 0.27, (228, 244, 255), 6, 6),
-        (63, 98, 'lockup', 128, 0.195, 0.16, None, 8, 8),
+        (1, 66, 'THE NEXT BIG ARTIST', 92, 0.19, 0.17, WHITE, 0, 5),          # speech frames 8–64
+        (6, 66, 'IS STILL UNKNOWN.', 92, 0.245, 0.27, (228, 244, 255), 6, 5),
+        (72, 100, 'lockup', 128, 0.195, 0.16, None, 3, 8),
     ],
     'c': [
-        (1, 41, 'ONE SYSTEM FINDS THEM.', 84, 0.2, 0.18, (228, 244, 255), 0, 5),
-        (42, 80, 'ANOTHER LETS YOU BACK THEM.', 84, 0.2, 0.18, (255, 232, 214), 3, 5),
-        (80, 98, 'lockup', 128, 0.195, 0.16, None, 6, 8),
+        (1, 43, 'ONE SYSTEM FINDS THEM.', 84, 0.2, 0.18, (228, 244, 255), 0, 4),     # speech frames 5–43
+        (44, 80, 'ANOTHER LETS YOU BACK THEM.', 84, 0.2, 0.18, (255, 232, 214), 2, 4),  # speech frames 44–81
+        (81, 100, 'lockup', 128, 0.195, 0.16, None, 3, 8),
     ],
 }
 TITLES = HOOKS[HOOK] + [

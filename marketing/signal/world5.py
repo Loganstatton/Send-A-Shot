@@ -14,6 +14,18 @@ MON = P0 + Vector((-0.5, 0.6, 0.6))                    # SCOUT's workstation (sc
 PHN = P0 + Vector((0.5, -1.55, -0.5))                  # NEXT's phone, on the far side
 FLOOR_Z = -1.25
 UW_W = 2.8; UW_ASPECT = 4201 / 1800; UW_H = UW_W / UW_ASPECT
+# the hook's closing pose (shared by Hook A/B/C and the SCOUT scene, so the cut at frame 90 is exact):
+# the two products turn toward the viewer and the camera comes in close
+MON_YAW = (math.radians(30), math.radians(8))
+PHN_ROT = ((math.radians(4), 0, math.radians(-34)), (math.radians(2), 0, math.radians(-8)))
+def hook_cam_keys(wide):
+    """(frame, location, target, focus, fstop, lens) for frames 62, 90, 105 of every hook."""
+    c62 = ((0.0, 15.2, 0.65), (0.0, 23.0, 0.75), (0.0, 23.0, 0.75), 5.6, 28)
+    if wide:
+        return [(62,) + c62, (90, (0.1, 19.9, 0.92), tuple(P0 + Vector((0, 0, 0.08))), tuple(P0), 5.6, 30),
+                (105, (0.11, 20.1, 0.93), tuple(P0 + Vector((0, 0, 0.08))), tuple(P0), 5.6, 30)]
+    return [(62,) + c62, (90, (0.15, 20.0, 0.95), tuple(P0 + Vector((0, 0, 0.12))), tuple(P0), 5.6, 28),
+            (105, (0.17, 20.25, 0.96), tuple(P0 + Vector((0, 0, 0.12))), tuple(P0), 5.6, 28)]
 
 def build_uw_monitor(name, states, width=UW_W, aspect=UW_ASPECT, glow=1.2):
     """scout3d.build_monitor, ultrawide (the same parts: thin bezel, chrome lip, matte screen with the
@@ -115,7 +127,7 @@ def build_world(S, LIT, appear, mon_states, phone_states):
     # SCOUT: the ultrawide on a brushed desk with a cyan edge light, a dark pedestal under it
     mon, mscr = build_uw_monitor('Workstation', mon_states, glow=0.0)
     mon.location = MON
-    keys(mon, 'rotation_euler', [(LIT - 6, (0, 0, math.radians(30))), (105, (0, 0, math.radians(17)))], interp='SINE', easing='EASE_OUT')
+    keys(mon, 'rotation_euler', [(LIT - 6, (0, 0, MON_YAW[0])), (105, (0, 0, MON_YAW[1]))], interp='SINE', easing='EASE_OUT')
     key_val(screen_bsdf(mscr).inputs['Emission Strength'], [(LIT - 6, 0.0), (LIT + 10, 1.15)])
     DESK_Z = MON.z - UW_H * 0.9 - 0.03 - 0.03
     desk = rounded_slab('Desk', 4.4, 1.5, 0.08, depth=0.03, bevel=0.012, mat=brushed('DeskMetal', (0.035, 0.037, 0.042), scale=(6.0, 900.0, 6.0)))
@@ -129,7 +141,7 @@ def build_world(S, LIT, appear, mon_states, phone_states):
     # NEXT: the phone
     phone, pscr = build_phone2('Phone', phone_states, screen_glow=0.0)
     phone.location = PHN; phone.scale = (0.72, 0.72, 0.72)
-    keys(phone, 'rotation_euler', [(LIT - 6, (math.radians(4), 0, math.radians(-34))), (105, (math.radians(2), 0, math.radians(-16)))], interp='SINE', easing='EASE_OUT')
+    keys(phone, 'rotation_euler', [(LIT - 6, PHN_ROT[0]), (105, PHN_ROT[1])], interp='SINE', easing='EASE_OUT')
     key_val(screen_bsdf(pscr).inputs['Emission Strength'], [(LIT - 6, 0.0), (LIT + 10, 1.0)])
     for r in station + [phone]:
         visible(r, [(appear, 100000)])
@@ -147,6 +159,63 @@ def build_world(S, LIT, appear, mon_states, phone_states):
         key_energy(spo, [(LIT - 4, 0.0), (LIT + 14, 900.0)]); lights[nm] = spo
     return dict(fl=fl, floor_glow=floor_glow, floor_mix=floor_mix, hz_s=hz_s_v, hz_n=hz_n_v, mon=mon, mscr=mscr, desk=desk, ped=ped,
                 desk_edge=edge_e, station=station, phone=phone, pscr=pscr, lights=lights)
+
+def build_architecture(floor_z, y0, y1, scout_xs, next_xs, back_y, on_pairs, ceil_z=8.5, appear=1, back_span=(-15.0, 17.0), split_x=1.0,
+                       extra=(), wall_gain=0.45):
+    """The space the products live in: a hall of brushed-metal monoliths with light strips — cyan in SCOUT's
+    half, orange in NEXT's — a data wall at the far end in each colour, and light rails overhead.
+    on_pairs keys the strips' brightness (0 = dark). Returns the emission sockets so a scene can retime them."""
+    metal = brushed('MonolithMetal', (0.012, 0.013, 0.015), rough=(0.34, 0.5), scale=(6.0, 6.0, 900.0))   # dark satin: it frames, never glares
+    sock = {}
+    for side, xs, col, nm in (('S', scout_xs, CYAN, 'Scout'), ('N', next_xs, EMBER_HOT, 'Next')):
+        sm, se = emissive(f'{nm}Strip', col, 0.0); key_val(se.inputs['Strength'], [(f, v * (1.0 if side == 'S' else 0.9)) for f, v in on_pairs]); sock[side] = se
+        h = ceil_z - floor_z
+        for x in xs:
+            face = 1 if x < split_x else -1                      # strips face the middle of the space
+            y = y0
+            while y <= y1:
+                bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y, floor_z + h / 2)); pl = bpy.context.active_object
+                pl.scale = (0.5, 0.5, h); pl.data.materials.append(metal)
+                bpy.ops.mesh.primitive_cube_add(size=1, location=(x + face * 0.252, y, floor_z + h / 2)); st = bpy.context.active_object
+                st.scale = (0.004, 0.035, h * 0.92); st.data.materials.append(sm)
+                for ob in (pl, st): visible(ob, [(appear, 100000)])
+                y += 3.6
+        for (ex, ey, es) in extra:                                # rows facing the cameras: behind each product
+            if es != side: continue
+            bpy.ops.mesh.primitive_cube_add(size=1, location=(ex, ey, floor_z + h / 2)); pl = bpy.context.active_object
+            pl.scale = (0.5, 0.5, h); pl.data.materials.append(metal)
+            bpy.ops.mesh.primitive_cube_add(size=1, location=(ex, ey - 0.252, floor_z + h / 2)); st = bpy.context.active_object
+            st.scale = (0.035, 0.004, h * 0.92); st.data.materials.append(sm)
+            for ob in (pl, st): visible(ob, [(appear, 100000)])
+        # the data wall: horizontal light lines at the far end of this half
+        x_a, x_b = (back_span[0], split_x - 0.5) if side == 'S' else (split_x + 0.5, back_span[1])
+        bpy.ops.mesh.primitive_plane_add(size=1, location=((x_a + x_b) / 2, back_y, floor_z + (ceil_z - floor_z) / 2), rotation=(math.radians(90), 0, 0))
+        wl = bpy.context.active_object; wl.scale = (x_b - x_a, ceil_z - floor_z, 1)
+        wm = bpy.data.materials.new(f'{nm}DataWall'); wm.use_nodes = True; wn = wm.node_tree; wn.nodes.clear()
+        tc = wn.nodes.new('ShaderNodeTexCoord'); wave = wn.nodes.new('ShaderNodeTexWave'); wave.wave_type = 'BANDS'; wave.bands_direction = 'Y'
+        wave.inputs['Scale'].default_value = 34.0; wave.inputs['Distortion'].default_value = 0.0
+        ramp = wn.nodes.new('ShaderNodeValToRGB'); ramp.color_ramp.elements[0].position = 0.9; ramp.color_ramp.elements[0].color = (0, 0, 0, 1)
+        ramp.color_ramp.elements[1].position = 0.97; ramp.color_ramp.elements[1].color = (1, 1, 1, 1)
+        noise = wn.nodes.new('ShaderNodeTexNoise'); noise.inputs['Scale'].default_value = 3.0
+        mul = wn.nodes.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'
+        em = wn.nodes.new('ShaderNodeEmission'); em.inputs['Color'].default_value = (*col, 1)
+        k_ = wn.nodes.new('ShaderNodeMath'); k_.operation = 'MULTIPLY'
+        out = wn.nodes.new('ShaderNodeOutputMaterial')
+        wn.links.new(tc.outputs['Generated'], wave.inputs['Vector']); wn.links.new(wave.outputs['Fac'], ramp.inputs['Fac'])
+        wn.links.new(tc.outputs['Generated'], noise.inputs['Vector'])
+        wn.links.new(ramp.outputs['Color'], mul.inputs[0]); wn.links.new(noise.outputs['Fac'], mul.inputs[1])
+        wn.links.new(mul.outputs[0], k_.inputs[0]); key_val(k_.inputs[1], [(f, v * wall_gain) for f, v in on_pairs])
+        wn.links.new(k_.outputs[0], em.inputs['Strength']); wn.links.new(em.outputs[0], out.inputs['Surface'])
+        wl.data.materials.append(wm); wl.visible_glossy = False; visible(wl, [(appear, 100000)])
+        sock['wall' + side] = k_.inputs[1]
+        # overhead light rails running the length of the hall
+        for i, x in enumerate((x_a + (x_b - x_a) * f for f in (0.25, 0.5, 0.75))):
+            bpy.ops.mesh.primitive_cube_add(size=1, location=(x, (y0 + y1) / 2 + 4, ceil_z - 0.2)); rl = bpy.context.active_object
+            rl.scale = (0.05, (y1 - y0) + 14, 0.03); rl.data.materials.append(sm); visible(rl, [(appear, 100000)])
+    return sock
+
+# monolith rows behind the products, where the cameras look (clear of the corridor and the chart)
+BEHIND = [(x, y, 'S') for x in (-3.6, -1.8, 0.0) for y in (32.5, 36.1)] + [(x, y, 'N') for x in (4.6, 6.4, 8.2, 10.0) for y in (35.4, 39.0)]
 
 def link_lights(W, extra_floor_only=()):
     """Each product takes only its own colour; keys and rims skip the glossy floor (no light-shaped glints)."""

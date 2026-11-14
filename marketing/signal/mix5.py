@@ -27,7 +27,7 @@ def load(p):
 
 # where each line starts (seconds); the hook's lines are picture-locked to the titles
 HOOK = arg('--hook', 'a')
-PLACE = {'stock': 0.2, 'artist': 1.36} if HOOK == 'a' else {'hook_b': 0.2} if HOOK == 'b' else {'hook_c': 0.1}
+PLACE = {'stock': 0.2, 'artist': 1.36} if HOOK == 'a' else {'hook_b': 0.2} if HOOK == 'b' else {'hook_c1': 0.1, 'hook_c2': 1.41}
 PLACE.update({'scout': 3.4, 'review': 10.2, 'begins': 21.15, 'discover': 23.2, 'credits': 30.2, 'trade': 33.1,
               'build': 40.5, 'believer': 47.6, 'finds': 53.6, 'next': 56.9})
 if arg('--placements'):
