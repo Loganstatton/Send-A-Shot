@@ -90,16 +90,16 @@ def place(base, layer, cx, cy, alpha=1.0, blur=0.0, glow=0.2, scale=1.0, darken=
 
 # (first, last, kind, text, size, y, colour, fade in, fade out)
 HOOKS = {
-    'a': [(1, 98, 'label', 'VIRTUAL PORTFOLIO GAIN', 30, 0.362, EMBER, 0, 8),
-          (1, 98, 'pill', 'ILLUSTRATIVE EXAMPLE · VIRTUAL CREDITS', 24, 0.565, SOFT, 0, 8),
-          (1, 98, 'small', 'NO CASH VALUE · DEMO DATA', 22, 0.6, SOFT, 0, 8)],
-    'b': [(1, 98, 'label', 'VIRTUAL PORTFOLIO GAIN', 28, 0.085, EMBER, 0, 8),
-          (1, 98, 'counter', '', 150, 0.15, WHITE, 0, 8),
-          (1, 98, 'pill', 'ILLUSTRATIVE EXAMPLE · VIRTUAL CREDITS', 22, 0.222, SOFT, 0, 8),
-          (1, 98, 'small', 'NO CASH VALUE · DEMO DATA', 20, 0.252, SOFT, 0, 8)],
+    'a': [(1, 90, 'label', 'VIRTUAL PORTFOLIO GAIN', 30, 0.362, EMBER, 0, 5),
+          (1, 90, 'pill', 'ILLUSTRATIVE EXAMPLE · VIRTUAL CREDITS', 24, 0.565, SOFT, 0, 5),
+          (1, 90, 'small', 'NO CASH VALUE · DEMO DATA', 22, 0.6, SOFT, 0, 5)],
+    'b': [(1, 90, 'label', 'VIRTUAL PORTFOLIO GAIN', 28, 0.085, EMBER, 0, 5),
+          (1, 90, 'counter', '', 150, 0.15, WHITE, 0, 5),
+          (1, 90, 'pill', 'ILLUSTRATIVE EXAMPLE · VIRTUAL CREDITS', 22, 0.222, SOFT, 0, 5),
+          (1, 90, 'small', 'NO CASH VALUE · DEMO DATA', 20, 0.252, SOFT, 0, 5)],
     'c': None,
 }
-HOOKS['c'] = [(40, 98) + t[2:7] + (6, t[8]) for t in HOOKS['a']]          # hook C: the figure forms on the lock, so do its labels
+HOOKS['c'] = [(40, 90) + t[2:7] + (6, t[8]) for t in HOOKS['a']]          # hook C: the figure forms on the lock, so do its labels
 URL = 'send-a-shot.onrender.com/next'                     # verified: returns 200 (see QC_REPORT.md)
 BODY = [
     # the market landscape (shot 3): what the viewer is looking at, and the live price

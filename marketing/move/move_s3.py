@@ -28,9 +28,9 @@ build_floor(); build_monoliths(M)
 ch = Chart(area_gain=0.6); ch.head_e.inputs['Strength'].default_value = 40.0
 PH = Vector((0.0, -3.0, 2.45))
 phone, scr = build_phone('Phone', [
-    (S_('m04a-trade-empty.png'), 1, 'cut'), (S_('m04-buy-amount.png'), 248, 'cut'), (S_('m05-buy-confirm.png'), 260, 'fade'),
-    (S_('m06-bought.png'), 273, 'push'),
-    (S_('m07b-position.png'), P2, 'cut'), (S_('m09c-sell-confirm.png'), 409, 'fade'), (S_('m10-sold.png'), 428, 'push')], screen_glow=1.3)
+    (S_('m04a-trade-empty.png'), 1, 'cut'), (S_('m04-buy-amount.png'), 248, 'cut'), (S_('m05-buy-confirm.png'), 260, 'cut'),
+    (S_('m06-bought.png'), 273, 'cut'),
+    (S_('m07b-position.png'), P2, 'cut'), (S_('m09c-sell-confirm.png'), 409, 'cut'), (S_('m10-sold.png'), 428, 'cut')], screen_glow=1.3)
 phone.location = PH
 keys(phone, 'rotation_euler', [(P1, (math.radians(-2), 0, math.radians(-4))), (DIVE, (0, 0, 0)), (P2, (math.radians(-1), 0, math.radians(3))),
                                (END, (math.radians(-2), 0, math.radians(-2)))], interp='BEZIER')
