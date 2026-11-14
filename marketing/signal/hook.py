@@ -29,6 +29,7 @@ END = 105
 sc = init(END, samples=96, gpu_samples=160)
 sc.cycles.transparent_max_bounces = 16
 sc.cycles.glossy_bounces = 6; sc.cycles.transmission_bounces = 8
+from world5 import compact_frames; compact_frames(sc)
 WIDE = arg('--hook') == 'wide'
 if WIDE: sc.render.resolution_x, sc.render.resolution_y = 1920, 1080
 S = lambda n: os.path.join(ASSETS, n)
@@ -36,7 +37,7 @@ S = lambda n: os.path.join(ASSETS, n)
 LOCK, OPEN0, OPEN1, CROSS, LIT = 40, 47, 58, 62, 52
 BEATS = [8 + 16 * i for i in range(7)]                     # 112.5 BPM grid: 8, 24, 40, 56, 72, 88, 104
 YW, ZC = 15.0, 0.6                                         # the waveform's plane and centre line
-FLOOR_Z = -1.25
+FLOOR_Z = -1.25                                            # (world5.FLOOR_Z)
 
 # ---------------------------------------------------------------- materials
 def tube_mat(name, strength):
@@ -185,101 +186,15 @@ for _ in range(3200):
 parts = particles('Sparks', starts, targets, bursts, delays, 20, settle=12.0, base=0.0, fly=0.012, noise_amp=0.5,
                   appear=20, vanish=(48, 64), glow=0.7)
 
-# ---------------------------------------------------------------- the floor: a dark glossy lattice, all orange,
-# then split cyan (SCOUT, left) / orange (NEXT, right) on the far side of the waveform
-bpy.ops.mesh.primitive_plane_add(size=120, location=(0, 20, FLOOR_Z)); fl = bpy.context.active_object
-fm = principled('Floor', (0.006, 0.006, 0.007), rough=0.16, coat=0.5); nt = fm.node_tree; fb = nt.nodes['Principled BSDF']
-tc = nt.nodes.new('ShaderNodeTexCoord'); sep = nt.nodes.new('ShaderNodeSeparateXYZ'); nt.links.new(tc.outputs['Object'], sep.inputs[0])
-def nm_(op, a, b=None):
-    x = nt.nodes.new('ShaderNodeMath'); x.operation = op
-    for i, v in enumerate((a, b)):
-        if v is None: continue
-        if isinstance(v, (int, float)): x.inputs[i].default_value = v
-        else: nt.links.new(v, x.inputs[i])
-    return x.outputs[0]
-def gline(coord, period=1.0, width=0.01):
-    f = nm_('FRACT', nm_('DIVIDE', coord, period)); d = nm_('MINIMUM', f, nm_('SUBTRACT', 1.0, f))
-    return nm_('LESS_THAN', d, width / period)
-grid = nm_('MAXIMUM', gline(sep.outputs['X']), gline(sep.outputs['Y']))
-# the plane is centred at y=20: local y=0 is world y=20
-fade = nm_('POWER', nm_('MAXIMUM', nm_('SUBTRACT', 1.0, nm_('DIVIDE', nm_('ABSOLUTE', nm_('SUBTRACT', sep.outputs['Y'], 0.0)), 26.0)), 0.0), 2.0)
-mixc = nt.nodes.new('ShaderNodeMix'); mixc.data_type = 'RGBA'
-mixc.inputs['B'].default_value = (*EMBER_HOT, 1)
-key_color(mixc.inputs["A"], [(LIT - 4, EMBER_HOT), (LIT + 14, CYAN)])
-nt.links.new(nm_('MINIMUM', nm_('MAXIMUM', nm_('DIVIDE', nm_('ADD', sep.outputs['X'], 0.35), 0.7), 0.0), 1.0), mixc.inputs['Factor'])
-nt.links.new(mixc.outputs['Result'], fb.inputs['Emission Color'])
-gs = nm_('MULTIPLY', grid, fade); gmul = nt.nodes.new('ShaderNodeMath'); gmul.operation = 'MULTIPLY'
-nt.links.new(gs, gmul.inputs[0]); key_val(gmul.inputs[1], [(1, 0.35), (LIT - 4, 0.25), (LIT + 14, 0.6)])
-nt.links.new(gmul.outputs[0], fb.inputs['Emission Strength'])
-fl.data.materials.append(fm)
-
-# far hazes: warm ahead from the start; on the far side, cool behind SCOUT, warm behind NEXT
-def haze(name, loc, col, pairs, size=40, radius=8.0):
-    bpy.ops.mesh.primitive_plane_add(size=size, location=loc, rotation=(math.radians(90), 0, 0)); hz = bpy.context.active_object
-    hm = bpy.data.materials.new(name); hm.use_nodes = True; hn = hm.node_tree; hn.nodes.clear()
-    htc = hn.nodes.new('ShaderNodeTexCoord'); hgr = hn.nodes.new('ShaderNodeTexGradient'); hgr.gradient_type = 'SPHERICAL'
-    hmp = hn.nodes.new('ShaderNodeMapping'); hmp.inputs['Scale'].default_value = (1.0 / radius,) * 3
-    hpw = hn.nodes.new('ShaderNodeMath'); hpw.operation = 'POWER'; hpw.inputs[1].default_value = 3.0
-    hmu = hn.nodes.new('ShaderNodeMath'); hmu.operation = 'MULTIPLY'
-    hem = hn.nodes.new('ShaderNodeEmission'); hem.inputs['Color'].default_value = (*col, 1); ho = hn.nodes.new('ShaderNodeOutputMaterial')
-    hn.links.new(htc.outputs['Object'], hmp.inputs['Vector']); hn.links.new(hmp.outputs['Vector'], hgr.inputs['Vector'])
-    hn.links.new(hgr.outputs['Fac'], hpw.inputs[0]); hn.links.new(hpw.outputs[0], hmu.inputs[0]); hn.links.new(hmu.outputs[0], hem.inputs['Strength'])
-    hn.links.new(hem.outputs[0], ho.inputs['Surface']); hz.data.materials.append(hm); key_val(hmu.inputs[1], pairs)
-    hz.visible_glossy = False
-    return hz
+# ---------------------------------------------------------------- the world beyond the waveform (shared with every scene)
+from world5 import build_world, link_lights, haze, L_, P0, MON, PHN
+W = build_world(S, LIT, OPEN0, [(S('scout-queue-before.png'), 1, 'cut')], [(S('n04-back-amount.png'), 1, 'cut')])
 haze('HazeAhead', (0, 44, 2.0), EMBER, [(1, 0.35), (LIT - 6, 0.35), (LIT + 4, 0.0)], size=60, radius=16.0)
-haze('HazeS', (-3.2, 33, 1.2), CYAN, [(LIT - 6, 0.0), (LIT + 14, 0.45)], size=30, radius=5.0)
-haze('HazeN', (3.2, 33, 0.2), EMBER, [(LIT - 6, 0.0), (LIT + 14, 0.16)], size=30, radius=5.0)
-
-# ---------------------------------------------------------------- the two worlds beyond the waveform
-P0 = Vector((0, 24.0, 0.8))                                # the middle of the far side
-MON = P0 + Vector((-0.5, 0.6, 0.6))
-mon, mscr = build_monitor('Workstation', [(S('s02-queue.png'), 1, 'cut')], width=2.35, glow=0.0)
-mon.location = MON
-keys(mon, 'rotation_euler', [(LIT - 6, (0, 0, math.radians(30))), (END, (0, 0, math.radians(17)))], interp='SINE', easing='EASE_OUT')
-msb = next(n for n in mscr.data.materials[0].node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
-key_val(msb.inputs['Emission Strength'], [(LIT - 6, 0.0), (LIT + 10, 1.15)])
-PHN = P0 + Vector((0.5, -1.55, -0.5))
-phone, pscr = build_phone2('Phone', [(S('n04-back-amount.png'), 1, 'cut')], screen_glow=0.0)
-phone.location = PHN; phone.scale = (0.72, 0.72, 0.72)
-keys(phone, 'rotation_euler', [(LIT - 6, (math.radians(4), 0, math.radians(-34))), (END, (math.radians(2), 0, math.radians(-16)))], interp='SINE', easing='EASE_OUT')
-psb = next(n for n in pscr.data.materials[0].node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
-key_val(psb.inputs['Emission Strength'], [(LIT - 6, 0.0), (LIT + 10, 1.0)])
-for ob in (mon, phone): visible(ob, [(OPEN0, END)])
-for ob in list(mon.children_recursive) + list(phone.children_recursive): visible(ob, [(OPEN0, END)])
-
-def L_(name, loc, tgt, size, color, pairs, size_y=None):
-    ob = look_light(name, tuple(loc), tuple(tgt), size, 0.0, color=color, size_y=size_y); key_energy(ob, pairs); return ob
-L_('ScoutKey', MON + Vector((-1.8, -2.6, 2.2)), MON, 1.8, (0.72, 0.88, 1.0), [(LIT - 4, 0.0), (LIT + 12, 120.0)])
-L_('ScoutRim', MON + Vector((-1.2, 1.6, 1.0)), MON, 0.2, CYAN, [(LIT - 4, 0.0), (LIT + 12, 420.0)], size_y=3.0)
-L_('NextKey', PHN + Vector((1.4, -2.2, 1.6)), PHN, 1.2, (1.0, 0.9, 0.8), [(LIT - 4, 0.0), (LIT + 12, 45.0)])
-L_('NextRim', PHN + Vector((1.2, 1.4, 0.5)), PHN, 0.2, EMBER, [(LIT - 4, 0.0), (LIT + 12, 240.0)], size_y=3.0)
-for nm, loc, col in (('PoolS', MON, CYAN), ('PoolN', PHN, EMBER)):
-    sp_d = bpy.data.lights.new(nm, 'SPOT'); sp_d.spot_size = math.radians(34); sp_d.spot_blend = 0.7; sp_d.color = col
-    spo = link(bpy.data.objects.new(nm, sp_d)); spo.location = (loc.x, loc.y, 4.5)
-    key_energy(spo, [(LIT - 4, 0.0), (LIT + 14, 900.0)])
 # the chart's own light: a broad warm wash from above-ahead, for the glass and the metal tubes
 L_('ChartTop', (0, 14, 6.0), (0, 10, 0), 6.0, (1.0, 0.62, 0.38), [(1, 60.0), (LIT - 6, 60.0), (LIT + 6, 0.0)])
 L_('ChartRimL', (-4.0, 22, 1.0), (0, 10, 0.3), 0.4, EMBER, [(1, 120.0), (LIT - 6, 120.0), (LIT + 6, 0.0)], size_y=8.0)
 L_('ChartRimR', (4.0, 22, 1.0), (0, 10, 0.3), 0.4, (1.0, 0.7, 0.45), [(1, 90.0), (LIT - 6, 90.0), (LIT + 6, 0.0)], size_y=8.0)
-for ob in bpy.data.objects:
-    if ob.type == 'LIGHT': ob.visible_camera = False
-# each product takes only its own colour
-def group(name, roots):
-    g = bpy.data.collections.new(name)
-    for r in roots:
-        for ob in [r] + list(r.children_recursive):
-            if ob.type in ('MESH', 'CURVE'): g.objects.link(ob)
-    return g
-scout_g, next_g = group('ScoutObjs', [mon]), group('NextObjs', [phone])
-# each product takes only its own colour; the keys and rims also skip the glossy floor (no light-shaped glints)
-scout_fx, next_fx = group('NotScout', [phone]), group('NotNext', [mon])
-for g in (scout_fx, next_fx): g.objects.link(fl)
-floor_g = bpy.data.collections.new('FloorOnly'); floor_g.objects.link(fl)
-for nm, g in (('ChartRimL', floor_g), ('ChartRimR', floor_g), ('ScoutKey', scout_fx), ('ScoutRim', scout_fx), ('PoolS', next_g),
-              ('NextKey', next_fx), ('NextRim', next_fx), ('PoolN', scout_g)):
-    bpy.data.objects[nm].light_linking.receiver_collection = g
-    for co in g.collection_objects: co.light_linking.link_state = 'EXCLUDE'
+link_lights(W, extra_floor_only=('ChartRimL', 'ChartRimR'))
 
 # ---------------------------------------------------------------- camera
 cam = Camera(lens=24, fstop=2.8)

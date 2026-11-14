@@ -8,6 +8,7 @@ Titles live in a band between 12% and 30% of the frame height (clear of the plat
 bars and bottom caption/CTA areas); small print stays above the bottom 20%.
 """
 import os, sys
+os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'                  # frames are half-float EXR (world5.compact_frames)
 import cv2, numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -94,15 +95,93 @@ def place(base, layer, cx, cy, alpha=1.0, blur=0.0, glow=0.25, scale=1.0, darken
     reg *= 1 - darken * cv2.GaussianBlur(a, (0, 0), 22)[..., None]        # soft local darkening for legibility
     reg[:] = reg * (1 - a) + src[..., :3] * a
 
+def scout_mark(size):
+    """SCOUT's own mark: the glowing cyan square + SCOUT in Inter Bold."""
+    fs = ImageFont.truetype(SANS_B, size); sq = int(size * 0.24)
+    w = int(sq + size * 0.24 + fs.getlength('SCOUT')) + 80
+    im = Image.new('RGBA', (w, int(size * 1.7)), (0, 0, 0, 0)); d = ImageDraw.Draw(im); cy = size * 0.85
+    d.rounded_rectangle((40, cy - sq / 2 - size * 0.02, 40 + sq, cy + sq / 2 - size * 0.02), radius=max(2, sq // 5), fill=CYAN)
+    d.text((40 + sq + size * 0.24, cy), 'SCOUT', font=fs, fill=(243, 246, 250), anchor='lm')
+    return im
+def rating_card(rows, show_final, size=40):
+    """The scout's rating, one column of the app's panel: label, the value the scout set (out of 10)
+    and the app's weight — composited sharp at final resolution over the real panel."""
+    fl, fv = ImageFont.truetype(SANS_B, size), ImageFont.truetype(SANS_B, int(size * 1.15))
+    fw = ImageFont.truetype(SANS, int(size * 0.8))
+    rh = int(size * 2.05); pad = int(size * 0.8); w = int(W * (0.62 if WIDE else 0.84))
+    im = Image.new('RGBA', (w + 80, len(rows) * rh + 2 * pad + 80), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+    d.rounded_rectangle((40, 40, 40 + w, 40 + len(rows) * rh + 2 * pad), radius=int(size * 0.6), fill=(10, 14, 18, 215), outline=(69, 198, 240, 140), width=2)
+    for i, (label, val, wt) in enumerate(rows):
+        y = 40 + pad + i * rh + rh / 2
+        d.text((40 + pad, y), label, font=fl, fill=(232, 240, 246), anchor='lm')
+        v = val if show_final else 5
+        d.text((40 + w - pad - fw.getlength(f'·  {wt}%') - size * 0.5, y), f'{v}/10', font=fv, fill=(105, 214, 245) if show_final else (150, 160, 170), anchor='rm')
+        d.text((40 + w - pad, y + size * 0.05), f'·  {wt}%', font=fw, fill=(150, 160, 170), anchor='rm')
+    return im
+LEFT = [('MUSIC / TALENT', 9, 25), ('ENGAGEMENT QUALITY', 9, 15), ('BRAND / PERSONALITY', 8, 10), ('COMMERCIAL POTENTIAL', 8, 5)]
+RIGHT = [('AUDIENCE GROWTH VELOCITY', 8, 15), ('ORIGINAL-SONG RESPONSE', 9, 15), ('CONTENT CONSISTENCY', 8, 10), ('PROFESSIONALISM / WORK ETHIC', 9, 5)]
+
 HOOK = arg('--hook', 'a')
-# (first, last, text or None for the lockup, size, y vertical, y wide, colour, fade in, fade out)
-TITLES = {
+SCOUT_W, NEXT_W = (228, 244, 255), (255, 232, 214)
+# (first, last, text | 'lockup' | 'scout', size, y vertical, y wide, colour, fade in, fade out)
+HOOKS = {
     'a': [
         (1, 33, "THIS ISN'T A STOCK.", 106, 0.2, 0.18, WHITE, 0, 5),
         (38, 63, "IT'S AN ARTIST.", 128, 0.2, 0.18, (255, 226, 204), 2, 6),
-        (63, 105, None, 128, 0.195, 0.16, None, 8, 0),
+        (63, 98, 'lockup', 128, 0.195, 0.16, None, 8, 8),
     ],
-}[HOOK]
+    'b': [
+        (1, 62, 'THE NEXT BIG ARTIST', 92, 0.19, 0.17, WHITE, 0, 6),
+        (6, 62, 'IS STILL UNKNOWN.', 92, 0.245, 0.27, (228, 244, 255), 6, 6),
+        (63, 98, 'lockup', 128, 0.195, 0.16, None, 8, 8),
+    ],
+    'c': [
+        (1, 41, 'ONE SYSTEM FINDS THEM.', 84, 0.2, 0.18, (228, 244, 255), 0, 5),
+        (42, 80, 'ANOTHER LETS YOU BACK THEM.', 84, 0.2, 0.18, (255, 232, 214), 3, 5),
+        (80, 98, 'lockup', 128, 0.195, 0.16, None, 6, 8),
+    ],
+}
+TITLES = HOOKS[HOOK] + [
+    (102, 178, 'scout', 132, 0.195, 0.16, None, 8, 8),
+    (182, 292, 'DISCOVER EMERGING TALENT.', 66, 0.2, 0.18, SCOUT_W, 12, 10),
+    (346, 432, '8-FACTOR SCOUT EVALUATION', 62, 0.19, 0.16, SCOUT_W, 12, 10),
+    (436, 512, 'HUMAN REVIEWED', 76, 0.19, 0.16, SCOUT_W, 12, 10),
+    (520, 592, 'APPROVED ON SCOUT.', 72, 0.2, 0.18, SCOUT_W, 12, 10),
+    (600, 668, 'LIVE ON NEXT.', 84, 0.2, 0.18, NEXT_W, 10, 10),
+    (672, 735, 'DISCOVER.', 96, 0.19, 0.16, NEXT_W, 10, 10),
+    (786, 838, 'LISTEN.', 96, 0.19, 0.16, NEXT_W, 8, 10),
+    (844, 898, 'FOLLOW.', 96, 0.19, 0.16, NEXT_W, 8, 10),
+    (905, 985, '10,000 VIRTUAL CREDITS', 70, 0.19, 0.16, NEXT_W, 10, 10),
+    (995, 1196, 'BUY. SELL. TRACK.', 78, 0.19, 0.16, NEXT_W, 10, 10),
+    (1236, 1282, 'BUILD YOUR PORTFOLIO.', 74, 0.19, 0.16, NEXT_W, 10, 10),
+    (1288, 1340, 'FOLLOW THE MUSIC.', 78, 0.19, 0.16, NEXT_W, 10, 10),
+    (1346, 1398, 'PROVE YOUR PICKS.', 78, 0.19, 0.16, NEXT_W, 10, 10),
+    (1445, 1492, 'FOUNDING BELIEVER', 74, 0.19, 0.12, NEXT_W, 12, 10),
+    (1495, 1538, 'BACKER #1', 92, 0.19, 0.12, NEXT_W, 10, 10),
+    (1541, 1590, 'YOU WERE EARLY.', 84, 0.19, 0.12, NEXT_W, 10, 10),
+    (1686, 1736, 'DISCOVER. BACK. BELIEVE.', 70, 0.19, 0.14, WHITE, 10, 8),
+    (1740, 1800, "FIND WHAT'S NEXT.", 84, 0.19, 0.14, WHITE, 10, 0),
+]
+NOTES = [        # small print: (first, last, text, y vertical, y wide)
+    (110, 292, 'SCOUT IS INTERNAL · NOT PART OF THE PUBLIC APP', 0.255, 0.235),
+    (304, 342, 'APPROVING AN ARTIST LISTS THEM ON NEXT', 0.255, 0.235),
+    (346, 512, 'EACH FACTOR RATED 0–10 BY A SCOUT · DEMO DATA', 0.245, 0.225),
+    (520, 662, 'SCOUT IS INTERNAL · NEXT IS PUBLIC', 0.26, 0.24),
+    (786, 840, 'DEMO ARTIST · PREVIEW AUDIO IS AN ORIGINAL DEMO TRACK', 0.25, 0.23),
+    (862, 900, "SCOUT SCORE: THE SCOUTS' RATING", 0.25, 0.23),
+    (862, 900, "NEXT PRICE: SET BY PLAYERS' VIRTUAL TRADES", 0.27, 0.255),
+    (905, 1198, 'VIRTUAL CREDITS · NO CASH VALUE', 0.25, 0.23),
+    (905, 1198, 'NOT REAL MONEY OR SECURITIES · DEMO DATA', 0.27, 0.255),
+    (1236, 1398, 'VIRTUAL CREDITS · NO CASH VALUE · DEMO DATA', 0.25, 0.23),
+    (1445, 1590, 'FIRST RECORDED NEXT BACKER · DEMO DATA', 0.25, 0.18),
+    (1700, 1800, 'SCOUT — INTERNAL ARTIST DISCOVERY AND EVALUATION', 0.25, 0.205),
+    (1700, 1800, 'NEXT — PUBLIC VIRTUAL MUSIC TRADING AND DISCOVERY', 0.27, 0.23),
+]
+CTA = (1748, 1800, 'EXPLORE NEXT', 'send-a-shot.onrender.com')     # the verified public site (shown as typed in a browser)
+CARDS = [(356, 400, LEFT, 372), (402, 446, RIGHT, 418)]        # rating cards: (first, last, rows, frame the values are set)
+FADE_IN, FADE_OUT = 12, 10
+def env(f, a, b, fi=FADE_IN, fo=FADE_OUT):
+    return min(smooth((f - a + 1) / fi) if fi else 1.0, 1 - smooth((f - (b - fo)) / fo) if fo else 1.0)
 def typography(img, f):
     for a, b, text, size, yv, yw, col, fi, fo in TITLES:
         if not a <= f <= b: continue
@@ -111,18 +190,42 @@ def typography(img, f):
         alpha = min(pin, pout)
         if alpha <= 0.001: continue
         s_ = size * (1.1 if WIDE else 1.0)
-        layer = lockup(int(s_)) if text is None else card(text, int(s_), color=col)
+        layer = lockup(int(s_)) if text == 'lockup' else scout_mark(int(s_)) if text == 'scout' else card(text, int(s_), color=col)
         fit = min(1.0, (W * (0.62 if WIDE else 0.86)) / max(1, layer.width - 80))     # never wider than the safe width
         # a hard-cut title arrives full size with a fast 4% settle; others drift up 12 px as they fade in
         settle = 1.0 + 0.04 * (1 - smooth((f - a) / 6)) if not fi else 1.0
         place(img, layer, W / 2, H * (yw if WIDE else yv) + (1 - pin) * 12, alpha=alpha, blur=(1 - pin) * 5 + (1 - pout) * 4, scale=settle * fit)
+    for a, b, text, yv, yw in NOTES:
+        if not a <= f <= b: continue
+        al = env(f, a, b) * 0.9
+        if al > 0.001:
+            ly = card(text, 26, tracking=0.16, font_path=SANS, color=(214, 222, 230))
+            place(img, ly, W / 2, H * (yw if WIDE else yv), alpha=al, glow=0.0, darken=0.35, scale=min(1.0, W * 0.86 / max(1, ly.width - 80)))
+    if CTA[0] <= f <= CTA[1]:
+        al = env(f, CTA[0], CTA[1], 10, 0)
+        place(img, card(CTA[2], 46, tracking=0.2, font_path=SANS_B, color=(255, 200, 176)), W / 2, H * (0.6 if not WIDE else 0.82), alpha=al, glow=0.2, darken=0.45)
+        place(img, card(CTA[3], 34, tracking=0.06, font_path=SANS, color=(236, 232, 226)), W / 2, H * (0.628 if not WIDE else 0.875), alpha=al, glow=0.0, darken=0.45)
+    for a, b, rows, fset in CARDS:
+        if not a <= f <= b: continue
+        al = env(f, a, b, 8, 8)
+        place(img, rating_card(rows, f >= fset), W / 2, H * (0.39 if not WIDE else 0.5), alpha=al, glow=0.0, darken=0.3)
 
-FLASH = {40: 1.7, 41: 1.3, 42: 1.1}                  # the waveform locks
+FLASH = ({40: 1.7, 41: 1.3, 42: 1.1} if HOOK == 'a' else {})     # the waveform locks
+FLASH.update({1440: 1.45, 1441: 1.15, 1680: 1.9, 1681: 1.4, 1682: 1.15})   # the card catches the light; the logo
+def read_frame(path):
+    """A linear frame as float32 BGR: Radiance HDR, or half-float EXR written under the same name."""
+    if not os.path.exists(path): return None
+    if open(path, 'rb').read(4) == b'\x76\x2f\x31\x01':            # EXR magic
+        import OpenEXR
+        with OpenEXR.File(path) as fx:
+            rgb = fx.channels()['RGB'].pixels.astype(np.float32)
+        return np.ascontiguousarray(rgb[..., ::-1])
+    a = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+    return None if a is None else a[..., :3].astype(np.float32)
 OFFSET = int(arg('--offset', '0'))
 def process(f):
-    lin = cv2.imread(os.path.join(IN, f'f{f:04d}.hdr'), cv2.IMREAD_UNCHANGED)
+    lin = read_frame(os.path.join(IN, f'f{f:04d}.hdr'))
     if lin is None: raise SystemExit(f'missing frame {f}')
-    lin = lin[..., :3].astype(np.float32)
     if lin.shape[:2] != (H, W): lin = cv2.resize(lin, (W, H), interpolation=cv2.INTER_CUBIC)
     g = f + OFFSET
     lin *= FLASH.get(g, 1.0)

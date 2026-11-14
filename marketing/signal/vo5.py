@@ -16,7 +16,9 @@ LINES = {
     'stock':    "This isn't a stock.",
     'artist':   "It's an artist.",
     'scout':    'SCOUT discovers promising musicians before they appear on NEXT.',
-    'review':   'Human reviewers evaluate eight factors, then approve which artists go live.',
+    # Accuracy: in the app a scout approves a candidate first (that lists it on NEXT), then rates the
+    # eight factors. The brief's line had the order reversed.
+    'review':   'Human reviewers approve which artists go live, then rate them on eight factors.',
     'begins':   "That's where NEXT begins.",
     'discover': 'Discover new music. Listen. Explore each artist\'s story.',
     'credits':  'Start with ten thousand virtual Credits.',

@@ -1,7 +1,7 @@
 """Final mix for "THE SIGNAL": narration over music and effects, with the music ducked and
 carved under every line so the voice stays clear on phone speakers.
 
-  post-venv/bin/python mix5.py STEMS_DIR VO_DIR OUT.wav [--len 60] [--no-vo] [--placements key@sec,...]
+  post-venv/bin/python mix5.py STEMS_DIR VO_DIR OUT.wav [--len 60] [--hook a|b|c] [--no-vo] [--placements key@sec,...]
 
 STEMS_DIR holds music.wav and sfx.wav (music5.py); VO_DIR holds one WAV per narration line (vo5.py).
 Also writes OUT_dir/stem_{voice,music,sfx}.wav at the final mix levels (they sum to the mix before
@@ -26,7 +26,10 @@ def load(p):
     out = np.zeros((N, 2), np.float32); out[:min(N, len(x))] = x[:N]; return out
 
 # where each line starts (seconds); the hook's lines are picture-locked to the titles
-PLACE = {'stock': 0.08, 'artist': 1.36}
+HOOK = arg('--hook', 'a')
+PLACE = {'stock': 0.2, 'artist': 1.36} if HOOK == 'a' else {'hook_b': 0.2} if HOOK == 'b' else {'hook_c': 0.1}
+PLACE.update({'scout': 3.4, 'review': 10.2, 'begins': 21.15, 'discover': 23.2, 'credits': 30.2, 'trade': 33.1,
+              'build': 40.5, 'believer': 47.6, 'finds': 53.6, 'next': 56.9})
 if arg('--placements'):
     for kv in arg('--placements').split(','):
         k, v = kv.split('@'); PLACE[k] = float(v)
@@ -55,7 +58,8 @@ def follower(x, att, rel):
 venv = follower(voice[:, 0], 0.01, 0.3); venv = np.clip(venv / (venv.max() + 1e-9) * 2.5, 0, 1)[:, None]
 music_sp = signal.sosfilt(sos('bandpass', [350, 4000]), music, axis=0)
 music_d = (music - 0.85 * venv * music_sp) * (1 - 0.55 * venv)
-sfx_d = sfx * (1 - 0.3 * venv)
+sfx_sp = signal.sosfilt(sos('bandpass', [350, 4000]), sfx, axis=0)
+sfx_d = (sfx - 0.7 * venv * sfx_sp) * (1 - 0.35 * venv)                 # the hits stay, but out of the voice's way
 mix = music_d * 0.9 + sfx_d * 0.85 + voice
 peak = np.abs(mix).max()
 g = 10 ** (-1.5 / 20) / peak
