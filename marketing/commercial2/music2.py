@@ -1,6 +1,10 @@
-"""Original score for NEXT Ad #2 — dark, confident hip-hop/electronic. 120 BPM,
+"""Original score for NEXT Ad #2 — dark, confident trap / cinematic hip-hop. 120 BPM,
 C minor (Ad #1 was 100 BPM industrial in F minor). Synthesized from scratch: no
 samples, loops or borrowed melodies, so it is ours to use in ads.
+
+v2 (rescored): no bells or chimes. The melody is a low, gritty detuned-saw lead with a
+slight glide over a dark string pad; the hats are tight filtered noise (no metallic
+jingle); the accents are low brass-like stabs. Same hit points as before.
 
 At 120 BPM a beat is 0.5 s = 15 frames; every scene boundary sits on a beat:
   0.0 hook (opening accent) · 2.0 PROVE IT (drop) · 4.0 discover · 7.0 trade
@@ -55,19 +59,38 @@ def clap(level=1.0):
     return x * e * 0.55 * level
 
 def hat(open_=False, level=1.0):
-    n = at(0.22 if open_ else 0.05); t = np.arange(n) / SR
-    m = sum(signal.square(2 * np.pi * f * t) for f in (3400, 4700, 6200, 7900, 9100)) / 5
-    x = signal.sosfilt(sos('highpass', 7500, 4), m + 0.7 * rng.standard_normal(n))
-    return x * np.exp(-t / (0.07 if open_ else 0.013)) * 0.2 * level
+    """Tight, dark trap hat: band-limited noise only (no tuned partials, so nothing jingles)."""
+    n = at(0.16 if open_ else 0.04); t = np.arange(n) / SR
+    x = signal.sosfilt(sos('bandpass', [6500, 11000], 3), rng.standard_normal(n))
+    return x * np.exp(-t / (0.045 if open_ else 0.009)) * 0.16 * level
 
-def bell(note, dur=0.9, level=1.0, bright=1.0):
-    """FM bell/pluck: the melodic voice of Ad #2."""
-    n = at(dur); t = np.arange(n) / SR; f = midi(note)
-    mod = np.sin(2 * np.pi * f * 3.5 * t) * (2.2 * bright) * np.exp(-t / 0.18)
-    x = np.sin(2 * np.pi * f * t + mod) * env(n, 0.002, dur * 0.45)
-    return x * 0.16 * level
+def lead(note, dur, glide_from=None, level=1.0):
+    """The melodic voice: a low, gritty detuned-saw lead (two voices + sub octave) through a
+    resonant low-pass that opens a little on each note; optional glide in from the previous note."""
+    n = at(dur); t = np.arange(n) / SR
+    f1 = midi(note); f0 = midi(glide_from) if glide_from else f1
+    f = f1 + (f0 - f1) * np.exp(-t / 0.045)
+    x = sum(signal.sawtooth(2 * np.pi * np.cumsum(f * (1 + d)) / SR) for d in (-0.006, 0.006)) / 2
+    x += 0.5 * np.sin(2 * np.pi * np.cumsum(f / 2) / SR)
+    out = np.zeros(n); zi = None
+    cut = 900 + 1900 * np.exp(-t / 0.12)
+    for i in range(0, n, 256):
+        s_ = signal.butter(2, float(cut[i]), btype='lowpass', fs=SR, output='sos')
+        seg, zi = signal.sosfilt(s_, x[i:i + 256], zi=zi if zi is not None else signal.sosfilt_zi(s_) * x[i])
+        out[i:i + 256] = seg
+    shape = np.minimum(1, t / 0.008) * np.minimum(1, (dur - t) / 0.03).clip(0) * (0.75 + 0.25 * np.exp(-t / 0.2))
+    return np.tanh(out * 2.2) * shape * 0.34 * level
 
-def stab(notes, dur=0.8, level=1.0, cutoff=4500):
+def strings(notes, dur, level=1.0, bright=1400):
+    """Dark string pad: many slightly detuned saws, slow swell, low-passed — cinematic weight, no shimmer."""
+    n = at(dur); t = np.arange(n) / SR; x = np.zeros(n)
+    for nn in notes:
+        for d in (-0.008, -0.003, 0.003, 0.008):
+            x += signal.sawtooth(2 * np.pi * midi(nn) * (1 + d) * t + rng.uniform(0, 6))
+    x = signal.sosfilt(sos('lowpass', bright), x / (4 * len(notes)))
+    return x * np.minimum(1, t / 0.6) * np.minimum(1, (dur - t) / 0.5).clip(0) * 0.55 * level
+
+def stab(notes, dur=0.8, level=1.0, cutoff=2200):
     n = at(dur); t = np.arange(n) / SR; x = np.zeros(n)
     for nn in notes:
         for det in (-0.01, 0.0, 0.01):
@@ -93,7 +116,8 @@ def metal_hit(level=1.0):
 C2, Eb2, F2, G1, Ab1, Bb1 = 36, 39, 41, 31, 32, 34
 BASS_BAR = [(0.0, C2, 0.7, None), (0.75, C2, 0.5, None), (1.5, C2, 0.9, G1), (2.5, Ab1, 0.6, None), (3.25, Bb1, 0.6, None)]
 BASS_BAR2 = [(0.0, C2, 0.7, None), (0.75, C2, 0.5, None), (1.5, Eb2, 0.9, None), (2.5, F2, 0.5, None), (3.0, G1, 0.9, C2)]
-MOTIF = [(0.0, 67), (0.5, 63), (1.0, 60), (1.5, 58), (2.0, 67), (2.5, 65), (3.0, 63), (3.5, 60)]   # my own, C minor
+LEAD = [(0.0, 60, 1.4, None), (1.5, 63, 0.45, 60), (2.0, 62, 0.9, None), (3.0, 58, 0.9, 62)]       # my own, C minor
+LEAD2 = [(0.0, 60, 1.4, None), (1.5, 67, 0.45, 60), (2.0, 65, 0.45, None), (2.5, 63, 1.3, 65)]
 def section(t):
     if t < DROP: return 'hook'
     if t < DARK: return 'groove'
@@ -130,14 +154,18 @@ for b in range(bars):
             if t0 < LEN and section(t0) != 'dark':
                 lv = 0.35 if section(t0) == 'hook' else 1.0
                 add(bass808(note, dur * BEAT * 1.6, gl, lv), t0, 1.0)
-    # bell motif (from the drop on; brighter from the trade)
-    if sec in ('groove', 'hero', 'end') or (sec == 'hook' and b == 0):
-        for off, note in MOTIF:
+    # the lead (from the drop on; an octave up for the trade, where the energy lifts)
+    if sec in ('groove', 'hero', 'end'):
+        for off, note, dur, gl in (LEAD if b % 2 == 0 else LEAD2):
             t0 = t_bar + off * BEAT
             if t0 < LEN and section(t0) != 'dark':
-                lv = 0.45 if section(t0) == 'hook' else 0.9 if t0 >= DISC else 0.7
-                add(bell(note + (12 if t0 >= TRADE and section(t0) == 'groove' and off >= 2 else 0), 0.8, lv,
-                         1.0 if t0 < TRADE else 1.4), t0, 1.0, pan=-0.35 + 0.7 * (off / 4))
+                up = 7 if (TRADE <= t0 < TRACK and section(t0) == 'groove') else 0     # lifted for the trade only
+                lv = 0.7 if TRACK <= t0 < DARK else 0.9                                  # leaves room for 'Track your picks'
+                add(lead(note + up, dur * BEAT, (gl + up) if gl else None, lv), t0, 1.0, pan=-0.1 if b % 2 else 0.1)
+    # dark strings under the groove
+    if sec in ('groove', 'hero', 'end') and t_bar + 4 * BEAT <= LEN + 2 * BEAT:
+        chord = ((48, 55, 63), (44, 51, 60), (46, 53, 62), (43, 50, 59))[b % 4]
+        add(strings(chord, 4 * BEAT + 0.4, 0.8 if t_bar >= TRADE else 0.6), t_bar, 1.0)
 
 # accents
 add(stab([48, 51, 55, 58, 62], 1.2, 1.1, 6000), HOOK, 1.0)                     # the opening accent (Cm9)

@@ -1,6 +1,7 @@
 """Final mix for NEXT Ad #2: score + original sound design + voiceover (ducked).
+v2: the chimes and shimmers were rebuilt as low synth confirms and airy swishes (nothing bell-like).
 
-  post-venv/bin/python mix2.py OUT.wav SECONDS --music music.wav --vo VO_DIR [--hook a|b|c]
+  post-venv/bin/python mix2.py OUT.wav SECONDS --music music.wav --vo VO_DIR [--hook a|b|c] [--stems DIR]
 All sound design is synthesized here (no samples). Voice lines come from vo.py.
 """
 import json, os, sys
@@ -40,10 +41,10 @@ def click(level=0.3, f=2600):
     n = at(0.035); t = np.arange(n) / SR
     return (np.sin(2 * np.pi * f * t) * 0.6 + signal.sosfilt(sos('highpass', 3000), rng.standard_normal(n)) * 0.4) * e(n, 0.005) * level
 def shimmer(dur, level=0.08):
+    """v2: an airy swish (band-passed noise swell), not a tremolo of high sines: nothing bell-like."""
     n = at(dur); t = np.arange(n) / SR
-    x = sum(np.sin(2 * np.pi * f * t + rng.uniform(0, 6)) for f in (2093, 2637, 3136, 3951)) / 4
-    trem = 0.6 + 0.4 * np.sin(2 * np.pi * 7 * t)
-    return x * trem * np.sin(np.pi * t / dur) * level
+    x = signal.sosfilt(sos('bandpass', [1200, 4500]), rng.standard_normal(n))
+    return x * np.sin(np.pi * t / dur) ** 2 * level * 1.3
 def shing(level=0.06):
     n = at(0.9); t = np.arange(n) / SR
     return signal.sosfilt(sos('bandpass', [5000, 12000]), rng.standard_normal(n)) * np.sin(np.pi * t / 0.9) ** 2 * level
@@ -65,10 +66,17 @@ def tone(f, dur, level, decay=0.25, harm=0.3):
     n = at(dur); t = np.arange(n) / SR
     return (np.sin(2 * np.pi * f * t) + harm * np.sin(2 * np.pi * 2 * f * t)) * np.minimum(1, t / 0.003) * e(n, decay) * level
 def chime(notes, step=0.05, level=0.08):
-    out = np.zeros(at(1.4))
-    for i, nn in enumerate(notes):
-        x = tone(440 * 2 ** ((nn - 69) / 12), 1.0, 1.0, 0.3, 0.35); s0 = at(i * step); out[s0:s0 + len(x)] += x[:len(out) - s0]
-    return out * level
+    """v2 'confirm': a low two-note synth hit (root, fifth) with a sub thump and a short noise
+    tail — modern UI weight instead of a high bell arpeggio. Same call sites and timing."""
+    n = at(0.9); t = np.arange(n) / SR; out = np.zeros(n)
+    root = notes[0] - 36 if notes[0] >= 72 else notes[0] - 24
+    for i, nn in enumerate((root, root + 7)):
+        s0 = at(i * max(step, 0.06)); k = n - s0; tt = np.arange(k) / SR; f = 440 * 2 ** ((nn - 69) / 12)
+        v = signal.sawtooth(2 * np.pi * f * tt) * 0.6 + np.sin(2 * np.pi * f / 2 * tt)
+        out[s0:] += signal.sosfilt(sos('lowpass', 1600), v) * np.minimum(1, tt / 0.004) * np.exp(-tt / 0.22) * 0.5
+    out += np.sin(2 * np.pi * np.cumsum(48 + 90 * np.exp(-t / 0.05)) / SR) * np.exp(-t / 0.18) * 0.8
+    out += signal.sosfilt(sos('bandpass', [2000, 7000]), rng.standard_normal(n)) * np.exp(-t / 0.04) * 0.25
+    return np.tanh(out * 1.4) * level * 3.2
 def rnb_preview(dur=1.95):
     """Juno Marrow's 'preview': an original late-night R&B sketch (warm keys, soft beat, a hummed line)."""
     n = at(dur); t = np.arange(n) / SR; out = np.zeros(n)
@@ -107,8 +115,8 @@ if LEN > 4.5:
     add(click(0.25, 2400), g(228)); add(click(0.3, 2700), g(241)); add(click(0.34, 3000), g(259))
     add(chime([68, 72, 75, 80, 84, 87], 0.05, 0.11), g(262), pan=0.1)      # bought
     add(boom(0.45, 46), g(262))
-    for i, nn in enumerate((72, 75, 77, 79, 82, 84, 87, 89, 91)):          # market lines growing
-        add(tone(440 * 2 ** ((nn - 69) / 12), 0.25, 0.04, 0.08), g(264 + i * 3.5), pan=-0.7 + 1.4 * i / 8)
+    for i in range(9):                                                       # market lines growing: rising data ticks
+        add(click(0.12 + 0.012 * i, 900 + 140 * i), g(264 + i * 3.5), pan=-0.7 + 1.4 * i / 8)
     add(whoosh(1.1, 200, 8000, 0.15, rise=True), g(296) - 0.2)    # into the chart
     # 5 TRACK
     for k, fr in enumerate((338, 348, 358, 367, 376)):
@@ -122,7 +130,7 @@ if LEN > 4.5:
     add(shing(0.04), g(486), pan=-0.4)                             # glint across the foil
     # 7 WHO'S NEXT
     add(whoosh(0.9, 400, 9000, 0.12), g(556), pan=-0.3); add(whoosh(0.9, 400, 9000, 0.12), g(558), pan=0.3)
-    for k in range(10): add(tone(2000 + 300 * k, 0.08, 0.012, 0.03), g(560) + k * 0.06, pan=-0.8 + 0.16 * k)
+    add(whoosh(0.7, 200, 6000, 0.1, rise=True), g(560), pan=0.0)                # particles into the logo: a short rise
     add(chime([89, 96], 0.0, 0.09), g(588)); add(boom(0.5, 44), g(588))
     add(click(0.2, 2000), g(612))
 
@@ -150,7 +158,7 @@ def follower(x, att, rel):
     for i in range(len(x)):
         y = x[i] + (y - x[i]) * (ka if x[i] > y else kr); out[i] = y
     return out
-duckg = 1 - 0.62 * follower(vo_env, 0.06, 0.25)
+duckg = 1 - 0.68 * follower(vo_env, 0.06, 0.25)
 prevg = 1 - 0.55 * follower(prev_env, 0.08, 0.3)                  # the score steps back for Juno's preview
 
 # ---------------------------------------------------------------- music + mix
@@ -158,6 +166,11 @@ mus = np.zeros((N, 2))
 if arg('--music'):
     msr, m = wavfile.read(arg('--music')); m = m.astype(np.float64) / 32768
     n_ = min(len(m), N); mus[:n_] = m[:n_]
+# v2: under the voice, the score's speech band (500 Hz-3 kHz, where its melody sits) dips further,
+# so the words stay clear while the low end and the drums keep their weight
+vo_f = follower(vo_env, 0.05, 0.3)[:, None]
+mus_sp = signal.sosfilt(signal.butter(2, [400, 3600], btype='bandpass', fs=SR, output='sos'), mus, axis=0)
+mus = mus - 1.0 * vo_f * mus_sp
 sfx = np.stack([L, R], 1); sfx = sfx / (np.abs(sfx).max() + 1e-9)
 prev = np.stack([PL, PR], 1)
 bed = (mus / (np.abs(mus).max() + 1e-9) * 0.8 * prevg[:, None] + sfx * 0.5 + prev * 0.9) * duckg[:, None]
@@ -182,6 +195,11 @@ if EDIT:
         s0 = at(nt); k = min(len(v), N2 - s0); vo[s0:s0 + k] += (v[:k] * 0.95)[:, None]; ve[s0:s0 + k] = 1
     bed = bed * (1 - 0.35 * follower(ve, 0.06, 0.25))[:, None]
 mix = bed + vo
+if arg('--stems'):                    # optional: write the music+sfx bed and the voice separately (for edits and checks)
+    os.makedirs(arg('--stems'), exist_ok=True)
+    pk = np.abs(mix).max() + 1e-9
+    for nm, st in (('bed', bed), ('voice', vo)):
+        wavfile.write(os.path.join(arg('--stems'), os.path.basename(OUTP).replace('.wav', f'_{nm}.wav')), SR, (st / pk * 0.6 * 32767).astype(np.int16))
 mix = np.tanh(mix * 1.1) / np.tanh(1.1)
 mix *= 10 ** (-4.0 / 20) / np.abs(mix).max()                     # sample peak -4 dBFS (true-peak headroom for AAC)
 f_ = at(0.04); mix[-f_:] *= np.linspace(1, 0, f_)[:, None]
