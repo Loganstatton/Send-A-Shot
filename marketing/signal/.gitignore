@@ -6,3 +6,4 @@ frames*/
 *.jpg
 *.blend
 __pycache__/
+*.blend1
