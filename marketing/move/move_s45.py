@@ -86,7 +86,7 @@ visible(word, [(LOGO - 4, END + 1)]); visible(word_face, [(LOGO - 4, END + 1)])
 dot_m, dot_e = emissive('NextDot', EMBER, 9.0)
 bpy.ops.mesh.primitive_uv_sphere_add(radius=0.065, segments=32, ring_count=16); dot = bpy.context.active_object; dot.data.materials.append(dot_m)
 keys(dot, 'scale', [(LOGO - 1, (0.0,) * 3), (LOGO, (1.0,) * 3)])
-DOT = LOGO_C + Vector((1.35 / 2 + 0.1, -0.05, -0.17))
+DOT = LOGO_C + Vector((1.35 / 2 + 0.15, -0.05, -0.17))
 keys(dot, 'location', [(LOGO, tuple(CORE)), (LOGO + 9, tuple(DOT))], interp='BEZIER'); visible(dot, [(LOGO, END + 1)])
 dl = bpy.data.lights.new('DotLight', 'POINT'); dl.energy = 140; dl.color = EMBER; dl.shadow_soft_size = 0.2
 dlo = link(bpy.data.objects.new('DotLight', dl)); dlo.parent = dot

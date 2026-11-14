@@ -100,7 +100,22 @@ HOOKS = {
     'c': None,
 }
 HOOKS['c'] = HOOKS['a']
-TITLES = HOOKS[HOOK]
+URL = 'send-a-shot.onrender.com/next'                     # verified: returns 200 (see QC_REPORT.md)
+BODY = [
+    # the market landscape (shot 3): what the viewer is looking at, and the live price
+    (300, 386, 'label', 'SIMULATED MARKET · DEMO PLAYERS\' TRADES', 26, 0.17, EMBER, 8, 8),
+    (300, 386, 'ticker', '', 92, 0.225, WHITE, 8, 8),
+    (300, 386, 'small', 'EVERY TRADE MOVES THE PRICE · 5% PER 10,000 CREDITS', 20, 0.27, SOFT, 8, 8),
+    # the reveal (shot 4)
+    (484, 598, 'pill', 'IN VIRTUAL CREDITS · NO CASH VALUE', 26, 0.735, SOFT, 6, 8),
+    (484, 598, 'small', 'ILLUSTRATIVE EXAMPLE · DEMO DATA · NOT REAL MONEY', 20, 0.77, SOFT, 6, 8),
+    # the end card (shot 5)
+    (636, 690, 'title', 'HOW GOOD ARE YOUR PICKS?', 64, 0.3, WHITE, 8, 6),
+    (692, 750, 'title', 'TRY NEXT FREE.', 76, 0.3, (255, 226, 204), 6, 0),
+    (650, 750, 'url', URL, 34, 0.665, (236, 232, 226), 10, 0),
+    (650, 750, 'small', 'Virtual trading game. Credits have no cash value.', 26, 0.705, SOFT, 10, 0),
+]
+TITLES = HOOKS[HOOK] + BODY
 # hook B's counter: the same curve as move_hook.py (the position's realistic exit value along the real price path)
 import json
 J = json.load(open(arg('--journey', os.path.join(HERE, 'journey.json'))))
@@ -113,6 +128,18 @@ def counter_value(f, lock=46, i0=1.35):
     t = min(max((f - 1) / (lock - 1), 0.0), 1.0); idx = i0 + (_N - 1 - i0) * (1 - (1 - t) ** 2.6)
     k = min(int(idx), _N - 2); fr = idx - k
     return int(round((_P[k] + (_P[k + 1] - _P[k]) * fr) / 100))
+def ticker_price(f, t0=302, t1=381):
+    """Kito Vale's price on the landscape (move_s3.py land_idx): the recorded series, $22.53 after the pick to $29.82."""
+    t = min(max((f - t0) / (t1 - t0), 0.0), 1.0); idx = 1.0 + (_N - 2) * (t * t * (3 - 2 * t))
+    k = min(int(idx), _N - 2); fr = idx - k
+    return (_S[k] + (_S[k + 1] - _S[k]) * fr) / 100
+def ticker_card(price, size):
+    f = ImageFont.truetype(DISP, size); g = ImageFont.truetype(SANS_B, int(size * 0.32))
+    a, bt = 'KITO VALE  ', f'${price:,.2f}'
+    w = int(g.getlength(a) + f.getlength(bt)) + 80
+    im = Image.new('RGBA', (w, int(size * 1.35)), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+    d.text((40, size * 0.55), a, font=g, fill=SOFT); d.text((40 + g.getlength(a), size * 0.08), bt, font=f, fill=WHITE)
+    return im
 def counter_card(v, size):
     """+$1,432 in the NEXT display face: the sign in ember, the figure in white."""
     f = ImageFont.truetype(DISP, size); sign, num = '+$', f'{v:,}'
@@ -130,7 +157,10 @@ def typography(img, f):
         if kind == 'label': layer = card(text, size, tracking=0.32, font_path=SANS_B, color=col); glow, dk = 0.35, 0.3
         elif kind == 'pill': layer = pill(text, size, color=col); glow, dk = 0.0, 0.35
         elif kind == 'counter': layer = counter_card(counter_value(f), size); glow, dk = 0.3, 0.4
-        elif kind == 'small': layer = card(text, size, tracking=0.2, font_path=SANS_B, color=col); glow, dk = 0.0, 0.35
+        elif kind == 'ticker': layer = ticker_card(ticker_price(f), size); glow, dk = 0.3, 0.4
+        elif kind == 'url': layer = card(text, size, tracking=0.04, font_path=SANS, color=col); glow, dk = 0.0, 0.4
+        elif kind == 'title': layer = card(text, size, tracking=0.06, font_path=SANS_B, color=col); glow, dk = 0.25, 0.45
+        elif kind == 'small': layer = card(text, size, tracking=0.2 if text.isupper() else 0.02, font_path=SANS_B if text.isupper() else SANS, color=col); glow, dk = 0.0, 0.35
         else: layer = card(text, size, color=col); glow, dk = 0.25, 0.45
         place(img, layer, W / 2, H * y + (1 - pin) * 10, alpha=al, blur=(1 - pin) * 4, glow=glow, darken=dk)
 
