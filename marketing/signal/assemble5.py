@@ -30,9 +30,9 @@ def run(cmd, **kw):
 # (scene dir, first global frame, last global frame, offset added to the scene's own frame number)
 def scenes(fmt):
     w = '_wide' if fmt == 'w' else ''; g = 'gW' if fmt == 'w' else 'gV'
-    F = lambda pod, name: os.path.join(ROOT, f'{g}{pod}', 'frames', name + w)
+    F = lambda pod, name: os.path.join(ROOT, f'{g}{pod}', name + w)
     return {'a': [(F(1, 'hook'), 1, 90, 0)], 'b': [(F(1, 'hookb'), 1, 90, 0)], 'c': [(F(1, 'hookc'), 1, 90, 0)],
-            'body': [(F(2, 'scout5'), 91, 660, 0), (F(3, 'next5'), 661, 1200, 0), (F(1, 'panels5'), 1201, 1410, 0), (F(4, 'card5'), 1411, 1800, -1409)]}
+            'body': [(F(2, 'scout5'), 91, 660, 0), (F(3, 'next5'), 661, 1200, 0), (F(1, 'panels5'), 1201, 1410, 0), (F(4, 'card5'), 1411, 1800, 1409)]}
 def post(fmt, hook, src, a, b, off, dst):
     os.makedirs(dst, exist_ok=True)
     todo = [g for g in range(a, b + 1) if not os.path.exists(os.path.join(dst, f'p{g:04d}.png'))]

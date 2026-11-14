@@ -156,9 +156,8 @@ TITLES = HOOKS[HOOK] + [
     (1236, 1282, 'BUILD YOUR PORTFOLIO.', 74, 0.19, 0.16, NEXT_W, 10, 10),
     (1288, 1340, 'FOLLOW THE MUSIC.', 78, 0.19, 0.16, NEXT_W, 10, 10),
     (1346, 1398, 'PROVE YOUR PICKS.', 78, 0.19, 0.16, NEXT_W, 10, 10),
-    (1445, 1492, 'FOUNDING BELIEVER', 74, 0.19, 0.12, NEXT_W, 12, 10),
-    (1495, 1538, 'BACKER #1', 92, 0.19, 0.12, NEXT_W, 10, 10),
-    (1541, 1590, 'YOU WERE EARLY.', 84, 0.19, 0.12, NEXT_W, 10, 10),
+    # the card itself carries FOUNDING BELIEVER and BACKER #1 in its own lettering, full frame
+    (1578, 1632, 'YOU WERE EARLY.', 84, 0.19, 0.14, NEXT_W, 10, 10),
     (1686, 1736, 'DISCOVER. BACK. BELIEVE.', 70, 0.19, 0.14, WHITE, 10, 8),
     (1740, 1800, "FIND WHAT'S NEXT.", 84, 0.19, 0.14, WHITE, 10, 0),
 ]
@@ -173,7 +172,7 @@ NOTES = [        # small print: (first, last, text, y vertical, y wide)
     (905, 1198, 'VIRTUAL CREDITS · NO CASH VALUE', 0.25, 0.23),
     (905, 1198, 'NOT REAL MONEY OR SECURITIES · DEMO DATA', 0.27, 0.255),
     (1236, 1398, 'VIRTUAL CREDITS · NO CASH VALUE · DEMO DATA', 0.25, 0.23),
-    (1445, 1590, 'FIRST RECORDED NEXT BACKER · DEMO DATA', 0.25, 0.18),
+    (1445, 1632, 'FIRST RECORDED NEXT BACKER · DEMO DATA', 0.135, 0.08),
     (1700, 1800, 'SCOUT — INTERNAL ARTIST DISCOVERY AND EVALUATION', 0.25, 0.205),
     (1700, 1800, 'NEXT — PUBLIC VIRTUAL MUSIC TRADING AND DISCOVERY', 0.27, 0.23),
 ]
@@ -197,7 +196,7 @@ def typography(img, f):
         place(img, layer, W / 2, H * (yw if WIDE else yv) + (1 - pin) * 12, alpha=alpha, blur=(1 - pin) * 5 + (1 - pout) * 4, scale=settle * fit)
     for a, b, text, yv, yw in NOTES:
         if not a <= f <= b: continue
-        al = env(f, a, b) * 0.9
+        al = env(f, a, b, FADE_IN, 0 if b >= 1800 else FADE_OUT) * 0.9          # the end card holds to the last frame
         if al > 0.001:
             ly = card(text, 26, tracking=0.16, font_path=SANS, color=(214, 222, 230))
             place(img, ly, W / 2, H * (yw if WIDE else yv), alpha=al, glow=0.0, darken=0.35, scale=min(1.0, W * 0.86 / max(1, ly.width - 80)))

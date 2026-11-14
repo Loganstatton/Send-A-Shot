@@ -73,7 +73,13 @@ Published guidance differs by platform and most figures are secondary sources. T
 Blender 5.0.1 Cycles (AgX, OptiX on RunPod RTX 4090s) → linear HDR frames → `post5.py` (bloom, tone map, grain, typography at final resolution) → FFmpeg. Typography and timing are composited in Python (OpenCV/Pillow) at final resolution rather than Remotion: same result, no extra tooling. `post5.py` and the assemble script are the editable compositing project.
 Estimate: about 3,960 frames (vertical + 16:9 + hooks B and C) at about 2–3 s each on an RTX 4090 ≈ 3 GPU-hours with pod start-up ≈ **$2.5–4** of the existing RunPod balance (about $7.43), including one round of re-renders. Nothing else is paid.
 
-## 7. Open items needing the owner's decision
-1. **Approval to use the RunPod balance** (estimate above). Nothing has been rendered on paid hardware yet.
+## 7. Delivered
+
+See `QC_REPORT.md` for every file, measurement and check. Rebuild: `node capture_signal.js` → `prep5.py` (+ `../commercial/make_card.py`) →
+render `hook.py`, `hookb.py`, `hookc.py` (1–90), `scout5.py` (91–660), `next5.py` (661–1200), `panels5.py` (1200–1410), `card5.py` (1–391), each also `@wide`,
+with `gpu_render5.py` → `assemble5.py` → `make_thumbs5.py`. Video, audio, images and .blend files stay out of git.
+
+## 8. Open items needing the owner's decision
+1. ~~Approval to use the RunPod balance~~ approved; the film used about $2.04.
 2. **Narration voice.** Kokoro-82M (Apache-2.0, licensed for commercial use) is used now. A professional voice actor or a paid voice service with a commercial licence would sound better for a paid campaign; that is a cost decision.
 3. **The website.** The first request to `send-a-shot.onrender.com` took 24 s (the server was asleep). Before paying for traffic, the server should stay warm, and a short custom domain would read better on the end card. The URL is a typography layer, so it can be swapped at the end.

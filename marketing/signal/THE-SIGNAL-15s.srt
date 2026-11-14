@@ -1,0 +1,20 @@
+1
+00:00:00,200 --> 00:00:01,485
+This isn't a stock.
+
+2
+00:00:01,360 --> 00:00:02,582
+It's an artist.
+
+3
+00:00:04,183 --> 00:00:05,653
+That's where NEXT begins.
+
+4
+00:00:06,000 --> 00:00:10,945
+Buy and sell artist shares in a simulated market, where trades move prices.
+
+5
+00:00:11,667 --> 00:00:13,005
+Find what's next.
+

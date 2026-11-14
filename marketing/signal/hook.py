@@ -216,4 +216,5 @@ else:
     cam.key(END, (0.0, 19.1, 0.84), P0 + Vector((0.0, 0, 0.1)), P0)
 cam.smooth()
 
+if arg('--save'): bpy.ops.file.pack_all()             # editable .blend: images packed inside
 render(os.path.join(HERE, 'frames', 'hook'))

@@ -1,0 +1,36 @@
+1
+00:00:00,200 --> 00:00:01,485
+This isn't a stock.
+
+2
+00:00:01,360 --> 00:00:02,582
+It's an artist.
+
+3
+00:00:03,400 --> 00:00:07,491
+SCOUT discovers promising musicians before they appear on NEXT.
+
+4
+00:00:08,067 --> 00:00:13,022
+Human reviewers approve which artists go live, then rate them on eight factors.
+
+5
+00:00:13,683 --> 00:00:15,153
+That's where NEXT begins.
+
+6
+00:00:15,267 --> 00:00:17,715
+Start with ten thousand virtual Credits.
+
+7
+00:00:18,167 --> 00:00:23,112
+Buy and sell artist shares in a simulated market, where trades move prices.
+
+8
+00:00:23,733 --> 00:00:26,655
+SCOUT finds the talent. NEXT lets you back it.
+
+9
+00:00:27,033 --> 00:00:28,371
+Find what's next.
+
