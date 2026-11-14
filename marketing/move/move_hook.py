@@ -25,6 +25,9 @@ J = json.load(open(arg('--journey', os.path.join(MHERE, 'journey.json'))))
 ASSETS = arg('--assets', os.path.join(MHERE, 'assets'))
 END = 90
 sc = init(END, samples=int(arg('--samples', '40')))
+if GPU:                                         # half-float EXR (DWAA) under the f####.hdr name, as world_move.compact
+    sc.render.image_settings.file_format = 'OPEN_EXR'; sc.render.image_settings.color_depth = '16'; sc.render.image_settings.exr_codec = 'DWAA'
+    sc.render.use_file_extension = False
 sc.cycles.max_bounces = 6; sc.cycles.glossy_bounces = 3; sc.cycles.transmission_bounces = 4; sc.cycles.diffuse_bounces = 2
 sc.cycles.sample_clamp_indirect = 6.0
 sc.render.motion_blur_shutter = 0.4

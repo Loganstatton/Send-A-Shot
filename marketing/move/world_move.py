@@ -24,6 +24,13 @@ def exit_pnl(p):
 PNL = [exit_pnl(p) for p in SERIES]
 assert PNL[-1] == 143_200
 
+def compact(sc):
+    """On the GPU pods: write each frame as half-float EXR (DWAA, visually lossless, ~10x smaller than Radiance
+    HDR) under the toolkit's f####.hdr name; post_move.py reads it by content."""
+    if not GPU: return
+    s_ = sc.render.image_settings; s_.file_format = 'OPEN_EXR'; s_.color_depth = '16'; s_.exr_codec = 'DWAA'
+    sc.render.use_file_extension = False
+
 def materials():
     return dict(lacquer=principled('BlackLacquer', (0.0025, 0.0024, 0.0026), rough=0.05, coat=1.0),
                 chrome=principled('Chrome', (0.9, 0.9, 0.92), metallic=1.0, rough=0.07),

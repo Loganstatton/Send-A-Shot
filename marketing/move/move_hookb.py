@@ -9,6 +9,7 @@ from world_move import *
 
 END, LOCK = 90, 46
 sc = init(END, samples=int(arg('--samples', '40')))
+compact(sc)
 sc.cycles.max_bounces = 6; sc.cycles.glossy_bounces = 3; sc.cycles.diffuse_bounces = 2; sc.cycles.sample_clamp_indirect = 6.0
 sc.render.motion_blur_shutter = 0.4
 world_dark(sc)
