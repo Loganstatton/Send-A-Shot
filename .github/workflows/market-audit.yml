@@ -39,3 +39,18 @@ jobs:
           [ "$status" -lt 400 ]
         env:
           CRON_SECRET: ${{ inputs.target == 'staging' && secrets.STAGING_CRON_SECRET || secrets.CRON_SECRET }}
+
+      # Staging only: a labelled test account opens a trading panel, checks the quotes and the 0.5% fee, buys
+      # 100 Credits and sells them, with the balance, holding, reserve, fee pool, ledger and price checked at
+      # each step and reconciliation before and after (scripts/staging-trade-check.mjs). Needs two repository
+      # secrets: STAGING_CRON_SECRET (staging's CRON_SECRET) and STAGING_INVITE_CODE (an invite that works on
+      # staging). Prints ids and amounts only; never a secret.
+      - name: Check out (staging trade check)
+        if: inputs.target == 'staging'
+        uses: actions/checkout@v4
+      - name: Staging trade check
+        if: inputs.target == 'staging'
+        run: node scripts/staging-trade-check.mjs
+        env:
+          CRON_SECRET: ${{ secrets.STAGING_CRON_SECRET }}
+          INVITE_CODE: ${{ secrets.STAGING_INVITE_CODE }}
