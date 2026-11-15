@@ -262,8 +262,12 @@ export default function TradePanel({
               <button
                 key={amt}
                 type="button"
+                // shows (and announces) which preset is the current amount
+                aria-pressed={!sellAllIntent && amountCents === amt * 100}
                 className="px-3 py-[5px] rounded-full text-xs"
-                style={{ border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
+                style={!sellAllIntent && amountCents === amt * 100
+                  ? { border: '1px solid var(--ember-line)', color: 'var(--text)', background: 'var(--surface-2)' }
+                  : { border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
                 onClick={() => { setDollars(String(amt)); setSellAllIntent(false); setSuccess(null); }}
               >
                 ${amt}
