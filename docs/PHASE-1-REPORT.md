@@ -268,7 +268,99 @@ leaderboard position.
    Fees collected before the rollback are then not in the fee pool; this is disclosed, and nothing anyone
    owns changes.
 
-## 9. Proposed production deployment (needs your approval)
+## 9. Staging checks (15 Nov 2026, commit `ecd0d2a`)
+
+Run with `scripts/staging-trade-check.mjs` against the staging deployment. Staging's cron secret and shared
+invite code were replaced with new staging-only values for this, as you chose. They are not stored in the
+repository; production was not touched. **28/28 checks passed.**
+
+**Reconciliation before the trade**
+- 3 accounts, 1 listed artist and 4 ledger entries.
+- Every balance equals its ledger account.
+- Every reserve covers its holders.
+- Every entry balances, and holdings match the curve.
+- Players 27,399.48 + reserves 2,599.76 = issued 27,399.48 + opening reserves 2,599.76.
+- No open issues.
+
+**Migration proof on staging's real data**
+- 3 balances entered the ledger unchanged.
+- 1 holding, value unchanged.
+- 1 reserve funded to cover 2,599.75 owed.
+- 3 trades and 4 price points before, the same after.
+
+**Authenticated trade** (test account #4, artist #1, price 28.84)
+1. **The panel showed:**
+   - "Buy 100 Credits: $28.99/share" and "Sell 100 Credits: $28.83/share", exactly the market maker's quotes;
+   - "Trading fee (0.5%) $0.50" and "Goes into the market $99.50";
+   - the market maker as counterparty, "no cash value", and a balance of $10,000.00.
+2. **Bought 100 Credits:**
+   - fee 0.50, balance 9,900.00, and exactly 3.449211285 shares (the curve amount);
+   - the reserve rose by exactly 99.50, to 2,699.26;
+   - the ledger moved players −100.00, reserves +99.50, fee pool +0.50;
+   - the panel showed the new balance and the holding.
+3. **Sold everything:**
+   - no fee, paid 99.49, which is exactly the curve amount;
+   - final balance 9,999.49 (the round trip cost the fee plus 1 cent of rounding);
+   - the price returned to exactly 28.84;
+   - the reserve kept only the 1-cent rounding (2,599.77);
+   - the panel showed no holding.
+
+**Reconciliation after**
+- Every check passes: 4 accounts, 7 ledger entries.
+- Credits issued grew by exactly the new account's 10,000, and the conservation equation holds.
+
+The test account is kept on staging so its trades stay visible.
+
+## 10. Production readiness
+
+**What would be deployed**
+- Branch `claude/artist-discovery-venture-yom2f3`. The application code was tested at commit **`ecd0d2a`**.
+- `main` (`d215d69`, Phase 0) contains nothing the branch lacks, so merging deploys exactly the tested code.
+- Any commit after `ecd0d2a` must be docs-only. Stop if `git diff ecd0d2a <deploy sha> -- . ':!docs'` is not empty.
+
+**Migration plan**
+- Migration 016 runs automatically, once, under the migration lock on the first request after deploy.
+- It only adds columns and tables, and the set-up step only writes new rows (ledger, snapshot) and the new
+  curve columns.
+- No balance, holding, price, transaction or price-history row is modified (rehearsed on 015-era data and on
+  staging).
+
+**Backup confirmation required before merging**
+- The backup workflow run must succeed.
+- The encrypted artifact must exist (NXTBAK1 format, 30-day retention), with a row count close to the
+  previous day's.
+- Render point-in-time recovery must be available (3 days).
+- Record before deploying: the market-audit trade count, the number of accounts, and the time of the backup.
+
+**Deployment steps**
+1. Run the backup workflow and confirm it.
+2. Set `NEXT_TRADING_PAUSED=1` on production and confirm the trade endpoint returns 503.
+3. Merge to `main` and wait for the deploy to go live on the tested commit.
+4. Run the market-audit workflow on production.
+5. Spot-check pages.
+6. Only then unpause, and reconcile once more.
+
+**Stop conditions** (stop, keep trading paused, and report)
+- The backup fails, the artifact is missing or not encrypted, or the counts look wrong.
+- After pausing, the trade endpoint does not return 503.
+- The deploy fails, health is not ok, or any NEXT page returns an error.
+- Reconciliation reports any issue, or any artist is automatically halted.
+- `migration.ok` is false, or the migration snapshot's counts differ from the pre-deploy counts (accounts,
+  holdings, trades, price points).
+- Any holding's value changed, or any reserve doesn't cover its holders.
+
+**Rollback limitations**
+- **Code rollback (revert the merge) is clean only while trading is still paused.** Phase 0 code ignores the
+  new columns, but it doesn't write the ledger. If trading ran on Phase 0 after a rollback, going forward
+  again needs the "reopen the books" migration (§8 step 4). Fees collected before the rollback would then
+  not be in the fee pool.
+- **Migration 016 has no down-migration.** Its additions are harmless to leave in place.
+- **Restoring the pre-deploy backup loses everything after it.** Render point-in-time recovery reaches back
+  3 days only.
+- **No test trade on production.** Production verification is reconciliation plus the migration proof plus
+  page checks. A live round trip would need a production test account, which needs your say-so.
+
+## 11. Proposed production deployment (needs your approval)
 
 1. Run the backup workflow and verify the encrypted artifact.
 2. Set `NEXT_TRADING_PAUSED=1` on production and confirm the trade endpoint returns 503.
