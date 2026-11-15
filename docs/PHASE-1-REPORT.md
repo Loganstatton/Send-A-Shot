@@ -216,7 +216,8 @@ Migration 016 adds columns and tables only. It runs `MARKET_ACCOUNTING_INIT_SQL`
 | Unit and integration (vitest, real Postgres) | **570 / 570 pass** (47 files). New: `market-maker.test.ts` (22 tests) and `market-migration.test.ts` (3). Existing tests changed only where Phase 1 changes behaviour on purpose: fee, 10-Credit listing, no $1 floor, Score comparison only for Score-listed artists. |
 | New browser suite `market-maker` | **28 / 28.** Fee shown before confirming (real browser); disclosures; admin overview; reconciliation over HTTP; depth preview, approval and refusals; audit log; pause/resume; new-account limit; quote guard. |
 | Browser suite `trade-exploit` (Phase 0 replay) | Passes with fees: every strategy ends below where it started, prices return exactly. |
-| All other browser suites | See the staging section of the final report. |
+| All other browser suites | **All pass:** main 55/55, guest 24/24, leagues 23/23, onboarding 20/20, challenges 18/18, discovery 14/14, artist-requests 12/12, analytics 6/6, security 14/14, social 9/9, keyboard 3/3, trade-exploit 15/15, and the dead-link sweep of every page as guest, player, artist, admin and phone (no dead ends). The sweep found one issue, fixed: the trade panel's amount presets now show which one is selected. |
+| Staging (deployed) | Healthy. Pages render. Trade, admin and reconciliation endpoints refuse signed-out requests. The automated staging reconciliation needs a `STAGING_CRON_SECRET` repository secret (staging uses its own CRON_SECRET); until then, run it from the admin Market maker page on staging. |
 | Typecheck, production build | Clean. |
 
 ## 7. What users will notice
