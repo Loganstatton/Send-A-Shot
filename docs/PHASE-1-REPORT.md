@@ -1,7 +1,6 @@
 # Phase 1: the NEXT market maker — implementation report
 
-Status: **implemented on the development branch and staging, not on production.** Production gets it only
-after you approve this report and its test results.
+Status: **live on production since 15 Nov 2026, 14:06 UTC** (merge `6ed83f8` of the tested code `ecd0d2a`; see §12).
 
 NEXT stays a virtual-credit game: no deposits, no withdrawals, nothing redeemable.
 
@@ -369,3 +368,17 @@ The test account is kept on staging so its trades stay visible.
    with the same number of balances, holdings, trades and price points as before.
 5. Spot-check the artist pages, portfolio values and the admin Market maker page.
 6. Unpause trading and run one more reconciliation.
+
+## 12. Production rollout record (15 Nov 2026)
+
+| Step | Result |
+|---|---|
+| Backup | `snapshot-2026-11-15T13-58-04-805Z-j9r4tj`, 2,214 rows. Encrypted off-site copy passed the NXTBAK1 check: artifact 14164229873, 30,701 bytes, kept until 15 Dec. Plus Render point-in-time recovery. |
+| Pre-deploy record | 8 trades by 1 account; 48 artist prices; leaderboard portfolio value 9,995.35; public profiles. |
+| Pause | `NEXT_TRADING_PAUSED=1`; the trade endpoint returned 503 before the merge. |
+| Deploy | PR #102 merged as `6ed83f8` (tree = tested `ecd0d2a` + report + a read-only script). Render deploy `dep-dbsrme67bikc73fdcak0` live 14:03:31. |
+| Migration 016 | Ran 14:03:32. Proof `ok: true`: 1 balance entered the ledger unchanged; 2 holdings worth 9,995.35 before and after (0 changed); 2 reserves funded with 9,995.37 for 9,995.36 owed; 8 trades and 56 price points, none removed. |
+| Reconciliation | `ok: true`, 48 artists, 1 account, 3 ledger entries, no issues, no halts. |
+| Public pages | All 48 artist prices, the leaderboard value and the profiles identical before and after. Pages 200; admin pages and admin API refuse signed-out access. No server errors. |
+| Reopen | Trading reopened at 14:06. Reconciliation again `ok: true` with no issues. |
+| Not checked on production | The signed-in trading panel and a live trade: these need a production test account, which was not authorized. The same code passed 28/28 on staging. |
