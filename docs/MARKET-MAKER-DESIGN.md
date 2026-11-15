@@ -1,6 +1,6 @@
 # NEXT market maker: final design for approval
 
-Status: **proposal, nothing built.** This is phase 1 of `LIVE-MARKET-PROPOSAL.md`, now that phase 0 is live.
+Status: **approved with conditions and implemented on staging — see `PHASE-1-REPORT.md` for what was built, how it differs (fee on buys only, admin-approved depth, uniform 10-Credit listing, no device fingerprinting) and the test results.** The original proposal follows. This is phase 1 of `LIVE-MARKET-PROPOSAL.md`, now that phase 0 is live.
 Every number below comes from `research/market-sim/mm-design-check.mjs`. That script imports the deployed
 pricing code and models the design next to it; run it with:
 

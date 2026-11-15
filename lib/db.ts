@@ -1549,6 +1549,8 @@ export async function executeTrade(
         const c = checkCurveState({ priceCents, anchorCents, depthCents, sharesOutstanding: shares, reserveCents: reserve });
         if (!c.ok) throw new TradeInvariantError(artistId, c.problem!);
       };
+      // ...and they must balance BEFORE it too: never trade against books that are already wrong.
+      if (artist.next_anchor_price_cents != null) assertCurve(prePriceCents, sharesOutstanding, reserveCents);
 
       if (type === 'buy') {
         // A 'passed' artist is off the public market (see getNextMarket).
@@ -1627,9 +1629,10 @@ export async function executeTrade(
       if (ownedShares - sharesSold < 0.0001) sharesSold = ownedShares;
       if (sharesSold > sharesOutstanding + 1e-9) throw new TradeInvariantError(artistId, `sale of ${sharesSold} exceeds shares outstanding ${sharesOutstanding}`);
       const quote = quoteSell(prePriceCents, sharesSold, depthCents);
-      // Never pay out more than the reserve holds (it always covers this; the min is a last line of defence).
-      const proceedsCents = Math.min(quote.proceedsCents, reserveCents);
-      const { postPriceCents, executionCents } = quote;
+      // The reserve always covers this (checked above). If it ever didn't, refuse and halt rather than pay
+      // the seller less than their quote.
+      if (quote.proceedsCents > reserveCents) throw new TradeInvariantError(artistId, `sale of ${quote.proceedsCents} exceeds reserve ${reserveCents}`);
+      const { postPriceCents, executionCents, proceedsCents } = quote;
       // A partial sale must pay at least a cent; selling the whole position is always allowed.
       if (proceedsCents < 1 && sharesSold < ownedShares) return { ok: false, error: 'amount is too small to sell' };
       const soldAll = sharesSold >= ownedShares;

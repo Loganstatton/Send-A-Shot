@@ -67,6 +67,8 @@ required) and set `DATABASE_URL` to the **external** URL with `DATABASE_SSL=1`.
 | `APP_URL` | recommended | Public base URL used in emailed links. |
 | `CRON_SECRET` | for scheduled jobs | Shared secret the GitHub Actions workflow sends to the job endpoints. |
 | `NEXT_TRADING_PAUSED` | no | `1` pauses new NEXT trades (the trade endpoint returns 503 with a maintenance message). Browsing, portfolios, discovery and everything else keep working, and no data changes. Unset it to resume. |
+| `NEXT_REQUIRE_VERIFIED_EMAIL` | no | `1` makes buying on NEXT require a verified email (selling is always allowed). Turn on only once email delivery works. |
+| `NEXT_NEW_ACCOUNT_DAYS` | no | How long an unverified account counts as "new" for the per-artist daily purchase limit (default 3). The test suites set `0`. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | for email | Verification / password-reset / digest email. Without them email is skipped. |
 | `YOUTUBE_API_KEY`, `SOUNDCHARTS_*` | optional | Discovery and enrichment sources — see README. |
 
