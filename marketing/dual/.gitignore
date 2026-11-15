@@ -1,0 +1,6 @@
+*.mp4
+*.wav
+*.png
+*.jpg
+frames_*/
+editable/

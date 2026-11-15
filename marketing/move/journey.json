@@ -1,0 +1,185 @@
+{
+  "artist_id": 7,
+  "ratings": {
+    "music_talent": 7,
+    "growth_velocity": 6,
+    "engagement_quality": 6,
+    "original_song_response": 7,
+    "brand_personality": 6,
+    "content_consistency": 5,
+    "commercial_potential": 6,
+    "professionalism": 5
+  },
+  "listing": 2203,
+  "plan": {
+    "listing": 2203,
+    "earlyBacker": 0,
+    "priceAtPick": 2203,
+    "pick": 450000,
+    "pickFill": 2228,
+    "shares": 201.97486535008977,
+    "afterPick": 2253,
+    "exit": 2982,
+    "crowdBeforeLast": 2916,
+    "lastBuy": 449300,
+    "sale": {
+      "post": 2892,
+      "fill": 2937,
+      "proceeds": 593200,
+      "pnl": 143200
+    }
+  },
+  "hero_buy": {
+    "price": 2228,
+    "shares": 201.97486535008977,
+    "credits": 450000
+  },
+  "hero_sell": {
+    "price": 2937,
+    "shares": 201.97486535008977,
+    "credits": 593200,
+    "pnl": 143200
+  },
+  "balance_cents": 1143200,
+  "series": [
+    2203,
+    2253,
+    2300,
+    2344,
+    2404,
+    2397,
+    2451,
+    2525,
+    2569,
+    2631,
+    2619,
+    2687,
+    2741,
+    2803,
+    2856,
+    2916,
+    2982,
+    2892
+  ],
+  "trades": [
+    {
+      "type": "buy",
+      "cents": 450000,
+      "price": 2228,
+      "at": "2026-11-03T13:31:40.214Z",
+      "hero": true
+    },
+    {
+      "type": "buy",
+      "cents": 420000,
+      "price": 2277,
+      "at": "2026-11-05T04:16:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 380000,
+      "price": 2322,
+      "at": "2026-11-05T19:01:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 510000,
+      "price": 2374,
+      "at": "2026-11-06T09:46:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "sell",
+      "cents": 59925,
+      "price": 2401,
+      "at": "2026-11-07T00:31:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 450000,
+      "price": 2424,
+      "at": "2026-11-07T15:16:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 600000,
+      "price": 2488,
+      "at": "2026-11-08T06:01:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 350000,
+      "price": 2547,
+      "at": "2026-11-08T20:46:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 480000,
+      "price": 2600,
+      "at": "2026-11-09T11:31:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "sell",
+      "cents": 89795,
+      "price": 2625,
+      "at": "2026-11-10T02:16:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 520000,
+      "price": 2653,
+      "at": "2026-11-10T17:01:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 400000,
+      "price": 2714,
+      "at": "2026-11-11T07:46:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 450000,
+      "price": 2772,
+      "at": "2026-11-11T22:31:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 380000,
+      "price": 2830,
+      "at": "2026-11-12T13:16:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 420000,
+      "price": 2886,
+      "at": "2026-11-13T04:01:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "buy",
+      "cents": 449300,
+      "price": 2949,
+      "at": "2026-11-13T18:46:40.214Z",
+      "hero": false
+    },
+    {
+      "type": "sell",
+      "cents": 593200,
+      "price": 2937,
+      "at": "2026-11-14T13:31:50.395Z",
+      "hero": true
+    }
+  ]
+}

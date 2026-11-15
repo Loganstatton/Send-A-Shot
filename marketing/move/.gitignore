@@ -1,0 +1,9 @@
+frames*/
+*.hdr
+*.wav
+*.mp4
+*.png
+*.jpg
+*.blend
+__pycache__/
+*.blend1

@@ -16,6 +16,11 @@ function respond(status: number, body: unknown) {
 
 export async function POST(req: Request, props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
+  // Maintenance switch (Render env var NEXT_TRADING_PAUSED=1): stops new trades only. Browsing,
+  // portfolios, discovery and everything else keep working; nothing is changed or lost.
+  if (process.env.NEXT_TRADING_PAUSED === '1') {
+    return respond(503, { error: 'Trading is paused for a short maintenance update. Your Credits and holdings are safe.' });
+  }
   // Any logged-in user can paper-trade — public, internal, and admin alike.
   const user = await getSessionUser();
   if (!user) return respond(401, { error: 'unauthorized' });

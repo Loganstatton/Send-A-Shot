@@ -1,0 +1,10 @@
+fonts/
+frames/
+post_frames/
+prev*/
+*.hdr
+*.wav
+*.mp4
+*.blend1
+__pycache__/
+out/

@@ -1,0 +1,18 @@
+{
+  "listing": 2203,
+  "earlyBacker": 0,
+  "priceAtPick": 2203,
+  "pick": 450000,
+  "pickFill": 2228,
+  "shares": 201.97486535008977,
+  "afterPick": 2253,
+  "exit": 2982,
+  "crowdBeforeLast": 2916,
+  "lastBuy": 449300,
+  "sale": {
+    "post": 2892,
+    "fill": 2937,
+    "proceeds": 593200,
+    "pnl": 143200
+  }
+}
