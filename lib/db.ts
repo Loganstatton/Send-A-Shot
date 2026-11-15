@@ -2,10 +2,10 @@ import { db, isUniqueViolation } from './pg';
 import { perRequest } from './request-cache';
 import { breakoutScore } from './scoring';
 import { toPublicArtist } from './public-artist';
-import { applyTradeImpact, executionPriceCents, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents, quoteSell } from './next-market';
+import { NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents, quoteBuy, quoteSell, sharesForSellCredits } from './next-market';
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import { getScoutBadges } from './scout-badges';
-import { getCoordinatedPairFlags, getRapidTradingFlags, MarketTradeRow } from './market-integrity';
+import { AuditTrade, findRoundTripEpisodes, getCoordinatedPairFlags, getRapidTradingFlags, MarketTradeRow } from './market-integrity';
 import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
   AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistClaim, ArtistFieldChange, ArtistInput,
@@ -1466,24 +1466,22 @@ export async function executeTrade(
         if (amountCents > user.next_credits_cents) {
           return { ok: false, error: 'not enough NEXT Credits' };
         }
-        // Impact is sized by the requested spend, same as the visible market
-        // move; the trader's own fill price is the average of pre/post so that
-        // impact isn't free money on an immediate resale (see executionPriceCents).
-        const postPriceCents = applyTradeImpact(prePriceCents, amountCents, 'buy');
-        const executionCents = executionPriceCents(prePriceCents, postPriceCents);
-        const shares = amountCents / executionCents;
-        const newShares = (holding?.shares ?? 0) + shares;
+        // The exact fill along the price curve (lib/next-market.ts quoteBuy): shares rounded down, the
+        // price moved by exactly what was spent, so slicing a buy can never beat buying at once.
+        const { shares, postPriceCents, executionCents } = quoteBuy(prePriceCents, amountCents);
+        if (!(shares > 0)) return { ok: false, error: 'amount is too small to buy any shares' };
         const newCostBasis = (holding?.cost_basis_cents ?? 0) + amountCents;
         // Whatever the listen history says right up to this moment — "did this
         // trader ever hit play on this artist before backing them."
         const listenedBeforeBuy = (await hasListenedToArtist(userId, artistId)) ? 1 : 0;
 
+        // Share quantities are exact decimals (NUMERIC): add in SQL, not in floating point.
         if (holding) {
-          await db.prepare('UPDATE next_holdings SET shares = ?, cost_basis_cents = ?, updated_at = ? WHERE id = ?')
-            .run(newShares, newCostBasis, now, holding.id);
+          await db.prepare('UPDATE next_holdings SET shares = shares + ?, cost_basis_cents = ?, updated_at = ? WHERE id = ?')
+            .run(String(shares), newCostBasis, now, holding.id);
         } else {
           await db.prepare('INSERT INTO next_holdings (user_id, artist_id, shares, cost_basis_cents, updated_at) VALUES (?, ?, ?, ?, ?)')
-            .run(userId, artistId, newShares, newCostBasis, now);
+            .run(userId, artistId, String(shares), newCostBasis, now);
         }
         // The balance was already checked above under the row lock, so this
         // can't fail today. The debit still carries its own guard
@@ -1498,12 +1496,13 @@ export async function executeTrade(
         await db.prepare(`
           INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents, listened_before_buy)
           VALUES (?, ?, ?, 'buy', ?, ?, ?, ?)
-        `).run(userId, artistId, now, shares, executionCents, -amountCents, listenedBeforeBuy);
+        `).run(userId, artistId, now, String(shares), Math.round(executionCents), -amountCents, listenedBeforeBuy);
 
+        // The price is kept at full precision (NUMERIC); only displays round it to the cent.
         await db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
         await db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);
 
-        await recordFoundingBelieverIfFirstBuy(userId, artistId, artist, breakoutScore(artist), executionCents, now);
+        await recordFoundingBelieverIfFirstBuy(userId, artistId, artist, breakoutScore(artist), Math.round(executionCents), now);
 
         return { ok: true, shares, priceCents: executionCents, newBalanceCents: user.next_credits_cents - amountCents };
       }
@@ -1512,13 +1511,15 @@ export async function executeTrade(
       const ownedShares = holding?.shares ?? 0;
       if (!holding || ownedShares <= 0) return { ok: false, error: "you don't own any shares of this artist" };
 
-      const requestedShares = amountCents / prePriceCents;
-      // Size impact by what's actually being sold, not the originally requested
-      // amount — matters when the request gets capped by ownedShares. quoteSell
-      // is the same math used to mark a still-held position's realistic exit
-      // value (see its own comment) — one formula, so the two can never drift.
+      // "Sell $X worth" → the shares whose exact proceeds are X (lib/next-market.ts), capped at what is
+      // owned (the sell-all sentinel always hits the cap). quoteSell is the same math used to mark a
+      // still-held position's realistic exit value — one formula, so the two can never drift.
+      const requestedShares = sharesForSellCredits(prePriceCents, amountCents);
       const sharesSold = Math.min(requestedShares, ownedShares);
       const { postPriceCents, executionCents, proceedsCents } = quoteSell(prePriceCents, sharesSold);
+      // A partial sale must pay at least a cent; selling the whole position is always allowed, even when the
+      // leftover is worth less than a cent, so nobody is left holding an unsellable sliver.
+      if (proceedsCents < 1 && sharesSold < ownedShares) return { ok: false, error: 'amount is too small to sell' };
       const avgCostPerShareCents = holding.cost_basis_cents / ownedShares;
       const costBasisSold = avgCostPerShareCents * sharesSold;
       const realizedPnlCents = Math.round(proceedsCents - costBasisSold);
@@ -1528,15 +1529,15 @@ export async function executeTrade(
       if (remainingShares < 0.0001) {
         await db.prepare('DELETE FROM next_holdings WHERE id = ?').run(holding.id);
       } else {
-        await db.prepare('UPDATE next_holdings SET shares = ?, cost_basis_cents = ?, updated_at = ? WHERE id = ?')
-          .run(remainingShares, remainingCostBasis, now, holding.id);
+        await db.prepare('UPDATE next_holdings SET shares = shares - ?, cost_basis_cents = ?, updated_at = ? WHERE id = ?')
+          .run(String(sharesSold), remainingCostBasis, now, holding.id);
       }
       await db.prepare('UPDATE users SET next_credits_cents = next_credits_cents + ? WHERE id = ?')
         .run(proceedsCents, userId);
       await db.prepare(`
         INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents, realized_pnl_cents)
         VALUES (?, ?, ?, 'sell', ?, ?, ?, ?)
-      `).run(userId, artistId, now, sharesSold, executionCents, proceedsCents, realizedPnlCents);
+      `).run(userId, artistId, now, String(sharesSold), Math.round(executionCents), proceedsCents, realizedPnlCents);
 
       await db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
       await db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);
@@ -3513,4 +3514,29 @@ export async function reviewArtistClaim(id: number, decision: 'approved' | 'reje
   }
 
   return await getArtistClaim(id);
+}
+
+// Phase 0 audit — see findRoundTripEpisodes (lib/market-integrity.ts). Read-only, ids only (no names or
+// emails), so the result is safe to print in a CI log.
+export async function getRoundingExploitAudit() {
+  const trades = (await db
+    .prepare('SELECT id, user_id, artist_id, created_at, type, shares, credits_delta_cents FROM next_transactions ORDER BY created_at ASC, id ASC')
+    .all()) as AuditTrade[];
+  const episodes = findRoundTripEpisodes(trades);
+  const isolated = episodes.filter((e) => e.isolated);
+  const evidence = isolated.filter((e) => e.profitCents > 0);
+  return {
+    checkedAt: new Date().toISOString(),
+    tradesChecked: trades.length,
+    accountsThatTraded: new Set(trades.map((t) => t.user_id)).size,
+    roundTripsFound: episodes.length,
+    isolatedRoundTrips: isolated.length,
+    // the evidence: isolated round trips that made Credits (impossible under the old engine without the exploit)
+    profitableIsolatedRoundTrips: evidence,
+    profitFromThoseCents: evidence.reduce((s, e) => s + e.profitCents, 0),
+    // context: the slicing pattern, whether or not it profited or was isolated
+    slicingPatternRoundTrips: episodes.filter((e) => e.slicingPattern),
+    // for scale: the largest isolated round-trip results either way
+    largestIsolatedResults: [...isolated].sort((a, b) => b.profitCents - a.profitCents).slice(0, 5),
+  };
 }

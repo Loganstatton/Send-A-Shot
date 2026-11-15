@@ -1,0 +1,24 @@
+name: Market integrity audit (on demand)
+
+# Phase 0: checks the whole trade history for evidence that the old trade-rounding exploit was used
+# (isolated round trips that made Credits; see lib/market-integrity.ts findRoundTripEpisodes).
+# Read-only: it changes nothing. The report contains account and artist ids and Credit amounts only —
+# no names or emails — because this repository's Actions logs are public.
+on:
+  workflow_dispatch: {}
+
+env:
+  APP_URL: https://send-a-shot.onrender.com
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the audit
+        run: |
+          status=$(curl -sS -o /tmp/audit.json -w '%{http_code}' "$APP_URL/api/admin/market-audit" -H "x-cron-secret: $CRON_SECRET")
+          echo "HTTP $status"
+          [ "$status" -lt 400 ]
+          jq . /tmp/audit.json
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

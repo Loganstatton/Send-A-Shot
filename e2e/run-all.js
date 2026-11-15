@@ -8,7 +8,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const path = require('path');
 const { DEV_DB } = require('./env');
 
-const SUITES = ['main', 'guest', 'leagues', 'onboarding', 'challenges', 'discovery', 'artist-requests', 'analytics', 'security', 'social', 'keyboard-check', 'dead-ends'];
+const SUITES = ['main', 'guest', 'leagues', 'onboarding', 'challenges', 'discovery', 'artist-requests', 'analytics', 'security', 'social', 'keyboard-check', 'dead-ends', 'trade-exploit'];
 const stamp = Date.now();
 const fresh = (name) => {
   const db = `e2e_${name}_${stamp}`;

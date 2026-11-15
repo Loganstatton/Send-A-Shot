@@ -108,3 +108,36 @@ describe('getCoordinatedPairFlags', () => {
     expect(flags[0].artistId).toBe(100);
   });
 });
+
+describe('findRoundTripEpisodes — the Phase 0 rounding-exploit audit', async () => {
+  const { findRoundTripEpisodes } = await import('./market-integrity');
+  let id = 0;
+  const t = (user: number, artist: number, min: number, type: 'buy' | 'sell', shares: number, delta: number) =>
+    ({ id: ++id, user_id: user, artist_id: artist, created_at: new Date(BASE + min * 60_000).toISOString(), type, shares, credits_delta_cents: delta });
+
+  it('an isolated round trip that made Credits is reported, with the slicing pattern', () => {
+    const trades = [t(1, 7, 0, 'buy', 450, -1_000_000)];
+    for (let i = 0; i < 25; i++) trades.push(t(1, 7, 1 + i, 'sell', 18, 40_976));          // 25 small sells, more back than spent
+    const [e] = findRoundTripEpisodes(trades);
+    expect(e.isolated).toBe(true);
+    expect(e.profitCents).toBe(25 * 40_976 - 1_000_000);
+    expect(e.profitCents).toBeGreaterThan(0);
+    expect(e.slicingPattern).toBe(false);        // sells of $409.76 are not "small" (< $100)
+  });
+
+  it('another player trading in between makes the round trip not isolated (a market outcome, not evidence)', () => {
+    const trades = [t(1, 8, 0, 'buy', 10, -20_000), t(2, 8, 1, 'buy', 50, -100_000), t(1, 8, 2, 'sell', 10, 21_000)];
+    const eps = findRoundTripEpisodes(trades).filter((e) => e.userId === 1);
+    expect(eps).toHaveLength(1);
+    expect(eps[0].isolated).toBe(false);
+  });
+
+  it('flags a large buy followed by many small sells as the slicing pattern', () => {
+    const trades = [t(3, 9, 0, 'buy', 450, -1_000_000)];
+    for (let i = 0; i < 12; i++) trades.push(t(3, 9, 1 + i, 'sell', 37.5, 4_000));      // 12 × 37.5 = all 450 shares, $40 each
+    const e = findRoundTripEpisodes(trades).find((x) => x.userId === 3)!;
+    expect(e).toBeDefined();
+    expect(e.slicingPattern).toBe(true);
+    expect(e.profitCents).toBe(12 * 4_000 - 1_000_000);                                  // a loss: pattern alone isn't evidence
+  });
+});

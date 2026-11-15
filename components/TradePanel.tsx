@@ -2,7 +2,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { formatCents } from '@/lib/format';
-import { applyTradeImpact, executionPriceCents, quoteSell, SELL_ALL_SENTINEL_CENTS } from '@/lib/next-market';
+import { quoteBuy, quoteSell, sharesForSellCredits, SELL_ALL_SENTINEL_CENTS } from '@/lib/next-market';
 import { track } from '@/lib/track';
 
 const PRESETS_BUY = [25, 50, 100, 500];
@@ -63,10 +63,15 @@ export default function TradePanel({
 
   const amountCents = Math.round((Number(dollars) || 0) * 100);
   const hasAmount = amountCents > 0;
-  const postTradePriceCents = hasAmount ? applyTradeImpact(priceCents, amountCents, mode === 'buy' ? 'buy' : 'sell') : priceCents;
-  const executionCents = hasAmount ? executionPriceCents(priceCents, postTradePriceCents) : priceCents;
-  const estimatedShares = hasAmount ? amountCents / executionCents : 0;
-  const creditsAfterCents = mode === 'buy' ? creditsCents - amountCents : creditsCents + Math.round(estimatedShares * executionCents);
+  // The preview uses the exact same fill math as the server (lib/next-market.ts), so it matches the fill
+  // for the current price; it can only differ if someone else trades first.
+  const buyQuote = mode === 'buy' && hasAmount ? quoteBuy(priceCents, amountCents) : null;
+  const sellShares = mode === 'sell' && hasAmount ? Math.min(sharesForSellCredits(priceCents, amountCents), ownedShares || Infinity) : 0;
+  const sellQuote = mode === 'sell' && hasAmount ? quoteSell(priceCents, sellAllIntent ? ownedShares : sellShares) : null;
+  const postTradePriceCents = buyQuote?.postPriceCents ?? sellQuote?.postPriceCents ?? priceCents;
+  const executionCents = buyQuote?.executionCents ?? sellQuote?.executionCents ?? priceCents;
+  const estimatedShares = buyQuote?.shares ?? sellShares;
+  const creditsAfterCents = mode === 'buy' ? creditsCents - amountCents : creditsCents + (sellQuote?.proceedsCents ?? 0);
   // Sell-all bypasses the (approximate) amountCents/executionCents estimate
   // entirely — it's exact, not "approximately" like a partial sell.
   const previewShares = mode === 'sell' && sellAllIntent ? ownedShares : estimatedShares;

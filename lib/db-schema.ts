@@ -764,4 +764,18 @@ CREATE TABLE IF NOT EXISTS pro_interest (
 );
 `,
   },
+  {
+    // Phase 0 trade-precision fix (see lib/next-market.ts): prices are kept at full precision instead of
+    // being rounded to whole cents on every trade, and share quantities become exact decimals instead of
+    // floating point. Existing values convert through their exact text form (float8 → text → numeric
+    // keeps every digit; a direct float8 → numeric cast would drop some), so no balance, holding or past
+    // transaction changes. Whole-cent columns (credits, cost basis, P&L) are untouched.
+    id: '015_precise_prices_and_shares',
+    sql: `
+ALTER TABLE artists ALTER COLUMN next_current_price_cents TYPE NUMERIC(30,12) USING next_current_price_cents::numeric;
+ALTER TABLE next_price_history ALTER COLUMN price_cents TYPE NUMERIC(30,12) USING price_cents::numeric;
+ALTER TABLE next_holdings ALTER COLUMN shares TYPE NUMERIC(38,18) USING shares::text::numeric;
+ALTER TABLE next_transactions ALTER COLUMN shares TYPE NUMERIC(38,18) USING shares::text::numeric;
+`,
+  },
 ];

@@ -108,9 +108,10 @@ export default function HowItWorksPage() {
           below {formatCents(NEXT_MIN_PRICE_CENTS)}.
         </p>
         <p className="m-0">
-          You pay the average of the price before and after your own trade, not the lower starting price. That means you
-          can&apos;t profit just by moving the price yourself: buying and immediately selling always costs a little, like a
-          spread.
+          Your trade fills at the exact average price along its own move, so you pay for the impact you cause. It makes
+          no difference whether you trade all at once or in pieces, and you can&apos;t profit just by moving the price
+          yourself: buying and selling straight back returns what you paid at most, never more (fractions of a cent are
+          always rounded in the market&apos;s favour).
         </p>
       </Section>
 

@@ -189,7 +189,9 @@ describe('NEXT trading engine — self-trade exploit prevention', () => {
     if (!partialSell.ok) throw new Error(partialSell.error);
     const holdingAfterEstimateSell = await getHolding(user.id, artist.id);
     expect(holdingAfterEstimateSell).toBeDefined();
-    expect(holdingAfterEstimateSell!.shares).toBeGreaterThan(0.001); // real shares left behind, not rounding dust
+    // Shares are left behind. Since the exact-fill fix (2026-11-15) the residue is only what proceeds
+    // rounding down leaves (fractions of a share), but it is still not zero — so 'Sell all' must use the sentinel.
+    expect(holdingAfterEstimateSell!.shares).toBeGreaterThan(0);
 
     // The fix: SELL_ALL_SENTINEL_CENTS always clears it completely,
     // regardless of any price-estimation drift.
