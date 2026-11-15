@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth';
-import { getSuspiciousTradingFlags } from '@/lib/db';
+import { getRoundingExploitAudit, getSuspiciousTradingFlags } from '@/lib/db';
+import { formatCents } from '@/lib/format';
 import { COORDINATED_PAIR_WINDOW_MINUTES, RAPID_TRADE_WINDOW_MINUTES } from '@/lib/market-integrity';
 import AdminTabs from '@/components/AdminTabs';
 
@@ -16,6 +17,7 @@ const KIND_LABELS = {
 export default async function AdminMarketIntegrityPage() {
   await requireAdmin();
   const flags = await getSuspiciousTradingFlags();
+  const audit = await getRoundingExploitAudit();
 
   return (
     <div className="space-y-6">
@@ -61,6 +63,29 @@ export default async function AdminMarketIntegrityPage() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-bold text-lg">Rounding-exploit audit (fixed 15 Nov 2026)</h2>
+        <p className="text-sm m-0" style={{ color: 'var(--text-muted)' }}>
+          Before the exact-fill fix, one player could gain Credits with nobody else trading by buying in one block and
+          selling back in small slices (or the reverse). Done normally, a round trip with no other player trading that
+          artist in between always lost a little, so an isolated round trip that <strong>made</strong> Credits is the
+          evidence. Read-only: no balance is changed here.
+        </p>
+        <p className="text-sm m-0">
+          {audit.tradesChecked} trades by {audit.accountsThatTraded} accounts · {audit.roundTripsFound} round trips ·{' '}
+          {audit.isolatedRoundTrips} isolated · <strong>{audit.profitableIsolatedRoundTrips.length} profitable isolated</strong>
+          {audit.profitableIsolatedRoundTrips.length > 0 && <> ({formatCents(audit.profitFromThoseCents)} in total)</>} ·{' '}
+          {audit.slicingPatternRoundTrips.length} with the slicing pattern
+        </p>
+        {[...audit.profitableIsolatedRoundTrips, ...audit.slicingPatternRoundTrips.filter((e) => !(e.isolated && e.profitCents > 0))].map((e, i) => (
+          <p key={i} className="text-sm m-0" style={{ color: 'var(--text-faint)' }}>
+            <Link href={`/next/profile/${e.userId}`} className="underline">User #{e.userId}</Link> on{' '}
+            <Link href={`/artists/${e.artistId}`} className="underline">artist #{e.artistId}</Link>: {e.buys} buys, {e.sells} sells,{' '}
+            {e.profitCents >= 0 ? '+' : ''}{formatCents(e.profitCents)}{e.isolated ? ' · isolated' : ''}{e.slicingPattern ? ' · slicing pattern' : ''}
+          </p>
+        ))}
       </div>
     </div>
   );

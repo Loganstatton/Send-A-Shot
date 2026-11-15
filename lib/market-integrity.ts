@@ -104,3 +104,55 @@ export function getCoordinatedPairFlags(transactions: MarketTradeRow[]): Suspici
   }
   return flags;
 }
+
+// ---------------------------------------------------------------------------------------------------------
+// Phase 0 audit (2026-11-15): was the old rounding exploit ever used?
+//
+// Before the exact-fill fix, one player could make Credits with nobody else trading: buy in one block and
+// sell back in small slices (or the reverse), because small trades' price moves rounded to nothing. Done
+// normally, a round trip with no outside activity always LOST a little under the old engine. So the clean
+// evidence is: an "isolated" round trip — a player's position on one artist going from zero back to zero
+// with no other player trading that artist in between — that ended with MORE Credits than it started.
+// The slicing pattern (a large buy followed by many small sells, or many small buys then one large sell)
+// is reported alongside as context. Read-only: nothing here changes any balance.
+export type AuditTrade = {
+  id: number; user_id: number; artist_id: number; created_at: string; type: 'buy' | 'sell'; shares: number; credits_delta_cents: number;
+};
+export type RoundTripEpisode = {
+  userId: number; artistId: number; startedAt: string; endedAt: string; trades: number; buys: number; sells: number;
+  creditsSpentCents: number; creditsReceivedCents: number; profitCents: number; isolated: boolean; slicingPattern: boolean;
+};
+export const SLICE_SMALL_CENTS = 10_000;          // a "small" trade: under $100
+export const SLICE_MIN_COUNT = 10;                // at least this many small trades on the slicing side
+export const SLICE_LARGE_CENTS = 100_000;         // against at least one trade of $1,000+
+
+export function findRoundTripEpisodes(trades: AuditTrade[]): RoundTripEpisode[] {
+  const byArtist = new Map<number, AuditTrade[]>();
+  for (const t of trades) (byArtist.get(t.artist_id) ?? byArtist.set(t.artist_id, []).get(t.artist_id)!).push(t);
+  const episodes: RoundTripEpisode[] = [];
+  for (const [artistId, list] of byArtist) {
+    list.sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id - b.id));
+    const open = new Map<number, { startIdx: number; shares: number; ts: AuditTrade[] }>();
+    list.forEach((t, i) => {
+      let ep = open.get(t.user_id);
+      if (!ep) { if (t.type !== 'buy') return; ep = { startIdx: i, shares: 0, ts: [] }; open.set(t.user_id, ep); }
+      ep.ts.push(t); ep.shares += t.type === 'buy' ? Number(t.shares) : -Number(t.shares);
+      if (t.type === 'sell' && ep.shares < 0.0001) {
+        const others = list.slice(ep.startIdx, i + 1).some((x) => x.user_id !== t.user_id);
+        const buys = ep.ts.filter((x) => x.type === 'buy'), sells = ep.ts.filter((x) => x.type === 'sell');
+        const spent = -buys.reduce((s, x) => s + Number(x.credits_delta_cents), 0);
+        const received = sells.reduce((s, x) => s + Number(x.credits_delta_cents), 0);
+        const small = (xs: AuditTrade[]) => xs.filter((x) => Math.abs(Number(x.credits_delta_cents)) < SLICE_SMALL_CENTS).length;
+        const large = (xs: AuditTrade[]) => xs.some((x) => Math.abs(Number(x.credits_delta_cents)) >= SLICE_LARGE_CENTS);
+        episodes.push({
+          userId: t.user_id, artistId, startedAt: ep.ts[0].created_at, endedAt: t.created_at, trades: ep.ts.length,
+          buys: buys.length, sells: sells.length, creditsSpentCents: spent, creditsReceivedCents: received, profitCents: received - spent,
+          isolated: !others,
+          slicingPattern: (large(buys) && small(sells) >= SLICE_MIN_COUNT) || (large(sells) && small(buys) >= SLICE_MIN_COUNT),
+        });
+        open.delete(t.user_id);
+      }
+    });
+  }
+  return episodes;
+}

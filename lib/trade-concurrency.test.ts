@@ -100,14 +100,15 @@ describe('Concurrent trades — one artist, many traders', () => {
     // 20 identical buys applied one after another from the opening price.
     let expected = openingPrice;
     for (let i = 0; i < 20; i++) expected = applyTradeImpact(expected, 100_000, 'buy');
-    expect((await getArtist(artist.id))!.next_current_price_cents).toBe(expected);
+    // Prices are stored to 12 decimal places (NUMERIC), so compare to a millionth of a cent.
+    expect((await getArtist(artist.id))!.next_current_price_cents).toBeCloseTo(expected, 6);
 
     // Opening point + exactly one point per trade, strictly rising.
     const history = (await getNextArtist(artist.id))!.priceHistory.map((p) => p.price_cents);
     expect(history).toHaveLength(21);
     expect(history[0]).toBe(openingPrice);
     for (let i = 1; i < history.length; i++) expect(history[i]).toBeGreaterThan(history[i - 1]);
-    expect(history[history.length - 1]).toBe(expected);
+    expect(history[history.length - 1]).toBeCloseTo(expected, 6);
   });
 
   it('Founding Believer ranks are 1..N with no duplicates when N people back a new artist at once', async () => {
