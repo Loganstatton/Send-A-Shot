@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requireAdmin } from '@/lib/auth';
-import { getRoundingExploitAudit, getSuspiciousTradingFlags } from '@/lib/db';
+import { getPumpPatternReport, getRoundingExploitAudit, getSuspiciousTradingFlags } from '@/lib/db';
 import { formatCents } from '@/lib/format';
-import { COORDINATED_PAIR_WINDOW_MINUTES, RAPID_TRADE_WINDOW_MINUTES } from '@/lib/market-integrity';
+import { COORDINATED_PAIR_WINDOW_MINUTES, PUMP_WINDOW_HOURS, RAPID_TRADE_WINDOW_MINUTES, THIN_ACCOUNT_DAYS } from '@/lib/market-integrity';
 import AdminTabs from '@/components/AdminTabs';
 
 export const metadata: Metadata = { title: { absolute: 'Market integrity — Scout' } };
@@ -18,6 +18,7 @@ export default async function AdminMarketIntegrityPage() {
   await requireAdmin();
   const flags = await getSuspiciousTradingFlags();
   const audit = await getRoundingExploitAudit();
+  const pumps = await getPumpPatternReport();
 
   return (
     <div className="space-y-6">
@@ -62,6 +63,33 @@ export default async function AdminMarketIntegrityPage() {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      <div className="card space-y-3">
+        <h2 className="font-bold text-lg">Coordinated accounts (pump and dump): {pumps.patterns.length}</h2>
+        <p className="text-sm m-0" style={{ color: 'var(--text-faint)' }}>
+          A profitable exit where, in the {PUMP_WINDOW_HOURS} hours before it, two or more &quot;thin&quot; accounts (under {THIN_ACCOUNT_DAYS} days
+          old, almost all their buying in that one artist, or invited by the account that profited) supplied most of the other
+          buying and were left at a loss. Nobody can create Credits this way — they can only be moved between accounts — so
+          this is for review; nothing is blocked or changed automatically. Checked {pumps.tradesChecked} trades.
+        </p>
+        {pumps.patterns.length === 0 ? (
+          <p className="text-sm m-0" style={{ color: 'var(--text-muted)' }}>Nothing flagged.</p>
+        ) : (
+          <ul className="text-sm m-0 space-y-1">
+            {pumps.patterns.map((p, i) => (
+              <li key={i}>
+                {p.recurring && <span className="badge text-xs" style={{ color: 'var(--fire)' }}>Repeated</span>}{' '}
+                <Link className="underline" href={`/next/profile/${p.beneficiaryId}`}>User #{p.beneficiaryId}</Link> made {formatCents(p.profitCents)} on{' '}
+                <Link className="underline" href={`/artists/${p.artistId}`}>artist #{p.artistId}</Link> ({p.endedAt.slice(0, 16).replace('T', ' ')} UTC);
+                {' '}{p.feeders.length} feeder account(s) lost {formatCents(p.feederLossCents)} and supplied {p.feederShareOfOtherBuyingPct}% of the other buying:{' '}
+                {p.feeders.map((f, n) => (
+                  <span key={f.userId}>{n > 0 && ', '}<Link className="underline" href={`/next/profile/${f.userId}`}>#{f.userId}</Link> ({f.accountAgeDays} days old, {f.concentrationPct}% in this artist{f.invitedByBeneficiary ? ', invited by them' : ''})</span>
+                ))}
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 

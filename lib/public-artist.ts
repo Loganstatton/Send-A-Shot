@@ -40,5 +40,10 @@ export function toPublicArtist(artist: Artist): PublicArtist {
     website_url: artist.website_url,
     ...commonsAttribution,
     isClaimed: artist.claimed_by_user_id != null,
+    next_listing_rule: artist.next_listing_rule,
+    next_depth_cents: artist.next_depth_cents,
+    next_reserve_cents: artist.next_reserve_cents,
+    next_shares_outstanding: artist.next_shares_outstanding,
+    next_trading_halted: Boolean(artist.next_trading_halted_at),
   };
 }

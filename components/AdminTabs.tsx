@@ -8,6 +8,7 @@ const TABS = [
   { href: '/admin/sync', label: 'Sync health' },
   { href: '/admin/discovery', label: 'Discovery' },
   { href: '/admin/scout-accuracy', label: 'Scout accuracy' },
+  { href: '/admin/market', label: 'Market maker' },
   { href: '/admin/market-integrity', label: 'Market integrity' },
   { href: '/admin/feed-reports', label: 'Feed reports' },
   { href: '/admin/feedback', label: 'Beta feedback' },

@@ -2,7 +2,10 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { formatCents } from '@/lib/format';
-import { quoteBuy, quoteSell, sharesForSellCredits, SELL_ALL_SENTINEL_CENTS } from '@/lib/next-market';
+import {
+  BUY_FEE_BPS, DEFAULT_DEPTH_CENTS, MIN_BUY_CENTS, SELL_ALL_SENTINEL_CENTS, askPriceCents, bidPriceCents, priceImpactPct,
+  quoteBuyWithFee, quoteSell, sharesForSellCredits,
+} from '@/lib/next-market';
 import { track } from '@/lib/track';
 
 const PRESETS_BUY = [25, 50, 100, 500];
@@ -17,6 +20,9 @@ export default function TradePanel({
   volumeCents24h,
   recentBackerCount24h,
   feedReferralEventId,
+  depthCents = DEFAULT_DEPTH_CENTS,
+  reserveCents,
+  halted = false,
 }: {
   artistId: number;
   artistName: string;
@@ -31,6 +37,11 @@ export default function TradePanel({
   // route so a completed trade can be attributed back to it, purely for
   // analytics (feed_trade_completed). Never affects trade execution.
   feedReferralEventId?: number;
+  // The artist's market maker (Phase 1): its depth, the reserve backing every holder, and whether trading
+  // is paused for a market check.
+  depthCents?: number;
+  reserveCents?: number;
+  halted?: boolean;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<'buy' | 'sell'>('buy');
@@ -58,18 +69,24 @@ export default function TradePanel({
   // last buy, and a same-size sell mostly reverses that (see quoteSell's
   // own comment). Using the raw quote here is exactly the bug where a buy
   // instantly shows a paper gain that evaporates the moment you sell.
-  const marketValueCents = ownedShares > 0 ? quoteSell(priceCents, ownedShares).proceedsCents : 0;
+  const marketValueCents = ownedShares > 0 ? quoteSell(priceCents, ownedShares, depthCents).proceedsCents : 0;
   const unrealizedPnlCents = marketValueCents - costBasisCents;
 
   const amountCents = Math.round((Number(dollars) || 0) * 100);
   const hasAmount = amountCents > 0;
   // The preview uses the exact same fill math as the server (lib/next-market.ts), so it matches the fill
   // for the current price; it can only differ if someone else trades first.
-  const buyQuote = mode === 'buy' && hasAmount ? quoteBuy(priceCents, amountCents) : null;
-  const sellShares = mode === 'sell' && hasAmount ? Math.min(sharesForSellCredits(priceCents, amountCents), ownedShares || Infinity) : 0;
-  const sellQuote = mode === 'sell' && hasAmount ? quoteSell(priceCents, sellAllIntent ? ownedShares : sellShares) : null;
+  // Purchases: the 0.5% fee comes off first; the rest moves along the curve (exactly as the server fills).
+  const buyQuote = mode === 'buy' && hasAmount ? quoteBuyWithFee(priceCents, amountCents, depthCents) : null;
+  const sellShares = mode === 'sell' && hasAmount ? Math.min(sharesForSellCredits(priceCents, amountCents, depthCents), ownedShares || Infinity) : 0;
+  const sellQuote = mode === 'sell' && hasAmount ? quoteSell(priceCents, sellAllIntent ? ownedShares : sellShares, depthCents) : null;
+  // Average price per share actually paid (fee included) or received.
+  const averagePaidCents = buyQuote ? buyQuote.effectiveCents : sellQuote?.executionCents ?? priceCents;
+  // Quotes for a standard 100-Credit trade, from the same curve.
+  const ask100 = askPriceCents(priceCents, 10_000, depthCents);
+  const bid100 = bidPriceCents(priceCents, 10_000, depthCents);
+  const belowMinimum = mode === 'buy' && hasAmount && amountCents < MIN_BUY_CENTS;
   const postTradePriceCents = buyQuote?.postPriceCents ?? sellQuote?.postPriceCents ?? priceCents;
-  const executionCents = buyQuote?.executionCents ?? sellQuote?.executionCents ?? priceCents;
   const estimatedShares = buyQuote?.shares ?? sellShares;
   const creditsAfterCents = mode === 'buy' ? creditsCents - amountCents : creditsCents + (sellQuote?.proceedsCents ?? 0);
   // Sell-all bypasses the (approximate) amountCents/executionCents estimate
@@ -85,7 +102,7 @@ export default function TradePanel({
   // (below) rather than blocking outright.
   const overBalance = mode === 'buy' && hasAmount && amountCents > creditsCents;
   const overOwned = mode === 'sell' && hasAmount && amountCents > marketValueCents;
-  const canSubmit = hasAmount && !overBalance && (mode === 'buy' || ownedShares > 0);
+  const canSubmit = hasAmount && !overBalance && !belowMinimum && !halted && (mode === 'buy' || ownedShares > 0);
 
   function resetAfterAction() {
     setConfirming(false);
@@ -110,6 +127,8 @@ export default function TradePanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: mode, credits_amount_cents: submittedCreditsAmountCents, idempotencyKey,
+          // the price this player was shown: the server refuses the fill if the market moved >2% against them
+          quotedPriceCents: priceCents,
           ...(feedReferralEventId != null ? { referralSource: 'feed', referralFeedEventId: feedReferralEventId } : {}),
         }),
       });
@@ -117,7 +136,7 @@ export default function TradePanel({
       if (!res.ok) throw new Error(data.error ?? 'Trade failed');
       setSuccess(
         mode === 'buy'
-          ? `Bought ${Number(data.shares).toFixed(4)} shares of ${artistName} at ${formatCents(data.priceCents)}.`
+          ? `Bought ${Number(data.shares).toFixed(4)} shares of ${artistName} at ${formatCents(data.priceCents)}${data.feeCents ? ` (fee ${formatCents(data.feeCents)})` : ''}.`
           : `Sold ${Number(data.shares).toFixed(4)} shares of ${artistName} at ${formatCents(data.priceCents)}.`
       );
       setConfirming(false);
@@ -170,6 +189,17 @@ export default function TradePanel({
           <div className="num text-[14px] font-bold mt-0.5" style={{ color: 'var(--text)' }}>{recentBackerCount24h} {recentBackerCount24h === 1 ? 'person' : 'people'}</div>
         </div>
       </div>
+
+      <div className="text-[12px] flex justify-between gap-2 flex-wrap" style={{ color: 'var(--text-faint)' }} aria-label="Quotes for 100 Credits">
+        <span>Buy 100 Credits: <span className="num font-semibold" style={{ color: 'var(--text)' }}>{formatCents(ask100)}</span>/share</span>
+        <span>Sell 100 Credits: <span className="num font-semibold" style={{ color: 'var(--text)' }}>{formatCents(bid100)}</span>/share</span>
+      </div>
+
+      {halted && (
+        <div role="status" className="text-[13px] rounded-xl border px-3.5 py-3" style={{ borderColor: 'var(--down)', color: 'var(--text)' }}>
+          Trading in {artistName} is paused while the market is checked. Your Credits and shares are safe.
+        </div>
+      )}
 
       {ownedShares > 0 && (
         <div className="text-[13px] rounded-xl border p-3 flex flex-col gap-1.5" style={{ borderColor: 'var(--border-soft)' }}>
@@ -232,8 +262,12 @@ export default function TradePanel({
               <button
                 key={amt}
                 type="button"
+                // shows (and announces) which preset is the current amount
+                aria-pressed={!sellAllIntent && amountCents === amt * 100}
                 className="px-3 py-[5px] rounded-full text-xs"
-                style={{ border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
+                style={!sellAllIntent && amountCents === amt * 100
+                  ? { border: '1px solid var(--ember-line)', color: 'var(--text)', background: 'var(--surface-2)' }
+                  : { border: '1px solid var(--border-soft)', color: 'var(--text-muted)' }}
                 onClick={() => { setDollars(String(amt)); setSellAllIntent(false); setSuccess(null); }}
               >
                 ${amt}
@@ -254,6 +288,11 @@ export default function TradePanel({
               That&apos;s more than your {formatCents(creditsCents)} balance — lower the amount or hit MAX.
             </p>
           )}
+          {belowMinimum && (
+            <p className="text-[12.5px] m-0" style={{ color: 'var(--down)' }}>
+              The smallest purchase is {formatCents(MIN_BUY_CENTS)}.
+            </p>
+          )}
           {overOwned && (
             <p className="text-[12.5px] m-0" style={{ color: 'var(--text-faint)' }}>
               You only own {formatCents(marketValueCents)} worth — this will sell all {ownedShares.toFixed(4)} shares instead.
@@ -268,7 +307,15 @@ export default function TradePanel({
                 </span>
                 <span className="num" style={{ color: 'var(--text)' }}>{previewShares.toFixed(4)} shares</span>
               </div>
-              <div className={row}><span style={rowLabel}>Current execution price</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(executionCents)}</span></div>
+              {buyQuote ? (
+                <>
+                  <div className={row}><span style={rowLabel}>Trading fee ({BUY_FEE_BPS / 100}%)</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(buyQuote.feeCents)}</span></div>
+                  <div className={row}><span style={rowLabel}>Goes into the market</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(buyQuote.netCents)}</span></div>
+                </>
+              ) : (
+                <div className={row}><span style={rowLabel}>Trading fee</span><span className="num" style={{ color: 'var(--text)' }}>None on sales</span></div>
+              )}
+              <div className={row}><span style={rowLabel}>Average price per share{buyQuote ? ' (incl. fee)' : ''}</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(averagePaidCents)}</span></div>
               <div className={row}><span style={rowLabel}>Estimated price after trade</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(postTradePriceCents)}</span></div>
               <div className={row}><span style={rowLabel}>Remaining cash after trade</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(Math.max(0, creditsAfterCents))}</span></div>
             </div>
@@ -299,8 +346,12 @@ export default function TradePanel({
                 ? `Confirm: Sell all ${previewShares.toFixed(4)} shares of ${artistName}`
                 : `Confirm: ${mode === 'buy' ? 'Buy' : 'Sell'} ~${previewShares.toFixed(4)} shares of ${artistName}`}
             </p>
-            <div className={row}><span style={rowLabel}>{mode === 'buy' ? 'Spending' : 'Selling'}</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(amountCents)}</span></div>
-            <div className={row}><span style={rowLabel}>Execution price</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(executionCents)}</span></div>
+            <div className={row}><span style={rowLabel}>{mode === 'buy' ? 'Spending' : 'Selling'}</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(mode === 'sell' && sellQuote ? sellQuote.proceedsCents : amountCents)}</span></div>
+            {buyQuote && (
+              <div className={row}><span style={rowLabel}>Of which trading fee ({BUY_FEE_BPS / 100}%)</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(buyQuote.feeCents)}</span></div>
+            )}
+            <div className={row}><span style={rowLabel}>Average price per share{buyQuote ? ' (incl. fee)' : ''}</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(averagePaidCents)}</span></div>
+            <div className={row}><span style={rowLabel}>Price after</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(postTradePriceCents)}</span></div>
             <div className={row}><span style={rowLabel}>Remaining cash after</span><span className="num" style={{ color: 'var(--text)' }}>{formatCents(Math.max(0, creditsAfterCents))}</span></div>
           </div>
           <p className="text-[11px] m-0" style={{ color: 'var(--text-faint)' }}>
@@ -329,7 +380,10 @@ export default function TradePanel({
       )}
 
       <p className="text-[11px] leading-relaxed m-0" style={{ color: 'var(--text-faint)' }}>
-        NEXT Credits are virtual — no real monetary value. Price moves ~5% per $10,000 traded on one side.
+        Virtual trading: NEXT Credits have no cash value and can&apos;t be withdrawn. You trade with the NEXT market maker,
+        which always takes the other side; the price moves ~{(priceImpactPct(1_000_000, depthCents) * 100).toFixed(1)}% per $10,000 bought or sold.
+        Purchases pay a {BUY_FEE_BPS / 100}% fee; sales pay none.
+        {reserveCents != null && <> Its reserve of {formatCents(reserveCents)} covers everything every holder could be paid.</>}
       </p>
     </div>
   );

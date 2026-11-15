@@ -81,7 +81,7 @@ export default async function NextMarketPage(props: { searchParams: Promise<{ so
     if (!biggestMover || Math.abs(changePct) > Math.abs(biggestMover.changePct)) {
       biggestMover = { name: row.artist.name, changePct };
     }
-    const sentiment = marketSentiment(row.score, row.priceCents);
+    const sentiment = marketSentiment(row.score, row.priceCents, row.artist.next_listing_rule);
     if (sentiment.tone === 'undervalued' && (!biggestGap || sentiment.diff > biggestGap.diff)) {
       biggestGap = { name: row.artist.name, diff: sentiment.diff };
     }

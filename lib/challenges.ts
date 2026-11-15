@@ -44,7 +44,7 @@ export function weekStartUtc(date: Date): Date {
   return d;
 }
 
-type Backing = { purchased_at: string; discovery_rank: number; next_score: number; next_price_cents: number; genre: string | null };
+type Backing = { purchased_at: string; discovery_rank: number; next_score: number; next_price_cents: number; genre: string | null; listing_rule: string };
 type Listen = { artist_id: number; created_at: string };
 type Join = { joined_at: string };
 
@@ -54,7 +54,7 @@ async function loadActivity(userId: number, sinceIso: string): Promise<Activity>
   // Every backing ever (not just since `sinceIso`): "a genre you've never
   // backed" needs the full history before each one.
   const backings = (await db.prepare(`
-    SELECT b.purchased_at, b.discovery_rank, b.next_score, b.next_price_cents, a.genre
+    SELECT b.purchased_at, b.discovery_rank, b.next_score, b.next_price_cents, a.genre, a.next_listing_rule AS listing_rule
     FROM next_founding_believers b
     JOIN artists a ON a.id = b.artist_id
     WHERE b.user_id = ?
@@ -83,7 +83,7 @@ function progressForWeek(activity: Activity, startIso: string, endIso: string): 
     if (inWeek(b.purchased_at)) {
       if (b.discovery_rank <= EARLY_DISCOVERY_RANK_THRESHOLD) earlyCall++;
       if (parts.length > 0 && parts.every((p) => !seenParts.has(p))) newGenre++;
-      if (marketSentiment(b.next_score, b.next_price_cents).tone === 'undervalued') scoutsCall++;
+      if (marketSentiment(b.next_score, b.next_price_cents, b.listing_rule).tone === 'undervalued') scoutsCall++;
     }
     for (const p of parts) seenParts.add(p);
   }

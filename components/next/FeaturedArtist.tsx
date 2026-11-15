@@ -15,7 +15,7 @@ import { getArtistAvatarUrl } from '@/lib/artist-image';
 // biggest visual bet on the page.
 export default function FeaturedArtist({ row }: { row: NextMarketRow }) {
   const { artist, score, priceCents } = row;
-  const sentiment = marketSentiment(score, priceCents);
+  const sentiment = marketSentiment(score, priceCents, artist.next_listing_rule);
   const undervalued = sentiment.tone === 'undervalued';
 
   const blurb = artist.why_trending || null;

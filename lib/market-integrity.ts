@@ -156,3 +156,104 @@ export function findRoundTripEpisodes(trades: AuditTrade[]): RoundTripEpisode[] 
   }
   return episodes;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Phase 1: coordinated multi-account manipulation ("pump and dump").
+//
+// With a market maker nobody can create Credits, alone or as a group (Σ paid out ≤ Σ paid in), but a group
+// CAN move Credits from throwaway accounts to one account: the main account buys, the throwaways buy after
+// it (pushing the price up), the main account sells into that, and the throwaways are left with the loss.
+// This detector looks for that shape. It FLAGS for review; it never changes a balance or blocks anyone.
+//
+// A closed position by account A on artist X is flagged when, inside its last PUMP_WINDOW_HOURS:
+//   • A made at least PUMP_MIN_PROFIT_CENTS on it, and
+//   • at least PUMP_MIN_FEEDERS other accounts bought X and are now at a loss on X ("feeders"), each of
+//     them "thin": younger than THIN_ACCOUNT_DAYS when they bought, or with ≥ THIN_CONCENTRATION of all
+//     their purchases in X, or invited by A, and
+//   • those feeders supplied at least half of everyone else's buying in the window, and their losses
+//     cover at least a quarter of A's profit.
+// Organic markets rarely look like this: real late buyers are established, spread across artists, and
+// not a majority of the flow right before one account's exit. Repeat offenders (the same feeders backing
+// the same beneficiary more than once) are marked `recurring`.
+// ---------------------------------------------------------------------------------------------
+export const PUMP_WINDOW_HOURS = 24;
+export const PUMP_MIN_PROFIT_CENTS = 20_000;     // 200 Credits
+export const PUMP_MIN_FEEDERS = 2;
+export const THIN_ACCOUNT_DAYS = 7;
+export const THIN_CONCENTRATION = 0.8;
+
+export type PumpAccount = { id: number; createdAt: string; invitedBy?: number | null };
+export type PumpFeeder = {
+  userId: number; buysInWindowCents: number; lossCents: number; accountAgeDays: number;
+  concentrationPct: number; invitedByBeneficiary: boolean;
+};
+export type PumpPattern = {
+  beneficiaryId: number; artistId: number; startedAt: string; endedAt: string; profitCents: number;
+  feeders: PumpFeeder[]; feederLossCents: number; feederShareOfOtherBuyingPct: number; recurring: boolean;
+};
+
+export function findPumpPatterns(
+  trades: AuditTrade[],
+  accounts: Map<number, PumpAccount>,
+  // what each open position would pay if sold now, per user+artist (so open feeder losses count)
+  openValueCents: (userId: number, artistId: number) => number,
+): PumpPattern[] {
+  const byArtistUser = new Map<string, AuditTrade[]>();
+  const buysByUser = new Map<number, number>();
+  for (const t of trades) {
+    const k = `${t.artist_id}:${t.user_id}`;
+    (byArtistUser.get(k) ?? byArtistUser.set(k, []).get(k)!).push(t);
+    if (t.type === 'buy') buysByUser.set(t.user_id, (buysByUser.get(t.user_id) ?? 0) - t.credits_delta_cents);
+  }
+  const resultOn = (userId: number, artistId: number) => {
+    const list = byArtistUser.get(`${artistId}:${userId}`) ?? [];
+    const net = list.reduce((s, t) => s + t.credits_delta_cents, 0);              // received − spent
+    const spent = list.filter((t) => t.type === 'buy').reduce((s, t) => s - t.credits_delta_cents, 0);
+    return { pnl: net + openValueCents(userId, artistId), spent };
+  };
+
+  const flagged: PumpPattern[] = [];
+  for (const ep of findRoundTripEpisodes(trades)) {
+    if (ep.profitCents < PUMP_MIN_PROFIT_CENTS) continue;
+    const end = new Date(ep.endedAt).getTime();
+    const from = Math.max(new Date(ep.startedAt).getTime(), end - PUMP_WINDOW_HOURS * 3_600_000);
+    const otherBuys = trades.filter((t) => t.artist_id === ep.artistId && t.user_id !== ep.userId && t.type === 'buy'
+      && new Date(t.created_at).getTime() >= from && new Date(t.created_at).getTime() <= end);
+    if (otherBuys.length === 0) continue;
+    const buyBy = new Map<number, { cents: number; first: string }>();
+    for (const t of otherBuys) {
+      const b = buyBy.get(t.user_id) ?? { cents: 0, first: t.created_at };
+      b.cents += -t.credits_delta_cents; if (t.created_at < b.first) b.first = t.created_at;
+      buyBy.set(t.user_id, b);
+    }
+    const totalOther = [...buyBy.values()].reduce((s, b) => s + b.cents, 0);
+    const feeders: PumpFeeder[] = [];
+    for (const [userId, b] of buyBy) {
+      const acct = accounts.get(userId);
+      const r = resultOn(userId, ep.artistId);
+      if (!(r.pnl < 0)) continue;
+      const ageDays = acct ? (new Date(b.first).getTime() - new Date(acct.createdAt).getTime()) / 86_400_000 : Infinity;
+      const concentration = r.spent / Math.max(1, buysByUser.get(userId) ?? r.spent);
+      const invited = acct?.invitedBy === ep.userId;
+      if (ageDays < THIN_ACCOUNT_DAYS || concentration >= THIN_CONCENTRATION || invited) {
+        feeders.push({ userId, buysInWindowCents: b.cents, lossCents: -r.pnl, accountAgeDays: Math.round(ageDays * 10) / 10,
+          concentrationPct: Math.round(concentration * 1000) / 10, invitedByBeneficiary: invited });
+      }
+    }
+    const feederBuys = feeders.reduce((s, f) => s + f.buysInWindowCents, 0);
+    const feederLoss = feeders.reduce((s, f) => s + f.lossCents, 0);
+    if (feeders.length >= PUMP_MIN_FEEDERS && feederBuys * 2 >= totalOther && feederLoss * 4 >= ep.profitCents) {
+      flagged.push({
+        beneficiaryId: ep.userId, artistId: ep.artistId, startedAt: ep.startedAt, endedAt: ep.endedAt, profitCents: ep.profitCents,
+        feeders: feeders.sort((a, b) => b.lossCents - a.lossCents), feederLossCents: feederLoss,
+        feederShareOfOtherBuyingPct: Math.round((feederBuys / totalOther) * 1000) / 10, recurring: false,
+      });
+    }
+  }
+  // the same beneficiary fed by an overlapping set of accounts more than once
+  for (const p of flagged) {
+    const mine = new Set(p.feeders.map((f) => f.userId));
+    p.recurring = flagged.some((q) => q !== p && q.beneficiaryId === p.beneficiaryId && q.feeders.some((f) => mine.has(f.userId)));
+  }
+  return flagged;
+}

@@ -7,6 +7,9 @@ import { afterAll } from 'vitest';
 const schema = `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 process.env.DATABASE_SCHEMA = schema;
+// The new-account trading limit (lib/db.ts marketLimits) would stop most tests, which create accounts and
+// trade at once; it is off by default here and switched on by the tests that cover it.
+process.env.NEXT_NEW_ACCOUNT_DAYS ??= '0';
 
 afterAll(async () => {
   const { db, closeDb } = await import('./lib/pg');

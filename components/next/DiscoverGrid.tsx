@@ -119,7 +119,7 @@ export default function DiscoverGrid({
   const hotSignalId = useMemo(() => {
     let best: { id: number; diff: number } | null = null;
     for (const row of rows) {
-      const s = marketSentiment(row.score, row.priceCents);
+      const s = marketSentiment(row.score, row.priceCents, row.artist.next_listing_rule);
       if (s.tone === 'undervalued' && (!best || s.diff > best.diff)) best = { id: row.artist.id, diff: s.diff };
     }
     return best?.id ?? null;
@@ -131,7 +131,7 @@ export default function DiscoverGrid({
     if (term) list = list.filter((r) => r.artist.name.toLowerCase().includes(term));
     if (genre === FOR_YOU) list = list.filter((r) => matchesGenrePrefs(r.artist.genre, genrePrefs));
     else if (genre) list = list.filter((r) => r.artist.genre === genre);
-    if (signalOnly) list = list.filter((r) => marketSentiment(r.score, r.priceCents).tone === 'undervalued');
+    if (signalOnly) list = list.filter((r) => marketSentiment(r.score, r.priceCents, r.artist.next_listing_rule).tone === 'undervalued');
     if (watchlistOnly) list = list.filter((r) => watchedSet.has(r.artist.id));
     if (scoreRange.min !== '' || scoreRange.max !== '') list = list.filter((r) => inRange(r.score, scoreRange));
     if (priceRange.min !== '' || priceRange.max !== '') list = list.filter((r) => inRange(r.priceCents / 100, priceRange));
@@ -142,7 +142,7 @@ export default function DiscoverGrid({
       case 'gain': sorted.sort((a, b) => changePctFor(b) - changePctFor(a)); break;
       case 'loss': sorted.sort((a, b) => changePctFor(a) - changePctFor(b)); break;
       case 'new': sorted.sort((a, b) => (b.artist.created_at > a.artist.created_at ? 1 : -1)); break;
-      case 'gap': sorted.sort((a, b) => Math.abs(marketSentiment(b.score, b.priceCents).diff) - Math.abs(marketSentiment(a.score, a.priceCents).diff)); break;
+      case 'gap': sorted.sort((a, b) => Math.abs(marketSentiment(b.score, b.priceCents, b.artist.next_listing_rule).diff) - Math.abs(marketSentiment(a.score, a.priceCents, a.artist.next_listing_rule).diff)); break;
       case 'watched': sorted.sort((a, b) => (watchCounts[b.artist.id] ?? 0) - (watchCounts[a.artist.id] ?? 0)); break;
       case 'backed': sorted.sort((a, b) => (backerCounts[b.artist.id] ?? 0) - (backerCounts[a.artist.id] ?? 0)); break;
       case 'fewest': sorted.sort((a, b) => (backerCounts[a.artist.id] ?? 0) - (backerCounts[b.artist.id] ?? 0) || b.score - a.score); break;

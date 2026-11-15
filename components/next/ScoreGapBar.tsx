@@ -6,6 +6,8 @@ import { MarketSentiment } from '@/lib/next-market';
 // be the one thing people associate with NEXT, so every place a score and
 // a price appear together should use this, not a plain number.
 export default function ScoreGapBar({ score, sentiment }: { score: number; sentiment: MarketSentiment }) {
+  // Artists listed at the uniform price: the price was never set from the Score, so there is no gap to show.
+  if (!sentiment.comparable) return null;
   const fillPct = Math.max(0, Math.min(100, sentiment.impliedScore));
   const markerPct = Math.max(0, Math.min(100, score));
   const toneColor = sentiment.tone === 'undervalued' ? 'var(--ember)' : sentiment.tone === 'overheated' ? 'var(--down)' : 'var(--text-faint)';

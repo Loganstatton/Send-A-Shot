@@ -33,7 +33,7 @@ export default function ArtistCard({
   sinceWatched?: SinceWatched;
 }) {
   const { artist, score, priceCents, priceHistory } = row;
-  const sentiment = marketSentiment(score, priceCents);
+  const sentiment = marketSentiment(score, priceCents, artist.next_listing_rule);
   const first = priceHistory[0]?.price_cents ?? priceCents;
   const changePct = first !== 0 ? ((priceCents - first) / first) * 100 : 0;
   const up = changePct >= 0;

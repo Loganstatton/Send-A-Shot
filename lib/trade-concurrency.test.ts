@@ -11,7 +11,7 @@ const {
   createArtist, createUser, db, executeTrade, executeTradeRequest, getArtist, getHolding, getNextArtist, getUserById,
   TRADE_RATE_LIMIT_PER_MINUTE,
 } = await import('./db');
-const { applyTradeImpact, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents } = await import('./next-market');
+const { applyTradeImpact, buyFeeCents, NEXT_LISTING_PRICE_CENTS, NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents } = await import('./next-market');
 const { breakoutScore } = await import('./scoring');
 
 let seq = 0;
@@ -92,14 +92,15 @@ describe('Concurrent trades — one artist, many traders', () => {
   it('every trade moves the price from where the previous one left it (no price update is lost)', async () => {
     const artist = await makeArtist('Crowded');
     const traders = await Promise.all(Array.from({ length: 20 }, () => makeUser('Crowd')));
-    const openingPrice = nextBasePriceCents(breakoutScore(artist));
+    const openingPrice = NEXT_LISTING_PRICE_CENTS;                 // new artists list at 10 Credits
 
     const results = await Promise.all(traders.map((t) => executeTrade(t.id, artist.id, 'buy', 100_000)));
     expect(results.every((r) => r.ok)).toBe(true);
 
-    // 20 identical buys applied one after another from the opening price.
+    // 20 identical buys applied one after another from the opening price; each puts its amount minus the
+    // 0.5% fee into the curve.
     let expected = openingPrice;
-    for (let i = 0; i < 20; i++) expected = applyTradeImpact(expected, 100_000, 'buy');
+    for (let i = 0; i < 20; i++) expected = applyTradeImpact(expected, 100_000 - buyFeeCents(100_000), 'buy');
     // Prices are stored to 12 decimal places (NUMERIC), so compare to a millionth of a cent.
     expect((await getArtist(artist.id))!.next_current_price_cents).toBeCloseTo(expected, 6);
 

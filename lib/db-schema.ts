@@ -21,6 +21,48 @@
 //     as 0/1 throughout.
 export type Migration = { id: string; sql: string };
 
+// Sets up market-maker accounting from whatever balances and holdings exist, without changing any of them.
+// Run by migration 016, and again after restoring a snapshot taken before 016 (lib/db-backup.ts).
+//  • every artist listed so far keeps its Score-based listing rule (only new artists list at 10 Credits)
+//  • Q = all shares players hold; the anchor puts the curve through today's price at Q
+//  • the reserve is funded with exactly what all holders could get, rounded up (an 'opening_reserve' entry)
+//  • every player's current balance is entered as an 'opening_balance' from 'issuance'
+//  • a snapshot of balances, holdings, prices and counts is kept for verification
+export const MARKET_ACCOUNTING_INIT_SQL = `
+UPDATE artists SET next_listing_rule = 'score';
+UPDATE artists a SET next_shares_outstanding = COALESCE((SELECT SUM(h.shares) FROM next_holdings h WHERE h.artist_id = a.id), 0),
+                     next_retired_shares = 0;
+UPDATE artists SET next_anchor_price_cents = next_current_price_cents / (1 + next_current_price_cents * next_shares_outstanding / next_depth_cents)
+  WHERE next_current_price_cents IS NOT NULL;
+UPDATE artists SET next_reserve_cents = CEIL(next_depth_cents * LN(next_current_price_cents / next_anchor_price_cents))
+  WHERE next_current_price_cents IS NOT NULL;
+UPDATE artists SET next_reserve_cents = 0 WHERE next_current_price_cents IS NULL;
+
+DELETE FROM next_ledger WHERE kind IN ('opening_balance', 'opening_reserve');
+INSERT INTO next_ledger (entry_id, created_at, account, amount_cents, kind, user_id)
+  SELECT 'open-user-' || id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'user:' || id, next_credits_cents, 'opening_balance', id FROM users;
+INSERT INTO next_ledger (entry_id, created_at, account, amount_cents, kind, user_id)
+  SELECT 'open-user-' || id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'issuance', -next_credits_cents, 'opening_balance', id FROM users;
+INSERT INTO next_ledger (entry_id, created_at, account, amount_cents, kind, artist_id)
+  SELECT 'open-reserve-' || id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'reserve:' || id, next_reserve_cents, 'opening_reserve', id FROM artists WHERE next_reserve_cents <> 0;
+INSERT INTO next_ledger (entry_id, created_at, account, amount_cents, kind, artist_id)
+  SELECT 'open-reserve-' || id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'opening_reserve', -next_reserve_cents, 'opening_reserve', id FROM artists WHERE next_reserve_cents <> 0;
+
+DELETE FROM next_market_migration_snapshot;
+INSERT INTO next_market_migration_snapshot (recorded_at, kind, user_id, credits_cents)
+  SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'balance', id, next_credits_cents FROM users;
+INSERT INTO next_market_migration_snapshot (recorded_at, kind, user_id, artist_id, shares, price_cents, cost_basis_cents)
+  SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'holding', h.user_id, h.artist_id, h.shares, a.next_current_price_cents, h.cost_basis_cents
+  FROM next_holdings h JOIN artists a ON a.id = h.artist_id;
+INSERT INTO next_market_migration_snapshot (recorded_at, kind, artist_id, price_cents)
+  SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'artist', id, next_current_price_cents FROM artists;
+INSERT INTO next_market_migration_snapshot (recorded_at, kind, count_value)
+  SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'count_transactions', COUNT(*) FROM next_transactions;
+INSERT INTO next_market_migration_snapshot (recorded_at, kind, count_value)
+  SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'count_price_history', COUNT(*) FROM next_price_history;
+`;
+
+
 export const MIGRATIONS: Migration[] = [
   {
     id: '001_initial_schema',
@@ -777,5 +819,83 @@ ALTER TABLE next_price_history ALTER COLUMN price_cents TYPE NUMERIC(30,12) USIN
 ALTER TABLE next_holdings ALTER COLUMN shares TYPE NUMERIC(38,18) USING shares::text::numeric;
 ALTER TABLE next_transactions ALTER COLUMN shares TYPE NUMERIC(38,18) USING shares::text::numeric;
 `,
+  },
+  {
+    // Phase 1 market maker (lib/next-market.ts, docs/PHASE-1-REPORT.md): each artist's curve state and
+    // reserve, the 0.5% buy fee, a double-entry Credit ledger, admin-approved depth changes, reconciliation
+    // runs, and a snapshot taken at migration time that proves nothing anyone owned changed. Balances,
+    // holdings, prices and history are not modified: only new columns and rows are written.
+    id: '016_market_maker_ledger',
+    sql: `
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS next_depth_cents NUMERIC(30,6) NOT NULL DEFAULT 20000000;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS next_anchor_price_cents NUMERIC(30,12);
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS next_shares_outstanding NUMERIC(38,18) NOT NULL DEFAULT 0;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS next_retired_shares NUMERIC(38,18) NOT NULL DEFAULT 0;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS next_reserve_cents BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS next_listing_rule TEXT COLLATE "C" NOT NULL DEFAULT 'uniform';
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS next_trading_halted_at TEXT COLLATE "C";
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS next_trading_halt_reason TEXT COLLATE "C";
+ALTER TABLE next_transactions ADD COLUMN IF NOT EXISTS fee_cents BIGINT NOT NULL DEFAULT 0;
+
+-- Double-entry Credit ledger: every entry_id's rows sum to zero. Accounts: 'user:<id>', 'reserve:<artist id>',
+-- 'fees' (the fee pool), 'issuance' (Credits given to players), 'opening_reserve' and 'liquidity' (virtual
+-- Credits that fund reserves at migration and on approved depth increases), 'retired' (deleted accounts or
+-- artists). Ids are kept without foreign keys: the ledger outlives what it describes.
+CREATE TABLE IF NOT EXISTS next_ledger (
+  id BIGSERIAL PRIMARY KEY,
+  entry_id TEXT COLLATE "C" NOT NULL,
+  created_at TEXT COLLATE "C" NOT NULL,
+  account TEXT COLLATE "C" NOT NULL,
+  amount_cents BIGINT NOT NULL,
+  kind TEXT COLLATE "C" NOT NULL,
+  user_id BIGINT,
+  artist_id BIGINT,
+  transaction_id BIGINT,
+  memo TEXT COLLATE "C"
+);
+CREATE INDEX IF NOT EXISTS idx_next_ledger_account ON next_ledger(account);
+CREATE INDEX IF NOT EXISTS idx_next_ledger_entry ON next_ledger(entry_id);
+
+CREATE TABLE IF NOT EXISTS next_depth_changes (
+  id BIGSERIAL PRIMARY KEY,
+  artist_id BIGINT NOT NULL,
+  created_at TEXT COLLATE "C" NOT NULL,
+  approved_by_user_id BIGINT,
+  note TEXT COLLATE "C",
+  price_cents NUMERIC(30,12) NOT NULL,
+  shares_outstanding NUMERIC(38,18) NOT NULL,
+  old_depth_cents NUMERIC(30,6) NOT NULL,
+  new_depth_cents NUMERIC(30,6) NOT NULL,
+  old_anchor_cents NUMERIC(30,12) NOT NULL,
+  new_anchor_cents NUMERIC(30,12) NOT NULL,
+  reserve_before_cents BIGINT NOT NULL,
+  owed_after_cents NUMERIC(30,6) NOT NULL,
+  top_up_cents BIGINT NOT NULL,
+  from_fee_pool_cents BIGINT NOT NULL,
+  from_liquidity_cents BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_next_depth_changes_artist ON next_depth_changes(artist_id, created_at);
+
+CREATE TABLE IF NOT EXISTS next_reconciliation_runs (
+  id BIGSERIAL PRIMARY KEY,
+  run_at TEXT COLLATE "C" NOT NULL,
+  ok INTEGER NOT NULL,
+  summary_json TEXT COLLATE "C" NOT NULL
+);
+
+-- What everyone owned at the moment of migration, so verifyMarketMigration can prove it is unchanged.
+CREATE TABLE IF NOT EXISTS next_market_migration_snapshot (
+  id BIGSERIAL PRIMARY KEY,
+  recorded_at TEXT COLLATE "C" NOT NULL,
+  kind TEXT COLLATE "C" NOT NULL,             -- 'balance' | 'holding' | 'artist' | 'count_transactions' | 'count_price_history'
+  user_id BIGINT,
+  artist_id BIGINT,
+  credits_cents BIGINT,
+  shares NUMERIC(38,18),
+  price_cents NUMERIC(30,12),
+  cost_basis_cents BIGINT,
+  count_value BIGINT
+);
+` + MARKET_ACCOUNTING_INIT_SQL,
   },
 ];
