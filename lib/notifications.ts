@@ -132,7 +132,7 @@ async function watchlistNotifications(watchlist: WatchlistEntry[], trendingIds: 
       }
     }
 
-    const sentiment = marketSentiment(score, priceCents);
+    const sentiment = marketSentiment(score, priceCents, artist.next_listing_rule);
     if (sentiment.tone !== 'fair') {
       notifications.push({
         key: `watchlist_sentiment:${artist.id}:${sentiment.tone}`,

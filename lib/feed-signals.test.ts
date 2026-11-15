@@ -14,13 +14,16 @@ const {
 } = await import('./db');
 const { generateFeedSignals, SIGNAL_COOLDOWN_DAYS } = await import('./feed-signals');
 
-async function makeArtist(name: string) {
+async function makeArtist(name: string, listingRule: 'score' | 'uniform' = 'score') {
   // Same deterministic breakout_score=80 recipe as lib/db.test.ts's
   // makeArtist — every rated category lands on 8/10.
-  return await createArtist({
+  const artist = await createArtist({
     name, music_talent: 8, growth_velocity: 8, growth_velocity_pct: 32, engagement_quality: 8, engagement_rate_pct: 16,
     original_song_response: 8, brand_personality: 8, content_consistency: 8, commercial_potential: 8, professionalism: 8,
   });
+  // The Scout-vs-market signals only exist for artists listed from their Score (before Phase 1).
+  await db.prepare('UPDATE artists SET next_listing_rule = ? WHERE id = ?').run(listingRule, artist.id);
+  return artist;
 }
 
 // getScoreChanges() only looks at score_history rows, independent of the
@@ -80,6 +83,14 @@ describe('generateFeedSignals — undervalued / overheated', () => {
 
     await generateFeedSignals();
     expect(await eventsFor(artist.id, 'signal_undervalued')).toHaveLength(1);
+    expect(await eventsFor(artist.id, 'signal_overheated')).toHaveLength(0);
+  });
+
+  it('never posts a Scout-vs-market signal for an artist listed at the uniform price', async () => {
+    const artist = await makeArtist('Signal Uniform Artist', 'uniform');
+    await db.prepare('UPDATE artists SET next_current_price_cents = 100 WHERE id = ?').run(artist.id);
+    await generateFeedSignals();
+    expect(await eventsFor(artist.id, 'signal_undervalued')).toHaveLength(0);
     expect(await eventsFor(artist.id, 'signal_overheated')).toHaveLength(0);
   });
 

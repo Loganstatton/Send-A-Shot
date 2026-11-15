@@ -102,6 +102,16 @@ export type Artist = ScoreInputs & {
   created_by?: number;
   created_by_name?: string;
   next_current_price_cents?: number;
+  // Phase 1 market maker state (lib/next-market.ts): curve depth, anchor (price with no shares held),
+  // shares held by all players, shares of deleted accounts, the reserve, the listing rule and any halt.
+  next_depth_cents?: number;
+  next_anchor_price_cents?: number | null;
+  next_shares_outstanding?: number;
+  next_retired_shares?: number;
+  next_reserve_cents?: number;
+  next_listing_rule?: 'score' | 'uniform';
+  next_trading_halted_at?: string | null;
+  next_trading_halt_reason?: string | null;
   photo_url?: string;
   bio?: string;
   top_song_url?: string;
@@ -610,6 +620,13 @@ export type PublicArtist = {
   // user id (a caller that needs "is it ME" does that comparison
   // server-side against the raw Artist, e.g. app/next/artists/[id]/page.tsx).
   isClaimed: boolean;
+  // The artist's market maker, shown openly (Phase 1): how its price was listed, the curve's depth, the
+  // reserve backing every holder, the shares players hold, and whether trading is paused for a check.
+  next_listing_rule?: 'score' | 'uniform';
+  next_depth_cents?: number;
+  next_reserve_cents?: number;
+  next_shares_outstanding?: number;
+  next_trading_halted?: boolean;
 };
 
 export type NextMarketRow = {

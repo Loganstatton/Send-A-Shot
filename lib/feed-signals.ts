@@ -87,7 +87,7 @@ export async function generateFeedSignals(): Promise<FeedSignalResult> {
       created += await maybePost(type, artist.id, cutoff, { scoreAfter: score, changeAbs: change.changeAbs });
     }
 
-    const sentiment = marketSentiment(score, priceCents);
+    const sentiment = marketSentiment(score, priceCents, artist.next_listing_rule);
     if (sentiment.tone !== 'fair') {
       const type: FeedEventType = sentiment.tone === 'undervalued' ? 'signal_undervalued' : 'signal_overheated';
       created += await maybePost(type, artist.id, cutoff, {

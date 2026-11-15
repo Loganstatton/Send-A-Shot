@@ -1,5 +1,6 @@
 import { db } from './pg';
-import { exportSnapshot, restoreSnapshot } from './snapshot-core';
+import { exportSnapshot, parseSnapshot, restoreSnapshot } from './snapshot-core';
+import { MARKET_ACCOUNTING_INIT_SQL } from './db-schema';
 
 // Database backups. Two independent layers, covering different failures:
 //
@@ -80,6 +81,12 @@ export async function restoreBackup(fileName: string): Promise<RestoreResult> {
   const data = await getBackupData(fileName);
   if (!data) throw new Error(`No snapshot named ${fileName}.`);
   const safety = await runBackup('pre-restore');
-  const result = await db.transaction(() => restoreSnapshot(raw, data));
+  const result = await db.transaction(async () => {
+    const r = await restoreSnapshot(raw, data);
+    // A snapshot from before the Phase 1 market maker has no curve state, reserves or ledger: set them up
+    // from its balances and holdings exactly as migration 016 did (nothing anyone owned changes).
+    if (!parseSnapshot(data).migrations?.includes('016_market_maker_ledger')) await raw.query(MARKET_ACCOUNTING_INIT_SQL);
+    return r;
+  });
   return { ...result, safetySnapshot: safety.fileName };
 }

@@ -161,3 +161,17 @@ jobs:
           path: offsite/*.enc
           retention-days: 30
           if-no-files-found: error
+
+      # Phase 1 market maker: prove the books balance (every ledger entry, balance and reserve; every reserve
+      # covers its holders; Credits conserved). Any artist that fails is paused automatically for review.
+      # Only pass/fail and the names of failed checks are printed: this repository's logs are public.
+      - name: Reconcile market
+        if: always()
+        run: |
+          status=$(curl -sS -o /tmp/recon.json -w '%{http_code}' -X POST "$APP_URL/api/admin/market/reconcile" \
+            -H "x-cron-secret: $CRON_SECRET")
+          echo "HTTP $status"
+          jq '{ok, checked, issues: [.issues[] | {check, artistId}], haltedArtistIds, migrationVerified: .migration.ok}' /tmp/recon.json
+          [ "$status" -lt 400 ]
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}

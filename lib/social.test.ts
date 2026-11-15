@@ -78,7 +78,7 @@ describe('challenge notifications', () => {
     // The week before as well, so there's a streak to keep.
     for (const weeksAgo of [1, 2]) {
       const a = await artist();
-      await db.prepare('UPDATE artists SET genre = ? WHERE id = ?').run(`Genre${seq}-${weeksAgo}`, a.id);
+      await db.prepare("UPDATE artists SET genre = ?, next_listing_rule = 'score' WHERE id = ?").run(`Genre${seq}-${weeksAgo}`, a.id); // listed before Phase 1
       await executeTrade(u.id, a.id, 'buy', 10_000);
       await db.prepare('UPDATE next_founding_believers SET purchased_at = ?, next_price_cents = 100 WHERE user_id = ? AND artist_id = ?')
         .run(new Date(thisWeek - weeksAgo * 7 * 86_400_000 + 3_600_000).toISOString(), u.id, a.id);

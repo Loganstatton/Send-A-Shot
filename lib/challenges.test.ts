@@ -70,12 +70,22 @@ describe('weekly challenges', () => {
   it('Trust the Scouts uses the Score and Price recorded at the moment of backing', async () => {
     const user = await makeUser();
     const artist = await makeArtist('Electronic', 9);
+    // An artist listed before Phase 1 (Score-based listing price) — the only kind with a Scout-vs-market gap.
+    await db.prepare("UPDATE artists SET next_listing_rule = 'score' WHERE id = ?").run(artist.id);
     await executeTrade(user.id, artist.id, 'buy', 10_000);
     // Freshly listed artists start at the price their Score implies ("in line").
     expect(done(await getWeeklyChallenges(user.id), 'scouts_call')).toBe(false);
     // Recorded with the price well below what the Score implies.
     await db.prepare('UPDATE next_founding_believers SET next_price_cents = 100 WHERE user_id = ?').run(user.id);
     expect(done(await getWeeklyChallenges(user.id), 'scouts_call')).toBe(true);
+  });
+
+  it('Trust the Scouts never counts an artist listed at the uniform price (Score and price are kept separate)', async () => {
+    const user = await makeUser();
+    const artist = await makeArtist('Electronic', 9);                  // new artist: lists at 10 Credits
+    await executeTrade(user.id, artist.id, 'buy', 10_000);
+    await db.prepare('UPDATE next_founding_believers SET next_price_cents = 100 WHERE user_id = ?').run(user.id);
+    expect(done(await getWeeklyChallenges(user.id), 'scouts_call')).toBe(false);
   });
 
   it('Crate digger needs previews from 5 different artists this week', async () => {
@@ -109,6 +119,7 @@ describe('weekly challenges', () => {
     // that Scouts rated higher (3 challenges), 1 and 2 weeks ago.
     for (const [weeksAgo, genre] of [[1, 'Latin'], [2, 'Indie']] as const) {
       const artist = await makeArtist(genre);
+      await db.prepare("UPDATE artists SET next_listing_rule = 'score' WHERE id = ?").run(artist.id); // listed before Phase 1
       await executeTrade(user.id, artist.id, 'buy', 10_000);
       const at = new Date(thisWeek - weeksAgo * 7 * 86_400_000 + 3600_000).toISOString();
       await db.prepare('UPDATE next_founding_believers SET purchased_at = ?, next_price_cents = 100 WHERE user_id = ? AND artist_id = ?').run(at, user.id, artist.id);

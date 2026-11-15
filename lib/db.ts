@@ -2,10 +2,19 @@ import { db, isUniqueViolation } from './pg';
 import { perRequest } from './request-cache';
 import { breakoutScore } from './scoring';
 import { toPublicArtist } from './public-artist';
-import { NEXT_STARTING_CREDITS_CENTS, nextBasePriceCents, quoteBuy, quoteSell, sharesForSellCredits } from './next-market';
+import {
+  DAILY_TRADE_LIMIT, DEFAULT_DEPTH_CENTS, MIN_BUY_CENTS, NEW_ACCOUNT_DAILY_BUY_PER_ARTIST_CENTS, NEW_ACCOUNT_DAYS_DEFAULT,
+  NEXT_LISTING_PRICE_CENTS, NEXT_STARTING_CREDITS_CENTS, QUOTE_TOLERANCE, exitValueCents, nextBasePriceCents,
+  quoteBuyWithFee, quoteSell, sharesForSellCredits,
+} from './next-market';
+import {
+  FEES as LEDGER_FEES, ISSUANCE, RETIRED, checkCurveState, haltArtistTrading, postLedgerEntry, reserveAccount, userAccount,
+} from './market-ledger';
 import { EARLY_DISCOVERY_RANK_THRESHOLD, scoutScore } from './scout-score';
 import { getScoutBadges } from './scout-badges';
-import { AuditTrade, findRoundTripEpisodes, getCoordinatedPairFlags, getRapidTradingFlags, MarketTradeRow } from './market-integrity';
+import {
+  AuditTrade, findPumpPatterns, findRoundTripEpisodes, getCoordinatedPairFlags, getRapidTradingFlags, MarketTradeRow, PumpAccount,
+} from './market-integrity';
 import type { DiscoveryRejectionBreakdown } from './discovery-source';
 import {
   AgreementInput, Agreement, AnalyticsEvent, AnalyticsEventType, Artist, ArtistClaim, ArtistFieldChange, ArtistInput,
@@ -270,9 +279,18 @@ export async function bulkSetArtistStage(ids: number[], stage: Stage, actor: Act
   return updated;
 }
 
+// NEXT books (Phase 1): whatever the artist's reserve held moves to the 'retired' ledger account.
 export async function deleteArtist(id: number): Promise<boolean> {
-  const info = await db.prepare('DELETE FROM artists WHERE id = ?').run(id);
-  return info.changes > 0;
+  return await db.transaction(async () => {
+    const a = (await db.prepare('SELECT next_reserve_cents FROM artists WHERE id = ? FOR UPDATE').get(id)) as { next_reserve_cents: number } | undefined;
+    if (!a) return false;
+    await postLedgerEntry('artist_deleted', [
+      { account: reserveAccount(id), amountCents: -Number(a.next_reserve_cents), artistId: id },
+      { account: RETIRED, amountCents: Number(a.next_reserve_cents), artistId: id },
+    ]);
+    const info = await db.prepare('DELETE FROM artists WHERE id = ?').run(id);
+    return info.changes > 0;
+  });
 }
 
 async function snapshotScore(artist: Artist, changedBy: number | null = null, rationale: string | null = null) {
@@ -455,14 +473,23 @@ function normalizeUser<T extends Record<(typeof BOOLEAN_USER_COLUMNS)[number], u
 // are set here, at signup, not editable afterward — they're a one-time
 // record of "the terms shown at signup time were accepted," not a
 // re-checkable settings toggle.
+// The starting Credits are issued through the ledger in the same transaction (lib/market-ledger.ts).
 export async function createUser(input: { name: string; email: string; password_hash: string }): Promise<User> {
   const now = new Date().toISOString();
-  const info = await db
-    .prepare(
-      "INSERT INTO users (created_at, name, email, password_hash, role, tos_accepted_at, privacy_accepted_at) VALUES (?, ?, ?, ?, 'public', ?, ?)"
-    )
-    .run(now, input.name, input.email.toLowerCase(), input.password_hash, now, now);
-  return (await getUserById(info.lastInsertRowid as number))!;
+  const id = await db.transaction(async () => {
+    const info = await db
+      .prepare(
+        "INSERT INTO users (created_at, name, email, password_hash, role, tos_accepted_at, privacy_accepted_at, next_credits_cents) VALUES (?, ?, ?, ?, 'public', ?, ?, ?)"
+      )
+      .run(now, input.name, input.email.toLowerCase(), input.password_hash, now, now, NEXT_STARTING_CREDITS_CENTS);
+    const userId = info.lastInsertRowid as number;
+    await postLedgerEntry('signup_grant', [
+      { account: ISSUANCE, amountCents: -NEXT_STARTING_CREDITS_CENTS, userId },
+      { account: userAccount(userId), amountCents: NEXT_STARTING_CREDITS_CENTS, userId },
+    ], { createdAt: now });
+    return userId;
+  });
+  return (await getUserById(id))!;
 }
 
 // Name and avatar are the only self-editable profile fields — email and
@@ -559,8 +586,25 @@ export async function markEmailVerified(userId: number): Promise<User | undefine
 // Scout-side attribution (created_by, reviewed_by) is ON DELETE SET NULL,
 // so a deleted user's Scout history stays intact but anonymized. A plain
 // DELETE here is safe as-is — see the FK definitions above.
+//
+// NEXT books (Phase 1): the account's Credits move to the 'retired' ledger account, and its shares stay in
+// each artist's curve as retired shares — the price doesn't move for anyone else, and the reserve keeps
+// covering every remaining holder.
 export async function deleteUser(userId: number): Promise<void> {
-  await db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  await db.transaction(async () => {
+    const u = (await db.prepare('SELECT next_credits_cents FROM users WHERE id = ? FOR UPDATE').get(userId)) as { next_credits_cents: number } | undefined;
+    if (!u) return;
+    const holdings = (await db.prepare('SELECT artist_id, shares FROM next_holdings WHERE user_id = ? ORDER BY artist_id').all(userId)) as { artist_id: number; shares: number }[];
+    for (const h of holdings) {
+      await db.prepare('UPDATE artists SET next_retired_shares = next_retired_shares + (SELECT shares FROM next_holdings WHERE user_id = ? AND artist_id = ?) WHERE id = ?')
+        .run(userId, h.artist_id, h.artist_id);
+    }
+    await postLedgerEntry('account_deleted', [
+      { account: userAccount(userId), amountCents: -u.next_credits_cents, userId },
+      { account: RETIRED, amountCents: u.next_credits_cents, userId },
+    ]);
+    await db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  });
 }
 
 export async function getUserByEmail(email: string): Promise<(User & { password_hash: string }) | undefined> {
@@ -897,10 +941,11 @@ export async function getPortfolioSummary(): Promise<PortfolioRow[]> {
 
 // --- NEXT (public paper-trading product) ---
 
-// Lazily sets an artist's starting NEXT Price the first time it's needed
-// (from the score-based formula in lib/next-market), then leaves it alone —
-// after that, price only moves via trades. Self-healing: works whether the
-// artist was created before or after NEXT existed.
+// Lazily sets an artist's starting NEXT Price the first time it's needed, then leaves it alone — after
+// that, price only moves via trades. Artists listed since Phase 1 (next_listing_rule 'uniform') all start
+// at the same 10 Credits a share, so the Scout rating never sets a market price; artists that existed
+// before keep the Score-based listing they always had ('score'), so no existing price ever changes. The
+// anchor (the curve's price with nobody holding shares) is set in the same statement.
 //
 // The UPDATE is conditional on the price still being unset: two requests
 // can reach this for the same brand-new artist at the same moment, and only
@@ -908,10 +953,10 @@ export async function getPortfolioSummary(): Promise<PortfolioRow[]> {
 // otherwise the chart would start with two.
 async function ensureNextPrice(artist: Artist): Promise<number> {
   if (artist.next_current_price_cents != null) return artist.next_current_price_cents;
-  const price = nextBasePriceCents(breakoutScore(artist));
+  const price = artist.next_listing_rule === 'score' ? nextBasePriceCents(breakoutScore(artist)) : NEXT_LISTING_PRICE_CENTS;
   const info = await db
-    .prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ? AND next_current_price_cents IS NULL')
-    .run(price, artist.id);
+    .prepare('UPDATE artists SET next_current_price_cents = ?, next_anchor_price_cents = ? WHERE id = ? AND next_current_price_cents IS NULL')
+    .run(price, price, artist.id);
   if (info.changes > 0) {
     await db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)')
       .run(artist.id, new Date().toISOString(), price);
@@ -1037,14 +1082,14 @@ export async function getUserHoldings(
 ): Promise<(NextHolding & { artist_name: string; artist_photo_url?: string; price_cents: number; exitValueCents: number })[]> {
   const rows = (await db.prepare(`
     SELECT next_holdings.*, artists.name AS artist_name, artists.photo_url AS artist_photo_url,
-           artists.next_current_price_cents AS current_price_cents
+           artists.next_current_price_cents AS current_price_cents, artists.next_depth_cents AS depth_cents
     FROM next_holdings
     JOIN artists ON artists.id = next_holdings.artist_id
     WHERE next_holdings.user_id = ? AND next_holdings.shares > 0
     ORDER BY next_holdings.updated_at DESC
-  `).all(userId)) as (NextHolding & { artist_name: string; artist_photo_url?: string; current_price_cents: number | null })[];
+  `).all(userId)) as (NextHolding & { artist_name: string; artist_photo_url?: string; current_price_cents: number | null; depth_cents: number })[];
   const holdings = [];
-  for (const { current_price_cents, ...row } of rows) {
+  for (const { current_price_cents, depth_cents, ...row } of rows) {
     // A held position always has a price (the buy that created it set one);
     // the fallback only covers a row written before NEXT prices existed.
     const priceCents = current_price_cents ?? (await ensureNextPrice((await getArtist(row.artist_id))!));
@@ -1053,8 +1098,8 @@ export async function getUserHoldings(
     // not shares * priceCents, is what "unrealized P&L" should be measured
     // against: priceCents already includes any impact this same trader's
     // own last buy caused, which a sell of comparable size mostly reverses.
-    const exitValueCents = quoteSell(priceCents, row.shares).proceedsCents;
-    holdings.push({ ...row, price_cents: priceCents, exitValueCents });
+    const exitValue = exitValueCents(priceCents, row.shares, depth_cents);
+    holdings.push({ ...row, price_cents: priceCents, exitValueCents: exitValue });
   }
   return holdings;
 }
@@ -1409,36 +1454,62 @@ export async function getNewArtistsThisWeek(days = 7): Promise<Artist[]> {
 }
 
 export type TradeResult =
-  | { ok: true; shares: number; priceCents: number; newBalanceCents: number; realizedPnlCents?: number }
+  | { ok: true; shares: number; priceCents: number; feeCents?: number; newBalanceCents: number; realizedPnlCents?: number }
   | { ok: false; error: string };
 
 // Thrown inside the trade transaction to roll it back when the debit's own
 // balance guard doesn't match — see the comment at the debit below.
 class InsufficientBalanceError extends Error {}
 
-// Both buy and sell take a NEXT Credits amount ("spend $X" / "sell $X
-// worth") rather than a share count — simpler for a paper-trading UI, and
-// symmetric in both directions. Average-cost method for P&L: cost_basis
-// tracks total credits paid for the current position, so unrealized P&L is
-// always (current value - cost_basis), and a partial sell reduces cost_basis
-// proportionally to the shares sold.
+export type TradeOptions = {
+  // The price the player saw. If the market has moved against them by more than QUOTE_TOLERANCE since,
+  // the trade is refused instead of filling at a price they never saw.
+  quotedPriceCents?: number;
+};
+
+// Thrown inside the trade transaction to roll everything back when the market maker's books would not
+// balance afterwards (a bug, never a normal outcome). The artist is halted for an admin to review.
+class TradeInvariantError extends Error { constructor(readonly artistId: number, message: string) { super(message); } }
+
+// Trading limits (Phase 1). Reasonable, disclosed, and aimed at throwaway accounts rather than players:
+//   • a new account (younger than NEW_ACCOUNT_DAYS, email not verified) can buy at most
+//     NEW_ACCOUNT_DAILY_BUY_PER_ARTIST_CENTS of any one artist in 24 hours;
+//   • every account: at most DAILY_TRADE_LIMIT trades in 24 hours (plus the 20-a-minute rate limit);
+//   • a purchase must be at least MIN_BUY_CENTS (the fee would otherwise be a large share of it);
+//   • with NEXT_REQUIRE_VERIFIED_EMAIL=1 (once email delivery is live), buying needs a verified email.
+// Selling is never limited: anyone can always leave a position.
+export function marketLimits() {
+  const days = Number(process.env.NEXT_NEW_ACCOUNT_DAYS ?? NEW_ACCOUNT_DAYS_DEFAULT);
+  return {
+    newAccountDays: Number.isFinite(days) && days >= 0 ? days : NEW_ACCOUNT_DAYS_DEFAULT,
+    newAccountDailyBuyPerArtistCents: NEW_ACCOUNT_DAILY_BUY_PER_ARTIST_CENTS,
+    dailyTradeLimit: DAILY_TRADE_LIMIT,
+    minBuyCents: MIN_BUY_CENTS,
+    requireVerifiedEmail: process.env.NEXT_REQUIRE_VERIFIED_EMAIL === '1',
+    quoteTolerance: QUOTE_TOLERANCE,
+  };
+}
+export function isRestrictedNewAccount(user: Pick<User, 'created_at' | 'email_verified_at'>, now = Date.now()): boolean {
+  const { newAccountDays } = marketLimits();
+  if (user.email_verified_at) return false;
+  return now - new Date(user.created_at).getTime() < newAccountDays * 86_400_000;
+}
+
+// Every trade is against the artist's market maker (lib/next-market.ts). In ONE transaction it: locks the
+// trader and then the artist (`FOR UPDATE`, always in that order so two trades can never deadlock); fills
+// exactly along the curve; moves the player's Credits, the shares, the curve's shares outstanding, the
+// reserve and the fee pool together; writes the balanced ledger entry; and re-checks that the reserve still
+// covers everything every holder could be paid and that the price is still on the curve. If that check
+// ever failed, everything rolls back and trading in that artist halts for review.
 //
-// Concurrency: a trade reads a balance, a holding and a price, then writes
-// all three. With many requests in flight at once (several app instances,
-// or just several awaits interleaving in one), two trades reading the same
-// starting state would each write as if the other never happened — a double
-// spend, or one price move silently overwriting another. So the whole trade
-// runs in ONE transaction that first takes row locks on the trader and then
-// on the artist (`FOR UPDATE`): a second trade by the same user, or on the
-// same artist, waits at that line until the first has committed, and then
-// reads the state the first one left behind. Always user first, then
-// artist — one fixed order, so two trades can never each hold the lock the
-// other is waiting for.
+// Average-cost P&L: cost_basis is everything paid for the current position (fees included), and a partial
+// sale reduces it in proportion to the shares sold.
 export async function executeTrade(
   userId: number,
   artistId: number,
   type: NextTransactionType,
-  creditsAmountCents: number
+  creditsAmountCents: number,
+  options: TradeOptions = {}
 ): Promise<TradeResult> {
   if (!Number.isFinite(creditsAmountCents) || creditsAmountCents <= 0) {
     return { ok: false, error: 'amount must be a positive number' };
@@ -1446,6 +1517,7 @@ export async function executeTrade(
   // Credits are whole cents everywhere they're stored.
   const amountCents = Math.round(creditsAmountCents);
   if (amountCents < 1) return { ok: false, error: 'amount must be a positive number' };
+  const limits = marketLimits();
 
   try {
     return await db.transaction(async (): Promise<TradeResult> => {
@@ -1454,23 +1526,57 @@ export async function executeTrade(
       if (!artist) return { ok: false, error: 'artist not found' };
       if (!userRow) return { ok: false, error: 'user not found' };
       const user = normalizeUser(userRow);
+      if (artist.next_trading_halted_at) {
+        return { ok: false, error: 'Trading in this artist is paused while the market is checked. Your Credits and shares are safe.' };
+      }
 
       const prePriceCents = await ensureNextPrice(artist);
+      const depthCents = Number(artist.next_depth_cents ?? DEFAULT_DEPTH_CENTS);
+      const anchorCents = Number(artist.next_anchor_price_cents ?? prePriceCents);
+      const sharesOutstanding = Number(artist.next_shares_outstanding ?? 0);
+      const reserveCents = Number(artist.next_reserve_cents ?? 0);
       const holding = await getHolding(userId, artistId);
       const now = new Date().toISOString();
+
+      const q = options.quotedPriceCents;
+      if (q != null && Number.isFinite(q) && q > 0) {
+        const movedAgainst = type === 'buy' ? prePriceCents > q * (1 + limits.quoteTolerance) : prePriceCents < q * (1 - limits.quoteTolerance);
+        if (movedAgainst) return { ok: false, error: 'The price moved since your quote. Check the new price and try again.' };
+      }
+
+      // The books after this trade must still balance; otherwise nothing is written (see TradeInvariantError).
+      const assertCurve = (priceCents: number, shares: number, reserve: number) => {
+        const c = checkCurveState({ priceCents, anchorCents, depthCents, sharesOutstanding: shares, reserveCents: reserve });
+        if (!c.ok) throw new TradeInvariantError(artistId, c.problem!);
+      };
 
       if (type === 'buy') {
         // A 'passed' artist is off the public market (see getNextMarket).
         // Anyone still holding it can always sell out; nobody can buy in.
         if (artist.stage === 'passed') return { ok: false, error: 'this artist is no longer listed on NEXT' };
+        if (amountCents < limits.minBuyCents) return { ok: false, error: `the smallest purchase is ${formatCreditsShort(limits.minBuyCents)}` };
         if (amountCents > user.next_credits_cents) {
           return { ok: false, error: 'not enough NEXT Credits' };
         }
-        // The exact fill along the price curve (lib/next-market.ts quoteBuy): shares rounded down, the
-        // price moved by exactly what was spent, so slicing a buy can never beat buying at once.
-        const { shares, postPriceCents, executionCents } = quoteBuy(prePriceCents, amountCents);
+        if (limits.requireVerifiedEmail && !user.email_verified_at) {
+          return { ok: false, error: 'Verify your email to buy. (You can always sell what you hold.)' };
+        }
+        if (isRestrictedNewAccount(user)) {
+          const since = new Date(Date.now() - 86_400_000).toISOString();
+          const spent = Number(((await db.prepare(
+            "SELECT COALESCE(SUM(-credits_delta_cents), 0) AS s FROM next_transactions WHERE user_id = ? AND artist_id = ? AND type = 'buy' AND created_at >= ?"
+          ).get(userId, artistId, since)) as { s: number }).s);
+          if (spent + amountCents > limits.newAccountDailyBuyPerArtistCents) {
+            const left = Math.max(0, limits.newAccountDailyBuyPerArtistCents - spent);
+            return { ok: false, error: `New accounts can buy up to ${formatCreditsShort(limits.newAccountDailyBuyPerArtistCents)} of one artist a day for their first ${limits.newAccountDays} days (${formatCreditsShort(left)} left today). Verifying your email lifts this.` };
+          }
+        }
+        // Fee first (0.5%, rounded up), then the exact curve: shares rounded down, the price set by the
+        // shares actually issued, so slicing a purchase can never beat buying at once.
+        const { shares, postPriceCents, executionCents, feeCents, netCents } = quoteBuyWithFee(prePriceCents, amountCents, depthCents);
         if (!(shares > 0)) return { ok: false, error: 'amount is too small to buy any shares' };
         const newCostBasis = (holding?.cost_basis_cents ?? 0) + amountCents;
+        assertCurve(postPriceCents, sharesOutstanding + shares, reserveCents + netCents);
         // Whatever the listen history says right up to this moment — "did this
         // trader ever hit play on this artist before backing them."
         const listenedBeforeBuy = (await hasListenedToArtist(userId, artistId)) ? 1 : 0;
@@ -1483,77 +1589,103 @@ export async function executeTrade(
           await db.prepare('INSERT INTO next_holdings (user_id, artist_id, shares, cost_basis_cents, updated_at) VALUES (?, ?, ?, ?, ?)')
             .run(userId, artistId, String(shares), newCostBasis, now);
         }
-        // The balance was already checked above under the row lock, so this
-        // can't fail today. The debit still carries its own guard
-        // (`AND next_credits_cents >= ?`) so that "a balance never goes
-        // negative" is enforced by the statement that moves the money, not
-        // only by the code path that happens to lead up to it.
+        // The balance was already checked above under the row lock; the debit still carries its own guard so
+        // "a balance never goes negative" is enforced by the statement that moves the Credits.
         const debit = await db
           .prepare('UPDATE users SET next_credits_cents = next_credits_cents - ? WHERE id = ? AND next_credits_cents >= ?')
           .run(amountCents, userId, amountCents);
         if (debit.changes === 0) throw new InsufficientBalanceError();
 
-        await db.prepare(`
-          INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents, listened_before_buy)
-          VALUES (?, ?, ?, 'buy', ?, ?, ?, ?)
-        `).run(userId, artistId, now, String(shares), Math.round(executionCents), -amountCents, listenedBeforeBuy);
+        const tx = await db.prepare(`
+          INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents, listened_before_buy, fee_cents)
+          VALUES (?, ?, ?, 'buy', ?, ?, ?, ?, ?)
+        `).run(userId, artistId, now, String(shares), Math.round(executionCents), -amountCents, listenedBeforeBuy, feeCents);
 
-        // The price is kept at full precision (NUMERIC); only displays round it to the cent.
-        await db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
+        await db.prepare('UPDATE artists SET next_current_price_cents = ?, next_shares_outstanding = next_shares_outstanding + ?, next_reserve_cents = next_reserve_cents + ?, next_anchor_price_cents = ? WHERE id = ?')
+          .run(postPriceCents, String(shares), netCents, anchorCents, artistId);
         await db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);
+        await postLedgerEntry('buy', [
+          { account: userAccount(userId), amountCents: -amountCents, userId, artistId },
+          { account: reserveAccount(artistId), amountCents: netCents, userId, artistId },
+          { account: LEDGER_FEES, amountCents: feeCents, userId, artistId },
+        ], { transactionId: tx.lastInsertRowid as number, createdAt: now });
 
         await recordFoundingBelieverIfFirstBuy(userId, artistId, artist, breakoutScore(artist), Math.round(executionCents), now);
 
-        return { ok: true, shares, priceCents: executionCents, newBalanceCents: user.next_credits_cents - amountCents };
+        return { ok: true, shares, priceCents: executionCents, feeCents, newBalanceCents: user.next_credits_cents - amountCents };
       }
 
-      // sell
+      // sell — never limited, never charged a fee
       const ownedShares = holding?.shares ?? 0;
       if (!holding || ownedShares <= 0) return { ok: false, error: "you don't own any shares of this artist" };
 
-      // "Sell $X worth" → the shares whose exact proceeds are X (lib/next-market.ts), capped at what is
-      // owned (the sell-all sentinel always hits the cap). quoteSell is the same math used to mark a
-      // still-held position's realistic exit value — one formula, so the two can never drift.
-      const requestedShares = sharesForSellCredits(prePriceCents, amountCents);
-      const sharesSold = Math.min(requestedShares, ownedShares);
-      const { postPriceCents, executionCents, proceedsCents } = quoteSell(prePriceCents, sharesSold);
-      // A partial sale must pay at least a cent; selling the whole position is always allowed, even when the
-      // leftover is worth less than a cent, so nobody is left holding an unsellable sliver.
+      // "Sell X worth" → the shares whose exact proceeds are X, capped at what is owned (the sell-all
+      // sentinel always hits the cap). If less than 0.0001 of a share would be left, the whole position is
+      // sold, so nobody is left with an unsellable sliver and every share stays accounted for.
+      const requestedShares = sharesForSellCredits(prePriceCents, amountCents, depthCents);
+      let sharesSold = Math.min(requestedShares, ownedShares);
+      if (ownedShares - sharesSold < 0.0001) sharesSold = ownedShares;
+      if (sharesSold > sharesOutstanding + 1e-9) throw new TradeInvariantError(artistId, `sale of ${sharesSold} exceeds shares outstanding ${sharesOutstanding}`);
+      const quote = quoteSell(prePriceCents, sharesSold, depthCents);
+      // Never pay out more than the reserve holds (it always covers this; the min is a last line of defence).
+      const proceedsCents = Math.min(quote.proceedsCents, reserveCents);
+      const { postPriceCents, executionCents } = quote;
+      // A partial sale must pay at least a cent; selling the whole position is always allowed.
       if (proceedsCents < 1 && sharesSold < ownedShares) return { ok: false, error: 'amount is too small to sell' };
+      const soldAll = sharesSold >= ownedShares;
+      assertCurve(postPriceCents, soldAll ? sharesOutstanding - ownedShares : sharesOutstanding - sharesSold, reserveCents - proceedsCents);
       const avgCostPerShareCents = holding.cost_basis_cents / ownedShares;
-      const costBasisSold = avgCostPerShareCents * sharesSold;
+      const costBasisSold = soldAll ? holding.cost_basis_cents : avgCostPerShareCents * sharesSold;
       const realizedPnlCents = Math.round(proceedsCents - costBasisSold);
-      const remainingShares = ownedShares - sharesSold;
       const remainingCostBasis = Math.round(holding.cost_basis_cents - costBasisSold);
 
-      if (remainingShares < 0.0001) {
+      // Exact decimals in SQL: on a full exit the stored holding itself is what leaves the curve.
+      if (soldAll) {
+        await db.prepare('UPDATE artists SET next_shares_outstanding = next_shares_outstanding - (SELECT shares FROM next_holdings WHERE id = ?) WHERE id = ?')
+          .run(holding.id, artistId);
         await db.prepare('DELETE FROM next_holdings WHERE id = ?').run(holding.id);
       } else {
         await db.prepare('UPDATE next_holdings SET shares = shares - ?, cost_basis_cents = ?, updated_at = ? WHERE id = ?')
           .run(String(sharesSold), remainingCostBasis, now, holding.id);
+        await db.prepare('UPDATE artists SET next_shares_outstanding = next_shares_outstanding - ? WHERE id = ?').run(String(sharesSold), artistId);
       }
       await db.prepare('UPDATE users SET next_credits_cents = next_credits_cents + ? WHERE id = ?')
         .run(proceedsCents, userId);
-      await db.prepare(`
+      const tx = await db.prepare(`
         INSERT INTO next_transactions (user_id, artist_id, created_at, type, shares, price_cents_per_share, credits_delta_cents, realized_pnl_cents)
         VALUES (?, ?, ?, 'sell', ?, ?, ?, ?)
       `).run(userId, artistId, now, String(sharesSold), Math.round(executionCents), proceedsCents, realizedPnlCents);
 
-      await db.prepare('UPDATE artists SET next_current_price_cents = ? WHERE id = ?').run(postPriceCents, artistId);
+      await db.prepare('UPDATE artists SET next_current_price_cents = ?, next_reserve_cents = next_reserve_cents - ?, next_anchor_price_cents = ? WHERE id = ?')
+        .run(postPriceCents, proceedsCents, anchorCents, artistId);
       await db.prepare('INSERT INTO next_price_history (artist_id, recorded_at, price_cents) VALUES (?, ?, ?)').run(artistId, now, postPriceCents);
+      await postLedgerEntry('sell', [
+        { account: reserveAccount(artistId), amountCents: -proceedsCents, userId, artistId },
+        { account: userAccount(userId), amountCents: proceedsCents, userId, artistId },
+      ], { transactionId: tx.lastInsertRowid as number, createdAt: now });
 
       return {
         ok: true,
         shares: sharesSold,
         priceCents: executionCents,
+        feeCents: 0,
         newBalanceCents: user.next_credits_cents + proceedsCents,
         realizedPnlCents,
       };
     });
   } catch (err) {
     if (err instanceof InsufficientBalanceError) return { ok: false, error: 'not enough NEXT Credits' };
+    if (err instanceof TradeInvariantError) {
+      await haltArtistTrading(err.artistId, `Automatic: a trade would have broken the market's books (${err.message}). Nothing was changed.`);
+      console.error(`[market] trade refused and artist ${err.artistId} halted: ${err.message}`);
+      return { ok: false, error: 'Trading in this artist is paused while the market is checked. Your Credits and shares are safe.' };
+    }
     throw err;
   }
+}
+
+function formatCreditsShort(cents: number): string {
+  return `${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })} Credits`;
 }
 
 // Anti-spam on trading itself — a generous cap, not a serious abuse
@@ -1618,7 +1750,8 @@ export async function executeTradeRequest(
   artistId: number,
   type: NextTransactionType,
   creditsAmountCents: number,
-  idempotencyKey?: string
+  idempotencyKey?: string,
+  options: TradeOptions = {}
 ): Promise<TradeRequestOutcome> {
   return await db.transaction(async (): Promise<TradeRequestOutcome> => {
     const locked = await db.prepare('SELECT id FROM users WHERE id = ? FOR UPDATE').get(userId);
@@ -1634,8 +1767,11 @@ export async function executeTradeRequest(
     if ((await getRecentTradeCount(userId, 1)) >= TRADE_RATE_LIMIT_PER_MINUTE) {
       return { status: 429, body: { error: "You're trading faster than we can keep up — wait a moment and try again." }, replayed: false };
     }
+    if ((await getRecentTradeCount(userId, 24 * 60)) >= marketLimits().dailyTradeLimit) {
+      return { status: 429, body: { error: `You've reached today's limit of ${marketLimits().dailyTradeLimit} trades. It resets over the next 24 hours.` }, replayed: false };
+    }
 
-    const result = await executeTrade(userId, artistId, type, creditsAmountCents);
+    const result = await executeTrade(userId, artistId, type, creditsAmountCents, options);
     const status = result.ok ? 200 : 400;
     const body = result.ok ? result : { error: result.error };
     // A rejection (e.g. "not enough NEXT Credits") is stored too, so a
@@ -1719,6 +1855,7 @@ function buildPortfolioValueHistory(
   transactions: HistoryTransaction[],
   pricePoints: HistoryPricePoint[],
   valuation: 'quoted' | 'liquidation' = 'quoted',
+  depthByArtist: Map<number, number> = new Map(),
 ): PortfolioValuePoint[] {
   if (transactions.length === 0) return [];
 
@@ -1744,7 +1881,7 @@ function buildPortfolioValueHistory(
     for (const [artistId, shares] of sharesByArtist) {
       const price = latestPriceByArtist.get(artistId) ?? 0;
       if (valuation === 'liquidation') {
-        if (shares > 0 && price > 0) holdingsValueCents += quoteSell(price, shares).proceedsCents;
+        if (shares > 0 && price > 0) holdingsValueCents += exitValueCents(price, shares, depthByArtist.get(artistId) ?? DEFAULT_DEPTH_CENTS);
       } else {
         holdingsValueCents += shares * price;
       }
@@ -1959,16 +2096,17 @@ async function getScoutStandings(): Promise<ScoutStanding[]> {
 
   const holdingRows = (await db
     .prepare(`
-      SELECT next_holdings.user_id, next_holdings.shares, artists.next_current_price_cents AS price_cents
+      SELECT next_holdings.user_id, next_holdings.shares, artists.next_current_price_cents AS price_cents,
+             artists.next_depth_cents AS depth_cents
       FROM next_holdings
       JOIN artists ON artists.id = next_holdings.artist_id
       WHERE next_holdings.shares > 0
     `)
-    .all()) as { user_id: number; shares: number; price_cents: number | null }[];
+    .all()) as { user_id: number; shares: number; price_cents: number | null; depth_cents: number }[];
   const holdingsValueByUser = new Map<number, number>();
   for (const h of holdingRows) {
     if (h.price_cents == null) continue; // a held artist always has a price — see getUserHoldings
-    holdingsValueByUser.set(h.user_id, (holdingsValueByUser.get(h.user_id) ?? 0) + quoteSell(h.price_cents, h.shares).proceedsCents);
+    holdingsValueByUser.set(h.user_id, (holdingsValueByUser.get(h.user_id) ?? 0) + exitValueCents(h.price_cents, h.shares, h.depth_cents));
   }
 
   const believerRows = (await db
@@ -2001,6 +2139,8 @@ async function getScoutStandings(): Promise<ScoutStanding[]> {
     pricesByArtist.set(p.artist_id, list);
   }
 
+  const depthByArtist = new Map(((await db.prepare('SELECT id, next_depth_cents FROM artists').all()) as { id: number; next_depth_cents: number }[])
+    .map((r) => [r.id, r.next_depth_cents]));
   return users.map((user) => {
     const holdingsValueCents = holdingsValueByUser.get(user.id) ?? 0;
     const totalValueCents = user.next_credits_cents + holdingsValueCents;
@@ -2009,7 +2149,7 @@ async function getScoutStandings(): Promise<ScoutStanding[]> {
 
     const transactions = txByUser.get(user.id) ?? [];
     const tradedArtistIds = [...new Set(transactions.map((t) => t.artist_id))];
-    const history = buildPortfolioValueHistory(transactions, tradedArtistIds.flatMap((id) => pricesByArtist.get(id) ?? []), 'liquidation');
+    const history = buildPortfolioValueHistory(transactions, tradedArtistIds.flatMap((id) => pricesByArtist.get(id) ?? []), 'liquidation', depthByArtist);
 
     return {
       user,
@@ -2252,11 +2392,11 @@ export async function getAvailableGenres(): Promise<string[]> {
 export async function getGenreLeaderboard(genre: string): Promise<GenreLeaderboardEntry[]> {
   const holdings = (await db.prepare(`
     SELECT next_holdings.user_id, next_holdings.shares, next_holdings.cost_basis_cents, next_holdings.artist_id,
-           artists.next_current_price_cents AS price_cents
+           artists.next_current_price_cents AS price_cents, artists.next_depth_cents AS depth_cents
     FROM next_holdings
     JOIN artists ON artists.id = next_holdings.artist_id
     WHERE next_holdings.shares > 0 AND artists.genre = ?
-  `).all(genre)) as { user_id: number; shares: number; cost_basis_cents: number; artist_id: number; price_cents: number | null }[];
+  `).all(genre)) as { user_id: number; shares: number; cost_basis_cents: number; artist_id: number; price_cents: number | null; depth_cents: number }[];
 
   const sells = (await db.prepare(`
     SELECT next_transactions.user_id, next_transactions.realized_pnl_cents, next_transactions.artist_id
@@ -2273,7 +2413,7 @@ export async function getGenreLeaderboard(genre: string): Promise<GenreLeaderboa
     const priceCents = h.price_cents ?? (await ensureNextPrice((await getArtist(h.artist_id))!));
     const t = tally(h.user_id);
     // exitValueCents, not shares * price — see getUserHoldings' own comment.
-    t.pnlCents += quoteSell(priceCents, h.shares).proceedsCents - h.cost_basis_cents;
+    t.pnlCents += exitValueCents(priceCents, h.shares, h.depth_cents) - h.cost_basis_cents;
     t.artistIds.add(h.artist_id);
   }
   for (const s of sells) {
@@ -3539,4 +3679,25 @@ export async function getRoundingExploitAudit() {
     // for scale: the largest isolated round-trip results either way
     largestIsolatedResults: [...isolated].sort((a, b) => b.profitCents - a.profitCents).slice(0, 5),
   };
+}
+
+// Phase 1: coordinated multi-account manipulation (lib/market-integrity.ts findPumpPatterns). Read-only:
+// flags for an admin to review, with account and artist ids only. Open positions are valued at what selling
+// them now would pay, so a feeder still holding at a loss counts.
+export async function getPumpPatternReport() {
+  const trades = (await db
+    .prepare('SELECT id, user_id, artist_id, created_at, type, shares, credits_delta_cents FROM next_transactions ORDER BY created_at ASC, id ASC')
+    .all()) as AuditTrade[];
+  const accountRows = (await db.prepare(`
+    SELECT u.id, u.created_at, (SELECT bi.created_by FROM beta_invites bi WHERE bi.used_by_user_id = u.id ORDER BY bi.id LIMIT 1) AS invited_by
+    FROM users u
+  `).all()) as { id: number; created_at: string; invited_by: number | null }[];
+  const accounts = new Map<number, PumpAccount>(accountRows.map((r) => [r.id, { id: r.id, createdAt: r.created_at, invitedBy: r.invited_by }]));
+  const holdings = (await db.prepare(`
+    SELECT h.user_id, h.artist_id, h.shares, a.next_current_price_cents AS price, a.next_depth_cents AS depth
+    FROM next_holdings h JOIN artists a ON a.id = h.artist_id
+  `).all()) as { user_id: number; artist_id: number; shares: number; price: number | null; depth: number }[];
+  const open = new Map(holdings.map((h) => [`${h.user_id}:${h.artist_id}`, h.price ? exitValueCents(h.price, h.shares, h.depth) : 0]));
+  const patterns = findPumpPatterns(trades, accounts, (u, a) => open.get(`${u}:${a}`) ?? 0);
+  return { checkedAt: new Date().toISOString(), tradesChecked: trades.length, patterns };
 }

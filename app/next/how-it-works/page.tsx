@@ -3,7 +3,8 @@ import type { Metadata } from 'next';
 import { SCORE_LABELS, SCORE_WEIGHTS, ScoreInputs } from '@/lib/types';
 import { formatCents } from '@/lib/format';
 import {
-  NEXT_MIN_PRICE_CENTS, NEXT_STARTING_CREDITS_CENTS, SCOUT_GAP_EXPLAINER, nextBasePriceCents, priceImpactPct,
+  BUY_FEE_BPS, DAILY_TRADE_LIMIT, DEPTH_MAX_STEP, MIN_BUY_CENTS, NEW_ACCOUNT_DAILY_BUY_PER_ARTIST_CENTS, NEW_ACCOUNT_DAYS_DEFAULT,
+  NEXT_LISTING_PRICE_CENTS, NEXT_STARTING_CREDITS_CENTS, SCOUT_GAP_EXPLAINER, priceImpactPct,
 } from '@/lib/next-market';
 import { TRADE_RATE_LIMIT_PER_MINUTE } from '@/lib/db';
 import { getFoundingBelieverTier } from '@/lib/founding-believer';
@@ -98,20 +99,40 @@ export default function HowItWorksPage() {
 
       <Section id="price" title="NEXT Price — what players are paying">
         <p className="m-0">
-          When an artist joins NEXT, their starting price is set from their Score — between {formatCents(nextBasePriceCents(0))} and{' '}
-          {formatCents(nextBasePriceCents(100))}, curved so stronger Scores start higher (a Score of 80 starts at{' '}
-          {formatCents(nextBasePriceCents(80))}). After that, <strong style={{ color: 'var(--text)' }}>only trades move the price</strong>.
+          Every newly listed artist starts at the same price, {formatCents(NEXT_LISTING_PRICE_CENTS)} a share, so the Scouts&apos;
+          rating never sets a market price. (Artists listed before the market maker launched kept the Score-based starting price they
+          already had.) After that, <strong style={{ color: 'var(--text)' }}>only trades move the price</strong>.
         </p>
         <p className="m-0">
-          Every {formatCents(IMPACT_EXAMPLE_CENTS)} of credits spent backing an artist moves their price up about{' '}
-          {(priceImpactPct(IMPACT_EXAMPLE_CENTS) * 100).toFixed(1)}%; selling moves it down the same way. The price never goes
-          below {formatCents(NEXT_MIN_PRICE_CENTS)}.
+          You always trade with <strong style={{ color: 'var(--text)' }}>the NEXT market maker</strong>, an automated, published
+          price rule for each artist that takes the other side of every trade, so you never wait for another player. It never
+          trades on its own and never invents activity: every trade, price move and volume figure comes from a real player&apos;s
+          trade. Every Credit paid in sits in that artist&apos;s reserve, which always covers everything every holder could be paid
+          if they all sold — checked inside every trade and every day.
+        </p>
+        <p className="m-0">
+          Every {formatCents(IMPACT_EXAMPLE_CENTS)} of Credits going in moves the price up about{' '}
+          {(priceImpactPct(IMPACT_EXAMPLE_CENTS) * 100).toFixed(1)}%; selling moves it back down the same way. The price can&apos;t fall
+          below where it started, because nobody can sell shares that weren&apos;t bought. Purchases pay a{' '}
+          <strong style={{ color: 'var(--text)' }}>{BUY_FEE_BPS / 100}% trading fee</strong> (rounded up to the cent), shown
+          before you confirm; sales pay no fee. Fees go into a pool that funds deeper markets.
         </p>
         <p className="m-0">
           Your trade fills at the exact average price along its own move, so you pay for the impact you cause. It makes
           no difference whether you trade all at once or in pieces, and you can&apos;t profit just by moving the price
-          yourself: buying and selling straight back returns what you paid at most, never more (fractions of a cent are
-          always rounded in the market&apos;s favour).
+          yourself: buying and selling straight back returns less than you paid (the fee, plus fractions of a cent that are
+          always rounded in the market&apos;s favour). If the price moves more than 2% against you between your quote and your
+          order, the order is refused rather than filled at a price you didn&apos;t see.
+        </p>
+        <p className="m-0">
+          As more people play, an admin may make an artist&apos;s market deeper (each trade then moves the price less). Depth only
+          ever increases, by at most ×{DEPTH_MAX_STEP} a week; the price and everyone&apos;s shares stay exactly the same, and holdings
+          can only become worth more, because selling them moves the price less.
+        </p>
+        <p className="m-0">
+          Limits: at most 20 trades a minute and {DAILY_TRADE_LIMIT} a day. For their first {NEW_ACCOUNT_DAYS_DEFAULT} days, accounts
+          without a verified email can buy up to {formatCents(NEW_ACCOUNT_DAILY_BUY_PER_ARTIST_CENTS)} of any one artist a day. The
+          smallest purchase is {formatCents(MIN_BUY_CENTS)}. Selling is never limited.
         </p>
       </Section>
 
@@ -120,7 +141,8 @@ export default function HowItWorksPage() {
         <p className="m-0">
           You&apos;ll see this as &ldquo;Scouts rate higher&rdquo; (the Score is ahead of what the price implies),
           &ldquo;Market ahead of Scouts&rdquo; (the price is ahead of the Score) or &ldquo;In line&rdquo;. Gaps smaller than a few points
-          aren&apos;t shown.
+          aren&apos;t shown. This comparison only exists for artists listed before the market maker launched, whose starting price came
+          from their Score; artists listed since start at the same price for everyone, so there is nothing to compare.
         </p>
       </Section>
 

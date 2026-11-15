@@ -33,7 +33,6 @@ export const ALERT_SCORE_THRESHOLD = 5;
 export const ALERT_PRICE_PCT_THRESHOLD = 10;
 
 export const NEXT_STARTING_CREDITS_CENTS = 1_000_000; // $10,000.00 in NEXT Credits
-export const NEXT_MIN_PRICE_CENTS = 100; // price floor: $1.00
 
 // "Sell everything" is deliberately requested as an oversized credits
 // amount, not an estimated dollar figure — executeTrade's sell branch
@@ -48,9 +47,10 @@ export const NEXT_MIN_PRICE_CENTS = 100; // price floor: $1.00
 // holding, so the server-side cap is what actually decides the amount.
 export const SELL_ALL_SENTINEL_CENTS = 999_999_999;
 
-// Base price when an artist first enters the market: a $1-$50 range, curved
-// so a strong score commands a disproportionately higher starting price
-// (score 55 -> ~$17.70, score 94 -> ~$44.84, score 100 -> $50.00).
+// LEGACY listing price, from the Scout Score: a $1-$50 range, curved so a strong score started higher
+// (score 55 -> ~$17.70, score 94 -> ~$44.84, score 100 -> $50.00). Since Phase 1 it applies only to artists
+// listed before then (artists.next_listing_rule = 'score'), so their prices never change; every newly listed
+// artist starts at NEXT_LISTING_PRICE_CENTS, keeping the Scout rating separate from the market price.
 export function nextBasePriceCents(score: number): number {
   const normalized = Math.max(0, Math.min(100, score)) / 100;
   const dollars = 1 + Math.pow(normalized, 1.8) * 49;
@@ -58,98 +58,193 @@ export function nextBasePriceCents(score: number): number {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Price impact and execution — exact and path-independent (Phase 0 fix, 2026-11-15).
+// The NEXT market maker (Phase 1). See docs/MARKET-MAKER-DESIGN.md and docs/PHASE-1-REPORT.md.
 //
-// The rule is unchanged: every 10,000 Credits traded on one side moves the price about 5%; buys push it
-// up, sells push it down, and the price never goes below $1.00. What changed is HOW a trade is computed.
+// Every artist has a transparent automated market maker. It is always the other side of a trade, it never
+// trades on its own, and every Credit paid into it sits in that artist's reserve. Its rule, per artist:
 //
-// Before: each trade applied the impact as one step and rounded the new price, and the fill price, to
-// whole cents. Small trades' moves rounded to nothing (or up a cent), so slicing a trade into many small
-// ones beat doing it at once — a single player could buy $10,000 in one go and sell it back in $40
-// slices for ~+$243 with nobody else trading (see research/market-sim/exploit-check.mjs).
+//     1 / price = 1 / anchor − Q / depth        Q = shares held by all players, depth in cents
 //
-// Now each trade is the exact total along the continuous version of the same rule:
-//   the price moves by a factor e^(k·credits) for credits flowing in (buys) and e^(−k·credits) for
-//   credits flowing out (sells), k = 5% per 10,000 Credits;
-//   a buy of B credits at price p gets   shares = (1 − e^(−kB)) / (k·p),   new price p·e^(kB);
-//   a sell of s shares at price p pays   ln(1 + k·p·s) / k,               new price p / (1 + k·p·s).
-// The price is therefore a function of the net credits that have flowed in, so a trade's result
-// depends only on where it starts and ends — not on how it is sliced. A round trip with nobody else
-// trading returns exactly what went in, minus rounding, and rounding always goes AGAINST the trader:
-// shares bought round down (to 1e-9 shares), proceeds round down to the cent, and a tiny guard
-// absorbs floating-point error so it can never round in the trader's favour. The price itself is kept
-// at full precision (artists.next_current_price_cents is NUMERIC); only displays round to the cent.
-// Below the $1.00 floor the price stops falling and further sells fill flat at $1.00 (never above).
+// (the same curve Phase 0 runs: buying B Credits moves the price ×e^(B/depth); ~5% per 10,000 Credits at
+// the default depth of 200,000 Credits). Consequences, all exact:
+//   • Cost of any move from Q₁ to Q₂ is F(Q₂) − F(Q₁), with F(Q) = −depth·ln(1 − anchor·Q/depth). The
+//     result depends only on where the curve starts and ends, so splitting a trade can never help.
+//   • What all holders together are owed (selling everything, in any order) is F(Q) = depth·ln(price/anchor).
+//     The reserve is kept ≥ that at all times (checked inside every trade and by reconciliation).
+//   • The price can never fall below the anchor (where nobody holds a share), so there is no $1 floor.
+//   • Buys pay a 0.5% fee (rounded up to the cent) before moving along the curve; sales pay no fee.
+//   • Every other fraction rounds in the market's favour: shares down to 1e-9, proceeds down to the cent.
 // ---------------------------------------------------------------------------------------------
-const IMPACT_PER_CREDITS_CENTS = 1_000_000;
-const IMPACT_RATE = 0.05;
-const K = IMPACT_RATE / IMPACT_PER_CREDITS_CENTS;            // per cent of credits
+export const DEFAULT_DEPTH_CENTS = 20_000_000;              // 200,000 Credits: ~5% per 10,000 Credits
+export const NEXT_LISTING_PRICE_CENTS = 1_000;              // new artists list at 10 Credits a share
+export const BUY_FEE_BPS = 50;                              // 0.5% on purchases; none on sales
+export const DEPTH_MAX_STEP = 1.25;                         // depth may rise at most ×1.25 per 7 days
+export const DEPTH_STEP_WINDOW_DAYS = 7;
+export const DEPTH_CENTS_PER_ACTIVE_TRADER = 100_000;       // recommendation only: 1,000 Credits per trader
+
+// Trading limits (lib/db.ts marketLimits): aimed at throwaway accounts, never at leaving a position.
+export const NEW_ACCOUNT_DAYS_DEFAULT = 3;                  // unverified accounts younger than this are "new"
+export const NEW_ACCOUNT_DAILY_BUY_PER_ARTIST_CENTS = 250_000; // new accounts: 2,500 Credits of one artist per 24 h
+export const DAILY_TRADE_LIMIT = 500;                       // every account: trades per 24 h
+export const MIN_BUY_CENTS = 100;                           // smallest purchase: 1 Credit
+export const QUOTE_TOLERANCE = 0.02;                        // refuse a fill >2% worse than the quote the player saw
+
 export const SHARE_DECIMALS = 9;
 const SHARE_SCALE = 10 ** SHARE_DECIMALS;
 const GUARD = 1e-9;                                          // relative guard against floating-point error
 
-function floorShares(x: number): number { return Math.floor(x * SHARE_SCALE * (1 - GUARD)) / SHARE_SCALE; }
+// Shares are rounded down to the 1e-9 grid. The floating-point guard is applied to the CREDITS a purchase
+// puts in (BUY_GUARD), not to the shares: then the shares any split of a purchase can get are bounded by the
+// exact curve amount for the total, which one purchase rounds down to the same grid — so one purchase is
+// always at least as good as any split of it, and the curve is never paid less than it gives out.
+const BUY_GUARD = 1e-12;
+function floorShares(x: number): number { return Math.floor(x * SHARE_SCALE) / SHARE_SCALE; }
 function ceilShares(x: number): number { return Math.ceil(x * SHARE_SCALE) / SHARE_SCALE; }
 function floorCents(x: number): number { return Math.floor(x * (1 - GUARD)); }
+function validDepth(depthCents: number): number { return depthCents > 0 && Number.isFinite(depthCents) ? depthCents : DEFAULT_DEPTH_CENTS; }
 
-// How far the price moves for `creditsAmountCents` traded on one side (as a fraction, e.g. 0.051).
-export function priceImpactPct(creditsAmountCents: number): number {
-  return Math.expm1(K * creditsAmountCents);
+// The fee on a purchase of `amountCents` (whole cents, rounded up).
+export function buyFeeCents(amountCents: number): number {
+  if (!(amountCents > 0)) return 0;
+  return Math.ceil((Math.round(amountCents) * BUY_FEE_BPS) / 10_000);
+}
+
+// How far the price moves for `creditsAmountCents` going into the curve (as a fraction, e.g. 0.051).
+export function priceImpactPct(creditsAmountCents: number, depthCents = DEFAULT_DEPTH_CENTS): number {
+  return Math.expm1(creditsAmountCents / validDepth(depthCents));
 }
 
 export type BuyQuote = { postPriceCents: number; executionCents: number; shares: number };
 export type SellQuote = { postPriceCents: number; executionCents: number; proceedsCents: number };
+export type BuyWithFeeQuote = BuyQuote & {
+  feeCents: number;          // taken first, goes to the fee pool
+  netCents: number;          // what moves along the curve and goes into the reserve
+  effectiveCents: number;    // amount paid ÷ shares, fee included
+};
 
-// What spending `creditsCents` right now would get: the exact fill executeTrade's buy uses.
-export function quoteBuy(currentPriceCents: number, creditsCents: number): BuyQuote {
-  const p = Math.max(NEXT_MIN_PRICE_CENTS, currentPriceCents);
-  if (!(creditsCents > 0)) return { postPriceCents: p, executionCents: p, shares: 0 };
-  const shares = floorShares(-Math.expm1(-K * creditsCents) / (K * p));
-  const postPriceCents = p * Math.exp(K * creditsCents);
+// The curve only (no fee): what `creditsCents` going into the curve buys right now. The new price follows
+// from the shares actually issued (rounded down), so price and shares held stay exactly on the curve.
+export function quoteBuy(currentPriceCents: number, creditsCents: number, depthCents = DEFAULT_DEPTH_CENTS): BuyQuote {
+  const p = currentPriceCents, k = 1 / validDepth(depthCents);
+  if (!(creditsCents > 0) || !(p > 0)) return { postPriceCents: p, executionCents: p, shares: 0 };
+  const shares = floorShares(-Math.expm1(-k * creditsCents * (1 - BUY_GUARD)) / (k * p));
+  const postPriceCents = p / (1 - k * p * shares);
   return { postPriceCents, executionCents: shares > 0 ? creditsCents / shares : p, shares };
 }
 
-// What selling `shares` right now would actually net — the single source of truth for executeTrade's
-// sell AND for every "realistic exit value" (portfolios, leaderboards), so the two can never drift.
-export function quoteSell(currentPriceCents: number, shares: number): SellQuote {
-  const p = Math.max(NEXT_MIN_PRICE_CENTS, currentPriceCents);
-  if (!(shares > 0)) return { postPriceCents: p, executionCents: p, proceedsCents: 0 };
-  // shares the curve can absorb before the price reaches the $1.00 floor
-  const toFloor = p > NEXT_MIN_PRICE_CENTS ? (p / NEXT_MIN_PRICE_CENTS - 1) / (K * p) : 0;
-  let exact: number, postPriceCents: number;
-  if (shares <= toFloor) {
-    exact = Math.log1p(K * p * shares) / K;
-    postPriceCents = p / (1 + K * p * shares);
-  } else {
-    exact = Math.log(p / NEXT_MIN_PRICE_CENTS) / K + (shares - toFloor) * NEXT_MIN_PRICE_CENTS;
-    postPriceCents = NEXT_MIN_PRICE_CENTS;
-  }
-  const proceedsCents = Math.max(0, floorCents(exact));
-  return { postPriceCents: Math.max(NEXT_MIN_PRICE_CENTS, postPriceCents), executionCents: proceedsCents / shares, proceedsCents };
+// A purchase as executeTrade runs it: fee first, then the curve.
+export function quoteBuyWithFee(currentPriceCents: number, amountCents: number, depthCents = DEFAULT_DEPTH_CENTS): BuyWithFeeQuote {
+  const feeCents = buyFeeCents(amountCents);
+  const netCents = Math.max(0, Math.round(amountCents) - feeCents);
+  const q = quoteBuy(currentPriceCents, netCents, depthCents);
+  return { ...q, feeCents, netCents, effectiveCents: q.shares > 0 ? amountCents / q.shares : currentPriceCents };
 }
 
-// "Sell $X worth": the shares whose exact proceeds are X (rounded up to the share step, so the seller
-// receives at most X after rounding). executeTrade caps the result at the shares actually owned.
-export function sharesForSellCredits(currentPriceCents: number, creditsCents: number): number {
-  const p = Math.max(NEXT_MIN_PRICE_CENTS, currentPriceCents);
-  if (!(creditsCents > 0)) return 0;
-  const toFloorCredits = p > NEXT_MIN_PRICE_CENTS ? Math.log(p / NEXT_MIN_PRICE_CENTS) / K : 0;
-  if (creditsCents <= toFloorCredits) return ceilShares(Math.expm1(K * creditsCents) / (K * p));
-  return ceilShares((p / NEXT_MIN_PRICE_CENTS - 1) / (K * p) + (creditsCents - toFloorCredits) / NEXT_MIN_PRICE_CENTS);
+// What selling `shares` right now would net (no fee): the single source of truth for executeTrade's sell
+// AND for every portfolio value. Valid because a holder can never sell more than all players hold (Q).
+export function quoteSell(currentPriceCents: number, shares: number, depthCents = DEFAULT_DEPTH_CENTS): SellQuote {
+  const p = currentPriceCents, k = 1 / validDepth(depthCents);
+  if (!(shares > 0) || !(p > 0)) return { postPriceCents: p, executionCents: p, proceedsCents: 0 };
+  const proceedsCents = Math.max(0, floorCents(Math.log1p(k * p * shares) / k));
+  return { postPriceCents: p / (1 + k * p * shares), executionCents: proceedsCents / shares, proceedsCents };
 }
 
-// The price after `creditsAmountCents` traded on one side (buy: credits in; sell: credits received).
-// Used by the trade panel's preview, so the preview and the fill come from the same formula.
-export function applyTradeImpact(priceCents: number, creditsAmountCents: number, direction: 'buy' | 'sell'): number {
-  if (direction === 'buy') return quoteBuy(priceCents, creditsAmountCents).postPriceCents;
-  return quoteSell(priceCents, sharesForSellCredits(priceCents, creditsAmountCents)).postPriceCents;
+// A holding's value: what selling it alone right now would pay.
+export function exitValueCents(currentPriceCents: number, shares: number, depthCents = DEFAULT_DEPTH_CENTS): number {
+  return quoteSell(currentPriceCents, shares, depthCents).proceedsCents;
 }
 
-// The average fill price of a trade that moved the price from pre to post along the curve:
-// pre·post·ln(post/pre)/(post − pre) for both buys and sells (pre when the price didn't move).
+// The shares whose sale pays exactly `creditsCents` (rounded up, so the seller gets at least that much,
+// capped at what they own by the caller).
+export function sharesForSellCredits(currentPriceCents: number, creditsCents: number, depthCents = DEFAULT_DEPTH_CENTS): number {
+  const p = currentPriceCents, k = 1 / validDepth(depthCents);
+  if (!(creditsCents > 0) || !(p > 0)) return 0;
+  return ceilShares(Math.expm1(k * creditsCents) / (k * p));
+}
+
+// The price after `creditsAmountCents` traded on one side (buy: credits into the curve; sell: credits paid).
+export function applyTradeImpact(priceCents: number, creditsAmountCents: number, direction: 'buy' | 'sell', depthCents = DEFAULT_DEPTH_CENTS): number {
+  if (direction === 'buy') return quoteBuy(priceCents, creditsAmountCents, depthCents).postPriceCents;
+  return quoteSell(priceCents, sharesForSellCredits(priceCents, creditsAmountCents, depthCents), depthCents).postPriceCents;
+}
+
+// The average fill price of a trade that moved the price from pre to post along the curve.
 export function executionPriceCents(prePriceCents: number, postPriceCents: number): number {
   if (!(Math.abs(postPriceCents - prePriceCents) > 1e-9 * prePriceCents)) return prePriceCents;
   return (prePriceCents * postPriceCents * Math.log(postPriceCents / prePriceCents)) / (postPriceCents - prePriceCents);
+}
+
+// Quotes shown before a trade: the average price per share for buying (fee included) or selling `amountCents`
+// worth right now. A sell quote is capped at what the curve holds.
+export function askPriceCents(currentPriceCents: number, amountCents: number, depthCents = DEFAULT_DEPTH_CENTS): number {
+  return quoteBuyWithFee(currentPriceCents, amountCents, depthCents).effectiveCents;
+}
+export function bidPriceCents(currentPriceCents: number, amountCents: number, depthCents = DEFAULT_DEPTH_CENTS, maxShares = Infinity): number {
+  const s = Math.min(sharesForSellCredits(currentPriceCents, amountCents, depthCents), maxShares);
+  return s > 0 ? quoteSell(currentPriceCents, s, depthCents).executionCents : currentPriceCents;
+}
+
+// --- curve accounting -------------------------------------------------------------------------
+// What all holders together could get by selling everything (in any order): depth·ln(price/anchor).
+export function owedCents(currentPriceCents: number, anchorCents: number, depthCents: number): number {
+  if (!(anchorCents > 0) || !(currentPriceCents > anchorCents)) return 0;
+  return validDepth(depthCents) * Math.log(currentPriceCents / anchorCents);
+}
+// The anchor that puts `sharesOutstanding` at `priceCents` on a curve of `depthCents`.
+export function anchorFor(priceCents: number, sharesOutstanding: number, depthCents: number): number {
+  return priceCents / (1 + (priceCents * Math.max(0, sharesOutstanding)) / validDepth(depthCents));
+}
+// The price the curve implies for `sharesOutstanding`.
+export function curvePriceCents(anchorCents: number, sharesOutstanding: number, depthCents: number): number {
+  return anchorCents / (1 - (anchorCents * sharesOutstanding) / validDepth(depthCents));
+}
+
+export type DepthPlan = {
+  ok: boolean; reason?: string;
+  priceCents: number; sharesOutstanding: number;
+  oldDepthCents: number; newDepthCents: number; oldAnchorCents: number; newAnchorCents: number;
+  reserveCents: number; owedBeforeCents: number; owedAfterCents: number;
+  topUpCents: number;        // added to the reserve so it still covers everything owed
+};
+// A depth increase keeps the price and everyone's shares exactly as they are and re-anchors the curve
+// around them. Holders can then sell with less slippage, so what they're owed rises; the reserve is topped
+// up by exactly that much (rounded up to the cent). Depth may only increase, by at most DEPTH_MAX_STEP
+// relative to `depthWindowStartCents` (the depth DEPTH_STEP_WINDOW_DAYS ago).
+export function planDepthIncrease(input: {
+  priceCents: number; sharesOutstanding: number; reserveCents: number; depthCents: number;
+  newDepthCents: number; depthWindowStartCents?: number;
+}): DepthPlan {
+  const { priceCents, sharesOutstanding, reserveCents, depthCents, newDepthCents } = input;
+  const windowStart = input.depthWindowStartCents ?? depthCents;
+  const oldAnchorCents = anchorFor(priceCents, sharesOutstanding, depthCents);
+  const base = { priceCents, sharesOutstanding, oldDepthCents: depthCents, newDepthCents, oldAnchorCents, reserveCents,
+    owedBeforeCents: owedCents(priceCents, oldAnchorCents, depthCents) };
+  const fail = (reason: string): DepthPlan => ({ ...base, ok: false, reason, newAnchorCents: oldAnchorCents, owedAfterCents: base.owedBeforeCents, topUpCents: 0 });
+  if (!Number.isFinite(newDepthCents) || !(newDepthCents > 0)) return fail('depth must be a positive number');
+  if (!(newDepthCents > depthCents)) return fail('depth can only increase');
+  if (newDepthCents > windowStart * DEPTH_MAX_STEP * (1 + 1e-12)) {
+    return fail(`depth can rise at most ×${DEPTH_MAX_STEP} in ${DEPTH_STEP_WINDOW_DAYS} days (limit now ${Math.floor(windowStart * DEPTH_MAX_STEP)} cents)`);
+  }
+  const newAnchorCents = anchorFor(priceCents, sharesOutstanding, newDepthCents);
+  const owedAfterCents = owedCents(priceCents, newAnchorCents, newDepthCents);
+  return { ...base, ok: true, newAnchorCents, owedAfterCents, topUpCents: Math.max(0, Math.ceil(owedAfterCents - reserveCents - 1e-9)) };
+}
+
+// Recommendation shown to admins (never applied automatically): 1,000 Credits of depth per player who traded
+// in the last 30 days, never below the default.
+export function recommendedDepthCents(activeTraders: number): number {
+  return Math.max(DEFAULT_DEPTH_CENTS, DEPTH_CENTS_PER_ACTIVE_TRADER * Math.max(0, Math.floor(activeTraders)));
+}
+
+// Phase 0's exit value (with its $1.00 flat floor), kept only so the Phase 1 migration can prove that no
+// holding's value changed (lib/market-ledger.ts verifyMarketMigration).
+export function phase0ExitValueCents(currentPriceCents: number, shares: number): number {
+  const K0 = 1 / DEFAULT_DEPTH_CENTS, MIN = 100;
+  const p = Math.max(MIN, currentPriceCents);
+  if (!(shares > 0)) return 0;
+  const toFloor = p > MIN ? (p / MIN - 1) / (K0 * p) : 0;
+  const exact = shares <= toFloor ? Math.log1p(K0 * p * shares) / K0 : Math.log(p / MIN) / K0 + (shares - toFloor) * MIN;
+  return Math.max(0, floorCents(exact));
 }
 
 // The inverse of nextBasePriceCents: "what score would justify the current
@@ -176,20 +271,24 @@ export const SCOUT_GAP_EXPLAINER =
   "The gap shows where our Scouts and the players disagree. It's a difference of opinion, not a prediction — you decide who's right.";
 
 export type MarketSentiment = {
-  label: 'Scouts rate higher' | 'Market ahead of Scouts' | 'In line';
+  label: 'Scouts rate higher' | 'Market ahead of Scouts' | 'In line' | 'Not compared';
   tone: 'undervalued' | 'overheated' | 'fair';
   impliedScore: number;
   diff: number; // actual score minus implied score, in score points
+  // false for artists listed at the uniform price (Phase 1): their price was never set from the Score, so
+  // turning it back into an "implied Score" would invent a gap. Screens show no comparison for them.
+  comparable: boolean;
 };
 
 // A few points of drift is noise, not a signal — only call it out once the
 // score/price gap is big enough to matter.
 const SENTIMENT_THRESHOLD = 4;
 
-export function marketSentiment(actualScore: number, priceCents: number): MarketSentiment {
+export function marketSentiment(actualScore: number, priceCents: number, listingRule: 'score' | 'uniform' | string = 'score'): MarketSentiment {
+  if (listingRule === 'uniform') return { label: 'Not compared', tone: 'fair', impliedScore: actualScore, diff: 0, comparable: false };
   const impliedScore = impliedScoreFromPrice(priceCents);
   const diff = actualScore - impliedScore;
-  if (diff >= SENTIMENT_THRESHOLD) return { label: 'Scouts rate higher', tone: 'undervalued', impliedScore, diff };
-  if (diff <= -SENTIMENT_THRESHOLD) return { label: 'Market ahead of Scouts', tone: 'overheated', impliedScore, diff };
-  return { label: 'In line', tone: 'fair', impliedScore, diff };
+  if (diff >= SENTIMENT_THRESHOLD) return { label: 'Scouts rate higher', tone: 'undervalued', impliedScore, diff, comparable: true };
+  if (diff <= -SENTIMENT_THRESHOLD) return { label: 'Market ahead of Scouts', tone: 'overheated', impliedScore, diff, comparable: true };
+  return { label: 'In line', tone: 'fair', impliedScore, diff, comparable: true };
 }

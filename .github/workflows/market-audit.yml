@@ -5,10 +5,16 @@ name: Market integrity audit (on demand)
 # Read-only: it changes nothing. The report contains account and artist ids and Credit amounts only —
 # no names or emails — because this repository's Actions logs are public.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which deployment to check
+        type: choice
+        options: [production, staging]
+        default: production
 
 env:
-  APP_URL: https://send-a-shot.onrender.com
+  APP_URL: ${{ inputs.target == 'staging' && 'https://send-a-shot-staging.onrender.com' || 'https://send-a-shot.onrender.com' }}
 
 jobs:
   audit:
@@ -21,4 +27,15 @@ jobs:
           [ "$status" -lt 400 ]
           jq . /tmp/audit.json
         env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          CRON_SECRET: ${{ inputs.target == 'staging' && secrets.STAGING_CRON_SECRET || secrets.CRON_SECRET }}
+
+      # Phase 1: market maker books and the migration proof (pass/fail, check names, counts; no names).
+      - name: Reconcile the market maker
+        run: |
+          status=$(curl -sS -o /tmp/recon.json -w '%{http_code}' -X POST "$APP_URL/api/admin/market/reconcile" -H "x-cron-secret: $CRON_SECRET")
+          echo "HTTP $status"
+          if [ "$status" = "404" ]; then echo "Market maker not deployed here yet."; exit 0; fi
+          jq '{ok, checked, issues: [.issues[] | {check, artistId, userId}], haltedArtistIds, migration}' /tmp/recon.json
+          [ "$status" -lt 400 ]
+        env:
+          CRON_SECRET: ${{ inputs.target == 'staging' && secrets.STAGING_CRON_SECRET || secrets.CRON_SECRET }}

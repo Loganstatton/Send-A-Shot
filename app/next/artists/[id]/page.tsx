@@ -77,7 +77,7 @@ export default async function NextArtistPage(
   // into a 'use client' component itself (only the derived, already-safe
   // scoreParts/claimState values below are).
   const rawArtist = (await getArtist(id))!;
-  const sentiment = marketSentiment(score, priceCents);
+  const sentiment = marketSentiment(score, priceCents, rawArtist.next_listing_rule);
   const holding = user ? await getHolding(user.id, id) : undefined;
   const scoreHistory = await getScoreHistory(id);
   const foundingRecord = user ? await getFoundingBelieverRecord(user.id, id) : undefined;
@@ -363,6 +363,9 @@ export default async function NextArtistPage(
           volumeCents24h={volumeCents24h}
           recentBackerCount24h={recentBackerCount24h}
           feedReferralEventId={feedReferralEventId}
+          depthCents={rawArtist.next_depth_cents}
+          reserveCents={rawArtist.next_reserve_cents}
+          halted={Boolean(rawArtist.next_trading_halted_at)}
         />
         )}
       </div>

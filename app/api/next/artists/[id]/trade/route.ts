@@ -31,6 +31,8 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
   const body = (await req.json().catch(() => null)) as {
     type?: NextTransactionType; credits_amount_cents?: number; idempotencyKey?: string;
     referralSource?: string; referralFeedEventId?: number;
+    // The price the player was shown; the trade is refused if the market has since moved >2% against them.
+    quotedPriceCents?: number;
   } | null;
   if (!body || typeof body !== 'object') return respond(400, { error: 'invalid request body' });
   if (body.type !== 'buy' && body.type !== 'sell') {
@@ -49,7 +51,9 @@ export async function POST(req: Request, props: { params: Promise<{ id: string }
   // retried/duplicated request carrying the same client-generated key gets
   // back the ORIGINAL response (`replayed`) instead of trading twice.
   const idempotencyKey = typeof body.idempotencyKey === 'string' && body.idempotencyKey ? body.idempotencyKey.slice(0, 100) : undefined;
-  const outcome = await executeTradeRequest(user.id, artistId, body.type, body.credits_amount_cents, idempotencyKey);
+  const quotedPriceCents = typeof body.quotedPriceCents === 'number' && Number.isFinite(body.quotedPriceCents) && body.quotedPriceCents > 0
+    ? body.quotedPriceCents : undefined;
+  const outcome = await executeTradeRequest(user.id, artistId, body.type, body.credits_amount_cents, idempotencyKey, { quotedPriceCents });
   const { status, body: responseBody, result } = outcome;
   if (outcome.replayed || !result) return respond(status, responseBody);
 
