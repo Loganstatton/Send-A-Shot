@@ -66,6 +66,7 @@ required) and set `DATABASE_URL` to the **external** URL with `DATABASE_SSL=1`.
 | `SIGNUP_INVITE_CODE` | no | If set, signup requires this code (use for staging and for a closed beta). |
 | `APP_URL` | recommended | Public base URL used in emailed links. |
 | `CRON_SECRET` | for scheduled jobs | Shared secret the GitHub Actions workflow sends to the job endpoints. |
+| `NEXT_TRADING_PAUSED` | no | `1` pauses new NEXT trades (the trade endpoint returns 503 with a maintenance message). Browsing, portfolios, discovery and everything else keep working, and no data changes. Unset it to resume. |
 | `RESEND_API_KEY`, `EMAIL_FROM` | for email | Verification / password-reset / digest email. Without them email is skipped. |
 | `YOUTUBE_API_KEY`, `SOUNDCHARTS_*` | optional | Discovery and enrichment sources — see README. |
 

@@ -32,6 +32,7 @@ other's data. Screenshots land in `e2e/screenshots/` (git-ignored).
 | `social` | Notification settings, feed hide/mute, league activity |
 | `keyboard-check` | Skip link and focus outlines |
 | `dead-ends` | Every page as guest, player, artist, admin and phone: follows each link, clicks each non-destructive button, flags anything that does nothing, leads nowhere, overflows a phone screen or throws in a far-off timezone (~20 min) |
+| `trade-exploit` | The old trade-rounding exploit replayed through the real API: six slicing / round-trip strategies on isolated artists must not create Credits and must return the price exactly; portfolio value = what selling pays; simultaneous trades leave the price where net Credits put it (fails on the pre-fix engine: +$16.84) |
 | `axe-audit` | WCAG 2.1 A/AA scan with axe-core (needs `npm i -D axe-core`, or `AXE_PATH`) |
 
 `E2E_DEV_DB` overrides the database URL (default
